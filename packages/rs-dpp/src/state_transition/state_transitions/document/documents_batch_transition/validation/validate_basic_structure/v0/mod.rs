@@ -36,15 +36,13 @@ impl DocumentsBatchTransition {
         if transitions_len > u16::MAX as usize
             || transitions_len as u16
                 > platform_version
-                    .dpp
-                    .state_transitions
+                    .system_limits
                     .max_transitions_in_documents_batch
         {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 MaxDocumentsTransitionsExceededError::new(
                     platform_version
-                        .dpp
-                        .state_transitions
+                        .system_limits
                         .max_transitions_in_documents_batch,
                 )
                 .into(),

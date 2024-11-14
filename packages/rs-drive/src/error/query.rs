@@ -96,7 +96,7 @@ pub enum QuerySyntaxError {
 
     /// Where clause on non indexed property error
     #[error("where clause on non indexed property error: {0}")]
-    WhereClauseOnNonIndexedProperty(&'static str),
+    WhereClauseOnNonIndexedProperty(String),
     /// Query is too far from index error
     #[error("query is too far from index: {0}")]
     QueryTooFarFromIndex(&'static str),
@@ -132,4 +132,16 @@ pub enum QuerySyntaxError {
     /// Invalid identity prove request error
     #[error("invalid identity prove request error: {0}")]
     InvalidIdentityProveRequest(&'static str),
+
+    /// Requesting proof with offset error
+    #[error("requesting proof with offset error: {0}")]
+    RequestingProofWithOffset(String),
+
+    /// Unknown index error
+    #[error("unknown error: {0}")]
+    UnknownIndex(String),
+
+    /// Missing index values for query
+    #[error("incorrect index values error: {0}")]
+    IndexValuesError(String),
 }

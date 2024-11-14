@@ -2,24 +2,32 @@
 
 use std::time::Duration;
 
-use super::{CanRetry, TransportClient, TransportRequest};
+use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
+use dapi_grpc::tonic::transport::{ClientTlsConfig, Uri};
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
-use http::Uri;
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
-fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channel {
-    let mut builder = Channel::builder(uri);
+fn create_channel(
+    uri: Uri,
+    settings: Option<&AppliedRequestSettings>,
+) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
+    let mut builder = Channel::builder(uri).tls_config(
+        ClientTlsConfig::new()
+            .with_native_roots()
+            .with_webpki_roots()
+            .assume_http2(true),
+    )?;
 
     if let Some(settings) = settings {
         if let Some(timeout) = settings.connect_timeout {
@@ -27,58 +35,89 @@ fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channe
         }
     }
 
-    builder.connect_lazy()
+    Ok(builder.connect_lazy())
 }
 
 impl TransportClient for PlatformGrpcClient {
-    type Error = dapi_grpc::tonic::Status;
-
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
-            Self::new(create_channel(uri.clone(), None)).into()
-        })
-        .into()
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(PoolPrefix::Platform, &uri, None, || {
+                match create_channel(uri.clone(), None) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                }
+            })?
+            .into())
     }
 
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self {
-        pool.get_or_create(PoolPrefix::Platform, &uri, Some(settings), || {
-            Self::new(create_channel(uri.clone(), Some(settings))).into()
-        })
-        .into()
+    ) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(
+                PoolPrefix::Platform,
+                &uri,
+                Some(settings),
+                || match create_channel(uri.clone(), Some(settings)) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                },
+            )?
+            .into())
     }
 }
 
 impl TransportClient for CoreGrpcClient {
-    type Error = dapi_grpc::tonic::Status;
-
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(PoolPrefix::Core, &uri, None, || {
-            Self::new(create_channel(uri.clone(), None)).into()
-        })
-        .into()
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(PoolPrefix::Core, &uri, None, || {
+                match create_channel(uri.clone(), None) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                }
+            })?
+            .into())
     }
 
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self {
-        pool.get_or_create(PoolPrefix::Core, &uri, Some(settings), || {
-            Self::new(create_channel(uri.clone(), Some(settings))).into()
-        })
-        .into()
+    ) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(
+                PoolPrefix::Core,
+                &uri,
+                Some(settings),
+                || match create_channel(uri.clone(), Some(settings)) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                },
+            )?
+            .into())
     }
 }
 
 impl CanRetry for dapi_grpc::tonic::Status {
-    fn is_node_failure(&self) -> bool {
+    fn can_retry(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
+
         matches!(
             code,
             Ok | DataLoss
@@ -112,7 +151,7 @@ macro_rules! impl_transport_request_grpc {
                 self,
                 client: &'c mut Self::Client,
                 settings: &AppliedRequestSettings,
-            ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>>
             {
                 let mut grpc_request = self.into_request();
 
@@ -122,6 +161,7 @@ macro_rules! impl_transport_request_grpc {
 
                 client
                     .$($method)+(grpc_request)
+                    .map_err(TransportError::Grpc)
                     .map_ok(|response| response.into_inner())
                     .boxed()
             }
@@ -186,8 +226,7 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(80)),
-        retries: Some(0),
+        timeout: Some(Duration::from_secs(120)),
         ..RequestSettings::default()
     },
     wait_for_state_transition_result
@@ -207,6 +246,14 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_identity_balance
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesBalancesRequest,
+    platform_proto::GetIdentitiesBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_balances
 );
 
 impl_transport_request_grpc!(
@@ -281,6 +328,103 @@ impl_transport_request_grpc!(
     get_data_contracts
 );
 
+// rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourcesRequest,
+    platform_proto::GetContestedResourcesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resources
+);
+
+//  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceVoteStateRequest,
+    platform_proto::GetContestedResourceVoteStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_vote_state
+);
+
+// rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceVotersForIdentityRequest,
+    platform_proto::GetContestedResourceVotersForIdentityResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_voters_for_identity
+);
+// rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceIdentityVotesRequest,
+    platform_proto::GetContestedResourceIdentityVotesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_identity_votes
+);
+// rpc GetVotePollsByEndDateRequest(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetVotePollsByEndDateRequest,
+    platform_proto::GetVotePollsByEndDateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_vote_polls_by_end_date
+);
+
+// rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByIdsRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_ids
+);
+
+// rpc GetEvonodesProposedEpochBlocksByRangeRequest(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByRangeRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_range
+);
+
+// rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetPrefundedSpecializedBalanceRequest,
+    platform_proto::GetPrefundedSpecializedBalanceResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_prefunded_specialized_balance
+);
+
+// rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetPathElementsRequest,
+    platform_proto::GetPathElementsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_path_elements
+);
+
+// rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTotalCreditsInPlatformRequest,
+    platform_proto::GetTotalCreditsInPlatformResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_total_credits_in_platform
+);
+
+// rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetCurrentQuorumsInfoRequest,
+    platform_proto::GetCurrentQuorumsInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_current_quorums_info
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(
@@ -316,4 +460,13 @@ impl_transport_request_grpc!(
         ..RequestSettings::default()
     },
     subscribe_to_transactions_with_proofs
+);
+
+// rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetStatusRequest,
+    platform_proto::GetStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_status
 );

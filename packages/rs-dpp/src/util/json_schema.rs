@@ -149,11 +149,12 @@ mod test {
     use crate::data_contract::document_type::DocumentType;
 
     use platform_value::Identifier;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use platform_version::version::PlatformVersion;
     use serde_json::json;
 
     #[test]
     fn test_extract_indices() {
+        let platform_version = PlatformVersion::latest();
         let input = json!({
             "type": "object",
             "indices": [
@@ -215,24 +216,27 @@ mod test {
             false,
             false,
             &mut vec![],
-            LATEST_PLATFORM_VERSION,
+            platform_version,
         )
         .unwrap();
 
-        let indices = document_type.indices();
+        let indices = document_type.indexes();
 
         assert_eq!(indices.len(), 2);
 
-        assert_eq!(indices[0].name, "&ownerId");
-        assert_eq!(indices[0].properties.len(), 1);
-        assert_eq!(indices[0].properties[0].name, "$ownerId");
-        assert!(indices[0].properties[0].ascending);
-        assert!(indices[0].unique);
+        assert_eq!(indices["&ownerId"].name, "&ownerId");
+        assert_eq!(indices["&ownerId"].properties.len(), 1);
+        assert_eq!(indices["&ownerId"].properties[0].name, "$ownerId");
+        assert!(indices["&ownerId"].properties[0].ascending);
+        assert!(indices["&ownerId"].unique);
 
-        assert_eq!(indices[1].name, "&ownerId&updatedAt");
-        assert_eq!(indices[1].properties.len(), 2);
-        assert_eq!(indices[1].properties[0].name, "$ownerId");
-        assert_eq!(indices[1].properties[1].name, "$updatedAt");
-        assert!(!indices[1].unique);
+        assert_eq!(indices["&ownerId&updatedAt"].name, "&ownerId&updatedAt");
+        assert_eq!(indices["&ownerId&updatedAt"].properties.len(), 2);
+        assert_eq!(indices["&ownerId&updatedAt"].properties[0].name, "$ownerId");
+        assert_eq!(
+            indices["&ownerId&updatedAt"].properties[1].name,
+            "$updatedAt"
+        );
+        assert!(!indices["&ownerId&updatedAt"].unique);
     }
 }

@@ -5,23 +5,20 @@ use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
-use itertools::Itertools;
-use std::collections::HashSet;
-
-use drive::drive::batch::DriveOperation;
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-use drive::grovedb::Transaction;
+use std::collections::BTreeSet;
 
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
-
-const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
+use dpp::withdrawal::WithdrawalTransactionIndex;
+use drive::config::DEFAULT_QUERY_LIMIT;
+use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
 
 impl<C> Platform<C>
 where
@@ -46,20 +43,21 @@ where
             return Ok(());
         }
 
-        // Collecting unique withdrawal indices
-        let broadcasted_withdrawal_indices = broadcasted_withdrawal_documents
-            .iter()
-            .map(|document| {
-                document
-                    .properties()
-                    .get_optional_u64(withdrawal::properties::TRANSACTION_INDEX)?
-                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                        "Can't get transaction index from withdrawal document".to_string(),
-                    )))
-            })
-            .collect::<Result<HashSet<WithdrawalTransactionIndex>, Error>>()?
-            .into_iter()
-            .collect_vec();
+        // Collecting unique withdrawal indices of broadcasted documents
+        let broadcasted_withdrawal_indices: Vec<WithdrawalTransactionIndex> =
+            broadcasted_withdrawal_documents
+                .iter()
+                .map(|document| {
+                    document
+                        .properties()
+                        .get_optional_u64(withdrawal::properties::TRANSACTION_INDEX)?
+                        .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "Can't get transaction index from withdrawal document".to_string(),
+                        )))
+                })
+                .collect::<Result<BTreeSet<WithdrawalTransactionIndex>, Error>>()?
+                .into_iter()
+                .collect();
 
         let withdrawal_transaction_statuses = self.fetch_transactions_block_inclusion_status(
             block_info.core_height,
@@ -68,6 +66,18 @@ where
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
+
+        // Let's remove broadcasted withdrawal transactions that are now chainlocked
+        let chainlocked_indexes = withdrawal_transaction_statuses
+            .iter()
+            .filter_map(|(index, status)| {
+                if *status == AssetUnlockStatus::Chainlocked {
+                    Some(*index)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<WithdrawalTransactionIndex>>();
 
         // Collecting only documents that have been updated
         let mut documents_to_update = Vec::new();
@@ -108,13 +118,17 @@ where
                 );
 
                 WithdrawalStatus::COMPLETE
-            } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
+            } else if block_height_difference
+                > platform_version
+                    .drive_abci
+                    .withdrawal_constants
+                    .core_expiration_blocks
+            {
                 tracing::debug!(
                     transaction_sign_height,
                     "Withdrawal with transaction index {} is marked as expired",
                     withdrawal_index
                 );
-
                 WithdrawalStatus::EXPIRED
             } else {
                 continue;
@@ -132,6 +146,13 @@ where
         if documents_to_update.is_empty() {
             return Ok(());
         }
+
+        self.drive
+            .remove_broadcasted_withdrawal_transactions_after_completion_operations(
+                chainlocked_indexes,
+                &mut drive_operations,
+                platform_version,
+            )?;
 
         let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
 
@@ -155,6 +176,7 @@ where
             block_info,
             transaction.into(),
             platform_version,
+            None,
         )?;
 
         Ok(())
@@ -181,8 +203,8 @@ mod tests {
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
-    use drive::tests::helpers::setup::setup_document;
-    use drive::tests::helpers::setup::setup_system_data_contract;
+    use drive::util::test_helpers::setup::setup_document;
+    use drive::util::test_helpers::setup::setup_system_data_contract;
 
     #[test]
     fn test_statuses_are_updated() {

@@ -33,7 +33,6 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::decode::VersionError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
@@ -53,29 +52,47 @@ use dpp::consensus::basic::BasicError::{
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
     UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
+use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::state_error::StateError;
 
 use dpp::consensus::state::data_trigger::DataTriggerError::{
-    DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
+  DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
-use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
+use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
+use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
+use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
+use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
+use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
+use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
+use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
+use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
+use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractEmptySchemaErrorWasm, DataContractErrorWasm,
-    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
+    DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
+    DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
-    IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
-    InvalidDocumentTypeNameErrorWasm,
+    IncompatibleDataContractSchemaErrorWasm, IncompatibleDocumentTypeSchemaErrorWasm,
+    InvalidDataContractIdErrorWasm, InvalidDocumentTypeNameErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
     DocumentTransitionsAreAbsentErrorWasm, DuplicateDocumentTransitionsWithIdsErrorWasm,
@@ -96,7 +113,7 @@ use crate::errors::consensus::state::data_contract::data_trigger::{
 };
 use crate::errors::consensus::state::data_contract::{
     DataContractAlreadyPresentErrorWasm, DataContractConfigUpdateErrorWasm,
-    DataContractIsReadonlyErrorWasm,
+    DataContractIsReadonlyErrorWasm, DataContractUpdatePermissionErrorWasm,
 };
 use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
@@ -149,6 +166,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
         DPPConsensusError::DefaultError => JsError::new("DefaultError").into(),
+        #[cfg(test)]
+        #[allow(unreachable_patterns)]
+        e => JsError::new(&format!("unsupported error: {:?}", e)).into(),
     }
 }
 
@@ -236,6 +256,57 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentIncorrectPurchasePriceError(e) => {
             generic_consensus_error!(DocumentIncorrectPurchasePriceError, e).into()
+        }
+        StateError::PrefundedSpecializedBalanceInsufficientError(e) => {
+            generic_consensus_error!(PrefundedSpecializedBalanceInsufficientError, e).into()
+        }
+        StateError::PrefundedSpecializedBalanceNotFoundError(e) => {
+            generic_consensus_error!(PrefundedSpecializedBalanceNotFoundError, e).into()
+        }
+        StateError::DataContractUpdatePermissionError(e) => {
+            DataContractUpdatePermissionErrorWasm::from(e).into()
+        }
+        StateError::MasternodeNotFoundError(e) => {
+            generic_consensus_error!(MasternodeNotFoundError, e).into()
+        }
+        StateError::DocumentContestCurrentlyLockedError(e) => {
+            generic_consensus_error!(DocumentContestCurrentlyLockedError, e).into()
+        }
+        StateError::DocumentContestNotJoinableError(e) => {
+            generic_consensus_error!(DocumentContestNotJoinableError, e).into()
+        }
+        StateError::DocumentContestIdentityAlreadyContestantError(e) => {
+            generic_consensus_error!(DocumentContestIdentityAlreadyContestantError, e).into()
+        }
+        StateError::VotePollNotFoundError(e) => {
+            generic_consensus_error!(VotePollNotFoundError, e).into()
+        }
+        StateError::VotePollNotAvailableForVotingError(e) => {
+            generic_consensus_error!(VotePollNotAvailableForVotingError, e).into()
+        }
+        StateError::MasternodeVotedTooManyTimesError(e) => {
+            generic_consensus_error!(MasternodeVotedTooManyTimesError, e).into()
+        }
+        StateError::MasternodeVoteAlreadyPresentError(e) => {
+            generic_consensus_error!(MasternodeVoteAlreadyPresentError, e).into()
+        }
+        StateError::MasternodeIncorrectVotingAddressError(e) => {
+            generic_consensus_error!(MasternodeIncorrectVotingAddressError, e).into()
+        }
+        StateError::MasternodeIncorrectVoterIdentityIdError(e) => {
+            generic_consensus_error!(MasternodeIncorrectVoterIdentityIdError, e).into()
+        }
+        StateError::DocumentContestDocumentWithSameIdAlreadyPresentError(e) => {
+            generic_consensus_error!(DocumentContestDocumentWithSameIdAlreadyPresentError, e).into()
+        }
+        StateError::MissingTransferKeyError(e) => {
+            generic_consensus_error!(MissingTransferKeyError, e).into()
+        }
+        StateError::NoTransferKeyForCoreWithdrawalAvailableError(e) => {
+            generic_consensus_error!(NoTransferKeyForCoreWithdrawalAvailableError, e).into()
+        }
+        StateError::DocumentContestNotPaidForError(e) => {
+            generic_consensus_error!(DocumentContestNotPaidForError, e).into()
         }
     }
 }
@@ -330,8 +401,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::IncompatibleDataContractSchemaError(err) => {
             IncompatibleDataContractSchemaErrorWasm::from(err).into()
         }
-        BasicError::DataContractEmptySchemaError(err) => {
-            DataContractEmptySchemaErrorWasm::from(err).into()
+        BasicError::IncompatibleDocumentTypeSchemaError(err) => {
+            IncompatibleDocumentTypeSchemaErrorWasm::from(err).into()
         }
         BasicError::InvalidIdentityKeySignatureError(err) => {
             InvalidIdentityKeySignatureErrorWasm::from(err).into()
@@ -476,6 +547,29 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentCreationNotAllowedError(e) => {
             generic_consensus_error!(DocumentCreationNotAllowedError, e).into()
+        }
+        BasicError::OverflowError(e) => generic_consensus_error!(OverflowError, e).into(),
+        BasicError::ContestedUniqueIndexOnMutableDocumentTypeError(e) => {
+            generic_consensus_error!(ContestedUniqueIndexOnMutableDocumentTypeError, e).into()
+        }
+        BasicError::UnsupportedFeatureError(e) => {
+            generic_consensus_error!(UnsupportedFeatureError, e).into()
+        }
+        BasicError::DocumentFieldMaxSizeExceededError(e) => {
+            generic_consensus_error!(DocumentFieldMaxSizeExceededError, e).into()
+        }
+        BasicError::ContestedUniqueIndexWithUniqueIndexError(e) => {
+            generic_consensus_error!(ContestedUniqueIndexWithUniqueIndexError, e).into()
+        }
+        BasicError::ContestedDocumentsTemporarilyNotAllowedError(e) => {
+            generic_consensus_error!(ContestedDocumentsTemporarilyNotAllowedError, e).into()
+        }
+        BasicError::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(e) => {
+            generic_consensus_error!(
+                WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+                e
+            )
+            .into()
         }
     }
 }

@@ -48,7 +48,7 @@ export interface ClientOpts {
  * and the Dash Platform (layer 2).
  */
 export class Client extends EventEmitter {
-  public network: string = 'testnet';
+  public network: string = 'mainnet';
 
   public wallet: Wallet | undefined;
 
@@ -74,7 +74,7 @@ export class Client extends EventEmitter {
 
     this.options = options;
 
-    this.network = this.options.network ? this.options.network.toString() : 'testnet';
+    this.network = this.options.network ? this.options.network.toString() : 'mainnet';
 
     // Initialize DAPI Client
     const dapiClientOptions = {
@@ -180,6 +180,8 @@ export class Client extends EventEmitter {
     if (this.wallet) {
       await this.wallet.disconnect();
     }
+
+    await this.dapiClient.disconnect();
   }
 
   /**

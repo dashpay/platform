@@ -4,6 +4,7 @@ use platform_value::{Identifier, IdentifierBytes32};
 use platform_version::version::PlatformVersion;
 use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::fmt;
 
 mod error;
 pub mod v1;
@@ -13,10 +14,7 @@ pub const ID_BYTES: [u8; 32] = [
     216, 182, 16, 76, 73, 68, 166, 47, 226, 217, 127,
 ];
 
-pub const OWNER_ID_BYTES: [u8; 32] = [
-    170, 138, 235, 213, 173, 122, 202, 36, 243, 48, 61, 185, 146, 50, 146, 255, 194, 133, 221, 176,
-    188, 82, 144, 69, 234, 198, 106, 35, 245, 167, 46, 192,
-];
+pub const OWNER_ID_BYTES: [u8; 32] = [0; 32];
 
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
@@ -35,11 +33,29 @@ pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
     IntoPrimitive,
 )]
 pub enum WithdrawalStatus {
+    /// The documents are in the state and waiting to be processed.
     QUEUED = 0,
+    /// Pooled happens when we are waiting for signing.
     POOLED = 1,
+    /// We have broadcasted the transaction to core.
     BROADCASTED = 2,
+    /// The transaction is now complete.
     COMPLETE = 3,
+    /// We broadcasted the transaction but core never saw it or rejected it.
     EXPIRED = 4,
+}
+
+impl fmt::Display for WithdrawalStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status_str = match self {
+            WithdrawalStatus::QUEUED => "Queued",
+            WithdrawalStatus::POOLED => "Pooled",
+            WithdrawalStatus::BROADCASTED => "Broadcasted",
+            WithdrawalStatus::COMPLETE => "Complete",
+            WithdrawalStatus::EXPIRED => "Expired",
+        };
+        write!(f, "{}", status_str)
+    }
 }
 
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {

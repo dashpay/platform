@@ -12,7 +12,7 @@ on:
       lint-runner:
         description: Runner for linting. Must be JSON valid string.
         type: string
-        default: '"ubuntu-22.04"'
+        default: '"ubuntu-24.04"'
       check-each-feature:
         description: If true, try to build each individual feature for this crate
         type: boolean
@@ -33,13 +33,17 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           components: clippy
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
 
       - uses: clechasseur/rs-clippy-check@v3
         with:
@@ -47,12 +51,14 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
 
   formatting:
     name: Formatting
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check out repo
@@ -64,12 +70,19 @@ jobs:
           components: rustfmt
           cache: false
 
+      #  This step doesn't need librocksdb, so we don't install it
+
       - name: Check formatting
-        run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+        run: cargo fmt --check --package=${{ inputs.package }}
 
   unused_deps:
     name: Unused dependencies
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
@@ -81,11 +94,15 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
 
       - name: Get crate ${{ inputs.package }} info
         id: crate_info
@@ -98,14 +115,16 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
         with:
           args: ${{ steps.crate_info.outputs.cargo_manifest_dir }}
 
   detect_structure_changes:
     name: Detect immutable structure changes
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     # FIXME: as we use `gh pr view` below, this check can only
     # run on pull requests. We should find a way to run it
     # when manual triggers are used.
@@ -167,7 +186,7 @@ jobs:
   test:
     name: Tests
     runs-on: ${{ fromJSON(inputs.test-runner) }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -175,18 +194,25 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
 
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
 
   check_each_feature:
     name: Check each feature
@@ -195,17 +221,22 @@ jobs:
     if: ${{ inputs.check-each-feature }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
 
-      - name: Get crate ${{ inputs.package }} info
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - name: Get crate ${{ runner.arch }} info
         id: crate_info
         uses: ./.github/actions/crate_info
         with:
@@ -215,8 +246,10 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
         run: |
           echo Verify all features disabled
           set -ex

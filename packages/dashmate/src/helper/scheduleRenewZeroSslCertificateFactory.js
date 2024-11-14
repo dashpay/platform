@@ -26,8 +26,8 @@ export default function scheduleRenewZeroSslCertificateFactory(
    */
   async function scheduleRenewZeroSslCertificate(config) {
     const certificate = await getCertificate(
-      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', false),
-      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', false),
+      config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
+      config.get('platform.gateway.ssl.providerConfigs.zerossl.id', false),
     );
 
     if (!certificate) {
@@ -51,18 +51,22 @@ export default function scheduleRenewZeroSslCertificateFactory(
     }
 
     const job = new CronJob(expiresAt, async () => {
-      const tasks = await obtainZeroSSLCertificateTask(config);
+      const tasks = obtainZeroSSLCertificateTask(config);
 
       await tasks.run({
         expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
+        noRetry: true,
       });
 
       // Write config files
       configFileRepository.write(configFile);
       writeConfigTemplates(config);
 
-      // Restart Envoy to catch up new SSL certificates
-      await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');
+      // TODO: We can use https://www.envoyproxy.io/docs/envoy/v1.30.1/start/quick-start/configuration-dynamic-filesystem.html#start-quick-start-dynamic-fs-dynamic-lds
+      //  to dynamically update envoy configuration without restarting it
+
+      // Restart Gateway to catch up new SSL certificates
+      await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
 
       return job.stop();
     }, async () => {

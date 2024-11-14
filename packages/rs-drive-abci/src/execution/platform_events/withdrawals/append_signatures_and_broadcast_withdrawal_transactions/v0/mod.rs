@@ -1,7 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::{
     CoreRPCLike, CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED, CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM,
     CORE_RPC_TX_ALREADY_IN_CHAIN,
@@ -10,12 +9,14 @@ use dashcore_rpc::jsonrpc;
 use dashcore_rpc::Error as CoreRPCError;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dpp::dashcore::{consensus, Txid};
+use dpp::dashcore::{consensus, Transaction, Txid};
+use std::collections::BTreeMap;
 
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tenderdash_abci::proto::types::VoteExtension;
 
 impl<C> Platform<C>
 where
@@ -23,79 +24,98 @@ where
 {
     pub(super) fn append_signatures_and_broadcast_withdrawal_transactions_v0(
         &self,
-        unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
-        signatures: Vec<BLSSignature>,
+        withdrawal_transactions_with_vote_extensions: BTreeMap<&Transaction, &VoteExtension>,
     ) -> Result<(), Error> {
-        if unsigned_withdrawal_transactions.is_empty() {
+        if withdrawal_transactions_with_vote_extensions.is_empty() {
             return Ok(());
         }
 
-        if unsigned_withdrawal_transactions.len() != signatures.len() {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "number of signatures must match number of withdrawal transactions",
-            )));
-        }
-
         tracing::debug!(
-            "Broadcasting {} withdrawal transactions",
-            unsigned_withdrawal_transactions.len(),
+            "Broadcasting {} asset unlock transactions",
+            withdrawal_transactions_with_vote_extensions.len(),
         );
 
         let mut transaction_submission_failures = vec![];
 
-        for (mut transaction, signature) in
-            unsigned_withdrawal_transactions.into_iter().zip(signatures)
-        {
+        for (transaction_ref, vote_extension) in withdrawal_transactions_with_vote_extensions {
+            // Clone the transaction to get an owned, mutable transaction
+            let mut transaction = transaction_ref.clone();
+
+            // Extract the signature from the vote extension
+            let signature_bytes: [u8; 96] = vote_extension
+                .signature
+                .as_slice()
+                .try_into()
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "invalid votes extension signature size",
+                    ))
+                })?;
+
+            let signature = BLSSignature::from(signature_bytes);
+
+            // Modify the transaction's payload
             let Some(AssetUnlockPayloadType(mut payload)) = transaction.special_transaction_payload
             else {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "withdrawal transaction payload must be AssetUnlockPayloadType",
+                return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "withdrawal transaction payload must be AssetUnlockPayloadType".to_string(),
                 )));
             };
 
+            // Assign the quorum signature
             payload.quorum_sig = signature;
 
-            let index = payload.base.index;
+            let tx_index = payload.base.index;
 
+            // Assign the modified payload back to the transaction
             transaction.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
 
+            // Serialize the transaction
             let tx_bytes = consensus::serialize(&transaction);
 
-            // TODO: We need to broadcast all or none of the transactions (in case of error)
-            //  will be fixed in upcoming PR
+            // Send the transaction
             match self.core_rpc.send_raw_transaction(&tx_bytes) {
                 Ok(_) => {
                     tracing::debug!(
                         tx_id = transaction.txid().to_hex(),
-                        index,
-                        "Successfully broadcasted withdrawal transaction with index {}",
-                        index
+                        tx_index,
+                        "Successfully broadcasted asset unlock transaction with index {tx_index}",
                     );
                 }
-                // Ignore errors that can happen during blockchain synchronization.
-                // They will be logged with dashcore_rpc
+                // Handle specific errors
                 Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
-                    if e.code == CORE_RPC_TX_ALREADY_IN_CHAIN
-                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
+                    if e.code == CORE_RPC_TX_ALREADY_IN_CHAIN =>
+                {
+                    // Transaction already in chain; no action needed
+                }
+                Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
+                    if e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
                         || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED =>
                 {
-                    // These will never work again
-                }
-                // Errors that can happen if we created invalid tx or Core isn't responding
-                Err(e) => {
-                    tracing::error!(
+                    tracing::debug!(
                         tx_id = transaction.txid().to_string(),
-                        index,
-                        "Failed to broadcast asset unlock transaction {}: {}",
-                        index,
+                        tx_index,
+                        error = ?e,
+                        "Asset unlock transaction with index {tx_index} is expired or has no active quorum: {}",
+                        e.message
+                    );
+                    transaction_submission_failures.push((transaction.txid(), tx_bytes));
+                }
+                // Handle other errors
+                Err(e) => {
+                    tracing::warn!(
+                        tx_id = transaction.txid().to_string(),
+                        tx_index,
+                        "Failed to broadcast asset unlock transaction with index {tx_index}: {}",
                         e
                     );
-                    // These errors might allow the state transition to be broadcast in the future
+                    // Collect failed transactions for potential future retries
                     transaction_submission_failures.push((transaction.txid(), tx_bytes));
                 }
             }
         }
 
+        // Store transaction submission failures
         if let Some(ref rejections_path) = self.config.rejections_path {
             store_transaction_failures(transaction_submission_failures, rejections_path)
                 .map_err(|e| Error::Execution(e.into()))?;
@@ -113,6 +133,12 @@ fn store_transaction_failures(
     if failures.is_empty() {
         return Ok(());
     }
+
+    tracing::trace!(
+        "Store {} Asset Unlock transaction submission failures in {}",
+        failures.len(),
+        dir_path.display()
+    );
 
     // Ensure the directory exists
     fs::create_dir_all(dir_path).map_err(|e| {

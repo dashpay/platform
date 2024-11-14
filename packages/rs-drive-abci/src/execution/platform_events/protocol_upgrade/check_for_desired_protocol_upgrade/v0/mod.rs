@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use dpp::dashcore::Network;
 
 use dpp::version::PlatformVersion;
 use drive::dpp::util::deserializer::ProtocolVersion;
@@ -10,17 +11,33 @@ impl<C> Platform<C> {
     /// this should only be called on epoch change
     pub(super) fn check_for_desired_protocol_upgrade_v0(
         &self,
-        total_hpmns: u32,
+        active_hpmns: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let upgrade_percentage_needed = platform_version
-            .drive_abci
-            .methods
-            .protocol_upgrade
-            .protocol_version_upgrade_percentage_needed;
+        let upgrade_percentage_needed = if (self.config.network == Network::Dash
+            && platform_version.protocol_version == 1)
+            || (self.config.network == Network::Testnet && platform_version.protocol_version == 2)
+        {
+            // This is a solution for the emergency update to version 3
+            // We clean this up immediately though as we transition to check_for_desired_protocol_upgrade_v1
+            u64::min(
+                51,
+                platform_version
+                    .drive_abci
+                    .methods
+                    .protocol_upgrade
+                    .protocol_version_upgrade_percentage_needed,
+            )
+        } else {
+            platform_version
+                .drive_abci
+                .methods
+                .protocol_upgrade
+                .protocol_version_upgrade_percentage_needed
+        };
 
         let required_upgraded_hpmns = 1
-            + (total_hpmns as u64)
+            + (active_hpmns as u64)
                 .checked_mul(upgrade_percentage_needed)
                 .and_then(|product| product.checked_div(100))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
@@ -30,9 +47,9 @@ impl<C> Platform<C> {
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
         let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
+
         let mut versions_passing_threshold =
             protocol_versions_counter.versions_passing_threshold(required_upgraded_hpmns);
-        drop(protocol_versions_counter);
 
         if versions_passing_threshold.len() > 1 {
             return Err(Error::Execution(
@@ -42,13 +59,20 @@ impl<C> Platform<C> {
             ));
         }
 
+        tracing::debug!(
+            active_hpmns,
+            required_upgraded_hpmns,
+            all_votes = ?protocol_versions_counter.global_cache,
+            ?versions_passing_threshold,
+            "Protocol version voting is finished. we require {} upgraded, {} versions passing the threshold: {:?}",
+            required_upgraded_hpmns,
+            versions_passing_threshold.len(),
+            versions_passing_threshold
+        );
+
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
             let next_version = versions_passing_threshold.remove(0);
-
-            // TODO: We stored next version here previously.
-            //  It was never used so we can temporary remove it from here and move it to Epoch trees in upcoming PR
-
             Ok(Some(next_version))
         } else {
             Ok(None)

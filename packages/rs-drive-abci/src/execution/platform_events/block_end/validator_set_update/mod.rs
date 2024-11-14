@@ -1,4 +1,6 @@
 mod v0;
+mod v1;
+mod v2;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -36,6 +38,7 @@ where
     ///
     pub fn validator_set_update(
         &self,
+        proposer_pro_tx_hash: [u8; 32],
         platform_state: &PlatformState,
         block_execution_context: &mut BlockExecutionContext,
         platform_version: &PlatformVersion,
@@ -46,10 +49,24 @@ where
             .block_end
             .validator_set_update
         {
-            0 => self.validator_set_update_v0(platform_state, block_execution_context),
+            0 => self.validator_set_update_v0(
+                proposer_pro_tx_hash,
+                platform_state,
+                block_execution_context,
+            ),
+            1 => self.validator_set_update_v1(
+                proposer_pro_tx_hash,
+                platform_state,
+                block_execution_context,
+            ),
+            2 => self.validator_set_update_v2(
+                proposer_pro_tx_hash,
+                platform_state,
+                block_execution_context,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "validator_set_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

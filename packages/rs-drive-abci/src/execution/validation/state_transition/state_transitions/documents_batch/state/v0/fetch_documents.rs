@@ -1,17 +1,18 @@
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{
@@ -19,10 +20,14 @@ use dpp::state_transition::documents_batch_transition::document_transition::{
 };
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::drive_contested_document_query::{
+    DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
+};
+use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
@@ -136,7 +141,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
         .collect();
 
-    let drive_query = DriveQuery {
+    let drive_query = DriveDocumentQuery {
         contract,
         document_type,
         internal_clauses: InternalClauses {
@@ -179,8 +184,8 @@ pub(crate) fn fetch_document_with_id(
     id: Identifier,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<Option<Document>, Error> {
-    let drive_query = DriveQuery {
+) -> Result<(Option<Document>, FeeResult), Error> {
+    let drive_query = DriveDocumentQuery {
         contract,
         document_type,
         internal_clauses: InternalClauses {
@@ -202,7 +207,6 @@ pub(crate) fn fetch_document_with_id(
         block_time_ms: None,
     };
 
-    //todo: deal with cost of this operation
     let documents_outcome = drive.query_documents(
         drive_query,
         None,
@@ -211,11 +215,60 @@ pub(crate) fn fetch_document_with_id(
         Some(platform_version.protocol_version),
     )?;
 
+    let fee = documents_outcome.cost();
+    let fee_result = FeeResult {
+        storage_fee: 0,
+        processing_fee: fee,
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+    };
     let mut documents = documents_outcome.documents_owned();
 
     if documents.is_empty() {
-        Ok(None)
+        Ok((None, fee_result))
     } else {
-        Ok(Some(documents.remove(0)))
+        Ok((Some(documents.remove(0)), fee_result))
+    }
+}
+
+pub(crate) fn has_contested_document_with_document_id<'a>(
+    drive: &Drive,
+    contract: &'a DataContract,
+    document_type: DocumentTypeRef<'a>,
+    document_id: Identifier,
+    epoch: Option<&Epoch>,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(bool, FeeResult), Error> {
+    let drive_query = DriveContestedDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: PrimaryContestedInternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: Some(document_id),
+        },
+    };
+
+    let documents_outcome = drive.query_contested_documents(
+        drive_query,
+        epoch,
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+
+    let fee = documents_outcome.cost();
+    let fee_result = FeeResult {
+        storage_fee: 0,
+        processing_fee: fee,
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+    };
+    let documents = documents_outcome.documents_owned();
+
+    if documents.is_empty() {
+        Ok((false, fee_result))
+    } else {
+        Ok((true, fee_result))
     }
 }

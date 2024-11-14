@@ -15,7 +15,6 @@ impl Drive {
         let identity_contract_path = Self::identity_contract_nonce_query(identity_id, contract_id);
         self.grove_get_proved_path_query(
             &identity_contract_path,
-            false,
             transaction,
             &mut vec![],
             drive_version,

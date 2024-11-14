@@ -16,8 +16,18 @@ impl<C> Platform<C> {
             .fetch_platform_state_bytes(transaction, platform_version)
             .map_err(Error::Drive)?
             .map(|bytes| {
-                PlatformState::versioned_deserialize(&bytes, platform_version)
-                    .map_err(Error::Protocol)
+                let result = PlatformState::versioned_deserialize(&bytes, platform_version)
+                    .map_err(Error::Protocol);
+
+                if result.is_err() {
+                    tracing::error!(
+                        bytes = hex::encode(&bytes),
+                        "Unable deserialize platform state for version {}",
+                        platform_version.protocol_version
+                    );
+                }
+
+                result
             })
             .transpose()
     }

@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
@@ -59,7 +59,7 @@ impl Drive {
         if with_searchable_inner_references
             && matches!(
                 identity_key.purpose(),
-                Purpose::AUTHENTICATION | Purpose::TRANSFER
+                Purpose::AUTHENTICATION | Purpose::TRANSFER | Purpose::VOTING
             )
         {
             self.insert_key_searchable_references_operations(

@@ -49,13 +49,13 @@ use dpp::document::{DocumentV0, INITIAL_REVISION};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types;
 use dpp::version::PlatformVersion;
-use drive::common::test_utils::identities::create_test_identity_with_rng;
 use drive::dpp::document::Document;
-use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use drive::util::storage_flags::StorageFlags;
+use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
 fn create_test_mn_share_document(
@@ -115,6 +115,7 @@ fn create_test_mn_share_document(
             true,
             transaction,
             platform_version,
+            None,
         )
         .expect("expected to insert a document successfully");
 
@@ -136,7 +137,7 @@ pub fn create_test_masternode_share_identities_and_documents(
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
     let all_exist = drive
-        .verify_all_identities_exist(pro_tx_hashes, transaction)
+        .verify_all_identities_exist(pro_tx_hashes, transaction, platform_version)
         .expect("expected that all identities existed");
     if all_exist {
         pro_tx_hashes

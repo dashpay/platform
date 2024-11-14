@@ -53,6 +53,13 @@ pub(super) fn enrich_with_base_schema_v0(
         ));
     }
 
+    if let Some(schema_defs) = schema_defs {
+        schema_map.insert_string_key_value(
+            contract_property_names::DEFINITIONS.to_string(),
+            schema_defs,
+        )
+    }
+
     // Remove $createdAt, $updatedAt and $transferredAt and their height and core height variants
     // from JSON Schema since they aren't part of
     // dynamic (user defined) document data which is validating against the schema
@@ -66,13 +73,6 @@ pub(super) fn enrich_with_base_schema_v0(
                 }
             });
         }
-    }
-
-    if let Some(schema_defs) = schema_defs {
-        schema_map.insert_string_key_value(
-            contract_property_names::DEFINITIONS.to_string(),
-            schema_defs,
-        )
     }
 
     Ok(schema)

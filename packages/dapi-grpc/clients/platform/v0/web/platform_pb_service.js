@@ -73,6 +73,15 @@ Platform.getIdentityBalance = {
   responseType: platform_pb.GetIdentityBalanceResponse
 };
 
+Platform.getIdentitiesBalances = {
+  methodName: "getIdentitiesBalances",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentitiesBalancesRequest,
+  responseType: platform_pb.GetIdentitiesBalancesResponse
+};
+
 Platform.getIdentityBalanceAndRevision = {
   methodName: "getIdentityBalanceAndRevision",
   service: Platform,
@@ -80,6 +89,24 @@ Platform.getIdentityBalanceAndRevision = {
   responseStream: false,
   requestType: platform_pb.GetIdentityBalanceAndRevisionRequest,
   responseType: platform_pb.GetIdentityBalanceAndRevisionResponse
+};
+
+Platform.getEvonodesProposedEpochBlocksByIds = {
+  methodName: "getEvonodesProposedEpochBlocksByIds",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest,
+  responseType: platform_pb.GetEvonodesProposedEpochBlocksResponse
+};
+
+Platform.getEvonodesProposedEpochBlocksByRange = {
+  methodName: "getEvonodesProposedEpochBlocksByRange",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
+  responseType: platform_pb.GetEvonodesProposedEpochBlocksResponse
 };
 
 Platform.getProofs = {
@@ -181,6 +208,69 @@ Platform.getEpochsInfo = {
   responseType: platform_pb.GetEpochsInfoResponse
 };
 
+Platform.getContestedResources = {
+  methodName: "getContestedResources",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContestedResourcesRequest,
+  responseType: platform_pb.GetContestedResourcesResponse
+};
+
+Platform.getContestedResourceVoteState = {
+  methodName: "getContestedResourceVoteState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContestedResourceVoteStateRequest,
+  responseType: platform_pb.GetContestedResourceVoteStateResponse
+};
+
+Platform.getContestedResourceVotersForIdentity = {
+  methodName: "getContestedResourceVotersForIdentity",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContestedResourceVotersForIdentityRequest,
+  responseType: platform_pb.GetContestedResourceVotersForIdentityResponse
+};
+
+Platform.getContestedResourceIdentityVotes = {
+  methodName: "getContestedResourceIdentityVotes",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContestedResourceIdentityVotesRequest,
+  responseType: platform_pb.GetContestedResourceIdentityVotesResponse
+};
+
+Platform.getVotePollsByEndDate = {
+  methodName: "getVotePollsByEndDate",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetVotePollsByEndDateRequest,
+  responseType: platform_pb.GetVotePollsByEndDateResponse
+};
+
+Platform.getPrefundedSpecializedBalance = {
+  methodName: "getPrefundedSpecializedBalance",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetPrefundedSpecializedBalanceRequest,
+  responseType: platform_pb.GetPrefundedSpecializedBalanceResponse
+};
+
+Platform.getTotalCreditsInPlatform = {
+  methodName: "getTotalCreditsInPlatform",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetTotalCreditsInPlatformRequest,
+  responseType: platform_pb.GetTotalCreditsInPlatformResponse
+};
+
 Platform.getPathElements = {
   methodName: "getPathElements",
   service: Platform,
@@ -188,6 +278,24 @@ Platform.getPathElements = {
   responseStream: false,
   requestType: platform_pb.GetPathElementsRequest,
   responseType: platform_pb.GetPathElementsResponse
+};
+
+Platform.getStatus = {
+  methodName: "getStatus",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetStatusRequest,
+  responseType: platform_pb.GetStatusResponse
+};
+
+Platform.getCurrentQuorumsInfo = {
+  methodName: "getCurrentQuorumsInfo",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetCurrentQuorumsInfoRequest,
+  responseType: platform_pb.GetCurrentQuorumsInfoResponse
 };
 
 exports.Platform = Platform;
@@ -414,11 +522,104 @@ PlatformClient.prototype.getIdentityBalance = function getIdentityBalance(reques
   };
 };
 
+PlatformClient.prototype.getIdentitiesBalances = function getIdentitiesBalances(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getIdentitiesBalances, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getIdentityBalanceAndRevision = function getIdentityBalanceAndRevision(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getIdentityBalanceAndRevision, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getEvonodesProposedEpochBlocksByIds = function getEvonodesProposedEpochBlocksByIds(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getEvonodesProposedEpochBlocksByIds, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getEvonodesProposedEpochBlocksByRange = function getEvonodesProposedEpochBlocksByRange(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getEvonodesProposedEpochBlocksByRange, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -786,11 +987,290 @@ PlatformClient.prototype.getEpochsInfo = function getEpochsInfo(requestMessage, 
   };
 };
 
+PlatformClient.prototype.getContestedResources = function getContestedResources(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContestedResources, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContestedResourceVoteState = function getContestedResourceVoteState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContestedResourceVoteState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContestedResourceVotersForIdentity = function getContestedResourceVotersForIdentity(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContestedResourceVotersForIdentity, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContestedResourceIdentityVotes = function getContestedResourceIdentityVotes(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContestedResourceIdentityVotes, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getVotePollsByEndDate = function getVotePollsByEndDate(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getVotePollsByEndDate, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getPrefundedSpecializedBalance = function getPrefundedSpecializedBalance(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getPrefundedSpecializedBalance, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getTotalCreditsInPlatform = function getTotalCreditsInPlatform(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getTotalCreditsInPlatform, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getPathElements = function getPathElements(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getPathElements, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getStatus = function getStatus(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getStatus, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getCurrentQuorumsInfo = function getCurrentQuorumsInfo(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getCurrentQuorumsInfo, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

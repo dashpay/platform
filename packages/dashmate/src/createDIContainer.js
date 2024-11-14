@@ -15,6 +15,17 @@ import ConfigFileJsonRepository from './config/configFile/ConfigFileJsonReposito
 import createConfigFileFactory from './config/configFile/createConfigFileFactory.js';
 import migrateConfigFileFactory from './config/configFile/migrateConfigFileFactory.js';
 import DefaultConfigs from './config/DefaultConfigs.js';
+import analyseConfigFactory from './doctor/analyse/analyseConfigFactory.js';
+import analyseCoreFactory from './doctor/analyse/analyseCoreFactory.js';
+import analysePlatformFactory from './doctor/analyse/analysePlatformFactory.js';
+import analyseServiceContainersFactory from './doctor/analyse/analyseServiceContainersFactory.js';
+import analyseSystemResourcesFactory from './doctor/analyse/analyseSystemResourcesFactory.js';
+import analyseSamplesFactory from './doctor/analyseSamplesFactory.js';
+import archiveSamples from './doctor/archiveSamples.js';
+import unarchiveSamplesFactory from './doctor/unarchiveSamplesFactory.js';
+import cleanupZeroSSLCertificatesTaskFactory
+  from './listr/tasks/ssl/zerossl/cleanupZeroSSLCertificatesTaskFactory.js';
+import cancelCertificate from './ssl/zerossl/cancelCertificate.js';
 
 import renderTemplateFactory from './templates/renderTemplateFactory.js';
 import renderServiceTemplatesFactory from './templates/renderServiceTemplatesFactory.js';
@@ -75,6 +86,7 @@ import reindexNodeTaskFactory from './listr/tasks/reindexNodeTaskFactory.js';
 import updateNodeFactory from './update/updateNodeFactory.js';
 
 import generateHDPrivateKeys from './util/generateHDPrivateKeys.js';
+import getOperatingSystemInfoFactory from './util/getOperatingSystemInfoFactory.js';
 
 import obtainZeroSSLCertificateTaskFactory from './listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
 import VerificationServer from './listr/tasks/ssl/VerificationServer.js';
@@ -109,6 +121,12 @@ import createIpAndPortsFormFactory from './listr/prompts/createIpAndPortsForm.js
 import registerMasternodeWithCoreWalletFactory from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet.js';
 import registerMasternodeWithDMTFactory from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT.js';
 import writeConfigTemplatesFactory from './templates/writeConfigTemplatesFactory.js';
+import importCoreDataTaskFactory from './listr/tasks/setup/regular/importCoreDataTaskFactory.js';
+import verifySystemRequirementsTaskFactory
+  from './listr/tasks/setup/regular/verifySystemRequirementsTaskFactory.js';
+import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
+import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
+import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCertificateFactory.js';
 
 /**
  * @param {Object} [options]
@@ -167,6 +185,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     generateHDPrivateKeys: asValue(generateHDPrivateKeys),
+    getOperatingSystemInfo: asFunction(getOperatingSystemInfoFactory),
   });
 
   /**
@@ -190,6 +209,7 @@ export default async function createDIContainer(options = {}) {
     downloadCertificate: asValue(downloadCertificate),
     getCertificate: asValue(getCertificate),
     listCertificates: asValue(listCertificates),
+    cancelCertificate: asValue(cancelCertificate),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
     verificationServer: asClass(VerificationServer).singleton(),
   });
@@ -283,6 +303,7 @@ export default async function createDIContainer(options = {}) {
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
+    cleanupZeroSSLCertificatesTask: asFunction(cleanupZeroSSLCertificatesTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
@@ -298,6 +319,33 @@ export default async function createDIContainer(options = {}) {
       .singleton(),
     registerMasternodeWithDMT: asFunction(registerMasternodeWithDMTFactory)
       .singleton(),
+    importCoreDataTask: asFunction(importCoreDataTaskFactory).singleton(),
+    verifySystemRequirementsTask: asFunction(verifySystemRequirementsTaskFactory)
+      .singleton(),
+    collectSamplesTask: asFunction(collectSamplesTaskFactory).singleton(),
+  });
+
+  /**
+   * SSL
+   */
+  container.register({
+    validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
+    getCertificate: asValue(getCertificate),
+  });
+
+  /**
+   * Doctor
+   */
+  container.register({
+    verifySystemRequirements: asFunction(verifySystemRequirementsFactory),
+    analyseSamples: asFunction(analyseSamplesFactory).singleton(),
+    analyseSystemResources: asFunction(analyseSystemResourcesFactory).singleton(),
+    analyseServiceContainers: asFunction(analyseServiceContainersFactory).singleton(),
+    analyseConfig: asFunction(analyseConfigFactory).singleton(),
+    analyseCore: asFunction(analyseCoreFactory).singleton(),
+    analysePlatform: asFunction(analysePlatformFactory).singleton(),
+    unarchiveSamples: asFunction(unarchiveSamplesFactory).singleton(),
+    archiveSamples: asValue(archiveSamples),
   });
 
   /**

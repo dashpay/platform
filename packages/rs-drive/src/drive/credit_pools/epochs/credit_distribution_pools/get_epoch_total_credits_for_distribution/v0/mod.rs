@@ -1,7 +1,7 @@
 use grovedb::TransactionArg;
 
-use crate::drive::fee::get_overflow_error;
 use crate::drive::Drive;
+use crate::fees::get_overflow_error;
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
@@ -37,10 +37,10 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-    use crate::drive::batch::GroveDbOpBatch;
-    use crate::fee_pools::epochs::operations_factory::EpochOperations;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::fee::Credits;
 
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn test_get_epoch_total_credits_for_distribution_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
 

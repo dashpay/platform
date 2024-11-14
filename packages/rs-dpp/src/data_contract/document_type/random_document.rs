@@ -1,12 +1,14 @@
+use bincode::{Decode, Encode};
+
+use platform_value::{Bytes32, Identifier};
+use rand::prelude::StdRng;
+
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_value::{Bytes32, Identifier};
-use rand::prelude::StdRng;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
 pub enum DocumentFieldFillType {
@@ -180,10 +182,10 @@ pub trait CreateRandomDocument {
     /// A `Result<Vec<(Document, Identity, Bytes32)>, ProtocolError>` which is `Ok` containing a vector of tuples
     /// if successful, each tuple consisting of a Document, its associated Identity, and a Bytes32 value, or an error
     /// if the operation fails.
-    fn random_documents_with_params(
+    fn random_documents_with_params<'i>(
         &self,
         count: u32,
-        identities: &[Identity],
+        identities: &[&'i Identity],
         time_ms: Option<TimestampMillis>,
         block_height: Option<BlockHeight>,
         core_block_height: Option<CoreBlockHeight>,
@@ -191,7 +193,7 @@ pub trait CreateRandomDocument {
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError>;
+    ) -> Result<Vec<(Document, &'i Identity, Bytes32)>, ProtocolError>;
 }
 
 impl CreateRandomDocument for DocumentType {
@@ -284,10 +286,10 @@ impl CreateRandomDocument for DocumentType {
             ), // Add more cases as necessary for other variants
         }
     }
-    fn random_documents_with_params(
+    fn random_documents_with_params<'i>(
         &self,
         count: u32,
-        identities: &[Identity],
+        identities: &[&'i Identity],
         time_ms: Option<TimestampMillis>,
         block_height: Option<BlockHeight>,
         core_block_height: Option<CoreBlockHeight>,
@@ -295,7 +297,7 @@ impl CreateRandomDocument for DocumentType {
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
+    ) -> Result<Vec<(Document, &'i Identity, Bytes32)>, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_documents_with_params(
                 count,
@@ -307,7 +309,7 @@ impl CreateRandomDocument for DocumentType {
                 document_field_fill_size,
                 rng,
                 platform_version,
-            ), // Add more cases as necessary for other variants
+            ),
         }
     }
 }
@@ -403,10 +405,10 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
         }
     }
 
-    fn random_documents_with_params(
+    fn random_documents_with_params<'i>(
         &self,
         count: u32,
-        identities: &[Identity],
+        identities: &[&'i Identity],
         time_ms: Option<TimestampMillis>,
         block_height: Option<BlockHeight>,
         core_block_height: Option<CoreBlockHeight>,
@@ -414,7 +416,7 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
+    ) -> Result<Vec<(Document, &'i Identity, Bytes32)>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_documents_with_params(
                 count,

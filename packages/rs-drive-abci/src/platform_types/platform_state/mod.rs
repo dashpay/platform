@@ -1,9 +1,11 @@
+mod patch_platform_version;
 /// Version 0
 pub mod v0;
 
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::{
-    PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
+    MasternodeListChanges, PlatformStateForSavingV0, PlatformStateForSavingV1, PlatformStateV0,
+    PlatformStateV0Methods, PlatformStateV0PrivateMethods,
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
@@ -20,9 +22,11 @@ use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVer
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 
+use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
+use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -38,30 +42,15 @@ pub enum PlatformState {
 pub enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
-}
-
-impl PlatformStateForSaving {
-    /// Retrieves the current protocol version used in consensus.
-    ///
-    /// Matches against `PlatformStateForSaving` variants to extract the protocol version.
-    ///
-    /// # Returns
-    /// A `ProtocolVersion` indicating the current consensus protocol version.
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    #[allow(deprecated)]
-    pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
-        match self {
-            PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,
-        }
-    }
+    /// Version 1
+    V1(PlatformStateForSavingV1),
 }
 
 impl PlatformSerializable for PlatformState {
     type Error = Error;
 
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let platform_version = PlatformVersion::get(self.current_protocol_version_in_consensus())?;
+        let platform_version = self.current_platform_version()?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;
@@ -102,30 +91,25 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 
 impl PlatformState {
     /// Get the state fingerprint
-    pub fn fingerprint(&self) -> [u8; 32] {
-        hash_double(
-            self.serialize_to_bytes()
-                .expect("expected to serialize state"),
-        )
-    }
-    /// Get the current platform version
-    pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
-        Ok(PlatformVersion::get(
-            self.current_protocol_version_in_consensus(),
-        )?)
+    pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
+        Ok(hash_double(self.serialize_to_bytes()?))
     }
 
     /// The default state at platform start
     pub fn default_with_protocol_versions(
         current_protocol_version_in_consensus: ProtocolVersion,
         next_epoch_protocol_version: ProtocolVersion,
-    ) -> PlatformState {
+        config: &PlatformConfig,
+    ) -> Result<PlatformState, Error> {
         //todo find the current Platform state for the protocol version
-        PlatformStateV0::default_with_protocol_versions(
+        let state = PlatformStateV0::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-        )
-        .into()
+            config,
+        )?
+        .into();
+
+        Ok(state)
     }
 
     /// Retrieve version 0, or an error if not currently on version 0
@@ -154,11 +138,11 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
                 match platform_version
                     .drive_abci
                     .structs
-                    .platform_state_for_saving_structure
+                    .platform_state_for_saving_structure_default
                 {
                     0 => {
-                        let saving_v0: PlatformStateForSavingV0 = v0.try_into()?;
-                        Ok(saving_v0.into())
+                        let saving_v1: PlatformStateForSavingV1 = v0.try_into()?;
+                        Ok(saving_v1.into())
                     }
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
@@ -190,7 +174,23 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                     }
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
-                            "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
+                            "PlatformState::try_from_platform_versioned(PlatformStateForSavingV0)"
+                                .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                }
+            }
+            PlatformStateForSaving::V1(v1) => {
+                match platform_version.drive_abci.structs.platform_state_structure {
+                    0 => {
+                        let platform_state_v0 = PlatformStateV0::from(v1);
+
+                        Ok(platform_state_v0.into())
+                    }
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method:
+                            "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
                                 .to_string(),
                         known_versions: vec![0],
                         received: version,
@@ -201,7 +201,23 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
     }
 }
 
+impl PlatformStateV0PrivateMethods for PlatformState {
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
+        match self {
+            PlatformState::V0(v0) => v0.patched_platform_version = version,
+        }
+    }
+}
+
 impl PlatformStateV0Methods for PlatformState {
+    fn last_committed_block_height(&self) -> u64 {
+        match self {
+            PlatformState::V0(v0) => v0.last_committed_block_height(),
+        }
+    }
+
     fn last_committed_known_block_height_or(&self, default: u64) -> u64 {
         match self {
             PlatformState::V0(v0) => v0.last_committed_known_block_height_or(default),
@@ -232,6 +248,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32] {
+        match self {
+            PlatformState::V0(v0) => v0.last_committed_block_proposer_pro_tx_hash(),
+        }
+    }
+
     fn last_committed_block_signature(&self) -> [u8; 96] {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_signature(),
@@ -241,12 +263,6 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_committed_block_app_hash(&self) -> Option<[u8; 32]> {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_app_hash(),
-        }
-    }
-
-    fn last_committed_block_height(&self) -> u64 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_height(),
         }
     }
 
@@ -268,6 +284,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn hpmn_active_list_len(&self) -> usize {
+        match self {
+            PlatformState::V0(v0) => v0.hpmn_active_list_len(),
+        }
+    }
+
     fn current_validator_set(&self) -> Result<&ValidatorSet, Error> {
         match self {
             PlatformState::V0(v0) => v0.current_validator_set(),
@@ -283,6 +305,14 @@ impl PlatformStateV0Methods for PlatformState {
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
             PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
+        }
+    }
+
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
+        match self {
+            PlatformState::V0(v0) => v0.patched_platform_version,
         }
     }
 
@@ -316,9 +346,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
+        }
+    }
+
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
         }
     }
 
@@ -382,38 +418,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(
-        &mut self,
-        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    ) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
         }
     }
 
-    fn replace_chain_lock_validating_quorums(
-        &mut self,
-        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    ) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         match self {
-            PlatformState::V0(v0) => v0.replace_chain_lock_validating_quorums(quorums),
-        }
-    }
-
-    fn set_previous_chain_lock_validating_quorums(
-        &mut self,
-        previous_core_height: u32,
-        change_core_height: u32,
-        previous_quorums_change_height: Option<u32>,
-        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    ) {
-        match self {
-            PlatformState::V0(v0) => v0.set_previous_chain_lock_validating_quorums(
-                previous_core_height,
-                change_core_height,
-                previous_quorums_change_height,
-                quorums,
-            ),
+            PlatformState::V0(v0) => v0.set_instant_lock_validating_quorums(quorums),
         }
     }
 
@@ -471,37 +484,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums_mut(
-        &mut self,
-    ) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
         }
     }
 
-    fn previous_height_chain_lock_validating_quorums(
-        &self,
-    ) -> Option<&(
-        u32,
-        u32,
-        Option<u32>,
-        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    )> {
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
         match self {
-            PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums(),
-        }
-    }
-
-    fn previous_height_chain_lock_validating_quorums_mut(
-        &mut self,
-    ) -> &mut Option<(
-        u32,
-        u32,
-        Option<u32>,
-        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
-    )> {
-        match self {
-            PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums_mut(),
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
         }
     }
 
@@ -526,6 +517,55 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_committed_block_id_hash(&self) -> [u8; 32] {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_id_hash(),
+        }
+    }
+
+    fn full_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
+        match (self, previous) {
+            (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {
+                v0.full_masternode_list_changes(v0_previous)
+            }
+        }
+    }
+
+    fn hpmn_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
+        match (self, previous) {
+            (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {
+                v0.hpmn_masternode_list_changes(v0_previous)
+            }
+        }
+    }
+
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
+        match self {
+            PlatformState::V0(v0) => v0.previous_fee_versions(),
+        }
+    }
+
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        match self {
+            PlatformState::V0(v0) => v0.previous_fee_versions_mut(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod versioned_deserialize {
+        use super::*;
+        use crate::test::fixture::platform_state::PLATFORM_STATE_V3_TESTNET;
+        use platform_version::version::v3::PLATFORM_V3;
+        use std::ops::Deref;
+
+        #[test]
+        fn should_deserialize_state_stored_in_version_0_from_testnet() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
+
+            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
+                .expect("failed to deserialize state");
         }
     }
 }

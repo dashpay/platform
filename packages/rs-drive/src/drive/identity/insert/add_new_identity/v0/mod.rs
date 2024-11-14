@@ -1,10 +1,10 @@
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -51,6 +51,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok(fees)
     }
@@ -130,6 +131,7 @@ impl Drive {
         // We insert the identity tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKey((identity_tree_path, id.to_vec())),
+            false,
             Some(&storage_flags),
             apply_type,
             transaction,
@@ -187,6 +189,7 @@ impl Drive {
                             .iter()
                             .map(|identity_public_key| identity_public_key.id())
                             .collect(),
+                        &block_info.epoch,
                         estimated_costs_only_with_layer_info,
                         transaction,
                         platform_version,
@@ -270,7 +273,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::identity::Identity;
 
     use dpp::block::block_info::BlockInfo;
@@ -317,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_insert_identity_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 

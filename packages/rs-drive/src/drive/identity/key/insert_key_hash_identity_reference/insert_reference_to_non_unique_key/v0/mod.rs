@@ -2,8 +2,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
-use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
+use crate::fees::op::LowLevelDriveOperation::FunctionOperation;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
@@ -28,7 +28,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
-        let hash_vec = identity_key.hash()?;
+        let hash_vec = identity_key.public_key_hash()?;
         let key_hash = hash_vec.as_slice().try_into().map_err(|_| {
             Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
         })?;

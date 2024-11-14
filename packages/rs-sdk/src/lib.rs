@@ -15,7 +15,7 @@
 //! 2. [`Data Contract`](crate::platform::DataContract)
 //! 3. [`Document`](crate::platform::Document)
 //!
-//! To define document search conditions, you can use [`DriveQuery`](crate::platform::DriveQuery) and convert it
+//! To define document search conditions, you can use [`DriveQuery`](crate::platform::DriveDocumentQuery) and convert it
 //! to [`DocumentQuery`](crate::platform::DocumentQuery) with the [`From`] trait.
 //!
 //! Basic DPP objects are re-exported in the [`platform`] module.
@@ -32,9 +32,9 @@
 //!
 //! 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
-//! [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
-//! for more details.
-//! 3. [`DriveQuery`](crate::platform::DriveQuery) - can be used to build more complex queries
+//!    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
+//!    for more details.
+//! 3. [`DriveQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
 //!
 //! ## Testability
 //!
@@ -62,7 +62,6 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
-mod core_client;
 pub mod error;
 mod internal_cache;
 pub mod mock;
@@ -72,8 +71,12 @@ pub mod sdk;
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
+pub use dashcore_rpc;
 pub use dpp;
+pub use drive;
+pub use drive_proof_verifier::types as query_types;
 pub use rs_dapi_client as dapi_client;
+pub mod sync;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -4,7 +4,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 
@@ -185,8 +185,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::contract::tests::setup_reference_contract;
-    use crate::drive::flags::StorageFlags;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -213,6 +213,7 @@ mod tests {
                 true,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should update contract");
 
@@ -247,7 +248,7 @@ mod tests {
 
     #[test]
     fn should_return_none_if_contract_not_exist() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let result = drive
@@ -260,7 +261,7 @@ mod tests {
 
     #[test]
     fn should_return_fees_for_non_existing_contract_if_epoch_is_passed() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let result = drive
@@ -276,7 +277,7 @@ mod tests {
         assert_eq!(
             result.0,
             Some(FeeResult {
-                processing_fee: 4060,
+                processing_fee: 2800,
                 ..Default::default()
             })
         );

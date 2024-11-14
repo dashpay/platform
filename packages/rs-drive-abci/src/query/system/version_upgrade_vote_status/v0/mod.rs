@@ -98,8 +98,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
-    use drive::drive::grove_operations::BatchInsertApplyType;
-    use drive::drive::object_size_info::PathKeyElementInfo;
+    use dpp::dashcore::Network;
     use drive::drive::protocol_upgrade::{
         desired_version_for_validators_path, desired_version_for_validators_path_vec,
         versions_counter_path,
@@ -107,13 +106,16 @@ mod tests {
     use drive::drive::Drive;
     use drive::grovedb::{Element, GroveDb, QueryItem, SizedQuery};
     use drive::query::{PathQuery, Query};
+    use drive::util::grove_operations::BatchInsertApplyType;
+    use drive::util::object_size_info::PathKeyElementInfo;
     use integer_encoding::VarInt;
+    use platform_version::version::INITIAL_PROTOCOL_VERSION;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
     #[test]
     fn test_query_empty_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -139,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -231,7 +233,8 @@ mod tests {
 
     #[test]
     fn test_prove_empty_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform(false);
+        let platform_version = PlatformVersion::latest();
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -264,9 +267,13 @@ mod tests {
             SizedQuery::new(Query::new_single_query_item(query_item), Some(5), None),
         );
 
-        let elements = GroveDb::verify_query(proof.grovedb_proof.as_slice(), &path_query)
-            .expect("expected to be able to verify query")
-            .1;
+        let elements = GroveDb::verify_query(
+            proof.grovedb_proof.as_slice(),
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to be able to verify query")
+        .1;
 
         // we just started chain, there should be no versions
 
@@ -275,7 +282,9 @@ mod tests {
 
     #[test]
     fn test_prove_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform(false);
+        let platform_version = PlatformVersion::first();
+        let (platform, state, version) =
+            setup_platform(None, Network::Testnet, Some(INITIAL_PROTOCOL_VERSION));
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -375,9 +384,13 @@ mod tests {
             SizedQuery::new(Query::new_single_query_item(query_item), Some(5), None),
         );
 
-        let elements = GroveDb::verify_query(proof.grovedb_proof.as_slice(), &path_query)
-            .expect("expected to be able to verify query")
-            .1;
+        let elements = GroveDb::verify_query(
+            proof.grovedb_proof.as_slice(),
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to be able to verify query")
+        .1;
 
         // we just started chain, there should be no versions
 

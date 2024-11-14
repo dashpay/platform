@@ -37,11 +37,11 @@ use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
-use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
-use drive::grovedb::Transaction;
+use drive::error;
+use drive::grovedb::TransactionArg;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::{DriveOperation, GroveDbOpBatch};
 
 use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
@@ -54,7 +54,7 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -80,7 +80,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         block_execution_context: &BlockExecutionContext,
         block_fees: &BlockFees,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>
@@ -105,16 +105,27 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         // init current epoch pool for processing
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
-        //todo: version
+        let Some(fee_multiplier) = platform_version
+            .fee_version
+            .uses_version_fee_multiplier_permille
+        else {
+            return Err(Error::Drive(error::drive::DriveError::NotSupported("the fee_multiplier_permille must be set in fees if using add_process_epoch_change_operations_v0").into()));
+        };
+
+        // it is important to set the current protocol version because we might have skipped
+        // protocol versions if we skip over epochs.
         current_epoch.add_init_current_operations(
-            DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
+            fee_multiplier, // TODO (feature) use a data contract to choose the fee multiplier
             block_info.height(),
             block_info.core_chain_locked_height(),
             block_info.block_time_ms(),
+            block_execution_context
+                .block_platform_state()
+                .current_protocol_version_in_consensus(),
             &mut inner_batch,
         );
 
-        // Update next epoch protocol version
+        // Update next epoch protocol version so it can be queryable
         let next_epoch = Epoch::new(epoch_info.current_epoch_index() + 1)?;
         inner_batch.push(
             next_epoch.update_protocol_version_operation(
@@ -134,7 +145,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         let storage_fee_distribution_outcome = self
             .add_distribute_storage_fee_to_epochs_operations(
                 current_epoch.index,
-                Some(transaction),
+                transaction,
                 &mut inner_batch,
                 platform_version,
             )?;
@@ -143,7 +154,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .add_delete_pending_epoch_refunds_except_specified_operations(
                 &mut inner_batch,
                 block_fees.refunds_per_epoch(),
-                Some(transaction),
+                transaction,
                 &platform_version.drive,
             )?;
 
@@ -171,7 +182,8 @@ mod tests {
         use crate::platform_types::platform_state::PlatformState;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
-        use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+        use drive::grovedb::Transaction;
+        use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate an epoch change
         pub fn process_and_validate_epoch_change<C>(
@@ -211,6 +223,7 @@ mod tests {
                         &BlockInfo::default(),
                         Some(transaction),
                         platform_version,
+                        None,
                     )
                     .expect("should apply batch");
             }
@@ -252,12 +265,13 @@ mod tests {
             let block_platform_state = PlatformState::default_with_protocol_versions(
                 INITIAL_PROTOCOL_VERSION,
                 INITIAL_PROTOCOL_VERSION,
-            );
+                &platform.config,
+            )
+            .expect("failed to create platform state");
 
             let block_execution_context = BlockExecutionContextV0 {
                 block_state_info: block_info.clone().into(),
                 epoch_info,
-                hpmn_count: 0,
                 unsigned_withdrawal_transactions: Default::default(),
                 block_platform_state,
                 proposer_results: None,
@@ -269,7 +283,7 @@ mod tests {
                 .add_process_epoch_change_operations_v0(
                     &block_execution_context.into(),
                     &block_fees,
-                    transaction,
+                    Some(transaction),
                     &mut batch,
                     platform_version,
                 )
@@ -283,6 +297,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should apply batch");
 
@@ -294,7 +309,7 @@ mod tests {
 
             let has_epoch_tree_exists = platform
                 .drive
-                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction))
+                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(has_epoch_tree_exists);

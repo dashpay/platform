@@ -46,7 +46,8 @@ pub(super) trait ValidateStateTransitionIdentitySignatureV0<'a> {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,
-        request_revision: bool,
+        request_identity_balance: bool,
+        request_identity_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -57,6 +58,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,
+        request_identity_balance: bool,
         request_identity_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -72,34 +74,59 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
         let owner_id = self.owner_id();
 
-        let security_levels =
-            self.security_level_requirement()
+        let allowed_purposes =
+            self.purpose_requirement()
                 .ok_or(ProtocolError::CorruptedCodeExecution(
-                    "state_transition does not have security level".to_string(),
+                    "state_transition does not have a key purpose requirement".to_string(),
                 ))?;
-
-        let purpose = self
-            .purpose_requirement()
-            .ok_or(ProtocolError::CorruptedCodeExecution(
-                "state_transition does not have a key purpose requirement".to_string(),
-            ))?;
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
-        let maybe_partial_identity = if request_identity_revision {
-            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
-                RetrieveIdentityInfo::one_key_and_balance_and_revision(),
-            ));
-            drive.fetch_identity_balance_with_keys_and_revision(
-                key_request,
-                transaction,
-                platform_version,
-            )?
-        } else {
-            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
-                RetrieveIdentityInfo::one_key_and_balance(),
-            ));
-            drive.fetch_identity_balance_with_keys(key_request, transaction, platform_version)?
+        let maybe_partial_identity = match (request_identity_balance, request_identity_revision) {
+            (true, true) => {
+                // This is for identity update
+                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                    RetrieveIdentityInfo::one_key_and_balance_and_revision(),
+                ));
+                drive.fetch_identity_balance_with_keys_and_revision(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
+            (true, false) => {
+                // This is for most state transitions
+                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                    RetrieveIdentityInfo::one_key_and_balance(),
+                ));
+                drive.fetch_identity_balance_with_keys(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
+            (false, true) => {
+                // This currently is not used
+                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                    RetrieveIdentityInfo::one_key_and_revision(),
+                ));
+                drive.fetch_identity_revision_with_keys(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
+            (false, false) => {
+                // This is for masternode vote transition
+                execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                    RetrieveIdentityInfo::one_key(),
+                ));
+                drive.fetch_identity_keys_as_partial_identity(
+                    key_request,
+                    transaction,
+                    platform_version,
+                )?
+            }
         };
 
         let partial_identity = match maybe_partial_identity {
@@ -136,12 +163,18 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
             return Ok(validation_result);
         }
 
-        if purpose != public_key.purpose() {
+        if !allowed_purposes.contains(&public_key.purpose()) {
             validation_result.add_error(SignatureError::InvalidSignaturePublicKeyPurposeError(
-                InvalidSignaturePublicKeyPurposeError::new(public_key.purpose(), purpose),
+                InvalidSignaturePublicKeyPurposeError::new(public_key.purpose(), allowed_purposes),
             ));
             return Ok(validation_result);
         }
+
+        let security_levels = self
+            .security_level_requirement(public_key.purpose())
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "state_transition does not have security level".to_string(),
+            ))?;
 
         if !security_levels.contains(&public_key.security_level()) {
             validation_result.add_error(
@@ -208,9 +241,9 @@ pub fn convert_to_consensus_signature_error(
         ),
         ProtocolError::WrongPublicKeyPurposeError(err) => Ok(err.into()),
         ProtocolError::Error(_) => Err(error),
-        _ => Ok(ConsensusError::SignatureError(
+        e => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError(
-                InvalidStateTransitionSignatureError::new(),
+                InvalidStateTransitionSignatureError::new(e.to_string()),
             ),
         )),
     }

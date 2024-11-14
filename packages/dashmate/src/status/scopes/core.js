@@ -1,4 +1,5 @@
 /* eslint-disable camelcase */
+import { PortStateEnum } from '../enums/portState.js';
 import providers from '../providers.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
@@ -76,8 +77,8 @@ export default function getCoreScopeFactory(
     try {
       const rpcClient = createRpcClient({
         port: config.get('core.rpc.port'),
-        user: config.get('core.rpc.user'),
-        pass: config.get('core.rpc.password'),
+        user: 'dashmate',
+        pass: config.get('core.rpc.users.dashmate.password'),
         host: await getConnectionHost(config, 'core', 'core.rpc.host'),
       });
 
@@ -116,7 +117,8 @@ export default function getCoreScopeFactory(
 
     const providersResult = await Promise.allSettled([
       providers.github.release('dashpay/dash'),
-      providers.mnowatch.checkPortStatus(config.get('core.p2p.port')),
+      providers.mnowatch.checkPortStatus(config.get('core.p2p.port'), config.get('externalIp'))
+        .catch(() => PortStateEnum.ERROR),
       providers.insight(config.get('network')).status(),
     ]);
 

@@ -9,12 +9,15 @@ use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 use dpp::document::Document;
+use dpp::fee::Credits;
 
 use dpp::ProtocolError;
 
 pub use v0::*;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction};
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
+use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 
 /// document create transition action
 #[derive(Debug, Clone, From)]
@@ -57,6 +60,46 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     fn data_owned(self) -> BTreeMap<String, Value> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.data,
+        }
+    }
+
+    fn take_prefunded_voting_balance(
+        &mut self,
+    ) -> Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.prefunded_voting_balance.take(),
+        }
+    }
+
+    fn prefunded_voting_balance(
+        &self,
+    ) -> &Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => &v0.prefunded_voting_balance,
+        }
+    }
+
+    fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => &v0.should_store_contest_info,
+        }
+    }
+
+    fn take_should_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.should_store_contest_info.take(),
+        }
+    }
+
+    fn current_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => &v0.current_store_contest_info,
+        }
+    }
+
+    fn take_current_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.current_store_contest_info.take(),
         }
     }
 }

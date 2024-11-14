@@ -19,12 +19,19 @@ export default function updateNodeFactory(getServiceList, docker) {
 
     return Promise.all(
       lodash.uniqBy(services, 'image')
-        .map(async ({ name, image, title }) => new Promise((resolve, reject) => {
+        .map(async ({ name, image, title }) => new Promise((resolve) => {
           docker.pull(image, (err, stream) => {
             if (err) {
-              reject(err);
+              if (process.env.DEBUG) {
+                // eslint-disable-next-line no-console
+                console.error(`Failed to update ${name} service, image ${image}, error: ${err}`);
+              }
+
+              resolve({
+                name, title, image, updated: 'error',
+              });
             } else {
-              let updated = null;
+              let updated = 'error';
 
               stream.on('data', (data) => {
                 // parse all stdout and gather Status message
@@ -33,15 +40,26 @@ export default function updateNodeFactory(getServiceList, docker) {
                   .trim()
                   .split('\r\n')
                   .map((str) => JSON.parse(str))
-                  .filter((obj) => obj.status.startsWith('Status: '));
+                  .filter((obj) => obj?.status?.startsWith('Status: '));
 
-                if (status?.status.includes('Image is up to date for')) {
-                  updated = false;
-                } else if (status?.status.includes('Downloaded newer image for')) {
-                  updated = true;
+                if (status) {
+                  if (status.status.includes('Image is up to date for')) {
+                    updated = 'up to date';
+                  } else if (status.status.includes('Downloaded newer image for')) {
+                    updated = 'updated';
+                  }
                 }
               });
-              stream.on('error', reject);
+              stream.on('error', () => {
+                if (process.env.DEBUG) {
+                  // eslint-disable-next-line no-console
+                  console.error(`Failed to update ${name} service, image ${image}, error: ${err}`);
+                }
+
+                resolve({
+                  name, title, image, updated: 'error',
+                });
+              });
               stream.on('end', () => resolve({
                 name, title, image, updated,
               }));

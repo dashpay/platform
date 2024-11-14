@@ -19,7 +19,7 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
 };
 use crate::execution::types::{block_execution_context, block_state_info};
-
+use crate::metrics::HistogramTiming;
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Methods};
@@ -65,7 +65,9 @@ where
         epoch_info: EpochInfo,
         transaction: &Transaction,
         last_committed_platform_state: &PlatformState,
-        platform_version: &PlatformVersion,
+        mut block_platform_state: PlatformState,
+        platform_version: &'static PlatformVersion,
+        timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -101,9 +103,6 @@ where
         );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-
-        // Create a bock state from previous committed state
-        let mut block_platform_state = last_committed_platform_state.clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -270,6 +269,14 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
+        // Rebroadcast expired withdrawals if they exist
+        self.rebroadcast_expired_withdrawal_documents(
+            &block_info,
+            &last_committed_platform_state,
+            transaction,
+            platform_version,
+        )?;
+
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
         if block_state_info.core_chain_locked_height() != last_block_core_height {
@@ -286,6 +293,8 @@ where
         // required for signature verification (core height and quorum hash)
         // Then we save unsigned transaction bytes to block execution context
         // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
+        // Also, the dequeued untiled transaction added to the broadcasted transaction queue to for further
+        // resigning in case of failures.
         let unsigned_withdrawal_transaction_bytes = self
             .dequeue_and_build_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
@@ -294,6 +303,17 @@ where
                 platform_version,
             )?;
 
+        // Run all dao platform events, such as vote tallying and distribution of contested documents
+        // This must be done before state transition processing
+        // Otherwise we would expect a proof after a successful vote that has since been cleaned up.
+        self.run_dao_platform_events(
+            &block_info,
+            last_committed_platform_state,
+            &block_platform_state,
+            Some(transaction),
+            platform_version,
+        )?;
+
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
@@ -301,6 +321,8 @@ where
             &block_info,
             transaction,
             platform_version,
+            known_from_us,
+            timer,
         )?;
 
         // Pool withdrawals into transactions queue
@@ -309,7 +331,20 @@ where
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_info,
+            last_committed_platform_state,
             Some(transaction),
+            platform_version,
+        )?;
+
+        // Cleans up the expired locks for withdrawal amounts
+        // to update daily withdrawal limit
+        // This is for example when we make a withdrawal for 30 Dash
+        // But we can only withdraw 1000 Dash a day
+        // after the withdrawal we should only be able to withdraw 970 Dash
+        // But 24 hours later that locked 30 comes back
+        self.clean_up_expired_locks_of_withdrawal_amounts(
+            &block_info,
+            transaction,
             platform_version,
         )?;
 
@@ -318,10 +353,7 @@ where
         let mut block_execution_context: BlockExecutionContext =
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
-                epoch_info: epoch_info.clone(),
-                // TODO: It doesn't seem correct to use previous block count of hpmns.
-                //  We currently not using this field in the codebase. We probably should just remove it.
-                hpmn_count: last_committed_platform_state.hpmn_list_len() as u32,
+                epoch_info,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,
@@ -344,7 +376,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
@@ -353,6 +385,7 @@ where
             .set_app_hash(Some(root_hash));
 
         let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,
@@ -362,8 +395,11 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                platform_state_fingerprint =
-                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                platform_state_fingerprint = hex::encode(
+                    block_execution_context
+                        .block_platform_state()
+                        .fingerprint()?
+                ),
                 "Block proposal executed successfully",
             );
         }
@@ -373,7 +409,7 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
-                protocol_version: platform_version.protocol_version,
+                platform_version,
                 block_execution_context,
             },
         ))

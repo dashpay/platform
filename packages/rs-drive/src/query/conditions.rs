@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Query Conditions
 //!
 
@@ -1077,7 +1048,6 @@ impl<'a> WhereClause {
         Ok(query)
     }
 
-    /// Build where clauses from operations
     pub(crate) fn build_where_clauses_from_operations(
         binary_operation: &ast::Expr,
         document_type: &DocumentType,
@@ -1106,14 +1076,17 @@ impl<'a> WhereClause {
                 let property_type = match field_name.as_str() {
                     "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
                     "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                    "$revision" => Cow::Owned(DocumentPropertyType::Integer),
-                    property_name => {
-                        let Some(property) = document_type.properties().get(property_name) else {
-                            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                                "Invalid query: in clause property not in document type"
-                                    .to_string(),
-                            )));
-                        };
+                    "$revision" => Cow::Owned(DocumentPropertyType::U64),
+                    _ => {
+                        let property = document_type
+                            .flattened_properties()
+                            .get(&field_name)
+                            .ok_or_else(|| {
+                                Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                                    "Invalid query: property named {} not in document type",
+                                    field_name
+                                )))
+                            })?;
                         Cow::Borrowed(&property.property_type)
                     }
                 };
@@ -1241,15 +1214,17 @@ impl<'a> WhereClause {
                     let property_type = match field_name.as_str() {
                         "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
                         "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                        "$revision" => Cow::Owned(DocumentPropertyType::Integer),
-                        property_name => {
-                            let Some(property) = document_type.properties().get(property_name)
-                            else {
-                                return Err(Error::Query(QuerySyntaxError::InvalidSQL(format!(
-                                    "Invalid query: property named {} not in document type",
-                                    field_name.as_str()
-                                ))));
-                            };
+                        "$revision" => Cow::Owned(DocumentPropertyType::U64),
+                        _ => {
+                            let property = document_type
+                                .flattened_properties()
+                                .get(&field_name)
+                                .ok_or_else(|| {
+                                    Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                                        "Invalid query: property named {} not in document type",
+                                        field_name
+                                    )))
+                                })?;
                             Cow::Borrowed(&property.property_type)
                         }
                     };

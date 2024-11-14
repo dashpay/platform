@@ -21,6 +21,7 @@ where
 {
     /// Platform
     platform: Arc<Platform<C>>,
+    core_rpc: Arc<C>,
 }
 
 impl<C> PlatformApplication<C> for CheckTxAbciApplication<C>
@@ -37,8 +38,8 @@ where
     C: CoreRPCLike + Send + Sync + 'static,
 {
     /// Create new ABCI app
-    pub fn new(platform: Arc<Platform<C>>) -> Self {
-        Self { platform }
+    pub fn new(platform: Arc<Platform<C>>, core_rpc: Arc<C>) -> Self {
+        Self { platform, core_rpc }
     }
 }
 
@@ -70,6 +71,7 @@ where
         request: tonic::Request<proto::RequestCheckTx>,
     ) -> Result<tonic::Response<proto::ResponseCheckTx>, tonic::Status> {
         let platform = Arc::clone(&self.platform);
+        let core_rpc = Arc::clone(&self.core_rpc);
 
         let proto_request = request.into_inner();
 
@@ -82,8 +84,8 @@ where
         };
 
         spawn_blocking_task_with_name_if_supported(thread_name, move || {
-            let response =
-                handler::check_tx(&platform, proto_request).map_err(error_into_status)?;
+            let response = handler::check_tx(&platform, &core_rpc, proto_request)
+                .map_err(error_into_status)?;
 
             Ok(tonic::Response::new(response))
         })?

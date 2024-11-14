@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use super::common::{mock_data_contract, mock_document_type};
 use dash_sdk::{
     platform::{DocumentQuery, FetchMany},
@@ -14,25 +12,26 @@ use dpp::{
     },
     document::{Document, DocumentV0Getters},
 };
+use drive_proof_verifier::types::Documents;
 
 /// Given some data contract, document type and 1 document of this type, when I request multiple documents, I get that
 /// document.
 #[tokio::test]
 async fn test_mock_document_fetch_many() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 
     let expected_doc = document_type
         .random_document(None, sdk.version())
         .expect("document should be created");
-    let expected = BTreeMap::from([(expected_doc.id(), Some(expected_doc.clone()))]);
+    let expected = Documents::from([(expected_doc.id(), Some(expected_doc.clone()))]);
 
     // document that should not be returned, as it will be defined as a duplicate
     let not_expected_doc = document_type
         .random_document(None, sdk.version())
         .expect("document 2 should be created");
-    let not_expected = BTreeMap::from([(not_expected_doc.id(), Some(not_expected_doc))]);
+    let not_expected = Documents::from([(not_expected_doc.id(), Some(not_expected_doc))]);
 
     let document_type_name = document_type.name();
 

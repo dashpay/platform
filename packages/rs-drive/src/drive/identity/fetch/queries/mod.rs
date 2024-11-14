@@ -1,6 +1,7 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
+use std::ops::RangeFull;
 
 use crate::error::Error;
 
@@ -13,7 +14,8 @@ use crate::drive::identity::{
 use crate::error::query::QuerySyntaxError;
 use dpp::identity::Purpose;
 use grovedb::query_result_type::Key;
-use grovedb::{PathQuery, Query, SizedQuery};
+use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
+use grovedb_version::version::GroveVersion;
 
 /// An enumeration representing the types of identity prove requests.
 ///
@@ -72,11 +74,14 @@ impl Drive {
     }
 
     /// The path query for the revision and the balance of an identity
-    pub fn revision_and_balance_path_query(identity_id: [u8; 32]) -> PathQuery {
+    pub fn revision_and_balance_path_query(
+        identity_id: [u8; 32],
+        grove_version: &GroveVersion,
+    ) -> Result<PathQuery, Error> {
         let revision_query = Self::revision_for_identity_id_path_query(identity_id);
         let balance_query = Self::balance_for_identity_id_query(identity_id);
-        PathQuery::merge(vec![&revision_query, &balance_query])
-            .expect("expected to be able to merge path queries")
+        PathQuery::merge(vec![&revision_query, &balance_query], grove_version)
+            .map_err(Error::GroveDB)
     }
 
     /// The query for proving an identity id from a public key hash.
@@ -101,53 +106,110 @@ impl Drive {
     }
 
     /// The query getting all keys and balance and revision
-    pub fn full_identity_query(identity_id: &[u8; 32]) -> Result<PathQuery, Error> {
+    pub fn full_identity_query(
+        identity_id: &[u8; 32],
+        grove_version: &GroveVersion,
+    ) -> Result<PathQuery, Error> {
         let balance_query = Self::identity_balance_query(identity_id);
         let revision_query = Self::identity_revision_query(identity_id);
         let key_request = IdentityKeysRequest::new_all_keys_query(identity_id, None);
         let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
-            .map_err(Error::GroveDB)
+        PathQuery::merge(
+            vec![&balance_query, &revision_query, &all_keys_query],
+            grove_version,
+        )
+        .map_err(Error::GroveDB)
     }
 
     /// The query getting all keys and revision
-    pub fn identity_all_keys_query(identity_id: &[u8; 32]) -> Result<PathQuery, Error> {
+    pub fn identity_all_keys_query(
+        identity_id: &[u8; 32],
+        grove_version: &GroveVersion,
+    ) -> Result<PathQuery, Error> {
         let revision_query = Self::identity_revision_query(identity_id);
         let key_request = IdentityKeysRequest::new_all_keys_query(identity_id, None);
         let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&revision_query, &all_keys_query]).map_err(Error::GroveDB)
+        PathQuery::merge(vec![&revision_query, &all_keys_query], grove_version)
+            .map_err(Error::GroveDB)
     }
 
     /// The query getting all balances and revision
-    pub fn balances_for_identity_ids_query(identity_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
-        let path_queries: Vec<PathQuery> = identity_ids
-            .iter()
-            .map(Self::identity_balance_query)
-            .collect::<Vec<PathQuery>>();
-        PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)
+    pub fn balances_for_identity_ids_query(identity_ids: &[[u8; 32]]) -> PathQuery {
+        let balance_path = balance_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(identity_ids.iter().map(|key| key.to_vec()).collect());
+        PathQuery {
+            path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query getting all balances and revision
+    pub fn balances_for_range_query(
+        start_at: Option<([u8; 32], bool)>,
+        ascending: bool,
+        limit: u16,
+    ) -> PathQuery {
+        let balance_path = balance_path_vec();
+        let mut query = Query::new_with_direction(ascending);
+        if ascending {
+            if let Some((start_at, start_at_included)) = start_at {
+                if start_at_included {
+                    query.insert_item(QueryItem::RangeFrom(start_at.to_vec()..))
+                } else {
+                    query.insert_item(QueryItem::RangeAfter(start_at.to_vec()..))
+                }
+            } else {
+                query.insert_item(QueryItem::RangeFull(RangeFull))
+            }
+        } else if let Some((start_at, start_at_included)) = start_at {
+            if start_at_included {
+                query.insert_item(QueryItem::RangeToInclusive(..=start_at.to_vec()))
+            } else {
+                query.insert_item(QueryItem::RangeTo(..start_at.to_vec()))
+            }
+        } else {
+            query.insert_item(QueryItem::RangeFull(RangeFull))
+        }
+        PathQuery {
+            path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: Some(limit),
+                offset: None,
+            },
+        }
     }
 
     /// The query getting all keys and balance and revision
-    pub fn full_identities_query(identity_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
+    pub fn full_identities_query(
+        identity_ids: &[[u8; 32]],
+        grove_version: &GroveVersion,
+    ) -> Result<PathQuery, Error> {
         let path_queries: Vec<PathQuery> = identity_ids
             .iter()
-            .map(Self::full_identity_query)
+            .map(|identity_id| Self::full_identity_query(identity_id, grove_version))
             .collect::<Result<Vec<PathQuery>, Error>>()?;
-        PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)
+        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(Error::GroveDB)
     }
 
     /// This query gets the full identity and the public key hash
     pub fn full_identity_with_public_key_hash_query(
         public_key_hash: [u8; 20],
         identity_id: [u8; 32],
+        grove_version: &GroveVersion,
     ) -> Result<PathQuery, Error> {
-        let full_identity_query = Self::full_identity_query(&identity_id)?;
+        let full_identity_query = Self::full_identity_query(&identity_id, grove_version)?;
         let identity_id_by_public_key_hash_query =
             Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        PathQuery::merge(vec![
-            &full_identity_query,
-            &identity_id_by_public_key_hash_query,
-        ])
+        PathQuery::merge(
+            vec![&full_identity_query, &identity_id_by_public_key_hash_query],
+            grove_version,
+        )
         .map_err(Error::GroveDB)
     }
 
@@ -155,15 +217,16 @@ impl Drive {
     pub fn full_identities_with_keys_hashes_query(
         identity_ids: &[[u8; 32]],
         key_hashes: &[[u8; 20]],
+        grove_version: &GroveVersion,
     ) -> Result<PathQuery, Error> {
-        let identities_path_query = Self::full_identities_query(identity_ids)?;
+        let identities_path_query = Self::full_identities_query(identity_ids, grove_version)?;
         let key_hashes_to_identity_ids_query =
             Self::identity_ids_by_unique_public_key_hash_query(key_hashes);
 
-        PathQuery::merge(vec![
-            &identities_path_query,
-            &key_hashes_to_identity_ids_query,
-        ])
+        PathQuery::merge(
+            vec![&identities_path_query, &key_hashes_to_identity_ids_query],
+            grove_version,
+        )
         .map_err(Error::GroveDB)
     }
 
@@ -298,10 +361,17 @@ impl Drive {
     }
 
     /// The query for proving the identities balance and revision from an identity id.
-    pub fn balance_and_revision_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
+    pub fn balance_and_revision_for_identity_id_query(
+        identity_id: [u8; 32],
+        grove_version: &GroveVersion,
+    ) -> PathQuery {
         let balance_path_query = Self::balance_for_identity_id_query(identity_id);
         let revision_path_query = Self::identity_revision_query(&identity_id);
         //todo: lazy static this
-        PathQuery::merge(vec![&balance_path_query, &revision_path_query]).unwrap()
+        PathQuery::merge(
+            vec![&balance_path_query, &revision_path_query],
+            grove_version,
+        )
+        .unwrap()
     }
 }

@@ -15,7 +15,7 @@ use dpp::platform_value::Value;
 
 use drive::dpp::document::Document;
 use drive::grovedb::TransactionArg;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
@@ -41,7 +41,7 @@ impl<C> Platform<C> {
         let document_type =
             masternode_rewards_contract.document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
 
-        let drive_query = DriveQuery {
+        let drive_query = DriveDocumentQuery {
             contract: &masternode_rewards_contract,
             document_type,
             internal_clauses: InternalClauses {

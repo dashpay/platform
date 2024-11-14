@@ -2,7 +2,7 @@ use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInf
 use crate::drive::Drive;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -14,6 +14,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod add_potential_contract_info_for_contract_bounded_key;
+mod refresh_potential_contract_info_key_references;
 
 pub enum IdentityDataContractKeyApplyInfo {
     /// The root_id is either a contract id or an owner id

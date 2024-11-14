@@ -13,7 +13,7 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables avaialable:
+# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
 #   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
 #   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
@@ -30,7 +30,7 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-ARG PROTOC_VERSION=25.2
+ARG PROTOC_VERSION=27.3
 ARG RUSTC_WRAPPER
 
 #
@@ -68,13 +68,17 @@ RUN npm config set --global audit false
 
 ARG TARGETARCH
 
+WORKDIR /platform
+
+
 # TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
-    --profile minimal \
-    -y \
-    # Rust version the same as in /README.md
-    --default-toolchain 1.76 \
-    --target wasm32-unknown-unknown
+COPY rust-toolchain.toml .
+RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
+        --profile minimal \
+        -y \
+        --default-toolchain "${TOOLCHAIN_VERSION}" \
+        --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -138,8 +142,11 @@ ENV SCCACHE_REGION=${SCCACHE_REGION}
 ARG CARGO_INCREMENTAL=false
 ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_SECRET_ACCESS_KEY
+
 #
-# DEPS: FULL DEPENCIES LIST
+# DEPS: FULL DEPENDENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
@@ -147,9 +154,10 @@ FROM deps-${RUSTC_WRAPPER:-base} AS deps
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
+WORKDIR /platform
+
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
-WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
@@ -163,28 +171,36 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     # Meanwhile if you want to update wasm-bindgen you also need to update version in:
     #  - packages/wasm-dpp/Cargo.toml
     #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
 
 #
-# LOAD SOURCES
+# Rust build planner to speed up builds
 #
-FROM deps as sources
-
+FROM deps AS build-planner
 WORKDIR /platform
-
 COPY . .
+RUN source $HOME/.cargo/env && \
+    cargo chef prepare --recipe-path recipe.json
+
+# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+RUN touch /platform/packages/dapi-grpc/build.rs
 
 #
 # STAGE: BUILD RS-DRIVE-ABCI
 #
 # This will prebuild majority of dependencies
-FROM sources AS build-drive-abci
+FROM deps AS build-drive-abci
+
+SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
-RUN mkdir /artifacts
+WORKDIR /platform
 
+COPY --from=build-planner /platform/recipe.json recipe.json
+
+# Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
@@ -192,19 +208,70 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     source $HOME/.cargo/env && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    cargo build \
+    cargo chef cook \
+        --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci && \
-    cp /platform/target/*/drive-abci /artifacts/ && \
+        --package drive-abci \
+        --locked && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+
+COPY . .
+
+RUN mkdir /artifacts
+
+# Build Drive ABCI
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        mv .cargo/config-release.toml .cargo/config.toml && \
+        export OUT_DIRECTORY=release ; \
+    else \
+        export FEATURES_FLAG="--features=console,grovedbg" ; \
+        export OUT_DIRECTORY=debug ; \
+        
+    fi && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo build \
+        --profile "${CARGO_BUILD_PROFILE}" \
+        --package drive-abci \
+        ${FEATURES_FLAG} \
+        --locked && \
+    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
-FROM sources AS build-js
+FROM deps AS build-js
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
+
+WORKDIR /platform
+
+COPY --from=build-planner /platform/recipe.json recipe.json
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo chef cook \
+        --recipe-path recipe.json \
+        --profile "$CARGO_BUILD_PROFILE" \
+        --package wasm-dpp \
+        --target wasm32-unknown-unknown \
+        --locked && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+
+COPY . .
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \

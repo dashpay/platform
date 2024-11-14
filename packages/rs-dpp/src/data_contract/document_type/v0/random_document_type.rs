@@ -106,6 +106,7 @@ use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
+use crate::data_contract::document_type::{ByteArrayPropertySizes, StringPropertySizes};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -119,7 +120,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 impl DocumentTypeV0 {
@@ -145,22 +146,25 @@ impl DocumentTypeV0 {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_length = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.string_min_len.clone()))
                 } else {
                     None
                 };
                 // If a string property is used in an index it must have maxLength 63 or less (v1.0-dev)
-                let max_len = Some(63);
-                DocumentPropertyType::String(min_len, max_len)
+                let max_length = Some(63);
+                DocumentPropertyType::String(StringPropertySizes {
+                    min_length,
+                    max_length,
+                })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentPropertyType::Integer
+                DocumentPropertyType::I64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentPropertyType::Number
+                DocumentPropertyType::F64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
@@ -179,19 +183,20 @@ impl DocumentTypeV0 {
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_size = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
                 } else {
                     None
                 };
                 // Indexed arrays must have maxItems 255 or less (v1.0-dev)
-                let max_len = Some(255);
-                DocumentPropertyType::ByteArray(min_len, max_len)
+                let max_size = Some(255);
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes { min_size, max_size })
             };
 
             DocumentProperty {
                 property_type: document_type,
                 required,
+                transient: false,
             }
         };
 
@@ -234,11 +239,13 @@ impl DocumentTypeV0 {
             .cloned()
             .collect_vec();
 
-        let mut indices = Vec::with_capacity(index_count as usize);
+        let mut indices = BTreeMap::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices, rng) {
-                Ok(index) => indices.push(index),
+            match Index::random(&ten_field_names, indices.values(), rng) {
+                Ok(index) => {
+                    indices.insert(index.name.clone(), index);
+                }
                 Err(_) => break,
             }
         }
@@ -250,7 +257,7 @@ impl DocumentTypeV0 {
         let name = format!("doc_type_{}", rng.gen::<u16>());
 
         let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
+            IndexLevel::try_from_indices(indices.values(), name.as_str(), platform_version)?;
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &properties,
             &PlatformVersion::latest()
@@ -263,18 +270,19 @@ impl DocumentTypeV0 {
         let mut position_counter = 0;
         let properties_json_schema = properties.iter().map(|(key, prop)| {
             let mut schema_part = match &prop.property_type {
-                DocumentPropertyType::String(min, max) => {
+                DocumentPropertyType::String(sizes) => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("string".to_owned()));
-                    if let Some(min_len) = min {
-                        schema.insert("minLength".to_string(), serde_json::Value::Number(serde_json::Number::from(*min_len)));
+                    if let Some(min_len) = sizes.min_length {
+                        schema.insert("minLength".to_string(), serde_json::Value::Number(serde_json::Number::from(min_len)));
                     }
-                    if let Some(max_len) = max {
-                        schema.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(*max_len)));
+                    if let Some(max_len) = sizes.max_length {
+                        schema.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(max_len)));
                     }
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Integer => {
+                DocumentPropertyType::U128 | DocumentPropertyType::U64 | DocumentPropertyType::U32 | DocumentPropertyType::U16 | DocumentPropertyType::U8 |
+                    DocumentPropertyType::I128 | DocumentPropertyType::I64 | DocumentPropertyType::I32 | DocumentPropertyType::I16 | DocumentPropertyType::I8   => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("integer".to_owned()));
                     // Add min and max if specified in parameters
@@ -284,7 +292,7 @@ impl DocumentTypeV0 {
                     schema.insert("maximum".to_string(), serde_json::Value::Number(serde_json::Number::from(integer_max)));
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Number => {
+                DocumentPropertyType::F64 => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("number".to_owned()));
                     // Add min and max if specified in parameters
@@ -305,14 +313,14 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::Boolean => {
                     serde_json::json!({"type": "boolean"})
                 },
-                DocumentPropertyType::ByteArray(min, max) => {
+                DocumentPropertyType::ByteArray(sizes) => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("array".to_owned()));
-                    if let Some(min_len) = min {
-                        schema.insert("minItems".to_string(), serde_json::Value::Number(serde_json::Number::from(*min_len)));
+                    if let Some(min_len) = sizes.min_size {
+                        schema.insert("minItems".to_string(), serde_json::Value::Number(serde_json::Number::from(min_len)));
                     }
-                    if let Some(max_len) = max {
-                        schema.insert("maxItems".to_string(), serde_json::Value::Number(serde_json::Number::from(*max_len)));
+                    if let Some(max_len) = sizes.max_size {
+                        schema.insert("maxItems".to_string(), serde_json::Value::Number(serde_json::Number::from(max_len)));
                     }
                     schema.insert("byteArray".to_string(), serde_json::Value::Bool(true));
                     serde_json::Value::Object(schema)
@@ -387,7 +395,7 @@ impl DocumentTypeV0 {
         // Generate indices
         let indices_json_schema = indices
             .iter()
-            .map(|index| {
+            .map(|(_, index)| {
                 let properties_schema = index
                     .properties
                     .iter()
@@ -425,6 +433,7 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
+            transient_fields: Default::default(),
             documents_keep_history,
             documents_mutable,
             documents_can_be_deleted,
@@ -463,22 +472,25 @@ impl DocumentTypeV0 {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_length = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.string_min_len.clone()))
                 } else {
                     None
                 };
                 // If a string property is used in an index it must have maxLength 63 or less (v1.0-dev)
-                let max_len = Some(63);
-                DocumentPropertyType::String(min_len, max_len)
+                let max_length = Some(63);
+                DocumentPropertyType::String(StringPropertySizes {
+                    min_length,
+                    max_length,
+                })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentPropertyType::Integer
+                DocumentPropertyType::I64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentPropertyType::Number
+                DocumentPropertyType::F64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
@@ -497,19 +509,20 @@ impl DocumentTypeV0 {
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
-                let min_len = if has_min_len {
+                let min_size = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
                 } else {
                     None
                 };
                 // Indexed arrays must have maxItems 255 or less (v1.0-dev)
-                let max_len = Some(255);
-                DocumentPropertyType::ByteArray(min_len, max_len)
+                let max_size = Some(255);
+                DocumentPropertyType::ByteArray(ByteArrayPropertySizes { min_size, max_size })
             };
 
             DocumentProperty {
                 property_type: document_type,
                 required,
+                transient: false,
             }
         };
 
@@ -552,11 +565,13 @@ impl DocumentTypeV0 {
             .cloned()
             .collect_vec();
 
-        let mut indices = Vec::with_capacity(index_count as usize);
+        let mut indices = BTreeMap::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices, rng) {
-                Ok(index) => indices.push(index),
+            match Index::random(&ten_field_names, indices.values(), rng) {
+                Ok(index) => {
+                    indices.insert(index.name.clone(), index);
+                }
                 Err(_) => break,
             }
         }
@@ -568,7 +583,7 @@ impl DocumentTypeV0 {
         let name = format!("doc_type_{}", rng.gen::<u16>());
 
         let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
+            IndexLevel::try_from_indices(indices.values(), name.as_str(), platform_version)?;
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &properties,
             &PlatformVersion::latest()
@@ -593,6 +608,7 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
+            transient_fields: Default::default(),
             documents_keep_history,
             documents_mutable,
             documents_can_be_deleted,

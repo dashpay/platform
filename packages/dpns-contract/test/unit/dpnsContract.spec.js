@@ -158,7 +158,7 @@ describe('DPNS Contract', () => {
           normalizedParentDomainName: 'dash',
           preorderSalt: crypto.randomBytes(32),
           records: {
-            dashUniqueIdentityId: await generateRandomIdentifier(),
+            identity: await generateRandomIdentifier(),
           },
           subdomainRules: {
             allowSubdomains: false,
@@ -468,28 +468,10 @@ describe('DPNS Contract', () => {
         });
 
         describe('Dash Identity', () => {
-          it('should have either `dashUniqueIdentityId` or `dashAliasIdentityId`', async () => {
-            rawDomainDocument.records = {
-              dashUniqueIdentityId: identityId,
-              dashAliasIdentityId: identityId,
-            };
-
-            const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-            const validationResult = document.validate(dpp.protocolVersion);
-            const error = expectJsonSchemaError(validationResult);
-
-            expect(error.keyword)
-              .to
-              .equal('maxProperties');
-            expect(error.instancePath)
-              .to
-              .equal('/records');
-          });
-
-          describe('dashUniqueIdentityId', () => {
+          describe('identity record', () => {
             it('should no less than 32 bytes', async () => {
               rawDomainDocument.records = {
-                dashUniqueIdentityId: crypto.randomBytes(30),
+                identity: crypto.randomBytes(30),
               };
 
               expect(() => {
@@ -501,33 +483,7 @@ describe('DPNS Contract', () => {
 
             it('should no more than 32 bytes', async () => {
               rawDomainDocument.records = {
-                dashUniqueIdentityId: crypto.randomBytes(64),
-              };
-
-              expect(() => {
-                dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-              })
-                .to
-                .throw();
-            });
-          });
-
-          describe('dashAliasIdentityId', () => {
-            it('should no less than 32 bytes', async () => {
-              rawDomainDocument.records = {
-                dashAliasIdentityId: crypto.randomBytes(30),
-              };
-
-              expect(() => {
-                dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-              })
-                .to
-                .throw();
-            });
-
-            it('should no more than 32 bytes', async () => {
-              rawDomainDocument.records = {
-                dashAliasIdentityId: crypto.randomBytes(64),
+                identity: crypto.randomBytes(64),
               };
 
               expect(() => {

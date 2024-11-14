@@ -38,9 +38,12 @@ pub mod tests;
 pub mod asset_lock;
 pub mod balances;
 pub mod block;
+/// Core subsidy
+pub mod core_subsidy;
 pub mod fee;
 pub mod multi_identity_events;
 pub mod nft;
+pub mod prefunded_specialized_balance;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",
@@ -49,7 +52,14 @@ pub mod serialization;
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+
 mod tokens;
+
+pub mod voting;
+
+#[cfg(feature = "core-types")]
+pub mod core_types;
+
 pub mod withdrawal;
 
 pub use async_trait;
@@ -57,6 +67,7 @@ pub use async_trait;
 pub use bls::*;
 
 pub mod prelude {
+
     pub use crate::data_contract::DataContract;
     #[cfg(feature = "extended-document")]
     pub use crate::document::ExtendedDocument;
@@ -72,6 +83,8 @@ pub mod prelude {
 
     pub type CoreBlockHeight = u32;
     pub type TimestampMillis = u64;
+
+    pub type TimestampIncluded = bool;
     pub type Revision = u64;
     pub type IdentityNonce = u64;
 
@@ -82,11 +95,11 @@ pub mod prelude {
 
 pub use bincode;
 #[cfg(all(not(target_arch = "wasm32"), feature = "bls-signatures"))]
-pub use bls_signatures;
+pub use dashcore::bls_signatures;
+#[cfg(feature = "ed25519-dalek")]
+pub use dashcore::ed25519_dalek;
 #[cfg(feature = "system_contracts")]
 pub use data_contracts;
-#[cfg(feature = "ed25519-dalek")]
-pub use ed25519_dalek;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;

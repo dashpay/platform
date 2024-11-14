@@ -7,10 +7,11 @@ use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
-    DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
-    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
+    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
+    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
@@ -22,7 +23,8 @@ use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    DataContractNotPresentError, DocumentCreationNotAllowedError,
+    ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
+    DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
     InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
@@ -50,16 +52,19 @@ use crate::consensus::basic::identity::{
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError,
+    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
     StateTransitionMaxSizeExceededError,
 };
-use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
+use crate::consensus::basic::{
+    IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
+};
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
@@ -69,7 +74,9 @@ use crate::consensus::basic::{
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+)]
 pub enum BasicError {
     /*
 
@@ -171,9 +178,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     IncompatibleDataContractSchemaError(IncompatibleDataContractSchemaError),
-
-    #[error(transparent)]
-    DataContractEmptySchemaError(DataContractEmptySchemaError),
 
     #[error(transparent)]
     DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
@@ -332,6 +336,11 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(
+        WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    ),
+
+    #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     ),
@@ -362,6 +371,9 @@ pub enum BasicError {
     MissingStateTransitionTypeError(MissingStateTransitionTypeError),
 
     #[error(transparent)]
+    DocumentFieldMaxSizeExceededError(DocumentFieldMaxSizeExceededError),
+
+    #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
 
     #[error(transparent)]
@@ -372,6 +384,24 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDocumentTypeNameError(InvalidDocumentTypeNameError),
+
+    #[error(transparent)]
+    IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
+
+    #[error(transparent)]
+    ContestedUniqueIndexOnMutableDocumentTypeError(ContestedUniqueIndexOnMutableDocumentTypeError),
+
+    #[error(transparent)]
+    ContestedUniqueIndexWithUniqueIndexError(ContestedUniqueIndexWithUniqueIndexError),
+
+    #[error(transparent)]
+    OverflowError(OverflowError),
+
+    #[error(transparent)]
+    UnsupportedFeatureError(UnsupportedFeatureError),
+
+    #[error(transparent)]
+    ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
 }
 
 impl From<BasicError> for ConsensusError {

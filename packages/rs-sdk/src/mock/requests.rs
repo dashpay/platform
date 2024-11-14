@@ -1,22 +1,30 @@
-use std::collections::BTreeMap;
-
+use super::MockDashPlatformSdk;
+use dpp::bincode::config::standard;
 use dpp::{
+    bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
-    document::serialization_traits::DocumentCborMethodsV0,
-    document::Document,
-    platform_serialization::{
-        platform_encode_to_vec, platform_versioned_decode_from_slice, PlatformVersionEncode,
-        PlatformVersionedDecode,
-    },
+    dashcore::{hashes::Hash as CoreHash, ProTxHash},
+    document::{serialization_traits::DocumentCborMethodsV0, Document},
+    identifier::Identifier,
+    identity::IdentityPublicKey,
+    platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
+    voting::votes::{resource_vote::ResourceVote, Vote},
 };
-use serde::{Deserialize, Serialize};
+use drive::grovedb::Element;
+use drive_proof_verifier::types::{
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
+    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
+    ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
+    Voters,
+};
+use std::{collections::BTreeMap, hash::Hash};
 
-use super::MockDashPlatformSdk;
+static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
 /// Trait implemented by objects that can be used in mock expectation responses.
 ///
@@ -65,7 +73,7 @@ impl<T: MockResponse> MockResponse for Vec<T> {
     where
         Self: Sized,
     {
-        let items: Vec<Vec<u8>> = bincode::decode_from_slice(buf, bincode::config::standard())
+        let items: Vec<Vec<u8>> = bincode::decode_from_slice(buf, BINCODE_CONFIG)
             .expect("decode vec of data")
             .0;
         items
@@ -80,42 +88,75 @@ impl<T: MockResponse> MockResponse for Vec<T> {
             .map(|item| item.mock_serialize(mock_sdk))
             .collect();
 
-        bincode::encode_to_vec(data, bincode::config::standard()).expect("encode vec of data")
+        bincode::encode_to_vec(data, BINCODE_CONFIG).expect("encode vec of data")
     }
 }
-impl<K: Ord + Serialize + for<'de> Deserialize<'de>, V: Serialize + for<'de> Deserialize<'de>>
-    MockResponse for BTreeMap<K, V>
-{
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+
+impl<K: Ord + MockResponse, V: MockResponse> MockResponse for BTreeMap<K, V> {
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        serde_json::from_slice(buf).expect("decode vec of data")
+        let (data, _): (BTreeMap<Vec<u8>, Vec<u8>>, _) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode BTreeMap");
+
+        data.into_iter()
+            .map(|(k, v)| (K::mock_deserialize(sdk, &k), V::mock_deserialize(sdk, &v)))
+            .collect()
     }
 
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        serde_json::to_vec(self).expect("encode vec of data")
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let data: BTreeMap<Vec<u8>, Vec<u8>> = self
+            .iter()
+            .map(|(k, v)| (k.mock_serialize(sdk), v.mock_serialize(sdk)))
+            .collect();
+
+        bincode::encode_to_vec(data, BINCODE_CONFIG).expect("encode BTreeMap")
     }
 }
 
-impl MockResponse for Identity
-where
-    Self: PlatformVersionedDecode + PlatformVersionEncode,
-{
-    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        // self.clone().serialize_to_bytes().expect("serialize data")
-        platform_encode_to_vec(self, bincode::config::standard(), sdk.version())
-            .expect("serialize data")
-    }
-
+impl<K: Hash + Eq + MockResponse, V: MockResponse> MockResponse for IndexMap<K, V> {
     fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
-        Self: Sized + PlatformVersionedDecode,
+        Self: Sized,
     {
-        // Self::deserialize_from_bytes(buf).expect("deserialize data")
-        platform_versioned_decode_from_slice(buf, bincode::config::standard(), sdk.version())
-            .expect("deserialize data")
+        let (data, _): (IndexMap<Vec<u8>, Vec<u8>>, _) =
+            bincode::serde::decode_from_slice(buf, BINCODE_CONFIG).expect("decode IndexMap");
+
+        data.into_iter()
+            .map(|(k, v)| (K::mock_deserialize(sdk, &k), V::mock_deserialize(sdk, &v)))
+            .collect()
     }
+
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let data: IndexMap<Vec<u8>, Vec<u8>> = self
+            .iter()
+            .map(|(k, v)| (k.mock_serialize(sdk), v.mock_serialize(sdk)))
+            .collect();
+
+        bincode::serde::encode_to_vec(data, BINCODE_CONFIG).expect("encode IndexMap")
+    }
+}
+
+/// Serialize and deserialize the object for mocking using bincode.
+///
+/// Use this macro when the object implements platform serialization.
+macro_rules! impl_mock_response {
+    ($name:ident) => {
+        impl MockResponse for $name {
+            fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+                platform_encode_to_vec(self, BINCODE_CONFIG, sdk.version())
+                    .expect(concat!("encode ", stringify!($name)))
+            }
+            fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+            where
+                Self: Sized,
+            {
+                platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                    .expect(concat!("decode ", stringify!($name)))
+            }
+        }
+    };
 }
 
 // FIXME: Seems that DataContract doesn't implement PlatformVersionedDecode + PlatformVersionEncode,
@@ -149,16 +190,26 @@ impl MockResponse for Document {
     }
 }
 
-impl MockResponse for drive_proof_verifier::types::IdentityBalance {
+impl MockResponse for Element {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (*self).to_be_bytes().to_vec()
+        // Create a bincode configuration
+        let config = standard();
+
+        // Serialize using the specified configuration
+        bincode::encode_to_vec(self, config).expect("Failed to serialize Element")
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        Self::from_be_bytes(buf.try_into().expect("balance should be 8 bytes"))
+        // Create a bincode configuration
+        let config = standard();
+
+        // Deserialize using the specified configuration
+        bincode::decode_from_slice(buf, config)
+            .expect("Failed to deserialize Element")
+            .0
     }
 }
 
@@ -193,33 +244,53 @@ impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher 
         ))
     }
 }
-
-impl MockResponse for drive_proof_verifier::types::IdentityBalanceAndRevision {
-    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("encode IdentityBalanceAndRevision")
-    }
-
-    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
-    where
-        Self: Sized,
-    {
-        let (item, _len) = bincode::decode_from_slice(buf, bincode::config::standard())
-            .expect("decode IdentityBalanceAndRevision");
-        item
-    }
-}
-
-impl MockResponse for ExtendedEpochInfo {
+impl MockResponse for ProTxHash {
     fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        platform_encode_to_vec(self, bincode::config::standard(), sdk.version())
-            .expect("encode ExtendedEpochInfo")
+        let data = self.as_raw_hash().as_byte_array();
+        platform_encode_to_vec(data, BINCODE_CONFIG, sdk.version()).expect("encode ProTxHash")
     }
     fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        platform_versioned_decode_from_slice(buf, bincode::config::standard(), sdk.version())
-            .expect("decode ExtendedEpochInfo")
+        let data = platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+            .expect("decode ProTxHash");
+        ProTxHash::from_raw_hash(CoreHash::from_byte_array(data))
     }
 }
+
+impl MockResponse for ProposerBlockCounts {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let data = RetrievedValues::<Identifier, u64>::mock_deserialize(sdk, buf);
+        ProposerBlockCounts(data)
+    }
+}
+
+impl_mock_response!(Identity);
+impl_mock_response!(IdentityPublicKey);
+impl_mock_response!(Identifier);
+impl_mock_response!(MasternodeProtocolVote);
+impl_mock_response!(ResourceVote);
+impl_mock_response!(u8);
+impl_mock_response!(u16);
+impl_mock_response!(u32);
+impl_mock_response!(u64);
+impl_mock_response!(Vote);
+impl_mock_response!(ExtendedEpochInfo);
+impl_mock_response!(ContestedResources);
+impl_mock_response!(IdentityBalanceAndRevision);
+impl_mock_response!(Contenders);
+impl_mock_response!(Voters);
+impl_mock_response!(VotePollsGroupedByTimestamp);
+impl_mock_response!(PrefundedSpecializedBalance);
+impl_mock_response!(TotalCreditsInPlatform);
+impl_mock_response!(ElementFetchRequestItem);
+impl_mock_response!(EvoNodeStatus);
+impl_mock_response!(CurrentQuorumsInfo);

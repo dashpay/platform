@@ -19,6 +19,8 @@ mod calculate_total_credits_balance;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+use crate::query::Query;
+use grovedb::{PathQuery, SizedQuery};
 
 /// Storage fee pool key
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -42,6 +44,19 @@ pub fn total_credits_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
+/// A path query helper to get the total credits on Platform
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_credits_on_platform_path_query() -> PathQuery {
+    PathQuery {
+        path: vec![vec![RootTree::Misc as u8]],
+        query: SizedQuery {
+            query: Query::new_single_key(TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec()),
+            limit: Some(1),
+            offset: None,
+        },
+    }
+}
+
 /// The path for the balances tree
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn balance_path() -> [&'static [u8]; 1] {
@@ -59,12 +74,12 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 mod tests {
     use crate::drive::Drive;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[test]
     fn verify_total_credits_structure() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();

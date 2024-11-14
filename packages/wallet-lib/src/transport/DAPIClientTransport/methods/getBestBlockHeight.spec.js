@@ -14,7 +14,7 @@ describe('transports - DAPIClientTransport - .getBestBlockHeight', function suit
 
     clientMock = {
       core: {
-        getBlockchainStatus: () => fixture,
+        getBestBlockHeight: () => 1,
       }
     }
 
@@ -28,6 +28,6 @@ describe('transports - DAPIClientTransport - .getBestBlockHeight', function suit
   it('should work', async () => {
     const res = await transport.getBestBlockHeight();
 
-    expect(res).to.deep.equal(fixture.blocks);
+    expect(res).to.deep.equal(1);
   });
 });

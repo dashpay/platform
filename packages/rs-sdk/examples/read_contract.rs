@@ -1,9 +1,10 @@
-use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
+use std::{num::NonZeroUsize, str::FromStr};
 
 use clap::Parser;
 use dash_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
 use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
+use zeroize::Zeroizing;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -22,7 +23,7 @@ pub struct Config {
 
     // Dash Core RPC password
     #[arg(short = 'p', long)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
 
     /// Dash Platform DAPI port
     #[arg(short = 'd', long)]
@@ -48,7 +49,7 @@ async fn main() {
     // Convert bytes to identifier object that can be used as a Query
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse data contract id");
 
-    // Fetch identity from the Platform
+    // Fetch identity from Platform
     let contract: Option<DataContract> =
         DataContract::fetch(&sdk, id).await.expect("fetch identity");
 
@@ -58,7 +59,7 @@ async fn main() {
 }
 
 /// Setup Rust SDK
-fn setup_sdk(config: &Config) -> Arc<Sdk> {
+fn setup_sdk(config: &Config) -> Sdk {
     // We need to implement a ContextProvider.
     // Here, we will just use a mock implementation.
     // Tricky thing here is that this implementation requires SDK, so we have a
@@ -76,7 +77,6 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
         NonZeroUsize::new(100).expect("quorum public keys cache size"),
     )
     .expect("context provider");
-    let context_provider = Arc::new(std::sync::Mutex::new(context_provider));
 
     // Let's build the Sdk.
     // First, we need an URI of some Dash Platform DAPI host to connect to and use as seed.
@@ -88,15 +88,12 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
 
     // Now, we create the Sdk with the wallet and context provider.
     let sdk = SdkBuilder::new(AddressList::from_iter([uri]))
-        .with_context_provider(Arc::clone(&context_provider))
         .build()
         .expect("cannot build sdk");
 
     // Reconfigure context provider with Sdk
-    let mut guard = context_provider.lock().expect("lock context provider");
-    guard.set_sdk(Some(Arc::clone(&sdk)));
-    drop(guard);
-
+    context_provider.set_sdk(Some(sdk.clone()));
+    sdk.set_context_provider(context_provider);
     // Return the SDK we created
     sdk
 }

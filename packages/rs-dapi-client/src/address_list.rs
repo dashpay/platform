@@ -1,22 +1,34 @@
 //! Subsystem to manage DAPI nodes.
 
+use chrono::Utc;
+use dapi_grpc::tonic::codegen::http;
+use dapi_grpc::tonic::transport::Uri;
+use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
-use std::time;
 use std::time::Duration;
-
-use http::Uri;
-use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 
 const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 
 /// DAPI address.
 #[derive(Debug, Clone, Eq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct Address {
     ban_count: usize,
-    banned_until: Option<time::Instant>,
+    banned_until: Option<chrono::DateTime<Utc>>,
+    #[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))]
     uri: Uri,
+}
+
+impl FromStr for Address {
+    type Err = AddressListError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uri::from_str(s)
+            .map(Address::from)
+            .map_err(AddressListError::from)
+    }
 }
 
 impl PartialEq<Self> for Address {
@@ -53,7 +65,7 @@ impl Address {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period = Duration::from_secs_f64(base_ban_period.as_secs_f64() * coefficient);
 
-        self.banned_until = Some(time::Instant::now() + ban_period);
+        self.banned_until = Some(chrono::Utc::now() + ban_period);
         self.ban_count += 1;
     }
 
@@ -76,14 +88,20 @@ impl Address {
 
 /// [AddressList] errors
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddressListError {
+    /// Specified address is not present in the list
     #[error("address {0} not found in the list")]
-    AddressNotFound(Uri),
+    AddressNotFound(#[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))] Uri),
+    /// A valid uri is required to create an Address
+    #[error("unable parse address: {0}")]
+    #[cfg_attr(feature = "mocks", serde(skip))]
+    InvalidAddressUri(#[from] http::uri::InvalidUri),
 }
 
 /// A structure to manage DAPI addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AddressList {
     addresses: HashSet<Address>,
     base_ban_period: Duration,
@@ -167,7 +185,7 @@ impl AddressList {
 
     /// Get all addresses that are not banned.
     fn unbanned(&self) -> Vec<&Address> {
-        let now = time::Instant::now();
+        let now = chrono::Utc::now();
 
         self.addresses
             .iter()
@@ -198,6 +216,7 @@ impl AddressList {
     }
 }
 
+// TODO: Must be changed to FromStr
 impl From<&str> for AddressList {
     fn from(value: &str) -> Self {
         let uri_list: Vec<Uri> = value
@@ -217,5 +236,14 @@ impl FromIterator<Uri> for AddressList {
         }
 
         address_list
+    }
+}
+
+impl IntoIterator for AddressList {
+    type Item = Address;
+    type IntoIter = std::collections::hash_set::IntoIter<Address>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.addresses.into_iter()
     }
 }

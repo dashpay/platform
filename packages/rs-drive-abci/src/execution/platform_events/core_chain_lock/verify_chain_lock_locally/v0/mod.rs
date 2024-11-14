@@ -9,8 +9,10 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
+use crate::error::execution::ExecutionError;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetV0Methods;
 use dpp::version::PlatformVersion;
 
 const CHAIN_LOCK_REQUEST_ID_PREFIX: &str = "clsig";
@@ -29,15 +31,20 @@ where
         round: u32,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Option<bool>, Error> {
+        let quorum_set = platform_state.chain_lock_validating_quorums();
+        let quorum_config = quorum_set.config();
+
         // First verify that the signature conforms to a signature
-        let signature = G2Element::from_bytes(chain_lock.signature.as_bytes())?;
+        let Ok(signature) = G2Element::from_bytes(chain_lock.signature.as_bytes()) else {
+            return Ok(Some(false));
+        };
 
         // we attempt to verify the chain lock locally
         let chain_lock_height = chain_lock.block_height;
 
-        let window_width = self.config.chain_lock_quorum_window;
+        let window_width = quorum_config.window;
 
         // The last block in the window where the quorums would be the same
         let last_block_in_window = platform_state.last_committed_core_height()
@@ -61,55 +68,11 @@ where
             return Ok(None); // the chain lock is too far in the future or the past to verify locally
         }
 
-        let (probable_quorums, second_to_check_quorums, should_be_verifiable) = if let Some((
-            previous_quorum_height,
-            change_quorum_height,
-            previous_quorums_change_height,
-            previous_quorums,
-        )) =
-            platform_state.previous_height_chain_lock_validating_quorums()
-        {
-            if chain_lock_height > 8 && verification_height >= *change_quorum_height {
-                // in this case we are sure that we should be targeting the current quorum
-                // We updated core chain lock height from 100 to 105, new chain lock comes in for block 114
-                //  ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height) ------ 106 (new chain lock verification height 114 - 8)
-                // We are sure that we should use current quorums
-                // If we have
-                //  ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height) ------ 105 (new chain lock verification height 113 - 8)
-                // We should also use current quorums, this is because at 105 we are sure new chain lock validating quorums are active
-                (platform_state.chain_lock_validating_quorums(), None, true)
-            } else if chain_lock_height > 8 && verification_height <= *previous_quorum_height {
-                let should_be_verifiable = previous_quorums_change_height
-                    .map(|previous_quorums_change_height| {
-                        verification_height > previous_quorums_change_height
-                    })
-                    .unwrap_or(false);
-                // In this case the quorums were changed recently meaning that we should use the previous quorums to verify the chain lock
-                // We updated core chain lock height from 100 to 105, new chain lock comes in for block 106
-                // -------- 98 (new chain lock verification height 106 - 8) ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height)
-                // We are sure that we should use previous quorums
-                // If we have
-                // -------- 100 (new chain lock verification height 108 - 8) ------- 100 (previous_quorum_height) ------ 105 (change_quorum_height)
-                // We should also use previous quorums, this is because at 100 we are sure the old quorum set was active
-                (previous_quorums, None, should_be_verifiable)
-            } else {
-                let should_be_verifiable = previous_quorums_change_height
-                    .map(|previous_quorums_change_height| {
-                        verification_height > previous_quorums_change_height
-                    })
-                    .unwrap_or(false);
-                // we are in between, so we don't actually know if it was the old one or the new one to be used.
-                //  ------- 100 (previous_quorum_height) ------ 104 (new chain lock verification height 112 - 8) -------105 (change_quorum_height)
-                // we should just try both, starting with the current quorums
-                (
-                    platform_state.chain_lock_validating_quorums(),
-                    Some(previous_quorums),
-                    should_be_verifiable,
-                )
-            }
-        } else {
-            (platform_state.chain_lock_validating_quorums(), None, false)
-        };
+        let mut selected_quorums = platform_state
+            .chain_lock_validating_quorums()
+            .select_quorums(chain_lock_height, verification_height);
+
+        // TODO: We can use chain_lock.request_id()
 
         // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
         // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
@@ -131,14 +94,14 @@ where
 
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
-        let quorum = Platform::<C>::choose_quorum(
-            self.config.chain_lock_quorum_type(),
-            probable_quorums,
-            request_id.as_ref(),
-            platform_version,
-        )?;
+        let probable_quorums = selected_quorums.next().ok_or_else(|| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "No quorums selected for chain lock signature verification for specified height",
+            ))
+        })?;
 
-        let Some((quorum_hash, public_key)) = quorum else {
+        let Some((quorum_hash, quorum)) = probable_quorums.choose_quorum(request_id.as_ref())
+        else {
             return Ok(None);
         };
 
@@ -146,14 +109,19 @@ where
 
         let mut engine = sha256d::Hash::engine();
 
-        engine.input(&[self.config.chain_lock_quorum_type() as u8]);
-        engine.input(quorum_hash.as_slice());
+        let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+        reversed_quorum_hash.reverse();
+
+        engine.input(&[quorum_config.quorum_type as u8]);
+        engine.input(reversed_quorum_hash.as_slice());
         engine.input(request_id.as_byte_array());
         engine.input(chain_lock.block_hash.as_byte_array());
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+        let mut chain_lock_verified = quorum
+            .public_key
+            .verify(&signature, message_digest.as_ref());
 
         tracing::debug!(
             ?chain_lock,
@@ -162,7 +130,7 @@ where
             round,
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
-            hex::encode(quorum_hash.as_slice()),
+            hex::encode(reversed_quorum_hash.as_slice()),
             hex::encode(chain_lock.block_hash.as_byte_array()),
             if chain_lock_verified { "verified"} else {"not verified"},
             platform_state.last_committed_core_height(),
@@ -172,15 +140,10 @@ where
 
         if !chain_lock_verified {
             // We should also check the other quorum, as there could be the situation where the core height wasn't updated every block.
-            if let Some(second_to_check_quorums) = second_to_check_quorums {
-                let quorum = Platform::<C>::choose_quorum(
-                    self.config.chain_lock_quorum_type(),
-                    second_to_check_quorums,
-                    request_id.as_ref(),
-                    platform_version,
-                )?;
-
-                let Some((quorum_hash, public_key)) = quorum else {
+            if let Some(second_to_check_quorums) = selected_quorums.next() {
+                let Some((quorum_hash, quorum)) =
+                    second_to_check_quorums.choose_quorum(request_id.as_ref())
+                else {
                     // we return that we are not able to verify
                     return Ok(None);
                 };
@@ -189,14 +152,19 @@ where
 
                 let mut engine = sha256d::Hash::engine();
 
-                engine.input(&[self.config.chain_lock_quorum_type() as u8]);
-                engine.input(quorum_hash.as_slice());
+                let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+                reversed_quorum_hash.reverse();
+
+                engine.input(&[quorum_config.quorum_type as u8]);
+                engine.input(reversed_quorum_hash.as_slice());
                 engine.input(request_id.as_byte_array());
                 engine.input(chain_lock.block_hash.as_byte_array());
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+                chain_lock_verified = quorum
+                    .public_key
+                    .verify(&signature, message_digest.as_ref());
 
                 tracing::debug!(
                     ?chain_lock,
@@ -205,7 +173,7 @@ where
                     round,
                     chain_lock.block_height,
                     hex::encode(message_digest.as_byte_array()),
-                    hex::encode(quorum_hash.as_slice()),
+                    hex::encode(reversed_quorum_hash.as_slice()),
                     hex::encode(chain_lock.block_hash.as_byte_array()),
                     if chain_lock_verified { "verified"} else {"not verified"}
                 );
@@ -214,16 +182,16 @@ where
                         "chain lock was invalid for both recent and old chain lock quorums"
                     );
                 }
-            } else if platform_state
-                .previous_height_chain_lock_validating_quorums()
-                .is_none()
+            } else if !platform_state
+                .chain_lock_validating_quorums()
+                .has_previous_past_quorums()
             {
                 // we don't have old quorums, this means our node is very new.
                 tracing::debug!(
                     "we had no previous quorums locally, we should validate through core",
                 );
                 return Ok(None);
-            } else if !should_be_verifiable {
+            } else if !selected_quorums.should_be_verifiable() {
                 tracing::debug!(
                     "we were in a situation where it would be possible we didn't have all quorums and we couldn't verify locally, we should validate through core",
                 );

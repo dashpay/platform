@@ -1,14 +1,14 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::balance::v0::DocumentsBatchTransitionBalanceValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::v0::StateTransitionIdentityBalanceValidationV0;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 pub(crate) mod v0;
-impl StateTransitionBalanceValidationV0 for DocumentsBatchTransition {
+impl StateTransitionIdentityBalanceValidationV0 for DocumentsBatchTransition {
     fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,

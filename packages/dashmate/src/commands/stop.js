@@ -11,12 +11,17 @@ export default class StopCommand extends ConfigBaseCommand {
     ...ConfigBaseCommand.flags,
     force: Flags.boolean({
       char: 'f',
-      description: 'force stop even if any service is running',
+      description: 'force stop even if any service is running or DKG is in progress',
       default: false,
     }),
     platform: Flags.boolean({
       char: 'p',
       description: 'stop only platform',
+      default: false,
+    }),
+    safe: Flags.boolean({
+      char: 's',
+      description: 'wait for dkg before stop',
       default: false,
     }),
   };
@@ -32,6 +37,7 @@ export default class StopCommand extends ConfigBaseCommand {
     args,
     {
       force: isForce,
+      safe: isSafe,
       verbose: isVerbose,
       platform: platformOnly,
     },
@@ -59,6 +65,7 @@ export default class StopCommand extends ConfigBaseCommand {
       await tasks.run({
         isForce,
         isVerbose,
+        isSafe,
         platformOnly: platformOnly === true,
       });
     } catch (e) {

@@ -7,7 +7,7 @@ pub enum IdentityError {
 
     /// Identity already exists error
     #[error("identity key already exists for user error: {0}")]
-    IdentityKeyAlreadyExists(&'static str),
+    IdentityKeyAlreadyExists(String),
 
     /// A user is requesting an unknown key error
     #[error("identity public key not found: {0}")]
@@ -58,6 +58,6 @@ pub enum IdentityError {
     IdentityKeyBoundsError(&'static str),
 
     /// Identity Key Data Contract Not Found
-    #[error("contact with specified identifier is not found for identity key data contract")]
+    #[error("contract with specified identifier is not found for identity key data contract")]
     IdentityKeyDataContractNotFound,
 }

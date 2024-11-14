@@ -9,7 +9,9 @@ use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTran
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::DataContractProvider;
+use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait TopUpIdentity {
@@ -45,21 +47,30 @@ impl TopUpIdentity for Identity {
         request
             .clone()
             .execute(sdk, RequestSettings::default())
-            .await?;
+            .await // TODO: We need better way to handle execution errors
+            .into_inner()?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;
-
-        let response = request.execute(sdk, RequestSettings::default()).await?;
+        // TODO: Implement retry logic in wait for state transition result
+        let response = request
+            .execute(sdk, RequestSettings::default())
+            .await
+            .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 
         let proof = response.proof_owned()?;
+        let context_provider =
+            sdk.context_provider()
+                .ok_or(Error::from(ContextProviderError::Config(
+                    "Context provider not initialized".to_string(),
+                )))?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
             proof.grovedb_proof.as_slice(),
-            &|_| Ok(None),
+            &context_provider.as_contract_lookup_fn(),
             sdk.version(),
         )?;
 

@@ -8,14 +8,14 @@ use platform_version::version::PlatformVersion;
 impl DataContractUpdateTransitionActionV0 {
     pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_transition(
         value: DataContractUpdateTransitionV0,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract,
-                validate,
+                full_validation,
                 validation_operations,
                 platform_version,
             )?,
@@ -26,14 +26,14 @@ impl DataContractUpdateTransitionActionV0 {
 
     pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_borrowed_transition(
         value: &DataContractUpdateTransitionV0,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract.clone(),
-                validate,
+                full_validation,
                 validation_operations,
                 platform_version,
             )?,

@@ -1,9 +1,3 @@
-// Grouping std imports
-use std::{
-    collections::{BTreeMap, HashSet},
-    ops::RangeFull,
-};
-
 // Conditional imports for the features "server" or "verify"
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -24,18 +18,16 @@ use {
     },
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
+    std::{collections::BTreeMap, ops::RangeFull},
 };
 
 // Conditional imports for the feature "server"
+use crate::drive::identity::identity_transfer_keys_path_vec;
 #[cfg(feature = "server")]
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
-        block::epoch::Epoch,
-        fee::{
-            default_costs::{EpochCosts, KnownCostItem::FetchSingleIdentityKeyProcessingCost},
-            Credits,
-        },
+        fee::Credits,
         identity::{IdentityPublicKey, SecurityLevel},
         serialization::PlatformDeserializable,
         version::PlatformVersion,
@@ -47,6 +39,7 @@ use {
         Element,
         Element::Item,
     },
+    std::collections::HashSet,
 };
 
 // Modules conditionally compiled for the feature "server"
@@ -82,6 +75,8 @@ pub enum KeyRequestType {
     SpecificKeys(Vec<KeyID>),
     /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
+    /// Recent withdrawal keys
+    RecentWithdrawalKeys,
     /// Search for contract bound keys
     ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Search for contract bound keys
@@ -653,24 +648,38 @@ pub struct IdentityKeysRequest {
 impl IdentityKeysRequest {
     #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
-    pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
+    pub fn processing_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error> {
         match &self.request_type {
             AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(
                 "You can not get costs for requesting all keys",
             ))),
             SpecificKeys(keys) => Ok(keys.len() as u64
-                * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
-            SearchKey(_search) => todo!(),
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost),
+            SearchKey(_) => Err(Error::Fee(FeeError::OperationNotAllowed(
+                "You can not get costs for requesting search key",
+            ))),
             ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
-                        Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
+                        // not accessible
+                        Ok(platform_version
+                            .fee_version
+                            .processing
+                            .fetch_single_identity_key_processing_cost)
                     }
                     AllKeysOfKindRequest => Err(Error::Fee(FeeError::OperationNotAllowed(
                         "You can not get costs for an all keys of kind request",
                     ))),
                 }
             }
+            KeyRequestType::RecentWithdrawalKeys => Ok(self.limit.unwrap_or(10) as Credits
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost),
         }
     }
 
@@ -682,8 +691,8 @@ impl IdentityKeysRequest {
             sec_btree_map.insert(security_level, CurrentKeyOfKindRequest);
         }
         let mut purpose_btree_map = BTreeMap::new();
-        for purpose in 0..=Purpose::last() as u8 {
-            purpose_btree_map.insert(purpose, sec_btree_map.clone());
+        for purpose in Purpose::searchable_purposes() {
+            purpose_btree_map.insert(purpose as u8, sec_btree_map.clone());
         }
         IdentityKeysRequest {
             identity_id,
@@ -928,6 +937,19 @@ impl IdentityKeysRequest {
                     },
                 }
             }
+            KeyRequestType::RecentWithdrawalKeys => {
+                let query_keys_path = identity_transfer_keys_path_vec(&identity_id);
+                let mut query = Query::new_with_direction(false);
+                query.insert_all();
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query,
+                        limit,
+                        offset,
+                    },
+                }
+            }
         }
     }
 
@@ -996,11 +1018,10 @@ impl IdentityKeysRequest {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::version::drive_versions::DriveVersion;
 
     use super::*;
 
@@ -1043,7 +1064,6 @@ mod tests {
     #[test]
     fn test_fetch_single_identity_key() {
         let drive = setup_drive(None);
-        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -1084,7 +1104,6 @@ mod tests {
     #[test]
     fn test_fetch_multiple_identity_key() {
         let drive = setup_drive(None);
-        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -1125,7 +1144,6 @@ mod tests {
     #[test]
     fn test_fetch_unknown_identity_key_returns_not_found() {
         let drive = setup_drive(None);
-        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 

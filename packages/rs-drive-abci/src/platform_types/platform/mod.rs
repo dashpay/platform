@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter};
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use arc_swap::ArcSwap;
-use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+use dpp::version::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
@@ -18,6 +18,7 @@ use dashcore_rpc::dashcore::BlockHash;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use dpp::version::ProtocolVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::json;
 
@@ -107,16 +108,16 @@ impl Platform<DefaultCoreRPC> {
     ) -> Result<Platform<DefaultCoreRPC>, Error> {
         let config = config.unwrap_or(PlatformConfig::default_testnet());
         let core_rpc = DefaultCoreRPC::open(
-            config.core.rpc.url().as_str(),
-            config.core.rpc.username.clone(),
-            config.core.rpc.password.clone(),
+            config.core.consensus_rpc.url().as_str(),
+            config.core.consensus_rpc.username.clone(),
+            config.core.consensus_rpc.password.clone(),
         )
         .map_err(|_e| {
             Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "Could not setup Dash Core RPC client",
             ))
         })?;
-        Self::open_with_client(path, Some(config), core_rpc)
+        Self::open_with_client(path, Some(config), core_rpc, None)
     }
 }
 
@@ -126,6 +127,7 @@ impl Platform<MockCoreRPCLike> {
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
+        initial_protocol_version: Option<ProtocolVersion>,
     ) -> Result<Platform<MockCoreRPCLike>, Error> {
         let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -141,7 +143,7 @@ impl Platform<MockCoreRPCLike> {
                 "tx": [],
             }))
         });
-        Self::open_with_client(path, config, core_rpc_mock)
+        Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
     }
 
     /// Fetch and reload the state from the backing store
@@ -171,6 +173,7 @@ impl<C> Platform<C> {
         path: P,
         config: Option<PlatformConfig>,
         core_rpc: C,
+        initial_protocol_version: Option<ProtocolVersion>,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
@@ -203,8 +206,8 @@ impl<C> Platform<C> {
             drive,
             core_rpc,
             config,
-            INITIAL_PROTOCOL_VERSION,
-            INITIAL_PROTOCOL_VERSION,
+            initial_protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION),
+            initial_protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION),
         )
     }
 
@@ -213,16 +216,26 @@ impl<C> Platform<C> {
         drive: Drive,
         core_rpc: C,
         config: PlatformConfig,
-        platform_state: PlatformState,
+        mut platform_state: PlatformState,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
     {
-        PlatformVersion::set_current(PlatformVersion::get(
-            platform_state.current_protocol_version_in_consensus(),
-        )?);
-
         let height = platform_state.last_committed_block_height();
+
+        // Set patched or original platform version as current
+        let platform_version = platform_state
+            .apply_all_patches_to_platform_version_up_to_height(height)
+            .transpose()
+            .unwrap_or_else(|| {
+                let platform_version =
+                    PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
+                        .map_err(Error::from);
+
+                platform_version
+            })?;
+
+        PlatformVersion::set_current(platform_version);
 
         let platform: Platform<C> = Platform {
             drive,
@@ -249,7 +262,8 @@ impl<C> Platform<C> {
         let platform_state = PlatformState::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-        );
+            &config,
+        )?;
 
         let height = platform_state.last_committed_block_height();
 

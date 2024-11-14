@@ -213,15 +213,11 @@
                     "minItems": 38,
                     "maxItems": 102,
                     "position": 6
-                },
-                "coreHeightCreatedAt": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "position": 7
                 }
             },
             "required": [
                 "$createdAt",
+                "$createdAtCoreBlockHeight",
                 "toUserId",
                 "encryptedPublicKey",
                 "senderKeyIndex",

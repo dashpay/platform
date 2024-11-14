@@ -9,7 +9,7 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identity::accessors::IdentityGettersV0;
 
     mod add_new_keys_to_identity {
@@ -21,7 +21,7 @@ mod tests {
 
         #[test]
         fn should_add_one_new_key_to_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -61,7 +61,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 14202000,
-                    processing_fee: 2434150,
+                    processing_fee: 1098260,
                     ..Default::default()
                 }
             );
@@ -81,7 +81,7 @@ mod tests {
 
         #[test]
         fn should_add_two_dozen_new_keys_to_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -121,7 +121,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 347382000,
-                    processing_fee: 9344910,
+                    processing_fee: 6819220,
                     ..Default::default()
                 }
             );
@@ -141,7 +141,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -155,7 +155,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -172,7 +172,7 @@ mod tests {
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -182,7 +182,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 17145000,
-                    processing_fee: 12012160,
+                    processing_fee: 5483620,
                     ..Default::default()
                 }
             );
@@ -200,7 +200,7 @@ mod tests {
 
         #[test]
         fn should_disable_a_few_keys() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -255,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1452800,
+                    processing_fee: 869380,
                     ..Default::default()
                 }
             );
@@ -279,7 +279,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -292,7 +292,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -310,7 +310,7 @@ mod tests {
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -320,7 +320,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 5432130,
+                    processing_fee: 3216860,
                     ..Default::default()
                 }
             );
@@ -328,7 +328,7 @@ mod tests {
 
         #[test]
         fn estimated_costs_should_have_same_storage_cost() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -374,7 +374,7 @@ mod tests {
                 )
                 .expect("should get the cost of the disabling a few keys");
 
-            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee,);
+            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee);
         }
     }
 
@@ -387,7 +387,7 @@ mod tests {
 
         #[test]
         fn should_update_revision() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -418,6 +418,7 @@ mod tests {
                     true,
                     Some(&db_transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should update revision");
 
@@ -425,7 +426,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 648660,
+                    processing_fee: 238820,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -446,7 +447,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -459,7 +460,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -471,12 +472,13 @@ mod tests {
                     false,
                     None,
                     platform_version,
+                    None,
                 )
                 .expect("should estimate the revision update");
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -486,7 +488,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 4217750,
+                    processing_fee: 1813560,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

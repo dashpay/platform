@@ -27,15 +27,34 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
+use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
+use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
+use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+use crate::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
+use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
+use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
+use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
+use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
+use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use crate::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use crate::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
+use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
+#[derive(
+    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+)]
 pub enum StateError {
     /*
 
@@ -53,6 +72,23 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentAlreadyPresentError(DocumentAlreadyPresentError),
+
+    #[error(transparent)]
+    DocumentContestCurrentlyLockedError(DocumentContestCurrentlyLockedError),
+
+    #[error(transparent)]
+    DocumentContestNotJoinableError(DocumentContestNotJoinableError),
+
+    #[error(transparent)]
+    DocumentContestIdentityAlreadyContestantError(DocumentContestIdentityAlreadyContestantError),
+
+    #[error(transparent)]
+    DocumentContestNotPaidForError(DocumentContestNotPaidForError),
+
+    #[error(transparent)]
+    DocumentContestDocumentWithSameIdAlreadyPresentError(
+        DocumentContestDocumentWithSameIdAlreadyPresentError,
+    ),
 
     #[error(transparent)]
     DocumentNotFoundError(DocumentNotFoundError),
@@ -93,6 +129,12 @@ pub enum StateError {
     MissingIdentityPublicKeyIdsError(MissingIdentityPublicKeyIdsError),
 
     #[error(transparent)]
+    MissingTransferKeyError(MissingTransferKeyError),
+
+    #[error(transparent)]
+    NoTransferKeyForCoreWithdrawalAvailableError(NoTransferKeyForCoreWithdrawalAvailableError),
+
+    #[error(transparent)]
     InvalidIdentityPublicKeyIdError(InvalidIdentityPublicKeyIdError),
 
     #[error(transparent)]
@@ -127,6 +169,36 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentTypeUpdateError(DocumentTypeUpdateError),
+
+    #[error(transparent)]
+    PrefundedSpecializedBalanceInsufficientError(PrefundedSpecializedBalanceInsufficientError),
+
+    #[error(transparent)]
+    PrefundedSpecializedBalanceNotFoundError(PrefundedSpecializedBalanceNotFoundError),
+
+    #[error(transparent)]
+    DataContractUpdatePermissionError(DataContractUpdatePermissionError),
+
+    #[error(transparent)]
+    MasternodeNotFoundError(MasternodeNotFoundError),
+
+    #[error(transparent)]
+    MasternodeIncorrectVoterIdentityIdError(MasternodeIncorrectVoterIdentityIdError),
+
+    #[error(transparent)]
+    MasternodeIncorrectVotingAddressError(MasternodeIncorrectVotingAddressError),
+
+    #[error(transparent)]
+    VotePollNotFoundError(VotePollNotFoundError),
+
+    #[error(transparent)]
+    VotePollNotAvailableForVotingError(VotePollNotAvailableForVotingError),
+
+    #[error(transparent)]
+    MasternodeVotedTooManyTimesError(MasternodeVotedTooManyTimesError),
+
+    #[error(transparent)]
+    MasternodeVoteAlreadyPresentError(MasternodeVoteAlreadyPresentError),
 }
 
 impl From<StateError> for ConsensusError {

@@ -56,7 +56,7 @@ impl<C> Platform<C> {
                 .into_iter()
                 .map(|element| {
                     element
-                        .serialize()
+                        .serialize(&platform_version.drive.grove_version)
                         .map_err(|e| Error::Drive(drive::error::Error::GroveDB(e)))
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
@@ -77,6 +77,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::RootTree;
     use drive::grovedb::Element;
@@ -84,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_query_total_system_credits_from_path_elements_query() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -113,8 +114,11 @@ mod tests {
 
         assert_eq!(elements.elements.len(), 1);
 
-        let element = Element::deserialize(elements.elements.remove(0).as_slice())
-            .expect("expected to deserialize element");
+        let element = Element::deserialize(
+            elements.elements.remove(0).as_slice(),
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to deserialize element");
 
         let Element::Item(value, _) = element else {
             panic!("expected item")

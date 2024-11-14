@@ -268,7 +268,7 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           // eslint-disable-next-line prefer-destructuring
           ctx.quorumHash = quorumList[LLMQ_TYPE_TEST_PLATFORM][0];
 
-          const llmqType = ctx.masternodeCoreServices[0].getConfig().get('platform.drive.abci.validatorSet.llmqType');
+          const llmqType = ctx.masternodeCoreServices[0].getConfig().get('platform.drive.abci.validatorSet.quorum.llmqType');
 
           const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', llmqType, ctx.quorumHash);
 

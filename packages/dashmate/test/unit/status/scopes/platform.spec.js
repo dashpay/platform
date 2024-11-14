@@ -1,3 +1,6 @@
+import ContainerIsNotPresentError
+  from '../../../../src/docker/errors/ContainerIsNotPresentError.js';
+import DockerComposeError from '../../../../src/docker/errors/DockerComposeError.js';
 import providers from '../../../../src/status/providers.js';
 import determineStatus from '../../../../src/status/determineStatus.js';
 import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
@@ -47,7 +50,7 @@ describe('getPlatformScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
 
-      httpPort = config.get('platform.dapi.envoy.http.port');
+      httpPort = config.get('platform.gateway.listeners.dapiAndDrive.port');
       httpService = `${config.get('externalIp')}:${httpPort}`;
       p2pPort = config.get('platform.drive.tenderdash.p2p.port');
       p2pService = `${config.get('externalIp')}:${p2pPort}`;
@@ -63,12 +66,25 @@ describe('getPlatformScopeFactory', () => {
     it('should just work', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
       mockDockerCompose.isServiceRunning.returns(true);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const mockStatus = {
         node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
           version: '0',
           network: 'test',
           moniker: 'test',
@@ -83,7 +99,17 @@ describe('getPlatformScopeFactory', () => {
       };
       const mockNetInfo = { n_peers: 6, listening: true };
 
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+
       const expectedScope = {
+        platformActivation: 'Activated (at height 1337)',
         coreIsSynced: true,
         httpPort,
         httpService,
@@ -97,6 +123,8 @@ describe('getPlatformScopeFactory', () => {
           p2pPortState: PortStateEnum.OPEN,
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          protocolVersion: 3,
+          desiredProtocolVersion: 4,
           version: '0',
           listening: true,
           catchingUp: false,
@@ -111,6 +139,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
@@ -118,7 +147,9 @@ describe('getPlatformScopeFactory', () => {
         .onFirstCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -129,12 +160,24 @@ describe('getPlatformScopeFactory', () => {
     it('should return platform syncing when it is catching up', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
       mockDockerCompose.isServiceRunning.returns(true);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const mockStatus = {
         node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
           version: '0',
           network: 'test',
           moniker: 'test',
@@ -149,7 +192,17 @@ describe('getPlatformScopeFactory', () => {
       };
       const mockNetInfo = { n_peers: 6, listening: true };
 
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+
       const expectedScope = {
+        platformActivation: 'Activated (at height 1337)',
         coreIsSynced: true,
         httpPort,
         httpService,
@@ -164,6 +217,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.syncing,
           version: '0',
+          protocolVersion: 3,
+          desiredProtocolVersion: 4,
           listening: true,
           catchingUp: true,
           latestBlockHash: 'DEADBEEF',
@@ -177,6 +232,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
@@ -184,7 +240,9 @@ describe('getPlatformScopeFactory', () => {
         .onFirstCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -194,7 +252,6 @@ describe('getPlatformScopeFactory', () => {
 
     it('should return empty scope if error during request to core', async () => {
       mockRpcClient.mnsync.withArgs('status').throws(new Error());
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockDockerCompose.isServiceRunning.returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
@@ -202,6 +259,7 @@ describe('getPlatformScopeFactory', () => {
         .returns(DockerStatusEnum.running);
 
       const expectedScope = {
+        platformActivation: null,
         coreIsSynced: null,
         httpPort,
         httpService,
@@ -213,9 +271,11 @@ describe('getPlatformScopeFactory', () => {
         tenderdash: {
           httpPortState: null,
           p2pPortState: null,
-          dockerStatus: DockerStatusEnum.running,
-          serviceStatus: ServiceStatusEnum.wait_for_core,
+          dockerStatus: null,
+          serviceStatus: null,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -227,8 +287,9 @@ describe('getPlatformScopeFactory', () => {
           network: null,
         },
         drive: {
-          dockerStatus: DockerStatusEnum.running,
-          serviceStatus: ServiceStatusEnum.wait_for_core,
+          dockerStatus: null,
+          serviceStatus: null,
+          version: null,
         },
       };
 
@@ -238,16 +299,22 @@ describe('getPlatformScopeFactory', () => {
     });
 
     it('should return empty scope if core is not synced', async () => {
-      mockDockerCompose.isServiceRunning
-        .withArgs(config, 'drive_tenderdash')
-        .returns(true);
+      mockDockerCompose.isServiceRunning.withArgs(config, 'drive_tenderdash').returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash').returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci').returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: false } });
-      mockDockerCompose.execCommand.returns({ exitCode: 1, out: '' });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const expectedScope = {
+        platformActivation: 'Activated (at height 1337)',
         coreIsSynced: false,
         httpPort,
         httpService,
@@ -262,6 +329,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.wait_for_core,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -275,6 +344,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.wait_for_core,
+          version: '1.4.1',
         },
       };
 
@@ -285,6 +355,13 @@ describe('getPlatformScopeFactory', () => {
 
     it('should return drive info if tenderdash is failed', async () => {
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
       mockDockerCompose.isServiceRunning
         .withArgs(config, 'drive_tenderdash')
         .returns(true);
@@ -292,10 +369,11 @@ describe('getPlatformScopeFactory', () => {
         .returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
         .returns(DockerStatusEnum.running);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const expectedScope = {
+        platformActivation: 'Activated (at height 1337)',
         coreIsSynced: true,
         httpPort,
         httpService,
@@ -310,6 +388,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.error,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -323,6 +403,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
@@ -333,18 +414,33 @@ describe('getPlatformScopeFactory', () => {
 
     it('should still return scope with tenderdash if drive is failed', async () => {
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
       mockDockerCompose.isServiceRunning
         .withArgs(config, 'drive_tenderdash')
         .returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
-        .throws();
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+        .throws(new ContainerIsNotPresentError('drive_abci'));
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
+      const error = new DockerComposeError({
+        exitCode: 1,
+      });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').rejects(error);
 
       const mockStatus = {
         node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
           version: '0',
           network: 'test',
           moniker: 'test',
@@ -359,13 +455,25 @@ describe('getPlatformScopeFactory', () => {
       };
       const mockNetInfo = { n_peers: 6, listening: true };
 
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+
       mockFetch
         .onFirstCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
 
       const expectedScope = {
+        platformActivation: 'Activated (at height 1337)',
         coreIsSynced: true,
         httpPort,
         httpService,
@@ -380,6 +488,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
           version: '0',
+          protocolVersion: 3,
+          desiredProtocolVersion: 4,
           listening: true,
           catchingUp: false,
           latestBlockHash: 'DEADBEEF',
@@ -391,8 +501,9 @@ describe('getPlatformScopeFactory', () => {
           network: 'test',
         },
         drive: {
-          dockerStatus: null,
-          serviceStatus: null,
+          dockerStatus: DockerStatusEnum.not_started,
+          serviceStatus: ServiceStatusEnum.stopped,
+          version: null,
         },
       };
 
@@ -403,15 +514,24 @@ describe('getPlatformScopeFactory', () => {
 
     it('should have error service status in case FetchError to tenderdash', async () => {
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          softforks: {
+            mn_rr: { active: true, height: 1337 },
+          },
+        },
+      });
       mockDockerCompose.isServiceRunning
         .withArgs(config, 'drive_tenderdash')
         .returns(true);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
       mockFetch.returns(Promise.reject(new Error('FetchError')));
 
       const expectedScope = {
+        platformActivation: 'Activated (at height 1337)',
         coreIsSynced: true,
         httpPort,
         httpService,
@@ -426,6 +546,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.error,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -439,6 +561,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 

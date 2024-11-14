@@ -1,41 +1,13 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! This module defines functions within the Drive struct related to identities.
 //! Functions include inserting new identities into the `Identities` subtree and
 //! fetching identities from the subtree.
 //!
 
-#[cfg(feature = "server")]
-use crate::drive::object_size_info::DriveKeyInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+#[cfg(feature = "server")]
+use crate::util::object_size_info::DriveKeyInfo;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::Purpose;
@@ -68,10 +40,9 @@ pub mod key;
 #[cfg(feature = "server")]
 pub mod update;
 
-#[cfg(feature = "server")]
-pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
-
 use crate::drive::identity::contract_info::ContractInfoStructure;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use fetch::queries::*;
 
@@ -288,7 +259,6 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec(
 
 /// identity query keys security level tree path vec
 #[cfg(feature = "server")]
-/// Identity query keys security level tree path vec
 pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     identity_id: &[u8],
     security_level: SecurityLevel,
@@ -305,16 +275,18 @@ pub(crate) fn identity_query_keys_security_level_tree_path_vec(
 /// identity query keys full tree path
 #[cfg(feature = "server")]
 /// Identity query keys full tree path
-pub(crate) fn identity_query_keys_for_transfer_full_tree_path(identity_id: &[u8]) -> [&[u8]; 4] {
+pub(crate) fn identity_query_keys_for_direct_searchable_reference_full_tree_path(
+    purpose: Purpose,
+    identity_id: &[u8],
+) -> [&[u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
         Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
-        Into::<&[u8; 1]>::into(Purpose::TRANSFER),
+        Into::<&[u8; 1]>::into(purpose),
     ]
 }
 
-/// identity query keys full tree path
 #[cfg(feature = "server")]
 /// Identity query keys full tree path
 pub(crate) fn identity_query_keys_for_authentication_full_tree_path<'a>(
@@ -327,6 +299,28 @@ pub(crate) fn identity_query_keys_for_authentication_full_tree_path<'a>(
         Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
         Into::<&[u8; 1]>::into(Purpose::AUTHENTICATION),
         security_level,
+    ]
+}
+
+/// Identity query keys for transfer full tree path
+#[cfg(feature = "server")]
+pub fn identity_transfer_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
+        Into::<&[u8; 1]>::into(Purpose::TRANSFER),
+        Into::<&[u8; 1]>::into(SecurityLevel::CRITICAL),
+    ]
+}
+
+/// Identity query keys for transfer full tree path as vec
+pub fn identity_transfer_keys_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
+        vec![Purpose::TRANSFER as u8],
     ]
 }
 
@@ -347,6 +341,40 @@ pub enum IdentityRootStructure {
     IdentityTreeNegativeCredit = 96,
     /// Identity contract information
     IdentityContractInfo = 32,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl fmt::Display for IdentityRootStructure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_name = match self {
+            IdentityRootStructure::IdentityTreeRevision => "Revision",
+            IdentityRootStructure::IdentityTreeNonce => "Nonce",
+            IdentityRootStructure::IdentityTreeKeys => "IdentityKeys",
+            IdentityRootStructure::IdentityTreeKeyReferences => "IdentityKeyReferences",
+            IdentityRootStructure::IdentityTreeNegativeCredit => "NegativeCredit",
+            IdentityRootStructure::IdentityContractInfo => "ContractInfo",
+        };
+        write!(f, "{}", variant_name)
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TryFrom<u8> for IdentityRootStructure {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            192 => Ok(IdentityRootStructure::IdentityTreeRevision),
+            64 => Ok(IdentityRootStructure::IdentityTreeNonce),
+            128 => Ok(IdentityRootStructure::IdentityTreeKeys),
+            160 => Ok(IdentityRootStructure::IdentityTreeKeyReferences),
+            96 => Ok(IdentityRootStructure::IdentityTreeNegativeCredit),
+            32 => Ok(IdentityRootStructure::IdentityContractInfo),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown identity root structure tree item",
+            ))),
+        }
+    }
 }
 
 #[cfg(feature = "server")]

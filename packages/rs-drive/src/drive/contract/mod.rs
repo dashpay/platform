@@ -41,11 +41,9 @@ mod tests {
     use std::borrow::Cow;
     use std::option::Option::None;
 
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{
-        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
-    };
     use crate::drive::Drive;
+    use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
@@ -63,14 +61,14 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
     #[allow(deprecated)]
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
@@ -95,7 +93,7 @@ mod tests {
     #[deprecated(note = "This function is marked as unused.")]
     #[allow(deprecated)]
     fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
@@ -117,7 +115,7 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_reference_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -140,7 +138,7 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_dashpay() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
@@ -161,7 +159,7 @@ mod tests {
 
     pub(in crate::drive::contract) fn setup_dashpay_with_generalized_encryption_contract(
     ) -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
@@ -239,7 +237,7 @@ mod tests {
     //
     //     let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
     //     drive
-    //         .add_document_for_contract(
+    //         .add_contested_document_for_contract(
     //             DocumentAndContractInfo {
     //                 owned_document_info: OwnedDocumentInfo {
     //                     document_info: DocumentInfo::DocumentRefInfo((&document, storage_flags)),
@@ -292,6 +290,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -420,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract_without_apply() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -442,7 +441,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract_with_history_without_apply() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path =
@@ -465,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_update_reference_contract_without_apply() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -494,6 +493,7 @@ mod tests {
                 false,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to apply contract successfully");
     }

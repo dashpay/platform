@@ -1,4 +1,4 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::{identity_tree_path, Drive};
 

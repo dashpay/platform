@@ -289,7 +289,7 @@ describe('Withdrawals contract', () => {
 
           const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
+          const error = expectJsonSchemaError(validationResult, 2);
 
           expect(error.keyword)
             .to

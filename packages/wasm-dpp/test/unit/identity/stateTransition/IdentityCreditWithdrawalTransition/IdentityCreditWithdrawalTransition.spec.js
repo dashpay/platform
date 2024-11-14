@@ -75,7 +75,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        $version: '0',
+        $version: '1',
         type: StateTransitionTypes.IdentityCreditWithdrawal,
         identityId: stateTransition.getIdentityId().toBuffer(),
         amount: stateTransition.getAmount(),
@@ -92,7 +92,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        $version: '0',
+        $version: '1',
         type: StateTransitionTypes.IdentityCreditWithdrawal,
         identityId: stateTransition.getIdentityId().toBuffer(),
         amount: stateTransition.getAmount(),
@@ -109,7 +109,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        $version: '0',
+        $version: '1',
         type: StateTransitionTypes.IdentityCreditWithdrawal,
         identityId: stateTransition.getIdentityId().toString(),
         amount: stateTransition.getAmount().toString(),

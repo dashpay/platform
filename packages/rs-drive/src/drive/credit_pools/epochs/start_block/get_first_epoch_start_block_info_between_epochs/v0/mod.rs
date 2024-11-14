@@ -3,15 +3,15 @@ use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::paths;
 use dpp::block::epoch::EpochIndex;
 
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-
-use crate::fee_pools::epochs::epoch_key_constants::{
+use crate::drive::credit_pools::epochs;
+use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
 };
+use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the index and start block platform and core heights of the first epoch between
@@ -21,6 +21,7 @@ impl Drive {
         from_epoch_index: EpochIndex,
         to_epoch_index: EpochIndex,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<StartBlockInfo>, Error> {
         let mut start_block_height_query = Query::new();
         start_block_height_query.insert_key(KEY_START_BLOCK_HEIGHT.to_vec());
@@ -28,8 +29,8 @@ impl Drive {
 
         let mut epochs_query = Query::new();
 
-        let from_epoch_key = paths::encode_epoch_index_key(from_epoch_index)?.to_vec();
-        let current_epoch_key = paths::encode_epoch_index_key(to_epoch_index)?.to_vec();
+        let from_epoch_key = epochs::paths::encode_epoch_index_key(from_epoch_index)?.to_vec();
+        let current_epoch_key = epochs::paths::encode_epoch_index_key(to_epoch_index)?.to_vec();
 
         epochs_query.insert_range_after_to_inclusive(from_epoch_key..=current_epoch_key);
 
@@ -48,6 +49,7 @@ impl Drive {
                 true,
                 QueryPathKeyElementTrioResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -106,7 +108,7 @@ impl Drive {
                 "epoch pool shouldn't have empty path",
             )))?;
 
-        let epoch_index = paths::decode_epoch_index_key(epoch_key.as_slice())?;
+        let epoch_index = epochs::paths::decode_epoch_index_key(epoch_key.as_slice())?;
 
         Ok(Some(StartBlockInfo {
             epoch_index,

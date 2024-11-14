@@ -11,7 +11,7 @@ use drive_proof_verifier::types::{MasternodeProtocolVote, MasternodeProtocolVote
 /// Helper trait for managing MasternodeProtocolVote objects
 #[async_trait]
 pub trait MasternodeProtocolVoteEx<K: Ord> {
-    /// Fetch masternode votes for version update from the platform.
+    /// Fetch masternode votes for version update from Platform.
     ///
     /// ## Parameters
     ///
@@ -44,6 +44,7 @@ impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
             LimitQuery {
                 query: start_protxhash,
                 limit,
+                start_info: None,
             },
         )
         .await

@@ -340,6 +340,24 @@ GPB_FINAL @interface GetBlockResponse : GPBMessage
 
 @end
 
+#pragma mark - GetBestBlockHeightRequest
+
+GPB_FINAL @interface GetBestBlockHeightRequest : GPBMessage
+
+@end
+
+#pragma mark - GetBestBlockHeightResponse
+
+typedef GPB_ENUM(GetBestBlockHeightResponse_FieldNumber) {
+  GetBestBlockHeightResponse_FieldNumber_Height = 1,
+};
+
+GPB_FINAL @interface GetBestBlockHeightResponse : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t height;
+
+@end
+
 #pragma mark - BroadcastTransactionRequest
 
 typedef GPB_ENUM(BroadcastTransactionRequest_FieldNumber) {
@@ -623,6 +641,24 @@ GPB_FINAL @interface InstantSendLockMessages : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *messagesArray;
 /** The number of items in @c messagesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger messagesArray_Count;
+
+@end
+
+#pragma mark - MasternodeListRequest
+
+GPB_FINAL @interface MasternodeListRequest : GPBMessage
+
+@end
+
+#pragma mark - MasternodeListResponse
+
+typedef GPB_ENUM(MasternodeListResponse_FieldNumber) {
+  MasternodeListResponse_FieldNumber_MasternodeListDiff = 1,
+};
+
+GPB_FINAL @interface MasternodeListResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *masternodeListDiff;
 
 @end
 

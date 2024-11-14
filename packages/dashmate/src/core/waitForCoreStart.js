@@ -5,12 +5,13 @@ import wait from '../util/wait.js';
  *
  * @typedef {waitForCoreStart}
  * @param {CoreService} coreService
+ * @param {number} [maxRetries=120] ~2 minutes
+ * @param {number} [delayMs=1000]
  * @return {Promise<void>}
  */
-export default async function waitForCoreStart(coreService) {
+export default async function waitForCoreStart(coreService, maxRetries = 120, delayMs = 1000) {
   let retries = 0;
   let isReady = false;
-  const maxRetries = 120; // ~2 minutes
 
   do {
     try {
@@ -20,7 +21,7 @@ export default async function waitForCoreStart(coreService) {
       isReady = true;
     } catch (e) {
       // just wait 1 second before next try
-      await wait(1000);
+      await wait(delayMs);
       ++retries;
     }
   } while (!isReady && retries < maxRetries);

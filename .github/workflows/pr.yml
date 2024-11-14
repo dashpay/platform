@@ -10,7 +10,7 @@ on:
 jobs:
   pr-title:
     name: PR title
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Validate conventional PR title
         uses: amannn/action-semantic-pull-request@v5

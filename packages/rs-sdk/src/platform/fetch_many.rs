@@ -1,40 +1,54 @@
-//! Fetch multiple objects from the Platform.
+//! Fetch multiple objects from Platform.
 //!
-//! This module provides a trait to fetch multiple objects from the platform.
+//! This module provides a trait to fetch multiple objects from Platform.
 //!
 //! ## Traits
-//! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
+//! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
+use super::LimitQuery;
 use crate::{
     error::Error,
     mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
+    sync::retry,
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetIdentitiesContractKeysRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
+    GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
+    GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
-use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
-use dpp::identity::{KeyID, Purpose};
+use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
-use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
+use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
+use dpp::{
+    block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
+};
+use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
+use drive::grovedb::query_result_type::Key;
+use drive::grovedb::Element;
+use drive_proof_verifier::types::{
+    Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
+    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
+    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
+    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+};
 use drive_proof_verifier::{types::Documents, FromProof};
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use std::collections::BTreeMap;
+use rs_dapi_client::{
+    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
+    IntoInner, RequestSettings,
+};
 
-use super::LimitQuery;
-
-/// Fetch multiple objects from the Platform.
+/// Fetch multiple objects from Platform.
 ///
-/// To fetch multiple objects from the platform, you need to define some query (criteria that fetched objects must match)
+/// To fetch multiple objects from Platform, you need to define some query (criteria that fetched objects must match)
 /// and use [FetchMany::fetch_many()] for your object type.
 ///
 /// You can also use convenience methods:
@@ -44,6 +58,7 @@ use super::LimitQuery;
 /// ## Generic Parameters
 ///
 /// - `K`: The type of the key used to index the object
+/// - `O`: The type of returned container (eg. map) that holds the fetched objects
 ///
 /// ## Example
 ///
@@ -69,23 +84,24 @@ use super::LimitQuery;
 /// let data_contract = DataContract::fetch_many(&sdk, query);
 /// ```
 #[async_trait::async_trait]
-pub trait FetchMany<K: Ord>
+pub trait FetchMany<K: Ord, O: FromIterator<(K, Option<Self>)>>
 where
     Self: Sized,
-    BTreeMap<K, Option<Self>>: MockResponse
+    O: MockResponse
         + FromProof<
             Self::Request,
             Request = Self::Request,
-            Response = <<Self as FetchMany<K>>::Request as TransportRequest>::Response,
-        > + Sync,
+            Response = <<Self as FetchMany<K, O>>::Request as TransportRequest>::Response,
+        > + Send
+        + Default,
 {
-    /// Type of request used to fetch multiple objects from the platform.
+    /// Type of request used to fetch multiple objects from Platform.
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`](crate::mock::MockRequest).
     type Request: TransportRequest
-        + Into<<BTreeMap<K, Option<Self>> as FromProof<<Self as FetchMany<K>>::Request>>::Request>;
+        + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>;
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -101,7 +117,7 @@ where
     ///
     /// ## Generic Parameters
     ///
-    /// - `K`: The type of the key used to index the object in the returned collection
+    /// - `Q`: The type of [Query] used to generate a request
     ///
     /// ## Parameters
     ///
@@ -110,7 +126,7 @@ where
     ///
     /// ## Returns
     ///
-    /// Returns a `Result` containing either :
+    /// Returns a `Result` containing either:
     ///
     /// * list of objects matching the [Query] indexed by a key type `K`, where an item can be None of
     /// the object was not found for provided key
@@ -125,30 +141,48 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
-    async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany<K, O>>::Request>>(
         sdk: &Sdk,
         query: Q,
-    ) -> Result<RetrievedObjects<K, Self>, Error> {
-        let request = query.query(sdk.prove())?;
+    ) -> Result<O, Error> {
+        let request = &query.query(sdk.prove())?;
+        let closure = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|e| e.inner_into())?;
 
-        let response = request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+            sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request.clone(), response)
+                .await
+                .map(|o| ExecutionResponse {
+                    inner: o,
+                    retries,
+                    address: address.clone(),
+                })
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    retries,
+                    address: Some(address),
+                })
+        };
 
-        let object: BTreeMap<K, Option<Self>> = sdk
-            .parse_proof::<<Self as FetchMany<K>>::Request, BTreeMap<K, Option<Self>>>(
-                request, response,
-            )?
-            .unwrap_or_default();
+        let settings = sdk.dapi_client_settings;
 
-        Ok(object)
+        retry(settings, closure)
+            .await
+            .into_inner()
+            .map(|o| o.unwrap_or_default())
     }
 
-    /// Fetch multiple objects from the Platform by their identifiers.
+    /// Fetch multiple objects from Platform by their identifiers.
     ///
     /// Convenience method to fetch multiple objects by their identifiers.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
@@ -164,17 +198,17 @@ where
     async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
         sdk: &Sdk,
         identifiers: I,
-    ) -> Result<RetrievedObjects<K, Self>, Error>
+    ) -> Result<O, Error>
     where
-        Vec<Identifier>: Query<<Self as FetchMany<K>>::Request>,
+        Vec<Identifier>: Query<<Self as FetchMany<K, O>>::Request>,
     {
         let ids = identifiers.into_iter().collect::<Vec<Identifier>>();
         Self::fetch_many(sdk, ids).await
     }
 
-    /// Fetch multiple objects from the Platform with limit.
+    /// Fetch multiple objects from Platform with limit.
     ///
-    /// Fetches up to `limit` objects matching the `query`.    
+    /// Fetches up to `limit` objects matching the `query`.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -182,55 +216,74 @@ where
     /// - `sdk`: An instance of [Sdk].
     /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     /// - `limit`: Maximum number of objects to fetch.
-    async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K>>::Request>>(
+    async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K, O>>::Request>>(
         sdk: &Sdk,
         query: Q,
         limit: u32,
-    ) -> Result<RetrievedObjects<K, Self>, Error>
+    ) -> Result<O, Error>
     where
-        LimitQuery<Q>: Query<<Self as FetchMany<K>>::Request>,
+        LimitQuery<Q>: Query<<Self as FetchMany<K, O>>::Request>,
     {
         let limit_query = LimitQuery {
             limit: Some(limit),
             query,
+            start_info: None,
         };
 
         Self::fetch_many(sdk, limit_query).await
     }
 }
 
-/// Fetch documents from the Platform.
+/// Fetch documents from Platform.
 ///
 /// Returns [Documents](dpp::document::Document) indexed by their [Identifier](dpp::prelude::Identifier).
 ///
 /// ## Supported query types
 ///
-/// * [DriveQuery](crate::platform::DriveQuery) - query that specifies document matching criteria
-/// * [DocumentQuery](crate::platform::document_query::DocumentQuery) -
+/// * [DriveQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
+/// * [DocumentQuery](crate::platform::document_query::DocumentQuery)
 #[async_trait::async_trait]
-impl FetchMany<Identifier> for Document {
+impl FetchMany<Identifier, Documents> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     // TODO: Refactor to use ContextProvider
     type Request = DocumentQuery;
-    async fn fetch_many<Q: Query<<Self as FetchMany<Identifier>>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany<Identifier, Documents>>::Request>>(
         sdk: &Sdk,
         query: Q,
-    ) -> Result<BTreeMap<Identifier, Option<Self>>, Error> {
-        let document_query: DocumentQuery = query.query(sdk.prove())?;
+    ) -> Result<Documents, Error> {
+        let document_query: &DocumentQuery = &query.query(sdk.prove())?;
 
-        let request = document_query.clone();
-        let response: GetDocumentsResponse =
-            request.execute(sdk, RequestSettings::default()).await?;
+        retry(sdk.dapi_client_settings, |settings| async move {
+            let request = document_query.clone();
 
-        tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
-        // let object: Option<BTreeMap<K,Document>> = sdk
-        let documents: BTreeMap<Identifier, Option<Document>> = sdk
-            .parse_proof::<DocumentQuery, Documents>(document_query, response)?
-            .unwrap_or_default();
+            tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
 
-        Ok(documents)
+            // let object: Option<BTreeMap<K,Document>> = sdk
+            let documents = sdk
+                .parse_proof::<DocumentQuery, Documents>(document_query.clone(), response)
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    retries,
+                    address: Some(address.clone()),
+                })?
+                .unwrap_or_default();
+
+            Ok(ExecutionResponse {
+                inner: documents,
+                retries,
+                address,
+            })
+        })
+        .await
+        .into_inner()
     }
 }
 
@@ -242,7 +295,7 @@ impl FetchMany<Identifier> for Document {
 /// ## Supported query types
 ///
 /// * [Identifier] - [Identity](crate::platform::Identity) ID for which to retrieve keys
-impl FetchMany<KeyID> for IdentityPublicKey {
+impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
     type Request = GetIdentityKeysRequest;
 }
 
@@ -254,10 +307,10 @@ impl FetchMany<KeyID> for IdentityPublicKey {
 ///
 /// * [EpochQuery](super::types::epoch::EpochQuery) - query that specifies epoch matching criteria
 /// * [EpochIndex](dpp::block::epoch::EpochIndex) - epoch index of first object to find; will return up to
-/// [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
+///   [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
 /// * [`LimitQuery<EpochQuery>`](super::LimitQuery), [`LimitQuery<EpochIndex>`](super::LimitQuery) - limit query
-/// that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
-impl FetchMany<EpochIndex> for ExtendedEpochInfo {
+///   that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
+impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
 
@@ -273,15 +326,15 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::FetchMany};
-/// use drive_proof_verifier::types::ProtocolVersionVoteCount;
+/// use dash_sdk::{Sdk, platform::FetchMany, Error};
+/// use drive_proof_verifier::types::{ProtocolVersionUpgrades, ProtocolVersionVoteCount};
 ///
 /// # tokio_test::block_on(async {
 /// let sdk = Sdk::new_mock();
-/// let result = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
+/// let result: Result<ProtocolVersionUpgrades, Error> = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
 /// # });
 /// ```
-impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
+impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVoteCount {
     type Request = GetProtocolVersionUpgradeStateRequest;
 }
 
@@ -294,18 +347,123 @@ impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
 /// ## Supported query types
 ///
 /// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
-/// [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
 /// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
-/// the query will return all objects
+///   the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
-/// to fetch; see also [FetchMany::fetch_many_with_limit()].
-impl FetchMany<ProTxHash> for MasternodeProtocolVote {
+///   to fetch; see also [FetchMany::fetch_many_with_limit()].
+impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
+}
+
+/// Fetch information about the proposed block count by proposers for a given epoch.
+///
+/// Returns list of [ProposerBlockCounts](drive_proof_verifier::types::ProposerBlockCounts)
+/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// node protxhash and the amount of blocks that were proposed.
+///
+/// ## Supported query types
+///
+/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
+///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+/// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
+///   the query will return all objects
+/// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
+///   to fetch; see also [FetchMany::fetch_many_with_limit()].
+impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
+    type Request = GetEvonodesProposedEpochBlocksByRangeRequest;
+}
+
+/// Fetch information about the proposed block count by proposers for a given epoch.
+///
+/// Returns list of [ProposerBlockCounts](drive_proof_verifier::types::ProposerBlockCounts)
+/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// node pro_tx_hash and the amount of blocks that were proposed.
+///
+/// ## Supported query types
+///
+/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of an evonode to find; will return one evonode block count
+impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountById {
+    type Request = GetEvonodesProposedEpochBlocksByIdsRequest;
 }
 
 /// Fetch multiple data contracts.
 ///
 /// Returns [DataContracts](drive_proof_verifier::types::DataContracts) indexed by [Identifier](dpp::prelude::Identifier).
-impl FetchMany<Identifier> for DataContract {
+///
+/// ## Supported query types
+///
+/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of data contracts to fetch
+///
+impl FetchMany<Identifier, DataContracts> for DataContract {
     type Request = GetDataContractsRequest;
+}
+
+/// Fetch multiple [ContestedResource], indexed by Identifier.
+///
+/// ## Supported query types
+///
+/// * [VotePollsByDocumentTypeQuery]
+impl FetchMany<Identifier, ContestedResources> for ContestedResource {
+    type Request = GetContestedResourcesRequest;
+}
+
+/// Fetch multiple contenders for a contested document resource vote poll.
+///
+/// Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
+///
+/// ## Supported query types
+///
+/// * [ContestedDocumentVotePollDriveQuery]
+#[async_trait::async_trait]
+impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
+    type Request = GetContestedResourceVoteStateRequest;
+}
+
+///  Fetch voters
+/// ## Supported query types
+///
+/// * [ContestedDocumentVotePollVotesDriveQuery]
+impl FetchMany<usize, Voters> for Voter {
+    type Request = GetContestedResourceVotersForIdentityRequest;
+}
+
+//   GetContestedResourceIdentityVoteStatus
+/// Fetch votes of some identity for a contested document resource vote poll.
+///
+/// ## Supported query types
+///
+/// * [ContestedResourceVotesGivenByIdentityQuery]
+impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
+    type Request = GetContestedResourceIdentityVotesRequest;
+}
+
+//
+/// Fetch multiple vote polls grouped by timestamp.
+///
+/// ## Supported query types
+///
+/// * [VotePollsByEndDateDriveQuery]
+impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
+    type Request = GetVotePollsByEndDateRequest;
+}
+
+//
+/// Fetch multiple identity balances.
+///
+/// ## Supported query types
+///
+/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
+impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
+    type Request = GetIdentitiesBalancesRequest;
+}
+
+//
+/// Fetch multiple elements.
+///
+/// ## Supported query types
+///
+/// * [KeysInPath]
+impl FetchMany<Key, Elements> for Element {
+    type Request = GetPathElementsRequest;
 }

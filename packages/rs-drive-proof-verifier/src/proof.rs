@@ -1,52 +1,52 @@
+use crate::from_request::TryFromRequest;
+use crate::provider::DataContractProvider;
+use crate::verify::verify_tenderdash_proof;
 use crate::{types, types::*, ContextProvider, Error};
+use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
+use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
-    get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
-    get_epochs_info_request, get_identities_contract_keys_request,
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
-    get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, GetIdentitiesContractKeysRequest, GetPathElementsRequest,
-    GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, ResponseMetadata,
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::ProTxHash;
+use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
+use dpp::identity::Purpose;
+use dpp::platform_value::{self};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use dpp::voting::votes::Vote;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
-
-use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
-use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
-use dpp::block::block_info::BlockInfo;
-use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::{IdentityPublicKey, Purpose};
-use dpp::platform_value;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
-use drive::query::DriveQuery;
+use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
+use drive::query::proposer_block_count_query::ProposerQueryType;
+use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
+use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
+use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use indexmap::IndexMap;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use std::sync::Arc;
-
-use crate::verify::verify_tenderdash_proof;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -73,6 +73,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `network`: The network we are using, Mainnet/Testnet/Devnet or Regtest
     /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
@@ -80,18 +81,19 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
     {
-        Self::maybe_from_proof_with_metadata(request, response, platform_version, provider)
+        Self::maybe_from_proof_with_metadata(request, response, network, platform_version, provider)
             .map(|maybe_result| maybe_result.0)
     }
 
@@ -101,6 +103,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `network`: The network we are using, Mainnet/Testnet/Devnet or Regtest
     /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
@@ -108,14 +111,15 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some((object, metadata)))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a;
 
@@ -130,6 +134,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `network`: The network we are using, Mainnet/Testnet/Devnet or Regtest
     /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
@@ -141,13 +146,14 @@ pub trait FromProof<Req> {
     fn from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a,
     {
-        Self::maybe_from_proof(request, response, platform_version, provider)?
+        Self::maybe_from_proof(request, response, network, platform_version, provider)?
             .ok_or(Error::NotFound)
     }
 
@@ -162,6 +168,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
+    /// * `network`: The network we are using, Mainnet/Testnet/Devnet or Regtest
     /// * `platform_version`: The platform version that should be used.
     /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
@@ -173,15 +180,61 @@ pub trait FromProof<Req> {
     fn from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<(Self, ResponseMetadata), Error>
     where
         Self: Sized + 'a,
     {
-        let (main_item, response_metadata) =
-            Self::maybe_from_proof_with_metadata(request, response, platform_version, provider)?;
+        let (main_item, response_metadata, _) = Self::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
         Ok((main_item.ok_or(Error::NotFound)?, response_metadata))
+    }
+
+    /// Retrieve the requested object from the proof with metadata.
+    ///
+    /// Runs full verification of the proof and retrieves enclosed objects.
+    ///
+    /// This method uses [`FromProof::maybe_from_proof_with_metadata()`] internally and throws an error
+    /// if the requested object does not exist in the proof.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request sent to the server.
+    /// * `response`: The response received from the server.
+    /// * `network`: The network we are using, Mainnet/Testnet/Devnet or Regtest
+    /// * `platform_version`: The platform version that should be used.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(object, metadata, proof))` when the requested object was found in the proof.
+    /// * `Err(Error::DocumentMissingInProof)` when the requested object was not found in the proof.
+    /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
+    fn from_proof_with_metadata_and_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Self, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let (main_item, response_metadata, proof) = Self::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+        Ok((main_item.ok_or(Error::NotFound)?, response_metadata, proof))
     }
 }
 
@@ -192,9 +245,10 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Identity: Sized + 'a,
     {
@@ -203,7 +257,6 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
-
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
@@ -227,7 +280,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_identity, mtd.clone()))
+        Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
 }
 
@@ -239,10 +292,10 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Identity: 'a,
     {
@@ -259,7 +312,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
                     v0.public_key_hash
                         .try_into()
                         .map_err(|_| Error::DriveError {
-                            error: "Ivalid public key hash length".to_string(),
+                            error: "Invalid public key hash length".to_string(),
                         })?;
                 public_key_hash
             }
@@ -277,7 +330,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_identity, mtd.clone()))
+        Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
 }
 
@@ -288,10 +341,10 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         IdentityPublicKeys: 'a,
     {
@@ -318,33 +371,13 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                 }
             };
 
-        let key_request = match parse_key_request_type(&request_type)? {
-            KeyRequestType::SpecificKeys(specific_keys) => {
-                IdentityKeysRequest::new_specific_keys_query(&identity_id, specific_keys)
-            }
-            KeyRequestType::AllKeys => IdentityKeysRequest::new_all_keys_query(&identity_id, None),
-            KeyRequestType::SearchKey(criteria) => IdentityKeysRequest {
-                identity_id,
-                request_type: KeyRequestType::SearchKey(criteria),
-                limit,
-                offset,
-            },
-            KeyRequestType::ContractBoundKey(id, purpose, kind) => IdentityKeysRequest {
-                identity_id,
-                request_type: KeyRequestType::ContractBoundKey(id, purpose, kind),
-                limit,
-                offset,
-            },
-            KeyRequestType::ContractDocumentTypeBoundKey(id, s, purpose, kind) => {
-                IdentityKeysRequest {
-                    identity_id,
-                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(
-                        id, s, purpose, kind,
-                    ),
-                    limit,
-                    offset,
-                }
-            }
+        let request_type = parse_key_request_type(&request_type)?;
+
+        let key_request = IdentityKeysRequest {
+            identity_id,
+            request_type,
+            limit,
+            offset,
         };
 
         tracing::debug!(?identity_id, "checking proof of identity keys");
@@ -388,18 +421,18 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_keys, mtd.clone()))
+        Ok((maybe_keys, mtd.clone(), proof.clone()))
     }
 }
 
 fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestType, Error> {
     let key_request_type = request
         .to_owned()
-        .ok_or(Error::RequestDecodeError {
+        .ok_or(Error::RequestError {
             error: "missing key request type".to_string(),
         })?
         .request
-        .ok_or(Error::RequestDecodeError {
+        .ok_or(Error::RequestError {
             error: "empty request field in key request type".to_string(),
         })?;
 
@@ -423,7 +456,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                     Ok(GrpcKeyKind::AllKeysOfKindRequest) => {
                                         Ok(KeyKindRequestType::AllKeysOfKindRequest)
                                     }
-                                    _ => Err(Error::RequestDecodeError {
+                                    _ => Err(Error::RequestError {
                                         error: format!("missing requested key type: {}", kind),
                                     }),
                                 };
@@ -455,10 +488,10 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         IdentityNonceFetcher: 'a,
     {
@@ -493,7 +526,11 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_nonce.map(types::IdentityNonceFetcher), mtd.clone()))
+        Ok((
+            maybe_nonce.map(types::IdentityNonceFetcher),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 
@@ -504,10 +541,10 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         IdentityContractNonceFetcher: 'a,
     {
@@ -549,6 +586,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         Ok((
             maybe_identity.map(types::IdentityContractNonceFetcher),
             mtd.clone(),
+            proof.clone(),
         ))
     }
 }
@@ -560,10 +598,10 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         IdentityBalance: 'a,
     {
@@ -595,7 +633,58 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_identity, mtd.clone()))
+        Ok((maybe_identity, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
+    type Request = platform::GetIdentitiesBalancesRequest;
+    type Response = platform::GetIdentitiesBalancesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        IdentityBalances: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let identities_ids = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identities_balances_request::Version::V0(v0) => v0.ids,
+        };
+
+        let identity_ids = identities_ids
+            .into_iter()
+            .map(|identity_bytes| {
+                Identifier::from_bytes(&identity_bytes)
+                    .map(|identifier| identifier.into_buffer())
+                    .map_err(|e| Error::RequestError {
+                        error: format!("identities must be all 32 bytes {}", e),
+                    })
+            })
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+        let (root_hash, balances) = Drive::verify_identity_balances_for_identity_ids(
+            &proof.grovedb_proof,
+            false,
+            &identity_ids,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(balances), mtd.clone(), proof.clone()))
     }
 }
 
@@ -606,10 +695,10 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
-
+        _network: Network,
+        platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         IdentityBalanceAndRevision: 'a,
     {
@@ -635,6 +724,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
                 &proof.grovedb_proof,
                 id.into_buffer(),
                 false,
+                platform_version,
             )
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
@@ -642,7 +732,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_identity, mtd.clone()))
+        Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
 }
 
@@ -653,10 +743,10 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         DataContract: 'a,
     {
@@ -691,7 +781,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_contract, mtd.clone()))
+        Ok((maybe_contract, mtd.clone(), proof.clone()))
     }
 }
 
@@ -702,10 +792,10 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         DataContracts: 'a,
     {
@@ -724,11 +814,9 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         let ids = ids
             .iter()
             .map(|id| {
-                id.clone()
-                    .try_into()
-                    .map_err(|_e| Error::RequestDecodeError {
-                        error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
-                    })
+                id.clone().try_into().map_err(|_e| Error::RequestError {
+                    error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
+                })
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
@@ -744,27 +832,24 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        let maybe_contracts: Option<BTreeMap<Identifier, Option<DataContract>>> =
-            if !contracts.is_empty() {
-                let contracts: DataContracts = contracts
-                    .into_iter()
-                    .try_fold(DataContracts::new(), |mut acc, (k, v)| {
-                        Identifier::from_bytes(&k).map(|id| {
-                            acc.insert(id, v);
-                            acc
-                        })
-                    })
-                    .map_err(|e| Error::ResultEncodingError {
+        let contracts = contracts
+            .into_iter()
+            .map(|(k, v)| {
+                Identifier::from_bytes(&k).map(|id| (id, v)).map_err(|e| {
+                    Error::ResultEncodingError {
                         error: e.to_string(),
-                    })?;
+                    }
+                })
+            })
+            .collect::<Result<DataContracts, Error>>()?;
 
-                Some(contracts)
-            } else {
-                None
-            };
+        let maybe_contracts = if contracts.is_empty() {
+            None
+        } else {
+            Some(contracts)
+        };
 
-        Ok((maybe_contracts, mtd.clone()))
+        Ok((maybe_contracts, mtd.clone(), proof.clone()))
     }
 }
 
@@ -775,10 +860,10 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
@@ -817,7 +902,11 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_history, mtd.clone()))
+        Ok((
+            maybe_history.map(IndexMap::from_iter),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 
@@ -828,9 +917,10 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
@@ -858,18 +948,13 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: (metadata.epoch as u16).try_into()?,
         };
 
-        let known_contracts_provider_fn =
-            |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
-                provider.get_data_contract(id).map_err(|e| {
-                    drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
-                })
-            };
+        let contracts_provider_fn = provider.as_contract_lookup_fn();
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
             &proof.grovedb_proof,
-            &known_contracts_provider_fn,
+            &contracts_provider_fn,
             platform_version,
         )
         .map_err(|e| Error::DriveError {
@@ -878,7 +963,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         verify_tenderdash_proof(proof, metadata, &root_hash, provider)?;
 
-        Ok((Some(result), metadata.clone()))
+        Ok((Some(result), metadata.clone(), proof.clone()))
     }
 }
 
@@ -889,29 +974,31 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
         let epochs = ExtendedEpochInfos::maybe_from_proof_with_metadata(
             request,
             response,
+            network,
             platform_version,
             provider,
         )?;
 
-        if let Some(mut e) = epochs.0 {
+        if let Some(e) = epochs.0 {
             if e.len() != 1 {
-                return Err(Error::RequestDecodeError {
+                return Err(Error::RequestError {
                     error: format!("expected 1 epoch, got {}", e.len()),
                 });
             }
-            let epoch = e.pop_first().and_then(|v| v.1);
-            Ok((epoch, epochs.1))
+            let epoch = e.into_iter().next().and_then(|v| v.1);
+            Ok((epoch, epochs.1, epochs.2))
         } else {
-            Ok((None, epochs.1))
+            Ok((None, epochs.1, epochs.2))
         }
     }
 }
@@ -923,9 +1010,10 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
@@ -970,23 +1058,17 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
 
                 (info.index, Some(v))
             })
-            .collect::<BTreeMap<EpochIndex, Option<ExtendedEpochInfo>>>();
+            .collect::<ExtendedEpochInfos>();
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let maybe_epoch_info = if epoch_info.count_some() > 0 {
-            Some(epoch_info)
-        } else {
-            None
-        };
-
-        Ok((maybe_epoch_info, mtd.clone()))
+        Ok((epoch_info.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
 fn try_u32_to_u16(i: u32) -> Result<u16, Error> {
     i.try_into()
-        .map_err(|e: TryFromIntError| Error::RequestDecodeError {
+        .map_err(|e: TryFromIntError| Error::RequestError {
             error: e.to_string(),
         })
 }
@@ -998,9 +1080,10 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         _request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
@@ -1009,19 +1092,15 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, object) =
+        let (root_hash, objects) =
             Drive::verify_upgrade_state(&proof.grovedb_proof, platform_version)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        if object.is_empty() {
-            return Ok((None, mtd.clone()));
-        }
+        // Convert objects to a map of Option values
+        let response: Self = objects.into_iter().map(|(k, v)| (k, Some(v))).collect();
 
-        Ok((
-            Some(object.into_iter().map(|(k, v)| (k, Some(v))).collect()),
-            mtd.clone(),
-        ))
+        Ok((response.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1032,9 +1111,10 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
@@ -1054,7 +1134,7 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
                 None
             } else {
                 Some(request_v0.start_pro_tx_hash[..].try_into().map_err(
-                    |e: TryFromSliceError| Error::RequestDecodeError {
+                    |e: TryFromSliceError| Error::RequestError {
                         error: e.to_string(),
                     },
                 )?)
@@ -1070,7 +1150,7 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if objects.is_empty() {
-            return Ok((None, mtd.clone()));
+            return Ok((None, mtd.clone(), proof.clone()));
         }
         let votes: MasternodeProtocolVotes = objects
             .into_iter()
@@ -1091,7 +1171,7 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
             })
             .collect::<Result<MasternodeProtocolVotes, Error>>()?;
 
-        Ok((Some(votes), mtd.clone()))
+        Ok((votes.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1102,9 +1182,10 @@ impl FromProof<GetPathElementsRequest> for Elements {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
     {
@@ -1124,17 +1205,18 @@ impl FromProof<GetPathElementsRequest> for Elements {
 
         let (root_hash, objects) =
             Drive::verify_elements(&proof.grovedb_proof, path, keys, platform_version)?;
+        let elements: Elements = Elements::from_iter(objects);
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(objects), mtd.clone()))
+        Ok((elements.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where
-    Q: TryInto<DriveQuery<'dq>> + Clone + 'dq,
+    Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
@@ -1143,21 +1225,21 @@ where
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: 'a,
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let request: DriveQuery<'dq> =
+        let request: DriveDocumentQuery<'dq> =
             request
                 .clone()
                 .try_into()
-                .map_err(|e: Q::Error| Error::RequestDecodeError {
+                .map_err(|e: Q::Error| Error::RequestError {
                     error: e.to_string(),
                 })?;
 
@@ -1178,11 +1260,7 @@ where
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        if documents.is_empty() {
-            Ok((None, mtd.clone()))
-        } else {
-            Ok((Some(documents), mtd.clone()))
-        }
+        Ok((documents.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1193,10 +1271,10 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        _network: Network,
         platform_version: &PlatformVersion,
-
         provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: 'a,
     {
@@ -1216,7 +1294,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
                         contract_id,
                         document_type_name,
                         purposes,
-                        prove,
+                        ..
                     } = v0;
                     let identifiers = identities_ids
                         .into_iter()
@@ -1261,7 +1339,496 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(identities_contract_keys), mtd.clone()))
+        if identities_contract_keys.is_empty() {
+            return Ok((None, mtd.clone(), proof.clone()));
+        }
+
+        Ok((Some(identities_contract_keys), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
+    type Request = platform::GetContestedResourcesRequest;
+    type Response = platform::GetContestedResourcesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
+        let resolved_request =
+            drive_query.resolve_with_known_contracts_provider(&provider.as_contract_lookup_fn())?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, items) = resolved_request
+            .verify_contests_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let resources: ContestedResources = items.into_iter().map(ContestedResource).collect();
+
+        Ok((resources.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
+// rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
+    type Request = platform::GetContestedResourceVoteStateRequest;
+    type Response = platform::GetContestedResourceVoteStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
+
+        // Resolve request to get verify_*_proof
+        let contracts_provider = provider.as_contract_lookup_fn();
+        let resolved_request =
+            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, contested_resource_vote_state) = resolved_request
+            .verify_vote_poll_vote_state_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let contenders = contested_resource_vote_state
+            .contenders
+            .into_iter()
+            .map(|v| (v.identity_id(), v))
+            .collect();
+
+        let response = Contenders {
+            winner: contested_resource_vote_state.winner,
+            contenders,
+            abstain_vote_tally: contested_resource_vote_state.abstaining_vote_tally,
+            lock_vote_tally: contested_resource_vote_state.locked_vote_tally,
+        };
+        Ok((response.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
+    type Request = GetContestedResourceVotersForIdentityRequest;
+    type Response = GetContestedResourceVotersForIdentityResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
+
+        // Parse request to get resolved contract that implements verify_*_proof
+        let contracts_provider = provider.as_contract_lookup_fn();
+
+        let resolved_request =
+            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, voters) = resolved_request
+            .verify_vote_poll_votes_proof(&proof.grovedb_proof, platform_version)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if voters.is_empty() {
+            return Ok((None, mtd.clone(), proof.clone()));
+        }
+        let result: Voters = voters.into_iter().map(Voter::from).collect();
+
+        Ok((result.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceVotesByIdentity {
+    type Request = platform::GetContestedResourceIdentityVotesRequest;
+    type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let contract_provider_fn = provider.as_contract_lookup_fn();
+        let (root_hash, voters) = drive_query
+            .verify_identity_votes_given_proof::<Vec<_>>(
+                &proof.grovedb_proof,
+                &contract_provider_fn,
+                platform_version,
+            )
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let response: ResourceVotesByIdentity = voters
+            .into_iter()
+            .map(|(id, vote)| (id, Some(vote)))
+            .collect();
+
+        Ok((response.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTimestamp {
+    type Request = platform::GetVotePollsByEndDateRequest;
+    type Response = platform::GetVotePollsByEndDateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = VotePollsByEndDateDriveQuery::try_from_request(request)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, vote_polls) = drive_query
+            .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(
+                &proof.grovedb_proof,
+                platform_version,
+            )
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let response = VotePollsGroupedByTimestamp(vote_polls).sorted(drive_query.order_ascending);
+
+        Ok((response.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpecializedBalance {
+    type Request = platform::GetPrefundedSpecializedBalanceRequest;
+    type Response = platform::GetPrefundedSpecializedBalanceResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let balance_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_prefunded_specialized_balance_request::Version::V0(v0) => {
+                Identifier::from_vec(v0.id).map_err(|e| Error::RequestError {
+                    error: e.to_string(),
+                })?
+            }
+        };
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let (root_hash, balance) = Drive::verify_specialized_balance(
+            &proof.grovedb_proof,
+            balance_id.into_buffer(),
+            false,
+            platform_version,
+        )?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((balance.map(|v| v.into()), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
+    type Request = platform::GetContestedResourceIdentityVotesRequest;
+    type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let id_in_request = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+            get_contested_resource_identity_votes_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::RequestError {
+                    error: e.to_string(),
+                })?
+            }
+        };
+
+        let (maybe_votes, mtd, proof) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+
+        let (id, vote) = match maybe_votes {
+            Some(v) if v.len() > 1 => {
+                return Err(Error::ResponseDecodeError {
+                    error: format!("expected 1 vote, got {}", v.len()),
+                })
+            }
+            Some(v) if v.is_empty() => return Ok((None, mtd, proof)),
+            Some(v) => v
+                .into_iter()
+                .next()
+                .expect("is_empty() must detect empty map"),
+            None => return Ok((None, mtd, proof)),
+        };
+
+        if id != id_in_request {
+            return Err(Error::ResponseDecodeError {
+                error: format!(
+                    "expected vote for identity {}, got vote for identity {}",
+                    id_in_request, id
+                ),
+            });
+        }
+
+        Ok((vote.map(Vote::ResourceVote), mtd, proof))
+    }
+}
+
+impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPlatform {
+    type Request = platform::GetTotalCreditsInPlatformRequest;
+    type Response = platform::GetTotalCreditsInPlatformResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
+
+        let (root_hash, credits) = Drive::verify_total_credits_in_system(
+            &proof.grovedb_proof,
+            core_subsidy_halving_interval,
+            || {
+                provider.get_platform_activation_height().map_err(|e| {
+                    drive::error::Error::Proof(ProofError::MissingContextRequirement(e.to_string()))
+                })
+            },
+            mtd.core_chain_locked_height,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            Some(TotalCreditsInPlatform(credits)),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCounts {
+    type Request = platform::GetEvonodesProposedEpochBlocksByIdsRequest;
+    type Response = platform::GetEvonodesProposedEpochBlocksResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (ids, epoch) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0) => {
+                (v0.ids, v0.epoch)
+            }
+        };
+
+        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
+            &proof.grovedb_proof,
+            epoch
+                .map(|epoch_index| epoch_index as u16)
+                .unwrap_or_else(|| mtd.epoch as u16),
+            ProposerQueryType::ByIds(ids),
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            Some(ProposerBlockCounts(proposer_block_counts)),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
+impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for ProposerBlockCounts {
+    type Request = platform::GetEvonodesProposedEpochBlocksByRangeRequest;
+    type Response = platform::GetEvonodesProposedEpochBlocksResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (epoch, limit, start) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_evonodes_proposed_epoch_blocks_by_range_request::Version::V0(v0) => {
+                (v0.epoch, v0.limit, v0.start)
+            }
+        };
+
+        let formatted_start = match start {
+            None => None,
+            Some(Start::StartAfter(after)) => {
+                let id: [u8; 32] = after.try_into().map_err(|_| Error::DriveError {
+                    error: "Invalid public key hash length".to_string(),
+                })?;
+                Some((id, false))
+            }
+            Some(Start::StartAt(at)) => {
+                let id: [u8; 32] = at.try_into().map_err(|_| Error::DriveError {
+                    error: "Invalid public key hash length".to_string(),
+                })?;
+                Some((id, true))
+            }
+        };
+
+        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
+            &proof.grovedb_proof,
+            epoch
+                .map(|epoch_index| epoch_index as u16)
+                .unwrap_or_else(|| mtd.epoch as u16),
+            ProposerQueryType::ByRange(limit.map(|l| l as u16), formatted_start),
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            Some(ProposerBlockCounts(proposer_block_counts)),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 
@@ -1269,11 +1836,11 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
 /// Errors when value is out of range.
 fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     let i: Option<u16> = if i != 0 {
-        let i: u16 =
-            i.try_into()
-                .map_err(|e: std::num::TryFromIntError| Error::RequestDecodeError {
-                    error: format!("value {} out of range: {}", i, e),
-                })?;
+        let i: u16 = i
+            .try_into()
+            .map_err(|e: std::num::TryFromIntError| Error::RequestError {
+                error: format!("value {} out of range: {}", i, e),
+            })?;
         Some(i)
     } else {
         None
@@ -1286,6 +1853,8 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
 pub trait Length {
     /// Return number of non-None elements in the data structure
     fn count_some(&self) -> usize;
+    /// Return number of all elements in the data structure, including None
+    fn count(&self) -> usize;
 }
 
 impl<T: Length> Length for Option<T> {
@@ -1295,11 +1864,21 @@ impl<T: Length> Length for Option<T> {
             Some(i) => i.count_some(),
         }
     }
+    fn count(&self) -> usize {
+        match self {
+            None => 0,
+            Some(i) => i.count(),
+        }
+    }
 }
 
 impl<T> Length for Vec<Option<T>> {
     fn count_some(&self) -> usize {
         self.iter().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
     }
 }
 
@@ -1307,11 +1886,29 @@ impl<K, T> Length for Vec<(K, Option<T>)> {
     fn count_some(&self) -> usize {
         self.iter().filter(|(_, v)| v.is_some()).count()
     }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
 }
 
 impl<K, T> Length for BTreeMap<K, Option<T>> {
     fn count_some(&self) -> usize {
-        self.iter().filter(|(_, v)| v.is_some()).count()
+        self.values().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<K, T> Length for IndexMap<K, Option<T>> {
+    fn count_some(&self) -> usize {
+        self.values().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
     }
 }
 
@@ -1322,25 +1919,69 @@ impl<K, T> Length for BTreeMap<K, Option<T>> {
 /// * `$object`: The type for which to implement Length trait
 /// * `$len`: A closure that returns the length of the object; if ommitted, defaults to 1
 macro_rules! define_length {
-    ($object:ty,$len:expr) => {
+    ($object:ty,$some:expr,$counter:expr) => {
         impl Length for $object {
             fn count_some(&self) -> usize {
                 #[allow(clippy::redundant_closure_call)]
-                $len(self)
+                $some(self)
+            }
+
+            fn count(&self) -> usize {
+                #[allow(clippy::redundant_closure_call)]
+                $counter(self)
             }
         }
     };
+    ($object:ty,$some:expr) => {
+        define_length!($object, $some, $some);
+    };
     ($object:ty) => {
-        define_length!($object, |_| 1);
+        define_length!($object, |_| 1, |_| 1);
     };
 }
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
-// define_length!(DataContracts, |d: &DataContracts| d.count_some());
 define_length!(Document);
-// define_length!(Documents, |x: &Documents| x.len());
 define_length!(Identity);
 define_length!(IdentityBalance);
 define_length!(IdentityBalanceAndRevision);
-// define_length!(IdentityPublicKeys, |d: &IdentityPublicKeys| d.count_some());
+define_length!(
+    IdentitiesContractKeys,
+    |x: &IdentitiesContractKeys| x.values().map(|v| v.count_some()).sum(),
+    |x: &IdentitiesContractKeys| x.len()
+);
+define_length!(ContestedResources, |x: &ContestedResources| x.0.len());
+define_length!(Contenders, |x: &Contenders| x.contenders.len());
+define_length!(Voters, |x: &Voters| x.0.len());
+define_length!(
+    VotePollsGroupedByTimestamp,
+    |x: &VotePollsGroupedByTimestamp| x.0.iter().map(|v| v.1.len()).sum(),
+    |x: &VotePollsGroupedByTimestamp| x.0.len()
+);
+
+/// Convert a type into an Option
+trait IntoOption
+where
+    Self: Sized,
+{
+    /// For zero-length data structures, return None, otherwise return Some(self).
+    ///
+    /// In case of a zero-length data structure, the function returns None.
+    /// Otherwise, it returns Some(self), even it all values are None. This is to ensure that proof of absence
+    /// preserves the keys that are not present in the data structure.
+    fn into_option(self) -> Option<Self>;
+}
+
+impl<L: Length> IntoOption for L {
+    fn into_option(self) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        if self.count() == 0 {
+            None
+        } else {
+            Some(self)
+        }
+    }
+}

@@ -6,6 +6,7 @@ module.exports = {
       'seed-3.testnet.networks.dash.org:1443',
       'seed-4.testnet.networks.dash.org:1443',
       'seed-5.testnet.networks.dash.org:1443',
+      'seed-1.pshenmic.dev:1443',
     ],
     network: 'testnet',
     // Since we don't have PoSe atm, 3rd party masternodes sometimes provide wrong data
@@ -50,5 +51,15 @@ module.exports = {
   local: {
     dapiAddresses: ['127.0.0.1'],
     network: 'regtest',
+  },
+  mainnet: {
+    seeds: [
+      'seed-1.mainnet.networks.dash.org',
+      'seed-2.mainnet.networks.dash.org',
+      'seed-3.mainnet.networks.dash.org',
+      'seed-4.mainnet.networks.dash.org',
+      'seed-1.pshenmic.dev',
+    ],
+    network: 'mainnet',
   },
 };

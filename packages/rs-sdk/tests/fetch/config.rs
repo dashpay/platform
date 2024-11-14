@@ -3,10 +3,15 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dpp::prelude::Identifier;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::{
+    dashcore::{hashes::Hash, ProTxHash},
+    prelude::Identifier,
+};
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr};
+use zeroize::Zeroizing;
 
 /// Existing document ID
 ///
@@ -39,7 +44,7 @@ pub struct Config {
     pub core_user: String,
     /// Password for Dash Core RPC interface
     #[serde(default)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
@@ -67,7 +72,11 @@ pub struct Config {
     /// ID of document of the type [`existing_document_type_name`](Config::existing_document_type_name)
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
+    #[allow(unused)]
     pub existing_document_id: Identifier,
+    // Hex-encoded ProTxHash of the existing HP masternode
+    #[serde(default = "Config::default_protxhash")]
+    pub masternode_owner_pro_reg_tx_hash: String,
 }
 
 impl Config {
@@ -133,21 +142,25 @@ impl Config {
     ///
     /// ## Feature flags
     ///
-    /// * `offline-testing` is not set - connect to the platform and generate
-    /// new test vectors during execution
+    /// * `offline-testing` is not set - connect to Platform and generate
+    ///   new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
-    /// load existing test vectors from disk
+    ///   load existing test vectors from disk
     ///
     /// ## Arguments
     ///
     /// * namespace - namespace to use when storing mock expectations; this is used to separate
-    /// expectations from different tests.
+    ///   expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
-    pub async fn setup_api(&self, namespace: &str) -> Arc<dash_sdk::Sdk> {
+    pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
         let dump_dir = match namespace.is_empty() {
             true => self.dump_dir.clone(),
-            false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
+            false => {
+                // looks like spaces are not replaced by sanitize_filename, and we don't want them as they are confusing
+                let namespace = namespace.replace(' ', "_");
+                self.dump_dir.join(sanitize_filename::sanitize(namespace))
+            }
         };
 
         if dump_dir.is_relative() {
@@ -180,9 +193,12 @@ impl Config {
                     if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
                         tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
                     }
-                    std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                    std::fs::create_dir_all(&dump_dir)
+                        .expect(format!("create dump dir {}", dump_dir.display()).as_str());
                     // ensure dump dir is committed to git
-                    std::fs::write(dump_dir.join(".gitkeep"), "").expect("create .gitkeep file")
+                    let gitkeep = dump_dir.join(".gitkeep");
+                    std::fs::write(&gitkeep, "")
+                        .expect(format!("create {} file", gitkeep.display()).as_str());
                 }
 
                 builder.with_dump_dir(&dump_dir)
@@ -194,25 +210,25 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mock_sdk = dash_sdk::SdkBuilder::new_mock()
+            dash_sdk::SdkBuilder::new_mock()
+                .with_dump_dir(&dump_dir)
                 .build()
-                .expect("initialize api");
-
-            mock_sdk
-                .mock()
-                .quorum_info_dir(&dump_dir)
-                .load_expectations(&dump_dir)
-                .await
-                .expect("load expectations");
-
-            mock_sdk
+                .expect("initialize api")
         };
 
         sdk
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
+        // TODO: We don't have default system identities anymore.
+        //  So now I used this manually created identity to populate test vectors.
+        //  Next time we need to do it again and update this value :(. This is terrible.
+        //  We should automate creation of identity for SDK tests when we have time.
+        Identifier::from_string(
+            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
+            Encoding::Base58,
+        )
+        .unwrap()
     }
 
     fn default_data_contract_id() -> Identifier {
@@ -230,6 +246,28 @@ impl Config {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("vectors")
+    }
+
+    /// Existing masternode proTxHash. Must be updated every time test vectors are regenerated.
+    ///
+    /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
+    fn default_protxhash() -> String {
+        String::from("069dcb6e829988af0edb245f30d3b1297a47081854a78c3cdea9fddb8fbd07eb")
+    }
+
+    /// Return ProTxHash of an existing evo node, or None if not set
+    pub fn existing_protxhash(&self) -> Result<ProTxHash, String> {
+        hex::decode(&self.masternode_owner_pro_reg_tx_hash)
+            .map_err(|e| e.to_string())
+            .and_then(|b| ProTxHash::from_slice(&b).map_err(|e| e.to_string()))
+            .map_err(|e| {
+                format!(
+                    "Invalid {}MASTERNODE_OWNER_PRO_REG_TX_HASH {}: {}",
+                    Self::CONFIG_PREFIX,
+                    self.masternode_owner_pro_reg_tx_hash,
+                    e
+                )
+            })
     }
 }
 

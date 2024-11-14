@@ -58,36 +58,33 @@ where
             core_block_height,
             block_platform_state.last_committed_core_height()
         );
-        //todo: there's a weird condition that can happen if we are not on init chain, but we are
-        // in the genesis and we are not on round 0, and the core height changed
-        if block_platform_state.last_committed_block_info().is_some() || is_init_chain {
-            let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
-                masternode_list_diff,
-                removed_masternodes,
-            } = self.update_state_masternode_list_v0(
-                block_platform_state,
-                core_block_height,
-                is_init_chain,
-            )?;
 
-            self.update_masternode_identities(
-                masternode_list_diff,
-                &removed_masternodes,
-                block_info,
-                platform_state,
-                transaction,
-                platform_version,
-            )?;
+        let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
+            masternode_list_diff,
+            removed_masternodes,
+        } = self.update_state_masternode_list_v0(
+            block_platform_state,
+            core_block_height,
+            is_init_chain,
+        )?;
 
-            if !removed_masternodes.is_empty() {
-                self.drive.remove_validators_proposed_app_versions(
-                    removed_masternodes
-                        .into_keys()
-                        .map(|pro_tx_hash| pro_tx_hash.into()),
-                    Some(transaction),
-                    &platform_version.drive,
-                )?;
-            }
+        self.update_masternode_identities(
+            masternode_list_diff,
+            &removed_masternodes,
+            block_info,
+            platform_state,
+            transaction,
+            platform_version,
+        )?;
+
+        if !removed_masternodes.is_empty() {
+            self.drive.remove_validators_proposed_app_versions(
+                removed_masternodes
+                    .into_keys()
+                    .map(|pro_tx_hash| pro_tx_hash.into()),
+                Some(transaction),
+                &platform_version.drive,
+            )?;
         }
 
         Ok(())

@@ -31,6 +31,15 @@ type CoregetBlock = {
   readonly responseType: typeof core_pb.GetBlockResponse;
 };
 
+type CoregetBestBlockHeight = {
+  readonly methodName: string;
+  readonly service: typeof Core;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof core_pb.GetBestBlockHeightRequest;
+  readonly responseType: typeof core_pb.GetBestBlockHeightResponse;
+};
+
 type CorebroadcastTransaction = {
   readonly methodName: string;
   readonly service: typeof Core;
@@ -76,16 +85,27 @@ type CoresubscribeToTransactionsWithProofs = {
   readonly responseType: typeof core_pb.TransactionsWithProofsResponse;
 };
 
+type CoresubscribeToMasternodeList = {
+  readonly methodName: string;
+  readonly service: typeof Core;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof core_pb.MasternodeListRequest;
+  readonly responseType: typeof core_pb.MasternodeListResponse;
+};
+
 export class Core {
   static readonly serviceName: string;
   static readonly getBlockchainStatus: CoregetBlockchainStatus;
   static readonly getMasternodeStatus: CoregetMasternodeStatus;
   static readonly getBlock: CoregetBlock;
+  static readonly getBestBlockHeight: CoregetBestBlockHeight;
   static readonly broadcastTransaction: CorebroadcastTransaction;
   static readonly getTransaction: CoregetTransaction;
   static readonly getEstimatedTransactionFee: CoregetEstimatedTransactionFee;
   static readonly subscribeToBlockHeadersWithChainLocks: CoresubscribeToBlockHeadersWithChainLocks;
   static readonly subscribeToTransactionsWithProofs: CoresubscribeToTransactionsWithProofs;
+  static readonly subscribeToMasternodeList: CoresubscribeToMasternodeList;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -147,6 +167,15 @@ export class CoreClient {
     requestMessage: core_pb.GetBlockRequest,
     callback: (error: ServiceError|null, responseMessage: core_pb.GetBlockResponse|null) => void
   ): UnaryResponse;
+  getBestBlockHeight(
+    requestMessage: core_pb.GetBestBlockHeightRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetBestBlockHeightResponse|null) => void
+  ): UnaryResponse;
+  getBestBlockHeight(
+    requestMessage: core_pb.GetBestBlockHeightRequest,
+    callback: (error: ServiceError|null, responseMessage: core_pb.GetBestBlockHeightResponse|null) => void
+  ): UnaryResponse;
   broadcastTransaction(
     requestMessage: core_pb.BroadcastTransactionRequest,
     metadata: grpc.Metadata,
@@ -176,5 +205,6 @@ export class CoreClient {
   ): UnaryResponse;
   subscribeToBlockHeadersWithChainLocks(requestMessage: core_pb.BlockHeadersWithChainLocksRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.BlockHeadersWithChainLocksResponse>;
   subscribeToTransactionsWithProofs(requestMessage: core_pb.TransactionsWithProofsRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.TransactionsWithProofsResponse>;
+  subscribeToMasternodeList(requestMessage: core_pb.MasternodeListRequest, metadata?: grpc.Metadata): ResponseStream<core_pb.MasternodeListResponse>;
 }
 

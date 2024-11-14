@@ -24,29 +24,20 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
-        docker: {
-          image: 'dashpay/dashd:20.1.0',
-          commandArgs: [],
-        },
         p2p: {
           port: 19999,
         },
         rpc: {
           port: 19998,
         },
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'testnet', 'core.log'),
-          },
-        },
         spork: {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
         },
       },
       platform: {
-        dapi: {
-          envoy: {
-            http: {
+        gateway: {
+          listeners: {
+            dapiAndDrive: {
               port: 1443,
             },
           },
@@ -55,12 +46,31 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
           abci: {
             epochTime: 3600,
             validatorSet: {
-              llmqType: 6,
+              quorum: {
+                llmqType: 6,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
             },
             chainLock: {
-              llmqType: 1,
-              dkgInterval: 24,
-              llmqSize: 50,
+              quorum: {
+                llmqType: 1,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 5,
+                dkgInterval: 288,
+                activeSigners: 32,
+                rotation: true,
+              },
+            },
+            proposer: {
+              txProcessingTimeLimit: 5000,
             },
           },
           tenderdash: {
@@ -76,14 +86,21 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                   host: '35.92.64.72',
                   port: 36656,
                 },
+                {
+                  id: 'de3a73fc78e5c828151454156b492e4a2d985849',
+                  host: 'seed-1.pshenmic.dev',
+                  port: 36656,
+                },
               ],
               port: 36656,
             },
             mempool: {
-              timeoutCheckTx: '1s',
-              txEnqueueTimeout: '10ms',
-              txSendRateLimit: 10,
-              txRecvRateLimit: 12,
+              timeoutCheckTx: '3s',
+              txEnqueueTimeout: '30ms',
+              txSendRateLimit: 100,
+              txRecvRateLimit: 120,
+              ttlDuration: '24h',
+              ttlNumBlocks: 0,
             },
             rpc: {
               port: 36657,
@@ -96,32 +113,15 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              genesis_time: '2024-03-07T13:26:00.000Z',
-              chain_id: 'dash-testnet-39',
+              chain_id: 'dash-testnet-51',
               validator_quorum_type: 6,
-              initial_core_chain_locked_height: 984306,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
-        },
-        dpns: {
-          masterPublicKey: '02c8b4747b528cac5fddf7a6cc63702ee04ed7d1332904e08510343ea00dce546a',
-          secondPublicKey: '0201ee28f84f5485390567e939c2b586010b63a69ec92cab535dc96a8c71913602',
-        },
-        dashpay: {
-          masterPublicKey: '02d4dcce3f0a8d2936ce26df4d255fd2835b629b73eea39d4b2778096b91e77946',
-          secondPublicKey: '03699c8b4ebf1696c92e9ec605a02a38f6f9cec47d13fb584fdad779e936e20ccb',
-        },
-        featureFlags: {
-          masterPublicKey: '029cf2232549de08c114c19763309cb067688e21e310ac07458b59c2c026be7234',
-          secondPublicKey: '02a2abb50c03ae9f778f08a93849ba334a82e625153720dd5ef14e564b78b414e5',
-        },
-        masternodeRewardShares: {
-          masterPublicKey: '0319d795c0795bc8678bd0e58cfc7a4ad75c8e1797537728e7e8de8b9acc2bae2b',
-          secondPublicKey: '033756572938aaad752158b858ad38511c6edff4c79cf8462f70baa25fc6e8a616',
-        },
-        withdrawals: {
-          masterPublicKey: '032f79d1d9d6e652599d3315d30306b1277fbf588e32e383aef0a59749547d47b7',
-          secondPublicKey: '03eebbe3dc3721603a0b5a13441f214550ffa7d035b7dea9f1911de0f63ddac58d',
         },
       },
       network: NETWORK_TESTNET,

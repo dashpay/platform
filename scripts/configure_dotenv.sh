@@ -34,8 +34,6 @@ cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
 # JS-SDK:
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${LOGS_PATH}"/mint.log | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${LOGS_PATH}"/mint.log | awk '{printf $4}')
-# TODO This will be removed from dashmate. Please use hardcoded ID from contract crates
-DPNS_CONTRACT_ID=$(get_config platform.dpns.contract.id)
 
 SDK_ENV_FILE_PATH=${SDK_PATH}/.env
 rm -f "${SDK_ENV_FILE_PATH}"
@@ -45,7 +43,6 @@ touch "${SDK_ENV_FILE_PATH}"
 echo "DAPI_SEED=127.0.0.1:2443:self-signed
 FAUCET_ADDRESS=${FAUCET_ADDRESS}
 FAUCET_PRIVATE_KEY=${FAUCET_PRIVATE_KEY}
-DPNS_CONTRACT_ID=${DPNS_CONTRACT_ID}
 NETWORK=regtest" >>"${SDK_ENV_FILE_PATH}"
 #EOF
 
@@ -66,9 +63,9 @@ NETWORK=regtest" >>"${WALLET_LIB_ENV_FILE_PATH}"
 # DASH_SDK tests config
 
 CORE_RPC_PORT=$(get_config core.rpc.port)
-CORE_RPC_USER=$(get_config core.rpc.user)
-CORE_RPC_PASSWORD=$(get_config core.rpc.password)
-PLATFORM_RPC_PORT=$(get_config platform.dapi.envoy.http.port)
+CORE_RPC_USER=dashmate
+CORE_RPC_PASSWORD=$(get_config core.rpc.users.dashmate.password)
+PLATFORM_RPC_PORT=$(get_config platform.gateway.listeners.dapiAndDrive.port)
 
 cat <<EOF >"${DASH_SDK_PATH}"/tests/.env
 # Configuration of dash-sdk network tests

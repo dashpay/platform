@@ -1,15 +1,19 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Setters;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
-use dpp::version::PlatformVersion;
+use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -32,7 +36,51 @@ where
 
     let platform_state = app.platform().state.load();
 
+    // Verify that Platform State corresponds to Drive commited state
+    let platform_state_app_hash = platform_state
+        .last_committed_block_app_hash()
+        .unwrap_or_default();
+
+    let grove_version = &platform_state
+        .current_platform_version()?
+        .drive
+        .grove_version;
+
+    let drive_storage_root_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()?;
+
+    // We had a sequence of errors on the mainnet started since block 32326.
+    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+    // validators just proceeded to the next block partially committing the state and updating the cache.
+    // Full nodes are stuck and proceeded after re-sync.
+    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    let config = &app.platform().config;
+
+    #[allow(clippy::collapsible_if)]
+    if !(config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && request.height < 33000)
+    {
+        // App hash in memory must be equal to app hash on disk
+        if drive_storage_root_hash != platform_state_app_hash {
+            // We panic because we can't recover from this situation.
+            // Better to restart the Drive, so we might self-heal the node
+            // reloading state form the disk
+            panic!(
+                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+                drive_storage_root_hash, platform_state_app_hash
+            );
+        }
+    }
+
     let last_committed_core_height = platform_state.last_committed_core_height();
+
+    let starting_platform_version = platform_state.current_platform_version()?;
 
     let core_chain_lock_update = match app.platform().core_rpc.get_best_chain_lock() {
         Ok(latest_chain_lock) => {
@@ -88,11 +136,15 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
         };
-        if request.round > 0 {
-            transaction_guard
-                .as_ref()
-                .map(|tx| tx.rollback_to_savepoint());
-        };
+        tracing::debug!(
+            "rolling back to savepoint to process genesis proposal for round: {}",
+            request.round,
+        );
+        if let Some(tx) = transaction_guard.as_ref() {
+            tx.rollback_to_savepoint()
+                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            tx.set_savepoint();
+        }
         transaction_guard
     } else {
         app.start_transaction();
@@ -104,9 +156,13 @@ where
         .expect("transaction must be started");
 
     // Running the proposal executes all the state transitions for the block
-    let mut run_result =
-        app.platform()
-            .run_block_proposal(block_proposal, true, &platform_state, transaction)?;
+    let mut run_result = app.platform().run_block_proposal(
+        block_proposal,
+        true,
+        &platform_state,
+        transaction,
+        Some(&timer),
+    )?;
 
     if !run_result.is_valid() {
         // This is a system error, because we are proposing
@@ -117,12 +173,11 @@ where
         app_hash,
         state_transitions_result,
         validator_set_update,
-        protocol_version,
+        platform_version,
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
-    let platform_version = PlatformVersion::get(protocol_version)
-        .expect("must be set in run block proposal from existing protocol version");
+    let epoch_info = block_execution_context.epoch_info();
 
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
@@ -130,6 +185,9 @@ where
     let delayed_tx_count = transactions_exceeding_max_block_size.len();
     let invalid_paid_tx_count = state_transitions_result.invalid_paid_count();
     let invalid_unpaid_tx_count = state_transitions_result.invalid_unpaid_count();
+
+    let storage_fees = state_transitions_result.aggregated_fees().storage_fee;
+    let processing_fees = state_transitions_result.aggregated_fees().processing_fee;
 
     let mut tx_results = Vec::new();
     let mut tx_records = Vec::new();
@@ -148,17 +206,37 @@ where
             // Such state transitions must be invalidated by check tx, but they might
             // still be added to mempool due to inconsistency between check tx and tx processing
             // (fees calculation) or malicious proposer.
-            StateTransitionExecutionResult::UnpaidConsensusError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) => {
+                tracing::trace!(
+                    "UnpaidConsensusError at height {}, round {}: {:?}",
+                    request.height,
+                    request.round,
+                    consensus_error
+                );
+                TxAction::Removed
+            }
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::InternalError(error_message) => {
+                tracing::debug!(
+                    "InternalError at height {}, round {}: {}",
+                    request.height,
+                    request.round,
+                    error_message
+                );
+                TxAction::Removed
+            }
+            // State Transition was not executed as it reached the maximum time limit
+            StateTransitionExecutionResult::NotExecuted(..) => TxAction::Delayed,
         };
 
-        let tx_result: ExecTxResult =
+        let tx_result: Option<ExecTxResult> =
             state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
-        if tx_action != TxAction::Removed {
-            tx_results.push(tx_result);
+        if let Some(result) = tx_result {
+            if tx_action != TxAction::Removed {
+                tx_results.push(result);
+            }
         }
 
         tx_records.push(TxRecord {
@@ -187,9 +265,13 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
-        app_version: protocol_version as u64,
+        consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
+            starting_platform_version,
+            platform_version,
+            epoch_info,
+        )?,
+        app_version: platform_version.protocol_version as u64,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));
@@ -207,6 +289,8 @@ where
         valid_tx_count,
         delayed_tx_count,
         failed_tx_count,
+        storage_fees,
+        processing_fees,
         "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
         if valid_tx_count + invalid_paid_tx_count > 0 {

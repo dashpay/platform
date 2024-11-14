@@ -16,6 +16,11 @@ impl AsRef<[u8]> for Bytes20 {
         &self.0
     }
 }
+impl std::fmt::Display for Bytes20 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string(Encoding::Base58))
+    }
+}
 
 impl Bytes20 {
     pub fn new(buffer: [u8; 20]) -> Self {

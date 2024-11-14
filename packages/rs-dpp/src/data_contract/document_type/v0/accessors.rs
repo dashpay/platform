@@ -12,7 +12,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn name(&self) -> &String {
@@ -27,8 +27,15 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         self.schema
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indexes(&self) -> &BTreeMap<String, Index> {
         &self.indices
+    }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        self.indices
+            .iter()
+            .find(|(_, index)| index.contested_index.is_some())
+            .map(|(_, contested_index)| contested_index)
     }
 
     fn index_structure(&self) -> &IndexLevel {
@@ -53,6 +60,9 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn required_fields(&self) -> &BTreeSet<String> {
         &self.required_fields
+    }
+    fn transient_fields(&self) -> &BTreeSet<String> {
+        &self.transient_fields
     }
 
     fn documents_keep_history(&self) -> bool {

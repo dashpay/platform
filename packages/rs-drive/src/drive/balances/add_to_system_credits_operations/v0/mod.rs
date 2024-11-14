@@ -1,14 +1,14 @@
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::DirectQueryType;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -52,7 +52,7 @@ impl Drive {
                 "trying to add an amount that would overflow credits",
             )))?;
         let path_holding_total_credits_vec = misc_path_vec();
-        let replace_op = GroveDbOp::replace_op(
+        let replace_op = QualifiedGroveDbOp::replace_op(
             path_holding_total_credits_vec,
             TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
             Item(new_total.encode_var_vec(), None),

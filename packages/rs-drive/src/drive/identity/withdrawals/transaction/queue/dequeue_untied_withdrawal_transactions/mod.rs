@@ -1,15 +1,16 @@
 mod v0;
 
-use crate::drive::batch::DriveOperation;
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::batch::DriveOperation;
+use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Get specified amount of withdrawal transactions from the DB
+    /// Deque specified amount of untiled withdrawal transactions
+    /// and move them to broadcasted queue
     pub fn dequeue_untied_withdrawal_transactions(
         &self,
         limit: u16,
@@ -30,6 +31,7 @@ impl Drive {
                 limit,
                 transaction,
                 drive_operation_types,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "dequeue_untied_withdrawal_transactions".to_string(),

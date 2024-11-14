@@ -38,11 +38,15 @@ export const QUORUM_TYPES = {
 export const MASTERNODE_COLLATERAL_AMOUNT = 1000;
 export const HPMN_COLLATERAL_AMOUNT = 4000;
 
+// number of blocks to wait before core DKG exchange session
+export const MIN_BLOCKS_BEFORE_DKG = 6;
+
 export const PACKAGE_ROOT_DIR = path.join(url.fileURLToPath(import.meta.url), '../..');
 export const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
+export const DASHMATE_VERSION = version;
 export const DASHMATE_HELPER_DOCKER_IMAGE = `dashpay/dashmate-helper:${version}`;
 
 export const OUTPUT_FORMATS = {

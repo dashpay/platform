@@ -1,30 +1,30 @@
-//! Example ContextProvider that uses the Core gRPC API to fetch data from the platform.
+//! Example ContextProvider that uses the Core gRPC API to fetch data from Platform.
 
+use crate::core::LowLevelDashCoreClient;
+use crate::platform::Fetch;
+use crate::sync::block_on;
+use crate::{Error, Sdk};
+use arc_swap::ArcSwapAny;
+use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::ContextProvider;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use dpp::prelude::{DataContract, Identifier};
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::ContextProvider;
-
-use crate::core_client::CoreClient;
-use crate::platform::Fetch;
-use crate::{Error, Sdk};
-
-/// Context provider that uses the Core gRPC API to fetch data from the platform.
+/// Context provider that uses the Core gRPC API to fetch data from Platform.
 ///
 /// Example [ContextProvider] used by the Sdk for testing purposes.
 pub struct GrpcContextProvider {
     /// Core client
-    core: CoreClient,
+    core: LowLevelDashCoreClient,
     /// [Sdk] to use when fetching data from Platform
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     ///
     /// We use [Arc] as we have circular dependencies between Sdk and ContextProvider.
-    sdk: Option<Arc<Sdk>>,
+    sdk: ArcSwapAny<Arc<Option<Sdk>>>,
 
     /// Data contracts cache.
     ///
@@ -40,7 +40,7 @@ pub struct GrpcContextProvider {
 
     /// Directory where to store dumped data.
     ///
-    /// This is used to store data that is fetched from the platform and can be used for testing purposes.
+    /// This is used to store data that is fetched from Platform and can be used for testing purposes.
     #[cfg(feature = "mocks")]
     pub dump_dir: Option<std::path::PathBuf>,
 }
@@ -53,7 +53,7 @@ impl GrpcContextProvider {
     ///
     /// Sdk can be set later with [`GrpcContextProvider::set_sdk`].
     pub fn new(
-        sdk: Option<Arc<Sdk>>,
+        sdk: Option<Sdk>,
         core_ip: &str,
         core_port: u16,
         core_user: &str,
@@ -62,10 +62,11 @@ impl GrpcContextProvider {
         data_contracts_cache_size: NonZeroUsize,
         quorum_public_keys_cache_size: NonZeroUsize,
     ) -> Result<Self, Error> {
-        let core_client = CoreClient::new(core_ip, core_port, core_user, core_password)?;
+        let core_client =
+            LowLevelDashCoreClient::new(core_ip, core_port, core_user, core_password)?;
         Ok(Self {
             core: core_client,
-            sdk,
+            sdk: ArcSwapAny::new(Arc::new(sdk)),
             data_contracts_cache: Cache::new(data_contracts_cache_size),
             quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
             #[cfg(feature = "mocks")]
@@ -78,12 +79,12 @@ impl GrpcContextProvider {
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
-    pub fn set_sdk(&mut self, sdk: Option<Arc<Sdk>>) {
-        self.sdk = sdk;
+    pub fn set_sdk(&self, sdk: Option<Sdk>) {
+        self.sdk.store(Arc::new(sdk));
     }
     /// Set the directory where to store dumped data.
     ///
-    /// When set, the context provider will store data fetched from the platform into this directory.
+    /// When set, the context provider will store data fetched from Platform into this directory.
     #[cfg(feature = "mocks")]
     pub fn set_dump_dir(&mut self, dump_dir: Option<std::path::PathBuf>) {
         self.dump_dir = dump_dir;
@@ -111,7 +112,7 @@ impl GrpcContextProvider {
             None => return,
         };
 
-        let encoded = serde_json::to_vec(public_key).expect("encode quorum hash to json");
+        let encoded = hex::encode(public_key);
 
         let file = path.join(format!(
             "quorum_pubkey-{}-{}.json",
@@ -119,6 +120,32 @@ impl GrpcContextProvider {
             quorum_hash.encode_hex::<String>()
         ));
 
+        if let Err(e) = std::fs::write(file, encoded) {
+            tracing::warn!("Unable to write dump file {:?}: {}", path, e);
+        }
+    }
+
+    /// Save data contract to disk.
+    ///
+    /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
+    ///
+    /// Note that this will overwrite files with the same quorum type and quorum hash.
+    ///
+    /// Any errors are logged on `warn` level and ignored.
+    #[cfg(feature = "mocks")]
+    fn dump_data_contract(&self, data_contract: &DataContract) {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use hex::ToHex;
+
+        let path = match &self.dump_dir {
+            Some(p) => p,
+            None => return,
+        };
+        let id = data_contract.id();
+
+        let file = path.join(format!("data_contract-{}.json", id.encode_hex::<String>()));
+
+        let encoded = serde_json::to_vec(data_contract).expect("serialize data contract");
         if let Err(e) = std::fs::write(file, encoded) {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
         }
@@ -157,8 +184,9 @@ impl ContextProvider for GrpcContextProvider {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
         };
+        let sdk_guard = self.sdk.load();
 
-        let sdk = match &self.sdk {
+        let sdk = match sdk_guard.as_ref() {
             Some(sdk) => sdk,
             None => {
                 tracing::warn!("data contract cache miss and no sdk provided, skipping fetch");
@@ -166,33 +194,34 @@ impl ContextProvider for GrpcContextProvider {
             }
         };
 
-        let handle = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle,
-            // not an error, we rely on the caller to provide a data contract using
-            Err(e) => {
-                tracing::warn!(
-                    error = e.to_string(),
-                    "data contract cache miss and no tokio runtime detected, skipping fetch"
-                );
-                return Ok(None);
-            }
-        };
+        let contract_id = *data_contract_id;
 
-        let data_contract = handle
-            .block_on(DataContract::fetch(sdk, *data_contract_id))
-            .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
+        let sdk_cloned = sdk.clone();
+
+        let data_contract: Option<DataContract> =
+            block_on(async move { DataContract::fetch(&sdk_cloned, contract_id).await })?
+                .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
         };
 
+        #[cfg(feature = "mocks")]
+        if let Some(ref dc) = data_contract {
+            self.dump_data_contract(dc);
+        }
+
         Ok(data_contract.map(Arc::new))
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        self.core.get_platform_activation_height()
     }
 }
 
 /// Thread-safe cache of various objects inside the SDK.
 ///
-/// This is used to cache objects that are expensive to fetch from the platform, like data contracts.
+/// This is used to cache objects that are expensive to fetch from Platform, like data contracts.
 pub struct Cache<K: Hash + Eq, V> {
     // We use a Mutex to allow access to the cache when we don't have mutable &self
     // And we use Arc to allow multiple threads to access the cache without having to clone it

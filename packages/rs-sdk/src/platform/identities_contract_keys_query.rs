@@ -3,14 +3,15 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_request::Version::V0;
 use dapi_grpc::platform::v0::GetIdentitiesContractKeysRequest;
 use dpp::identity::Purpose;
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
 use crate::platform::Identifier;
 use crate::Error;
 
 /// Request that is used to query identities' contract keys
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, dapi_grpc_macros::Mockable)]
+#[derive(Debug, Clone, dapi_grpc_macros::Mockable)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentitiesContractKeysQuery {
     /// The identities' identifiers that we want to query
     pub identities_ids: Vec<Identifier>,
@@ -80,7 +81,7 @@ impl TransportRequest for IdentitiesContractKeysQuery {
         self,
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>> {
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
         let request: GetIdentitiesContractKeysRequest = self
             .try_into()
             .expect("IdentitiesContractKeysQuery should always be valid");

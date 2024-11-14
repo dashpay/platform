@@ -2,14 +2,14 @@
 name = "platform-value-convertible"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Convertion to and from platform values"
-version = "1.0.0-dev.12"
+version = "1.5.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version.workspace = true
 license = "MIT"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-quote = "1.0.26"
-syn = "2.0.15"
+quote = "1.0.37"
+syn = "2.0.75"

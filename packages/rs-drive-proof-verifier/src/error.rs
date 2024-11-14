@@ -37,7 +37,7 @@ pub enum Error {
 
     /// Decode protobuf error
     #[error("decode request: {error}")]
-    RequestDecodeError { error: String },
+    RequestError { error: String },
 
     /// Decode protobuf response error
     #[error("decode response: {error}")]
@@ -97,11 +97,19 @@ pub enum ContextProviderError {
 
     /// Data contract is invalid or not found, or some error occurred during data contract retrieval
     #[error("cannot get data contract: {0}")]
-    InvalidDataContract(String),
+    DataContractFailure(String),
 
     /// Provided quorum is invalid
     #[error("invalid quorum: {0}")]
     InvalidQuorum(String),
+
+    /// Core Fork Error
+    #[error("activation fork error: {0}")]
+    ActivationForkError(String),
+
+    /// Async error, eg. when tokio runtime fails
+    #[error("async error: {0}")]
+    AsyncError(String),
 }
 
 impl From<drive::error::Error> for Error {

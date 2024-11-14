@@ -7,7 +7,9 @@ use thiserror::Error;
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
 #[platform_serialize(unversioned)]
 pub struct DataContractImmutablePropertiesUpdateError {

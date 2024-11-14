@@ -4,7 +4,7 @@ use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPrevio
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

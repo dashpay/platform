@@ -12,8 +12,7 @@ const wait = require('../utils/wait');
  *    delay in MS to perform retry after an error
  */
 const defaultOptions = {
-  // TODO: manage timeout according to the Nginx setting of the node
-  autoReconnectInterval: 50000,
+  autoReconnectInterval: 600000,
   maxRetriesOnError: 10,
   retryOnErrorDelay: 1000,
 };
@@ -56,6 +55,8 @@ class ReconnectableStream extends EventEmitter {
     super();
 
     const opts = { ...defaultOptions, ...options };
+
+    this.logger = opts.logger || { debug: () => {} };
 
     /**
      * Auto-reconnect interval in millisecond
@@ -109,6 +110,8 @@ class ReconnectableStream extends EventEmitter {
   }
 
   async connect(...args) {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] Connecting to stream');
     // Memorize current stream args (which can be altered by beforeReconnect logic)
     this.args = args;
 
@@ -127,6 +130,8 @@ class ReconnectableStream extends EventEmitter {
     if (this.reconnectTimeout) {
       throw new Error('Auto reconnect timeout is already running.');
     }
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] Setting reconnect timeout');
     this.reconnectTimeout = this.setTimeout(
       this.reconnect,
       this.autoReconnectInterval,
@@ -134,6 +139,8 @@ class ReconnectableStream extends EventEmitter {
   }
 
   reconnect() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] Try reconnecting to stream');
     if (this.reconnectTimeout) {
       this.reconnectTimeout = null;
       this.stream.cancel();
@@ -146,6 +153,8 @@ class ReconnectableStream extends EventEmitter {
       this.emit(EVENTS.BEFORE_RECONNECT, updateArgs);
       this.connect(...newArgs)
         .catch((connectError) => this.emit(EVENTS.ERROR, connectError));
+      // eslint-disable-next-line no-unused-expressions
+      this.logger.debug('[ReconnectableStream] Reconnected to stream');
     }
   }
 
@@ -186,9 +195,13 @@ class ReconnectableStream extends EventEmitter {
    * @private
    */
   endHandler() {
-    this.stopAutoReconnect();
-    this.stream = null;
-    this.emit(EVENTS.END);
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] End handler, stream exists:', !!this.stream);
+    if (this.stream) {
+      this.stopAutoReconnect();
+      this.stream = null;
+      this.emit(EVENTS.END);
+    }
   }
 
   /**
@@ -197,9 +210,21 @@ class ReconnectableStream extends EventEmitter {
    * @param e
    */
   errorHandler(e) {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug(`[ReconnectableStream] Error in stream, code ${e.code}, e:`, e);
+
     // In case of cancellation nothing has to happen.
+    // Do not retry UNKNOWN error code - HACH for grpc-web that ignores following error that happens
+    // in a while after stream cancellation
+    // Error message:
+    // "Response closed without grpc-status (Headers only) {
+    //    [Error: Response closed without grpc-status (Headers only)]"
     // TODO: do we need to propagate GrpcErrorCodes.CANCELLED further?
-    if (e.code === GrpcErrorCodes.CANCELLED) {
+    if (e.code === GrpcErrorCodes.CANCELLED
+      || (e.code === GrpcErrorCodes.UNKNOWN && this.stream === null)
+    ) {
+      // e.code
+      this.logger.debug(`[ReconnectableStream] Returning from error handler without restart, error code ${e.code}, e:`);
       return;
     }
 
@@ -212,6 +237,8 @@ class ReconnectableStream extends EventEmitter {
    * @param e
    */
   retryOnError(e) {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] Error handler', e);
     // Stop reconnect timeout if there is one
     this.stopAutoReconnect();
 
@@ -252,9 +279,13 @@ class ReconnectableStream extends EventEmitter {
    * @private
    */
   stopAutoReconnect() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] Stopping auto reconnect');
     if (this.reconnectTimeout) {
       this.clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+      // eslint-disable-next-line no-unused-expressions
+      this.logger.debug('[ReconnectableStream] Stoped auto reconnect');
     }
   }
 
@@ -265,7 +296,18 @@ class ReconnectableStream extends EventEmitter {
    * @returns {*}
    */
   cancel() {
+    // eslint-disable-next-line no-unused-expressions
+    this.logger.debug('[ReconnectableStream] Canceling streams');
     this.stopAutoReconnect();
+    // Hack for browsers to properly unsubscribe from ERROR event.
+    // (It will continue propagating despite of calling cancel)
+    // Ref to unsubscribe from ERROR event
+    const { stream } = this;
+    setTimeout(() => {
+      stream.removeListener(EVENTS.ERROR, this.errorHandler);
+      // endHandler
+      this.stream = null;
+    }, 1000);
     return this.stream.cancel();
   }
 }

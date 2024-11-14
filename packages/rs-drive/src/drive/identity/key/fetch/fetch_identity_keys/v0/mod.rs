@@ -1,12 +1,13 @@
 use crate::drive::identity::key::fetch::KeyRequestType::{
-    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys,
+    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, RecentWithdrawalKeys, SearchKey,
+    SpecificKeys,
 };
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, IdentityPublicKeyResult, KeyKindRequestType,
 };
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
@@ -56,6 +57,7 @@ impl Drive {
 
                 let result = self.grove_get_raw_path_query_with_optional(
                     &path_query,
+                    false,
                     transaction,
                     drive_operations,
                     &platform_version.drive,
@@ -78,10 +80,11 @@ impl Drive {
                 T::try_from_path_key_optional(result, platform_version)
             }
             ContractBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
-            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest) => {
+            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest)
+            | RecentWithdrawalKeys => {
                 let path_query = key_request.into_path_query();
 
-                let (result, _) = self.grove_get_raw_path_query(
+                let (result, _) = self.grove_get_path_query(
                     &path_query,
                     transaction,
                     QueryPathKeyElementTrioResultType,

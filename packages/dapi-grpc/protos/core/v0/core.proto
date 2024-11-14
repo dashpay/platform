@@ -6,11 +6,13 @@ service Core {
   rpc getBlockchainStatus (GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse);
   rpc getMasternodeStatus (GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse);
   rpc getBlock (GetBlockRequest) returns (GetBlockResponse);
+  rpc getBestBlockHeight (GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse);
   rpc broadcastTransaction (BroadcastTransactionRequest) returns (BroadcastTransactionResponse);
   rpc getTransaction (GetTransactionRequest) returns (GetTransactionResponse);
   rpc getEstimatedTransactionFee (GetEstimatedTransactionFeeRequest) returns (GetEstimatedTransactionFeeResponse);
   rpc subscribeToBlockHeadersWithChainLocks (BlockHeadersWithChainLocksRequest) returns (stream BlockHeadersWithChainLocksResponse);
   rpc subscribeToTransactionsWithProofs (TransactionsWithProofsRequest) returns (stream TransactionsWithProofsResponse);
+  rpc subscribeToMasternodeList (MasternodeListRequest) returns (stream MasternodeListResponse);
 }
 
 message GetBlockchainStatusRequest {
@@ -100,6 +102,14 @@ message GetBlockResponse {
   bytes block = 1;
 }
 
+message GetBestBlockHeightRequest {
+
+}
+
+message GetBestBlockHeightResponse {
+  uint32 height = 1;
+}
+
 message BroadcastTransactionRequest {
   bytes transaction = 1;
   bool allow_high_fees = 2;
@@ -185,4 +195,12 @@ message RawTransactions {
 
 message InstantSendLockMessages {
   repeated bytes messages = 1;
+}
+
+message MasternodeListRequest {
+
+}
+
+message MasternodeListResponse {
+  bytes masternode_list_diff = 1;
 }

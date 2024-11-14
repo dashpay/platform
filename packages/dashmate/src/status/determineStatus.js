@@ -37,11 +37,20 @@ export default {
    * Determine platform ServiceStatus based on DockerStatusEnum and core readiness
    * @param dockerStatus {DockerStatusEnum}
    * @param coreIsSynced {boolean}
+   * @param mnRRSoftFork {object}
    * @returns {ServiceStatusEnum}
    */
-  platform: (dockerStatus, coreIsSynced) => {
+  platform: (dockerStatus, coreIsSynced, mnRRSoftFork) => {
+    if (coreIsSynced && !mnRRSoftFork.active) {
+      return ServiceStatusEnum.wait_for_activation;
+    }
+
     if (dockerStatus === DockerStatusEnum.running) {
       return coreIsSynced ? ServiceStatusEnum.up : ServiceStatusEnum.wait_for_core;
+    }
+
+    if (dockerStatus === DockerStatusEnum.not_started) {
+      return ServiceStatusEnum.stopped;
     }
 
     return ServiceStatusEnum.error;

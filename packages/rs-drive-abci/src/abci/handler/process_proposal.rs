@@ -1,6 +1,7 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
 };
@@ -8,10 +9,12 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
 use crate::platform_types::block_execution_outcome;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
+use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 
@@ -41,7 +44,6 @@ where
             if let Some(proposal_info) = block_execution_context.proposer_results() {
                 tracing::debug!(
                     method = "process_proposal",
-                    ?proposal_info, // TODO: It might be too big for debug
                     "we knew block hash, block execution context already had a proposer result",
                 );
                 // We were the proposer as well, so we have the result in cache
@@ -59,7 +61,6 @@ where
                 // We were not the proposer, just drop the execution context
                 tracing::warn!(
                         method = "process_proposal",
-                        ?request, // Shumkov, lklimek: this structure might be very big and we already logged it such as all other ABCI requests and responses
                         "block execution context already existed, but we are running it again for same height {}/round {}",
                         request.height,
                         request.round,
@@ -73,6 +74,7 @@ where
                 )))?;
             }
         } else {
+            // we were the proposer
             let Some(proposal_info) = block_execution_context.proposer_results() else {
                 Err(Error::Abci(AbciError::BadRequest(
                     "received a process proposal request twice".to_string(),
@@ -136,10 +138,9 @@ where
                 });
             } else {
                 tracing::warn!(
-                            method = "process_proposal",
-                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions, dropping the cache",
-                            proposal_info,
-                        );
+                    method = "process_proposal",
+                    "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result, but we are requesting a different amount of transactions, dropping the cache",
+                );
 
                 drop_block_execution_context = true;
             };
@@ -158,10 +159,14 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())))?;
         }
-        if request.round > 0 {
-            transaction_guard
-                .as_ref()
-                .map(|tx| tx.rollback_to_savepoint());
+        tracing::debug!(
+            "rolling back to savepoint to process genesis proposal for round: {}",
+            request.round,
+        );
+        if let Some(tx) = transaction_guard.as_ref() {
+            tx.rollback_to_savepoint()
+                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            tx.set_savepoint();
         }
         transaction_guard
     } else {
@@ -175,12 +180,57 @@ where
 
     let platform_state = app.platform().state.load();
 
+    // Verify that Platform State corresponds to Drive commited state
+    let platform_state_app_hash = platform_state
+        .last_committed_block_app_hash()
+        .unwrap_or_default();
+
+    let grove_version = &platform_state
+        .current_platform_version()?
+        .drive
+        .grove_version;
+
+    let drive_storage_root_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()?;
+
+    // We had a sequence of errors on the mainnet started since block 32326.
+    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+    // validators just proceeded to the next block partially committing the state and updating the cache.
+    // Full nodes are stuck and proceeded after re-sync.
+    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    let config = &app.platform().config;
+
+    #[allow(clippy::collapsible_if)]
+    if !(app.platform().config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && request.height < 33000)
+    {
+        // App hash in memory must be equal to app hash on disk
+        if drive_storage_root_hash != platform_state_app_hash {
+            // We panic because we can't recover from this situation.
+            // Better to restart the Drive, so we might self-heal the node
+            // reloading state form the disk
+            panic!(
+                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+                drive_storage_root_hash, platform_state_app_hash
+            );
+        }
+    }
+
+    let starting_platform_version = platform_state.current_platform_version()?;
+
     // Running the proposal executes all the state transitions for the block
     let run_result = app.platform().run_block_proposal(
         (&request).try_into()?,
         false,
         &platform_state,
         transaction,
+        None,
     )?;
 
     if !run_result.is_valid() {
@@ -198,65 +248,104 @@ where
             request.round,
         );
 
-        Ok(response)
-    } else {
-        let block_execution_outcome::v0::BlockExecutionOutcome {
-            app_hash,
-            state_transitions_result: state_transition_results,
-            validator_set_update,
-            protocol_version,
-            block_execution_context,
-        } = run_result.into_data().map_err(Error::Protocol)?;
+        return Ok(response);
+    }
 
-        let platform_version = PlatformVersion::get(protocol_version)
-            .expect("must be set in run block proposer from existing platform version");
+    let block_execution_outcome::v0::BlockExecutionOutcome {
+        app_hash,
+        state_transitions_result: state_transition_results,
+        validator_set_update,
+        platform_version,
+        block_execution_context,
+    } = run_result.into_data().map_err(Error::Protocol)?;
 
-        app.block_execution_context()
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
+    let epoch_info = *block_execution_context.epoch_info();
 
-        let invalid_tx_count = state_transition_results.invalid_paid_count();
-        let valid_tx_count = state_transition_results.valid_count();
+    app.block_execution_context()
+        .write()
+        .unwrap()
+        .replace(block_execution_context);
 
-        let tx_results = state_transition_results
-            .into_execution_results()
-            .into_iter()
-            // To prevent spam attacks we add to the block state transitions covered with fees only
-            .filter(|execution_result| {
-                matches!(
-                    execution_result,
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
-                        | StateTransitionExecutionResult::PaidConsensusError(..)
-                )
-            })
-            .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
-            .collect::<Result<_, _>>()?;
+    let invalid_tx_count = state_transition_results.invalid_paid_count();
+    let valid_tx_count = state_transition_results.valid_count();
+    let failed_tx_count = state_transition_results.failed_count();
+    let invalid_unpaid_tx_count = state_transition_results.invalid_unpaid_count();
+    let unexpected_execution_results = failed_tx_count + invalid_unpaid_tx_count;
 
+    let storage_fees = state_transition_results.aggregated_fees().storage_fee;
+    let processing_fees = state_transition_results.aggregated_fees().processing_fee;
+
+    // Reject block if proposal contains failed or unpaid state transitions
+    if unexpected_execution_results > 0 {
         let response = proto::ResponseProcessProposal {
             app_hash: app_hash.to_vec(),
-            tx_results,
-            // TODO: Must be reject if results are different
-            status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-            validator_set_update,
-            // TODO: Implement consensus param updates
-            consensus_param_updates: None,
-            events: Vec::new(),
+            status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+            ..Default::default()
         };
 
         let elapsed_time_ms = timer.elapsed().as_millis();
 
-        tracing::info!(
+        tracing::warn!(
             invalid_tx_count,
             valid_tx_count,
+            failed_tx_count,
+            invalid_unpaid_tx_count,
             elapsed_time_ms,
-            "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
-            valid_tx_count + invalid_tx_count,
+            "Rejected invalid proposal for height: {}, round: {} due to {} unexpected state transition execution result(s)",
             request.height,
             request.round,
-            elapsed_time_ms,
+            unexpected_execution_results
         );
 
-        Ok(response)
+        return Ok(response);
     }
+
+    let tx_results = state_transition_results
+        .into_execution_results()
+        .into_iter()
+        // To prevent spam attacks we add to the block state transitions covered with fees only
+        .filter(|execution_result| {
+            matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution(..)
+                    | StateTransitionExecutionResult::PaidConsensusError(..)
+            )
+        })
+        .filter_map(|execution_result| {
+            execution_result
+                .try_into_platform_versioned(platform_version)
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+
+    let response = proto::ResponseProcessProposal {
+        app_hash: app_hash.to_vec(),
+        tx_results,
+        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+        validator_set_update,
+        consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
+            starting_platform_version,
+            platform_version,
+            &epoch_info,
+        )?,
+        events: Vec::new(),
+    };
+
+    let elapsed_time_ms = timer.elapsed().as_millis();
+
+    tracing::info!(
+        invalid_tx_count,
+        valid_tx_count,
+        elapsed_time_ms,
+        storage_fees,
+        processing_fees,
+        "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
+        valid_tx_count + invalid_tx_count,
+        request.height,
+        request.round,
+        elapsed_time_ms,
+    );
+
+    Ok(response)
 }

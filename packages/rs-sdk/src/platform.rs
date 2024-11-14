@@ -9,7 +9,9 @@ pub mod block_info_from_metadata;
 mod delegate;
 mod document_query;
 mod fetch;
+pub mod fetch_current_no_parameters;
 mod fetch_many;
+mod fetch_unproved;
 mod identities_contract_keys_query;
 mod query;
 pub mod transition;
@@ -21,7 +23,7 @@ pub use dpp::{
     document::Document,
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
-pub use drive::query::DriveQuery;
+pub use drive::query::DriveDocumentQuery;
 pub use drive_proof_verifier::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use drive_proof_verifier::MockContextProvider;
@@ -30,5 +32,6 @@ pub use {
     document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
-    query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
+    fetch_unproved::FetchUnproved,
+    query::{LimitQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT},
 };

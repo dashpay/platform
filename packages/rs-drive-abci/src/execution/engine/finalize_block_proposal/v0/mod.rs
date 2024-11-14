@@ -8,8 +8,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 
-use dpp::dashcore::bls_sig_utils::BLSSignature;
-
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
     signatures::Hashable,
@@ -19,8 +17,7 @@ use crate::abci::AbciError;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-    BlockExecutionContextV0OwnedGetters,
+    BlockExecutionContextV0Getters, BlockExecutionContextV0OwnedGetters,
 };
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::{
@@ -46,7 +43,7 @@ where
     ///
     /// This function first retrieves the block execution context and decomposes the request. It then checks
     /// if the received block matches the expected block information (height, round, hash, etc.). If everything
-    /// matches, the function verifies the commit signature (if enabled) and the vote extensions. If all checks
+    /// matches, the function verifies the commit signature (if enabled) and the votes extensions. If all checks
     /// pass, the block is committed to the state.
     ///
     /// # Arguments
@@ -62,7 +59,7 @@ where
     pub(super) fn finalize_block_proposal_v0(
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
-        mut block_execution_context: BlockExecutionContext,
+        block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
@@ -74,7 +71,7 @@ where
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
-            commit: mut commit_info,
+            commit: commit_info,
             misbehavior: _,
             hash,
             height,
@@ -136,36 +133,41 @@ where
             return Ok(validation_result.into());
         }
 
-        // Verify vote extensions
-        // We don't need to verify vote extension signatures once again after tenderdash
+        // Verify votes extensions
+        // We don't need to verify votes extension signatures once again after tenderdash
         // here, because we will do it bellow broadcasting withdrawal transactions.
         // The sendrawtransaction RPC method returns an error if quorum signature is invalid
         let expected_withdrawal_transactions =
             block_execution_context.unsigned_withdrawal_transactions();
 
-        if !expected_withdrawal_transactions
-            .are_matching_with_vote_extensions(&commit_info.threshold_vote_extensions)
-        {
+        let Some(transaction_to_extension_matches) = expected_withdrawal_transactions
+            .verify_and_match_with_vote_extensions(&commit_info.threshold_vote_extensions)
+        else {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
                 got: commit_info.threshold_vote_extensions,
-                expected: expected_withdrawal_transactions.into(),
+                expected: (&expected_withdrawal_transactions.clone()).into(),
             });
 
             return Ok(validation_result.into());
-        }
+        };
+
+        // Verify commit
 
         // In production this will always be true
-        if self
+        #[cfg(not(feature = "testing-config"))]
+        let verify_commit_signature = true;
+
+        #[cfg(feature = "testing-config")]
+        let verify_commit_signature = self
             .config
             .testing_configs
-            .block_commit_signature_verification
-        {
-            // Verify commit
+            .block_commit_signature_verification;
 
+        if verify_commit_signature {
             let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
-            let quorum_type = self.config.validator_set_quorum_type();
+            let quorum_type = self.config.validator_set.quorum_type;
             // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
@@ -197,34 +199,9 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        // Append signatures and broadcast asset unlock transactions to Core
-
-        // Drain withdrawal transaction instead of cloning
-        let unsigned_withdrawal_transactions = block_execution_context
-            .unsigned_withdrawal_transactions_mut()
-            .drain();
-
-        if !unsigned_withdrawal_transactions.is_empty() {
-            // Drain signatures instead of cloning
-            let signatures = commit_info
-                .threshold_vote_extensions
-                .drain(..)
-                .map(|vote_extension| {
-                    let signature_bytes: [u8; 96] =
-                        vote_extension.signature.try_into().map_err(|e| {
-                            AbciError::BadRequestDataSize(format!(
-                                "invalid vote extension signature size: {}",
-                                hex::encode(e)
-                            ))
-                        })?;
-
-                    Ok(BLSSignature::from(signature_bytes))
-                })
-                .collect::<Result<_, AbciError>>()?;
-
+        if !transaction_to_extension_matches.is_empty() {
             self.append_signatures_and_broadcast_withdrawal_transactions(
-                unsigned_withdrawal_transactions,
-                signatures,
+                transaction_to_extension_matches,
                 platform_version,
             )?;
         }
@@ -236,6 +213,7 @@ where
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             block_id_hash,
+            proposer_pro_tx_hash: block_header.proposer_pro_tx_hash,
             signature: commit_info.block_signature,
             round,
         }

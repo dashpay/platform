@@ -1,7 +1,7 @@
-//! Broadcast trait representing the action of broadcasting a new identity state transition to the platform.
+//! Broadcast trait representing the action of broadcasting a new identity state transition to Platform.
 //!
 //! The [BroadcastRequestForNewIdentity] trait is designed for the creation and broadcasting of new identity state transitions.
-//! This involves the generation of a state transition object, signing it, and then broadcasting it to the platform.
+//! This involves the generation of a state transition object, signing it, and then broadcasting it to Platform.
 //!
 //! This trait is expected to be implemented by objects that encapsulate the necessary data and logic to perform
 //! these operations, including the handling of asset lock proof and signing operations.
@@ -22,11 +22,11 @@ use crate::error::Error;
 
 /// Trait implemented by objects that can be used to broadcast new identity state transitions.
 ///
-/// [BroadcastRequestForNewIdentity] trait is used when a new identity needs to be created and broadcasted on the platform.
+/// [BroadcastRequestForNewIdentity] trait is used when a new identity needs to be created and broadcasted on Platform.
 /// It encapsulates the data, the signing process, and the logic required to perform the broadcast operation.
 ///
 /// Implementors of this trait will typically be responsible for creating an identity state transition,
-/// signing it with the provided private key and signer, and preparing it for transport to the platform.
+/// signing it with the provided private key and signer, and preparing it for transport to Platform.
 ///
 /// ## Example
 ///
@@ -52,7 +52,7 @@ use crate::error::Error;
 ///
 /// match result {
 ///     Ok(transport_request) => {
-///         // The transport_request can now be sent to the platform to broadcast the new identity.
+///         // The transport_request can now be sent to Platform to broadcast the new identity.
 ///     }
 ///     Err(e) => {
 ///         // Handle the error
@@ -73,10 +73,10 @@ pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
     /// * `asset_lock_proof` - The proof that locks the asset which is used to create the identity.
     /// * `asset_lock_proof_private_key` - The private key associated with the asset lock proof.
     /// * `signer` - The signer to be used for signing the state transition.
-    /// * `platform_version` - The version of the platform for which the state transition is intended.
+    /// * `platform_version` - The version of Platform for which the state transition is intended.
     ///
     /// # Returns
-    /// On success, this method yields an instance of the `TransportRequest` type (`T`), which can be used to broadcast the new identity state transition to the platform.
+    /// On success, this method yields an instance of the `TransportRequest` type (`T`), which can be used to broadcast the new identity state transition to Platform.
     /// On failure, it yields an [`Error`].
     ///
     /// # Error Handling

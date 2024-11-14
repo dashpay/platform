@@ -8,8 +8,10 @@ use dapi_grpc::platform::v0::get_documents_request::Version::V0;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
-    GetDocumentsRequest, ResponseMetadata,
+    GetDocumentsRequest, Proof, ResponseMetadata,
 };
+use dpp::dashcore::Network;
+use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
@@ -17,12 +19,12 @@ use dpp::{
     document::Document,
     platform_value::{platform_value, Value},
     prelude::{DataContract, Identifier},
-    ProtocolError,
+    InvalidVectorSizeError, ProtocolError,
 };
-use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::{types::Documents, FromProof};
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
 use super::fetch::Fetch;
@@ -34,8 +36,9 @@ use super::fetch::Fetch;
 /// This is an abstraction layer built on top of [GetDocumentsRequest] to address issues with missing details
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
-/// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveQuery] using [TryFrom] trait.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, dapi_grpc_macros::Mockable)]
+/// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
+#[derive(Debug, Clone, PartialEq, dapi_grpc_macros::Mockable)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
     /// Data contract ID
     pub data_contract: Arc<DataContract>,
@@ -73,8 +76,8 @@ impl DocumentQuery {
         })
     }
 
-    /// Create new document query based on a [DriveQuery].
-    pub fn new_with_drive_query(d: &DriveQuery) -> Self {
+    /// Create new document query based on a [DriveDocumentQuery].
+    pub fn new_with_drive_query(d: &DriveDocumentQuery) -> Self {
         Self::from(d)
     }
 
@@ -145,7 +148,7 @@ impl TransportRequest for DocumentQuery {
         self,
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>> {
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
         let request: GetDocumentsRequest = self
             .try_into()
             .expect("DocumentQuery should always be valid");
@@ -159,23 +162,32 @@ impl FromProof<DocumentQuery> for Document {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
         let request: Self::Request = request.into();
 
-        let (documents, metadata): (Option<Documents>, ResponseMetadata) =
+        let (documents, metadata, proof): (Option<Documents>, ResponseMetadata, Proof) =
             <Documents as FromProof<Self::Request>>::maybe_from_proof_with_metadata(
-                request, response, version, provider,
+                request,
+                response,
+                network,
+                platform_version,
+                provider,
             )?;
 
         match documents {
-            None => Ok((None, metadata)),
+            None => Ok((None, metadata, proof)),
             Some(docs) => match docs.len() {
-                0 | 1 => Ok((docs.into_iter().next().and_then(|(_, v)| v), metadata)),
+                0 | 1 => Ok((
+                    docs.into_iter().next().and_then(|(_, v)| v),
+                    metadata,
+                    proof,
+                )),
                 n => Err(drive_proof_verifier::Error::ResponseDecodeError {
                     error: format!("expected 1 element, got {}", n),
                 }),
@@ -190,24 +202,26 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
         let request: Self::Request = request.into();
-        let drive_query: DriveQuery =
+        let drive_query: DriveDocumentQuery =
             (&request)
                 .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestDecodeError {
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
 
-        <drive_proof_verifier::types::Documents as FromProof<DriveQuery>>::maybe_from_proof_with_metadata(
+        <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
             response,
-            version,
+            network,
+            platform_version,
             provider,
         )
     }
@@ -238,8 +252,8 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     }
 }
 
-impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
-    fn from(value: &'a DriveQuery<'a>) -> Self {
+impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
+    fn from(value: &'a DriveDocumentQuery<'a>) -> Self {
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
         let where_clauses = value.internal_clauses.clone().into();
@@ -266,8 +280,8 @@ impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
     }
 }
 
-impl<'a> From<DriveQuery<'a>> for DocumentQuery {
-    fn from(value: DriveQuery<'a>) -> Self {
+impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
+    fn from(value: DriveDocumentQuery<'a>) -> Self {
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
         let where_clauses = value.internal_clauses.clone().into();
@@ -294,7 +308,7 @@ impl<'a> From<DriveQuery<'a>> for DocumentQuery {
     }
 }
 
-impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
+impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     type Error = crate::error::Error;
 
     fn try_from(request: &'a DocumentQuery) -> Result<Self, Self::Error> {
@@ -312,6 +326,26 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
         } else {
             None
         };
+
+        let (start_at, start_at_included) = match request.start.as_ref() {
+            None => (None, false),
+            Some(Start::StartAt(at)) => (
+                Some(at.clone().try_into().map_err(|_| {
+                    ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(32, at.len()))
+                })?),
+                true,
+            ),
+            Some(Start::StartAfter(after)) => (
+                Some(after.clone().try_into().map_err(|_| {
+                    ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
+                        32,
+                        after.len(),
+                    ))
+                })?),
+                true,
+            ),
+        };
+
         let query = Self {
             contract: &request.data_contract,
             document_type,
@@ -324,8 +358,8 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
                 .into_iter()
                 .map(|v| (v.field.clone(), v))
                 .collect(),
-            start_at: None,
-            start_at_included: false,
+            start_at,
+            start_at_included,
             block_time_ms: None,
         };
 

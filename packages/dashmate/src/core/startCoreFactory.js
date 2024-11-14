@@ -59,8 +59,10 @@ export default function startCoreFactory(
       coreCommand.push('--disablewallet=1');
     }
 
-    const logFilePath = config.get('core.log.file.path');
-    ensureFileMountExists(logFilePath, 0o666);
+    const logFilePath = config.get('core.log.filePath');
+    if (logFilePath !== null) {
+      ensureFileMountExists(logFilePath, 0o666);
+    }
 
     const coreContainer = await dockerCompose.runService(
       config,
@@ -75,8 +77,8 @@ export default function startCoreFactory(
     const rpcClient = createRpcClient(
       {
         port: config.get('core.rpc.port'),
-        user: config.get('core.rpc.user'),
-        pass: config.get('core.rpc.password'),
+        user: 'dashmate',
+        pass: config.get('core.rpc.users.dashmate.password'),
         host: await getConnectionHost(config, 'core', 'core.rpc.host'),
       },
     );

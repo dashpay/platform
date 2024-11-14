@@ -13,9 +13,9 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use drive::drive::batch::DriveOperation;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
+use drive::util::batch::DriveOperation;
 
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreHeight;
@@ -25,9 +25,8 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 use dpp::errors::ProtocolError;
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
 
-const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
+use drive::config::DEFAULT_QUERY_LIMIT;
 
 impl<C> Platform<C>
 where
@@ -43,9 +42,11 @@ where
     ) -> Result<UnsignedWithdrawalTxs, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        // Get 16 latest withdrawal transactions from the queue
+        // Get withdrawal_transactions_per_block_limit (normally 4) latest withdrawal transactions from the queue
         let untied_withdrawal_transactions = self.drive.dequeue_untied_withdrawal_transactions(
-            WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
+            platform_version
+                .system_limits
+                .withdrawal_transactions_per_block_limit,
             transaction,
             &mut drive_operations,
             platform_version,
@@ -108,6 +109,7 @@ where
             block_info,
             transaction,
             platform_version,
+            None,
         )?;
 
         Ok(UnsignedWithdrawalTxs::from_vec(
@@ -148,8 +150,8 @@ where
                 document.set_updated_at(Some(block_info.time_ms));
 
                 document.increment_revision().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not increment document revision",
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow when adding to document revision for withdrawals",
                     ))
                 })?;
 

@@ -12,11 +12,11 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferTransitionV0 {
         self.signature_public_key_id = key_id
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, _purpose: Purpose) -> Vec<SecurityLevel> {
         vec![CRITICAL]
     }
 
-    fn purpose_requirement(&self) -> Purpose {
-        Purpose::TRANSFER
+    fn purpose_requirement(&self) -> Vec<Purpose> {
+        vec![Purpose::TRANSFER]
     }
 }

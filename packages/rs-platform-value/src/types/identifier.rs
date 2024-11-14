@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 
-use crate::string_encoding::Encoding;
+use crate::string_encoding::{Encoding, ALL_ENCODINGS};
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
 
@@ -44,6 +44,16 @@ impl platform_serialization::PlatformVersionEncode for Identifier {
         _: &platform_version::version::PlatformVersion,
     ) -> Result<(), EncodeError> {
         self.0 .0.encode(encoder)
+    }
+}
+
+impl platform_serialization::PlatformVersionedDecode for Identifier {
+    fn platform_versioned_decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+        _platform_version: &platform_version::version::PlatformVersion,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes = <[u8; 32]>::decode(decoder)?;
+        Ok(Identifier::new(bytes))
     }
 }
 
@@ -160,6 +170,29 @@ impl Identifier {
         Identifier::from_bytes(&vec)
     }
 
+    pub fn from_string_try_encodings(
+        encoded_value: &str,
+        encodings: &[Encoding],
+    ) -> Result<Identifier, Error> {
+        let mut tried = vec![];
+        for encoding in encodings {
+            if let Ok(vec) = string_encoding::decode(encoded_value, *encoding) {
+                if vec.len() == 32 {
+                    return Identifier::from_bytes(&vec);
+                }
+            }
+            tried.push(encoding.to_string());
+        }
+        Err(Error::StringDecodingError(format!(
+            "Failed to decode string with encodings [{}]",
+            tried.join(", ")
+        )))
+    }
+
+    pub fn from_string_unknown_encoding(encoded_value: &str) -> Result<Identifier, Error> {
+        Identifier::from_string_try_encodings(encoded_value, &ALL_ENCODINGS)
+    }
+
     pub fn from_string_with_encoding_string(
         encoded_value: &str,
         encoding_string: Option<&str>,
@@ -173,7 +206,7 @@ impl Identifier {
     pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, Error> {
         if bytes.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from bytes",
             )));
         }
 
@@ -184,7 +217,7 @@ impl Identifier {
     pub fn from_vec(vec: Vec<u8>) -> Result<Identifier, Error> {
         if vec.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from vec",
             )));
         }
 
@@ -238,6 +271,14 @@ impl TryFrom<&[u8]> for Identifier {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl TryFrom<&Vec<u8>> for Identifier {
+    type Error = Error;
+
+    fn try_from(bytes: &Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes.as_slice())
     }
 }
 

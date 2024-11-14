@@ -1,5 +1,5 @@
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path, Drive,
@@ -8,16 +8,17 @@ use crate::drive::{
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 
+use dpp::prelude::Identifier;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Insert a non unique public key hash reference that contains an identity id
+    /// Insert a non-unique public key hash reference that contains an identity id
     /// Contrary to the name this is not a reference but an Item containing the identity
     /// identifier
     pub(super) fn insert_non_unique_public_key_hash_reference_to_identity_operations_v0(
@@ -74,7 +75,7 @@ impl Drive {
 
                 if already_exists_for_identity {
                     return Err(Error::Identity(IdentityError::IdentityKeyAlreadyExists(
-                        "the key already exists for this user",
+                        format!("the key with a public hash of {} already exists for this identity {} ({})", hex::encode(public_key_hash) , Identifier::new(identity_id), hex::encode(identity_id.as_slice()))
                     )));
                 }
             }
