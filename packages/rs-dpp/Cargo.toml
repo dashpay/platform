@@ -27,7 +27,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "secp-recovery",
   "rand",
   "signer",
-  "serde"
+  "serde",
 ], default-features = false, tag = "0.33.1" }
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }

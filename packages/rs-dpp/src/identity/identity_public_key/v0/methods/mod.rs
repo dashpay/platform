@@ -4,17 +4,15 @@ use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
+#[cfg(feature = "ed25519-dalek")]
+use dashcore::ed25519_dalek;
 use dashcore::hashes::Hash;
 use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::Bytes20;
 #[cfg(feature = "bls-signatures")]
-use {
-    crate::bls_signatures,
-    dashcore::{blsful::Bls12381G2Impl, ed25519_dalek},
-};
-
+use {crate::bls_signatures, dashcore::blsful::Bls12381G2Impl};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
