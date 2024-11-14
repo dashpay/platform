@@ -35,9 +35,6 @@ jobs:
         with:
           name: build-js-artifacts-${{ github.sha }}
 
-      - name: Unpack JS build artifacts archive
-        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
         with:

@@ -40,9 +40,6 @@ jobs:
         with:
           name: build-js-artifacts-${{ github.sha }}
 
-      - name: Unpack JS build artifacts archive
-        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
-
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
 
@@ -73,9 +70,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-js-artifacts-${{ github.sha }}
-
-      - name: Unpack JS build artifacts archive
-        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
 
       - name: Create necessary dotenv files
         run: |

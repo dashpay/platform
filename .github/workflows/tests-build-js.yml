@@ -81,18 +81,16 @@ jobs:
 
       - name: Get modified files
         id: diff
-        run: git ls-files --others --exclude-standard >> artifacts_list.txt
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Create an archive of built files
-        run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
+        run: |
+          files=$(git ls-files --others --exclude-standard)
+          echo "files=$files" >> $GITHUB_OUTPUT
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Upload the archive of built files
         uses: actions/upload-artifact@v4
         with:
           name: build-js-artifacts-${{ github.sha }}
-          path: build-js-artifacts-${{ github.sha }}.tar
+          path: ${{ steps.diff.outputs.files }}
           retention-days: 1
           if-no-files-found: error
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}

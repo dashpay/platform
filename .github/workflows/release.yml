@@ -251,9 +251,6 @@ jobs:
         with:
           name: build-js-artifacts-${{ github.sha }}
 
-      - name: Unpack JS build artifacts archive
-        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
-
       - name: Install macOS build deps
         if: runner.os == 'macOS'
         run: |
