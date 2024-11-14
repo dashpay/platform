@@ -23,34 +23,42 @@ jobs:
 #          path: build-js-artifacts-${{ github.sha }}.tar
 #          key: build-js-artifacts/${{ github.sha }}
 
-      - name: Cache build artifacts
-        uses: actions/cache@v4
+      - name: Download JS build artifacts
+        uses: actions/download-artifact@v4
         with:
-          key: build-js-artifacts-${{ github.sha }}
-          path: build-js-artifacts-${{ github.sha }}.tar
+          name: build-js-artifacts-${{ github.sha }}
+
+      - name: Check if artifacts exist
+        id: exists
+        run: |
+          if test -f build-js-artifacts-${{ github.sha }}.tar; then
+            echo "result=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Check out repo
         uses: actions/checkout@v4
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         with:
           fetch-depth: 0
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         with:
           target: wasm32-unknown-unknown
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Configure sccache
         uses: actions/github-script@v7
@@ -58,24 +66,25 @@ jobs:
           script: |
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Install Cargo binstall
         uses: cargo-bins/cargo-binstall@v1.3.1
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Install wasm-bindgen-cli
         run: cargo binstall wasm-bindgen-cli@0.2.86
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Build JS packages
         run: yarn build
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_GHA_ENABLED: true
 #          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
 #          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
 #          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Ignore only already cached artifacts
         run: |
@@ -85,15 +94,25 @@ jobs:
           echo "node_modules" >> .gitignore
           echo ".nyc_output" >> .gitignore
           echo ".idea" >> .gitignore
-          echo ".ultra.cache.json" >> .gitignore
+          echo ".ultra.exists.json" >> .gitignore
           echo "db/*" >> .gitignore
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Get modified files
         id: diff
         run: git ls-files --others --exclude-standard >> artifacts_list.txt
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
 
       - name: Create an archive of built files
         run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.exists.outputs.result != 'true' }}
+
+      - name: Upload the archive of built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-js-artifacts-${{ github.sha }}
+          path: build-js-artifacts-${{ github.sha }}.tar
+          retention-days: 1
+          if-no-files-found: error
+        if: ${{ steps.exists.outputs.result != 'true' }}
+
