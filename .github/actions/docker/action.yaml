@@ -157,13 +157,12 @@ runs:
         platforms: ${{ inputs.platform }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
-#          RUSTC_WRAPPER=sccache
-#          SCCACHE_BUCKET=${{ inputs.bucket }}
-#          SCCACHE_REGION=${{ inputs.region }}
-#          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
-#          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
-#          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
-#          AWS_REGION=${{ inputs.region }}
+          RUSTC_WRAPPER=sccache
+          SCCACHE_BUCKET=${{ inputs.bucket }}
+          SCCACHE_REGION=${{ inputs.region }}
+          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
+          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
 #        cache-from: type=registry,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache

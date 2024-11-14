@@ -181,7 +181,7 @@ RUN <<EOS
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
-        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
+#        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached

@@ -54,7 +54,6 @@ runs:
             region: '${{ inputs.region }}',
             bucket: '${{ inputs.bucket }}',
             prefix: '${{ inputs.prefix }}',
-            name: manifestNames.join(';'),
           };
 
           const settingsString = Object.entries(settings)
@@ -62,5 +61,9 @@ runs:
             .map(([key, value]) => `${key}=${value}`)
             .join(',');
 
-          core.setOutput('cache_from', settingsString);
-          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }}`);
+          const cacheFrom = manifestNames
+            .map((name) => `${settingsString},name=${name}`)
+            .join('\n');
+
+          core.setOutput('cache_from', cacheFrom);
+          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }},name=${manifestNames.join(';')}`);
