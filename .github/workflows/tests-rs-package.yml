@@ -5,14 +5,6 @@ on:
         description: The package name to run tests for
         type: string
         required: true
-      test-runner:
-        description: Runner for tests. Must be JSON valid string.
-        type: string
-        default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
-      lint-runner:
-        description: Runner for linting. Must be JSON valid string.
-        type: string
-        default: '"ubuntu-24.04"'
       check-each-feature:
         description: If true, try to build each individual feature for this crate
         type: boolean
@@ -21,7 +13,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ${{ fromJSON(inputs.lint-runner) }}
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
@@ -212,7 +204,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ${{ fromJSON(inputs.test-runner) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Check out repo
@@ -250,9 +242,10 @@ jobs:
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
   check_each_feature:
     name: Check each feature
-    runs-on: ${{ fromJSON(inputs.test-runner) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: ${{ inputs.check-each-feature }}
     steps:

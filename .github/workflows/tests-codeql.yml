@@ -30,20 +30,10 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-#      - name: Restore JS build artifacts archive
-#        uses: strophy/actions-cache@opendal-update
-#        with:
-#          bucket: multi-runner-cache-x1xibo9c
-#          root: actions-cache
-#          path: build-js-artifacts-${{ github.sha }}.tar
-#          key: build-js-artifacts/${{ github.sha }}
-
-      - name: Restore JS build artifacts archive
-        uses: actions/cache/restore@v4
+      - name: Download JS build artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: build-js-artifacts-${{ github.sha }}.tar
-          key: build-js-artifacts-${{ github.sha }}
-          fail-on-cache-miss: 'true'
+          name: build-js-artifacts-${{ github.sha }}
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
