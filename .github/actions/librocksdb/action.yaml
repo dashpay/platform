@@ -30,8 +30,9 @@ runs:
 #        path: /opt/rocksdb
 #        key: librocksdb/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
 
-    - name: Restore cached librocksdb
+    - name: Cache librocksdb
       uses: actions/cache@v4
+      id: librocksdb-cache
       with:
         key: librocksdb/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
         path: /opt/rocksdb
