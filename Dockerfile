@@ -254,35 +254,39 @@ WORKDIR /platform
 
 # Download and install cargo-binstall
 ENV BINSTALL_VERSION=1.10.11
-RUN set -ex; \
-    if [ "$TARGETARCH" = "amd64" ]; then \
-        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
-    else \
-        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
-    fi; \
-    # Construct download URL
-    DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
-    # Download and extract the cargo-binstall binary
-    curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall; \
-    rm ./cargo-binstall; \
-    source $HOME/.cargo/env; \
-    cargo binstall -V
+RUN <<EOS
+set -ex;
+if [ "$TARGETARCH" = "amd64" ]; then
+    CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl";
+elif [ "$TARGETARCH" = "arm64" ]; then
+    CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl";
+else
+    echo "Unsupported architecture: $TARGETARCH"; exit 1;
+fi;
+# Construct download URL
+DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz";
+# Download and extract the cargo-binstall binary
+curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;
+./cargo-binstall -y --force cargo-binstall;
+rm ./cargo-binstall;
+source $HOME/.cargo/env;
+cargo binstall -V
 
-RUN source $HOME/.cargo/env; \
-    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+source $HOME/.cargo/env;
+
+cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
     --no-track \
     --no-confirm
 
+EOS
+
 #
 # Rust build planner to speed up builds
 #
-FROM deps AS build-planner
+FROM lklimek/dash-platform-build-base AS build-planner
 
 WORKDIR /platform
 COPY . .
@@ -489,7 +493,6 @@ FROM build-js AS build-test-suite
 # node_modules directory to reuse built binaries
 RUN yarn workspaces focus --production @dashevo/platform-test-suite
 
-#
 #  STAGE: FINAL TEST SUITE IMAGE
 #
 FROM node:20-alpine${ALPINE_VERSION} AS test-suite
