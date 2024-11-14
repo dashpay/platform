@@ -1,8 +1,10 @@
+#[cfg(feature = "bls-signatures")]
+use crate::bls_signatures;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
-use crate::{bls_signatures, ProtocolError};
+use crate::ProtocolError;
 use anyhow::anyhow;
 use dashcore::blsful::Bls12381G2Impl;
 use dashcore::hashes::Hash;
