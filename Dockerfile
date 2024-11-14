@@ -43,7 +43,7 @@ RUN touch /platform/packages/dapi-grpc/build.rs
 # STAGE: BUILD RS-DRIVE-ABCI
 #
 # This will prebuild majority of dependencies
-FROM lklimek/dash-platform-build-base AS build-drive-abci
+FROM deps AS build-drive-abci
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
@@ -94,7 +94,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
-FROM lklimek/dash-platform-build-base AS build-js
+FROM deps AS build-js
 
 WORKDIR /platform
 
