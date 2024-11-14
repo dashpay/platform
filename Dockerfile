@@ -320,10 +320,19 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
     fi && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_TARGET="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CARGO_TARGET="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
+        ${FEATURES_FLAG} \
+        --target $CARGO_TARGET \
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
@@ -345,10 +354,18 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
     fi && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_TARGET="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CARGO_TARGET="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
     cargo build \
         --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
         ${FEATURES_FLAG} \
+        --target $CARGO_TARGET \
         --locked && \
     cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
