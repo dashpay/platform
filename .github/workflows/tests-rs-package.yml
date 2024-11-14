@@ -48,8 +48,7 @@ jobs:
         with:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: true
+#          RUSTC_WRAPPER: sccache
 #          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
 #          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
 #          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
@@ -82,8 +81,7 @@ jobs:
 
       - name: Check formatting
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: true
+#          RUSTC_WRAPPER: sccache
 #          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
 #          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
 #          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
@@ -129,8 +127,7 @@ jobs:
       - name: Find unused dependencies
         uses: lklimek/cargo-machete@feat/workdir
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: true
+#          RUSTC_WRAPPER: sccache
 #          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
 #          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
 #          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
@@ -233,8 +230,7 @@ jobs:
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: true
+#          RUSTC_WRAPPER: sccache
 #          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
 #          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
 #          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
@@ -280,8 +276,7 @@ jobs:
 
       - name: Check each feature in ${{ inputs.package }}
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: true
+#          RUSTC_WRAPPER: sccache
 #          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
 #          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
 #          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
