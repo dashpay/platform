@@ -82,7 +82,7 @@ jobs:
       - name: Get modified files
         id: diff
         run: |
-          files=$(git ls-files --others --exclude-standard)
+          files="$(git ls-files --others --exclude-standard)"
           echo "files=$files" >> $GITHUB_OUTPUT
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
