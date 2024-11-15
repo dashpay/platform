@@ -4,7 +4,7 @@ on:
 jobs:
   build-js:
     name: Build JS
-    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+    runs-on: ubuntu-24.04
     steps:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
@@ -45,6 +45,14 @@ jobs:
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         with:
           target: wasm32-unknown-unknown
+
+      - name: Install Cargo binstall
+        uses: cargo-bins/cargo-binstall@v1.3.1
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Install wasm-bindgen-cli
+        run: cargo binstall wasm-bindgen-cli@0.2.86
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Build JS packages
         run: yarn build

@@ -85,15 +85,19 @@ runs:
         export PATH="${PATH}:${HOME}/.local/bin"
 
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.3
+      uses: mozilla-actions/sccache-action@v0.0.6
       with:
-        version: "v0.7.1" # Must be the same as in Dockerfile
+        version: "v0.8.2" # Must be the same as in Dockerfile
       if: inputs.cache == 'true'
 
     - name: Hash ref_name
       id: hashed-ref-name
       shell: bash
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+
+    - name: Set HOME variable to github context
+      shell: bash
+      run: echo "HOME=$HOME" >> $GITHUB_ENV
 
     - name: Cache cargo registry (S3 bucket cache)
       uses: strophy/actions-cache@opendal-update
@@ -102,9 +106,9 @@ runs:
         bucket: multi-runner-cache-x1xibo9c
         root: actions-cache
         path: |
-          /home/ubuntu/.cargo/registry/index
-          /home/ubuntu/.cargo/registry/cache
-          /home/ubuntu/.cargo/git
+          ${{ env.HOME }}/.cargo/registry/index
+          ${{ env.HOME }}/.cargo/registry/cache
+          ${{ env.HOME }}/.cargo/git
         key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
@@ -117,5 +121,6 @@ runs:
       if: runner.os == 'Linux'
       run: |
         sudo apt update -qq
-        sudo apt install -qq --yes clang llvm
+        # snappy is required by rust rocksdb
+        sudo apt install -qq --yes clang llvm libsnappy-dev
         sudo update-alternatives --set cc /usr/bin/clang

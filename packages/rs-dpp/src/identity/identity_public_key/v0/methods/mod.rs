@@ -2,16 +2,18 @@ use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMe
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
-use crate::{bls_signatures, ProtocolError};
+use crate::ProtocolError;
 use anyhow::anyhow;
 use dashcore::address::Payload;
-use dashcore::blsful::Bls12381G2Impl;
+#[cfg(feature = "ed25519-dalek")]
+use dashcore::ed25519_dalek;
 use dashcore::hashes::Hash;
 use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
-use dashcore::{ed25519_dalek, Address, Network, PubkeyHash, PublicKey as ECDSAPublicKey};
+use dashcore::{Address, Network, PubkeyHash, PublicKey as ECDSAPublicKey};
 use platform_value::Bytes20;
-
+#[cfg(feature = "bls-signatures")]
+use {crate::bls_signatures, dashcore::blsful::Bls12381G2Impl};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
@@ -52,11 +54,9 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
 
     fn address(&self, network: Network) -> Result<Address, ProtocolError> {
         match self.key_type {
-            KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::NotSupported(
-                    "Can not get an address from a single script hash key".to_string(),
-                ))
-            }
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
+                "Can not get an address from a single script hash key".to_string(),
+            )),
             _ => {
                 let public_key_hash = self.public_key_hash()?;
                 Ok(Address::new(
@@ -96,7 +96,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
                     }
                     let private_key = private_key.expect("expected private key");
 
-                    Ok(&private_key.public_key().0.to_compressed() == self.data.as_slice())
+                    Ok(private_key.public_key().0.to_compressed() == self.data.as_slice())
                 }
                 #[cfg(not(feature = "bls-signatures"))]
                 return Err(ProtocolError::NotSupported(
@@ -120,7 +120,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
             KeyType::EDDSA_25519_HASH160 => {
                 #[cfg(feature = "ed25519-dalek")]
                 {
-                    let key_pair = ed25519_dalek::SigningKey::from_bytes(&private_key_bytes);
+                    let key_pair = ed25519_dalek::SigningKey::from_bytes(private_key_bytes);
                     Ok(
                         ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).as_slice()
                             == self.data.as_slice(),
@@ -131,11 +131,9 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
                     "Converting a private key to a eddsa hash 160 is not supported without the ed25519-dalek feature".to_string(),
                 ));
             }
-            KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::NotSupported(
-                    "Converting a private key to a script hash is not supported".to_string(),
-                ));
-            }
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
+                "Converting a private key to a script hash is not supported".to_string(),
+            )),
         }
     }
 }
@@ -156,10 +154,9 @@ mod tests {
         let (public_key_data, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-            &secret_key.try_into().unwrap(),
-        )
-        .expect("expected to get secret key");
+        let decoded_secret_key =
+            dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
+                .expect("expected to get secret key");
         let public_key = decoded_secret_key.public_key();
         let decoded_public_key_data = public_key.0.to_compressed();
         assert_eq!(
@@ -174,10 +171,9 @@ mod tests {
         let (_, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-            &secret_key.try_into().unwrap(),
-        )
-        .expect("expected to get secret key");
+        let decoded_secret_key =
+            dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
+                .expect("expected to get secret key");
         let signature = decoded_secret_key
             .sign(SignatureSchemes::Basic, b"hello")
             .expect("expected to sign");
@@ -200,7 +196,7 @@ mod tests {
         // Test for ECDSA_SECP256K1
         let key_type = KeyType::ECDSA_SECP256K1;
         let (public_key_data, private_key_data) = key_type
-            .random_public_and_private_key_data(&mut rng, &platform_version)
+            .random_public_and_private_key_data(&mut rng, platform_version)
             .expect("expected to generate random keys");
 
         let identity_public_key = IdentityPublicKeyV0 {
@@ -215,21 +211,15 @@ mod tests {
         };
 
         // Validate that the private key matches the public key
-        assert_eq!(
-            identity_public_key
-                .validate_private_key_bytes(&private_key_data, Network::Testnet)
-                .unwrap(),
-            true
-        );
+        assert!(identity_public_key
+            .validate_private_key_bytes(&private_key_data, Network::Testnet)
+            .unwrap(),);
 
         // Test with an invalid private key
         let invalid_private_key_bytes = [0u8; 32];
-        assert_eq!(
-            identity_public_key
-                .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
-                .unwrap(),
-            false
-        );
+        assert!(!identity_public_key
+            .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
+            .unwrap());
     }
 
     #[cfg(all(feature = "random-public-keys", feature = "bls-signatures"))]
@@ -241,7 +231,7 @@ mod tests {
         // Test for BLS12_381
         let key_type = KeyType::BLS12_381;
         let (public_key_data, private_key_data) = key_type
-            .random_public_and_private_key_data(&mut rng, &platform_version)
+            .random_public_and_private_key_data(&mut rng, platform_version)
             .expect("expected to generate random keys");
 
         let identity_public_key = IdentityPublicKeyV0 {
@@ -256,21 +246,15 @@ mod tests {
         };
 
         // Validate that the private key matches the public key
-        assert_eq!(
-            identity_public_key
-                .validate_private_key_bytes(&private_key_data, Network::Testnet)
-                .unwrap(),
-            true
-        );
+        assert!(identity_public_key
+            .validate_private_key_bytes(&private_key_data, Network::Testnet)
+            .unwrap());
 
         // Test with an invalid private key
         let invalid_private_key_bytes = [0u8; 32];
-        assert_eq!(
-            identity_public_key
-                .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
-                .unwrap(),
-            false
-        );
+        assert!(!identity_public_key
+            .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
+            .unwrap());
     }
 
     #[cfg(all(feature = "random-public-keys", feature = "ed25519-dalek"))]
@@ -282,7 +266,7 @@ mod tests {
         // Test for EDDSA_25519_HASH160
         let key_type = KeyType::EDDSA_25519_HASH160;
         let (public_key_data, private_key_data) = key_type
-            .random_public_and_private_key_data(&mut rng, &platform_version)
+            .random_public_and_private_key_data(&mut rng, platform_version)
             .expect("expected to generate random keys");
 
         let identity_public_key = IdentityPublicKeyV0 {
@@ -297,20 +281,14 @@ mod tests {
         };
 
         // Validate that the private key matches the public key
-        assert_eq!(
-            identity_public_key
-                .validate_private_key_bytes(&private_key_data, Network::Testnet)
-                .unwrap(),
-            true
-        );
+        assert!(identity_public_key
+            .validate_private_key_bytes(&private_key_data, Network::Testnet)
+            .unwrap());
 
         // Test with an invalid private key
         let invalid_private_key_bytes = [0u8; 32];
-        assert_eq!(
-            identity_public_key
-                .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
-                .unwrap(),
-            false
-        );
+        assert!(!identity_public_key
+            .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
+            .unwrap());
     }
 }
