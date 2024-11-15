@@ -367,7 +367,7 @@ impl FetchMany<Identifier, Documents> for Document {
             let ExecutionResponse {
                 address,
                 retries,
-                inner: response, ..
+                inner: response
             } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
             tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
