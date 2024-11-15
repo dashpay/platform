@@ -27,9 +27,10 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;
+use bincode::{Decode, Encode};
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,

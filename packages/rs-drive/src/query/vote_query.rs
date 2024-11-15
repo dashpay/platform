@@ -4,9 +4,10 @@ use crate::query::Query;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::{PathQuery, SizedQuery};
+use bincode::{Decode, Encode};
 
 /// Vote Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct IdentityBasedVoteDriveQuery {
     /// The identity who would have made the vote
     pub identity_id: Identifier,

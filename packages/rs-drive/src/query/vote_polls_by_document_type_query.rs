@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use super::ContractLookupFn;
 use crate::drive::votes::paths::vote_contested_resource_contract_documents_indexes_path_vec;
 #[cfg(feature = "server")]
@@ -32,7 +33,7 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct VotePollsByDocumentTypeQuery {
     /// The contract information associated with the document.
     pub contract_id: Identifier,

@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 #[cfg(feature = "verify")]
 use super::ContractLookupFn;
 use crate::drive::votes::paths::VotePollPaths;
@@ -27,7 +28,7 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct ContestedDocumentVotePollVotesDriveQuery {
     /// What vote poll are we asking for?
     pub vote_poll: ContestedDocumentResourceVotePoll,

@@ -31,12 +31,13 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
+use bincode::{Decode, Encode};
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
 /// This enum defines the various types of results that can be returned when querying the drive
 /// for contested document vote poll information.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Encode, Decode)]
 pub enum ContestedDocumentVotePollDriveQueryResultType {
     /// The documents associated with the vote poll are returned in the query result.
     Documents,
@@ -90,7 +91,7 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
 }
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct ContestedDocumentVotePollDriveQuery {
     /// What vote poll are we asking for?
     pub vote_poll: ContestedDocumentResourceVotePoll,
