@@ -26,19 +26,6 @@ runs:
       shell: bash
       run: echo "HOME=$HOME" >> $GITHUB_ENV
 
-    # TODO: Use upload artifacts action instead
-#    - name: Restore local network data
-#      id: local-network-data
-#      uses: strophy/actions-cache/restore@opendal-update
-#      with:
-#        bucket: multi-runner-cache-x1xibo9c
-#        root: local-network-data
-#        path: |
-#          ${{ env.HOME }}/.dashmate
-#          **/.env
-#          dashmate_volumes_dump
-#        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
-
     - name: Restore local network data
       id: local-network-data
       uses: actions/cache/restore@v4
@@ -74,18 +61,6 @@ runs:
       run: ./scripts/dashmate/volumes/dump.sh
       shell: bash
       if: steps.local-network-data.outputs.cache-hit != 'true'
-
-#    - name: Save local network data
-#      uses: strophy/actions-cache/save@opendal-update
-#      with:
-#        bucket: multi-runner-cache-x1xibo9c
-#        root: local-network-data
-#        path: |
-#          ${{ env.HOME }}/.dashmate
-#          **/.env
-#          dashmate_volumes_dump
-#        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
-#      if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Save local network data
       uses: actions/cache/save@v4

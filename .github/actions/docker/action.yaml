@@ -165,6 +165,4 @@ runs:
           AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
-#        cache-from: type=registry,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache
-#        cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache,mode=max
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
