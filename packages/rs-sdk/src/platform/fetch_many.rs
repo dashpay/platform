@@ -19,7 +19,8 @@ use dapi_grpc::platform::v0::{
     GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
     GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest, Proof,
+    ResponseMetadata,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
@@ -182,6 +183,112 @@ where
             .map(|o| o.unwrap_or_default())
     }
 
+    /// Fetch multiple objects from Platform with metadata.
+    ///
+    /// Fetch objects from Platform that satisfy the provided [Query].
+    /// This method allows you to retrieve the metadata associated with the response.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: An optional `RequestSettings` to give greater flexibility on the request.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a `Result` containing either:
+    ///
+    /// * A tuple `(O, ResponseMetadata)` where `O` is the collection of fetched objects, and `ResponseMetadata` contains metadata about the response.
+    /// * [`Error`](crate::error::Error) when an error occurs.
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_many_with_metadata<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: Option<RequestSettings>,
+    ) -> Result<(O, ResponseMetadata), Error> {
+        Self::fetch_many_with_metadata_and_proof(sdk, query, settings)
+            .await
+            .map(|(objects, metadata, _)| (objects, metadata))
+    }
+
+    /// Fetch multiple objects from Platform with metadata and underlying proof.
+    ///
+    /// Fetch objects from Platform that satisfy the provided [Query].
+    /// This method allows you to retrieve the metadata and the underlying proof associated with the response.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: An optional `RequestSettings` to give greater flexibility on the request.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a `Result` containing either:
+    ///
+    /// * A tuple `(O, ResponseMetadata, Proof)` where `O` is the collection of fetched objects, `ResponseMetadata` contains metadata about the response, and `Proof` is the underlying proof.
+    /// * [`Error`](crate::error::Error) when an error occurs.
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_many_with_metadata_and_proof<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: Option<RequestSettings>,
+    ) -> Result<(O, ResponseMetadata, Proof), Error> {
+        let request = &query.query(sdk.prove())?;
+
+        let fut = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|e| e.inner_into())?;
+
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(
+                request = ?request,
+                response = ?response,
+                ?address,
+                retries,
+                object_type,
+                "fetched objects from platform"
+            );
+
+            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
+                request.clone(),
+                response,
+            )
+            .await
+            .map_err(|e| ExecutionError {
+                inner: e,
+                address: Some(address.clone()),
+                retries,
+            })
+            .map(|(o, metadata, proof)| {
+                (ExecutionResponse {
+                    inner: (o.unwrap_or_default(), metadata, proof),
+                    retries,
+                    address: address.clone(),
+                })
+            })
+        };
+
+        let settings = sdk
+            .dapi_client_settings
+            .override_by(settings.unwrap_or_default());
+
+        retry(settings, fut).await.into_inner()
+    }
+
     /// Fetch multiple objects from Platform by their identifiers.
     ///
     /// Convenience method to fetch multiple objects by their identifiers.
@@ -260,7 +367,7 @@ impl FetchMany<Identifier, Documents> for Document {
             let ExecutionResponse {
                 address,
                 retries,
-                inner: response,
+                inner: response, ..
             } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
             tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");

@@ -76,7 +76,7 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
 }
 
 /// Request execution response.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionResponse<R> {
     /// The response from the request
     pub inner: R,
