@@ -274,8 +274,12 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
             id.into_buffer(),
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -324,8 +328,12 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
             public_key_hash,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -391,8 +399,12 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             false,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         let maybe_keys: Option<IdentityPublicKeys> = if let Some(identity) = maybe_identity {
@@ -520,8 +532,12 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
             false,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -577,8 +593,12 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
             false,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -627,8 +647,12 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
             false,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -678,8 +702,12 @@ impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
             &identity_ids,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -726,8 +754,12 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
                 false,
                 platform_version,
             )
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -775,8 +807,12 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
             id.into_buffer(),
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -827,8 +863,12 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
             ids.as_slice(),
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -896,8 +936,12 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
             offset,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -957,8 +1001,12 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             &contracts_provider_fn,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, metadata, &root_hash, provider)?;
@@ -1044,8 +1092,12 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
             ascending,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         let epoch_info = epoch_info
@@ -1093,7 +1145,15 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, objects) =
-            Drive::verify_upgrade_state(&proof.grovedb_proof, platform_version)?;
+            Drive::verify_upgrade_state(&proof.grovedb_proof, platform_version).map_err(
+                |e| match e {
+                    drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                        proof_bytes: proof.grovedb_proof.clone(),
+                        error: e.to_string(),
+                    },
+                    _ => e.into(),
+                },
+            )?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1145,7 +1205,14 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
             start_pro_tx_hash,
             try_u32_to_u16(request_v0.count)?,
             platform_version,
-        )?;
+        )
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
+        })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1250,9 +1317,14 @@ where
 
         let (root_hash, documents) = request
             .verify_proof(&proof.grovedb_proof, platform_version)
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
+
         let documents = documents
             .into_iter()
             .map(|d| (d.id(), Some(d)))
@@ -1333,8 +1405,12 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
             false,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1375,8 +1451,12 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         let (root_hash, items) = resolved_request
             .verify_contests_proof(&proof.grovedb_proof, platform_version)
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1419,8 +1499,12 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
 
         let (root_hash, contested_resource_vote_state) = resolved_request
             .verify_vote_poll_vote_state_proof(&proof.grovedb_proof, platform_version)
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1473,8 +1557,12 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
 
         let (root_hash, voters) = resolved_request
             .verify_vote_poll_votes_proof(&proof.grovedb_proof, platform_version)
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1519,8 +1607,12 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
                 &contract_provider_fn,
                 platform_version,
             )
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1563,8 +1655,12 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
                 &proof.grovedb_proof,
                 platform_version,
             )
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    error: e.to_string(),
+                },
+                _ => e.into(),
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1607,7 +1703,14 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
             balance_id.into_buffer(),
             false,
             platform_version,
-        )?;
+        )
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
+        })?;
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
@@ -1707,8 +1810,12 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
             mtd.core_chain_locked_height,
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1754,8 +1861,12 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
             ProposerQueryType::ByIds(ids),
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -1818,8 +1929,12 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
             ProposerQueryType::ByRange(limit.map(|l| l as u16), formatted_start),
             platform_version,
         )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
+        .map_err(|e| match e {
+            drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                proof_bytes: proof.grovedb_proof.clone(),
+                error: e.to_string(),
+            },
+            _ => e.into(),
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
