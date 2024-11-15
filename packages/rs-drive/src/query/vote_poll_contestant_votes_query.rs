@@ -1,4 +1,3 @@
-use bincode::{Decode, Encode};
 #[cfg(feature = "verify")]
 use super::ContractLookupFn;
 use crate::drive::votes::paths::VotePollPaths;
@@ -13,6 +12,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;

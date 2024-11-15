@@ -9,6 +9,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::query::Query;
 use crate::util::common::encode::{decode_u64, encode_u64};
+use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -27,7 +28,6 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;
-use bincode::{Decode, Encode};
 
 /// Vote Poll Drive Query struct
 #[derive(Debug, PartialEq, Clone, Encode, Decode)]

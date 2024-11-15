@@ -1,10 +1,10 @@
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity_vec;
 use crate::error::Error;
 use crate::query::Query;
+use bincode::{Decode, Encode};
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::{PathQuery, SizedQuery};
-use bincode::{Decode, Encode};
 
 /// Vote Drive Query struct
 #[derive(Debug, PartialEq, Clone, Encode, Decode)]

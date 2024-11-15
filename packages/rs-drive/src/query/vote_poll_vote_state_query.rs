@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
+use bincode::{Decode, Encode};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -31,7 +32,6 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, TransactionArg};
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use platform_version::version::PlatformVersion;
-use bincode::{Decode, Encode};
 
 /// Represents the types of results that can be obtained from a contested document vote poll query.
 ///
