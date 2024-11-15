@@ -94,7 +94,7 @@ runs:
           ${{ env.HOME }}/cargo-cache-git-db
         key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          - ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-
 
     - name: Inject cargo cache into docker
       uses: reproducible-containers/buildkit-cache-dance@v3.1.2
@@ -123,7 +123,7 @@ runs:
         path: ${{ env.HOME }}/yarn-unplugged-cache
         key: ${{ inputs.platform }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
         restore-keys: |
-          - ${{ inputs.platform }}-yarn-unplugged-
+          ${{ inputs.platform }}-yarn-unplugged-
 
     - name: Set arch
       id: arch
