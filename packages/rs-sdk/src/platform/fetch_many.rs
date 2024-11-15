@@ -146,41 +146,9 @@ where
         sdk: &Sdk,
         query: Q,
     ) -> Result<O, Error> {
-        let request = &query.query(sdk.prove())?;
-        let closure = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = request
-                .clone()
-                .execute(sdk, settings)
-                .await
-                .map_err(|e| e.inner_into())?;
-
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
-
-            sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request.clone(), response)
-                .await
-                .map(|o| ExecutionResponse {
-                    inner: o,
-                    retries,
-                    address: address.clone(),
-                })
-                .map_err(|e| ExecutionError {
-                    inner: e,
-                    retries,
-                    address: Some(address),
-                })
-        };
-
-        let settings = sdk.dapi_client_settings;
-
-        retry(settings, closure)
+        Self::fetch_many_with_metadata_and_proof(sdk, query, None)
             .await
-            .into_inner()
-            .map(|o| o.unwrap_or_default())
+            .map(|(objects, _, _)| objects)
     }
 
     /// Fetch multiple objects from Platform with metadata.
@@ -273,12 +241,10 @@ where
                 address: Some(address.clone()),
                 retries,
             })
-            .map(|(o, metadata, proof)| {
-                (ExecutionResponse {
-                    inner: (o.unwrap_or_default(), metadata, proof),
-                    retries,
-                    address: address.clone(),
-                })
+            .map(|(o, metadata, proof)| ExecutionResponse {
+                inner: (o.unwrap_or_default(), metadata, proof),
+                retries,
+                address: address.clone(),
             })
         };
 
