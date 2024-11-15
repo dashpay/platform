@@ -4,8 +4,8 @@ use crate::consensus::ConsensusError;
 use crate::ProtocolError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-
-#[derive(Debug, PartialEq, Clone, Copy)]
+use platform_value::Identifier;
+#[derive(Debug, PartialEq, Clone)]
 pub enum TradeMode {
     None = 0,
     DirectPurchase = 1,

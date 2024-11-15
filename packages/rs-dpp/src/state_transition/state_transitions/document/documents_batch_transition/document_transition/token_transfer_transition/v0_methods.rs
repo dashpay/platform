@@ -1,0 +1,55 @@
+use platform_value::Identifier;
+use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_base_transition::TokenBaseTransition;
+use crate::state_transition::documents_batch_transition::document_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::state_transition::documents_batch_transition::document_transition::TokenTransferTransition;
+
+impl TokenTransferTransitionV0Methods for TokenTransferTransition {
+    fn base(&self) -> &TokenBaseTransition {
+        match self {
+            TokenTransferTransition::V0(v0) => &v0.base,
+        }
+    }
+
+    fn base_mut(&mut self) -> &mut TokenBaseTransition {
+        match self {
+            TokenTransferTransition::V0(v0) => &mut v0.base,
+        }
+    }
+
+    fn set_base(&mut self, base: TokenBaseTransition) {
+        match self {
+            TokenTransferTransition::V0(v0) => v0.base = base,
+        }
+    }
+
+    fn revision(&self) -> Revision {
+        match self {
+            TokenTransferTransition::V0(v0) => v0.revision,
+        }
+    }
+
+    fn set_revision(&mut self, revision: Revision) {
+        match self {
+            TokenTransferTransition::V0(v0) => v0.revision = revision,
+        }
+    }
+
+    fn recipient_owner_id(&self) -> Identifier {
+        match self {
+            TokenTransferTransition::V0(v0) => v0.recipient_owner_id,
+        }
+    }
+
+    fn recipient_owner_id_ref(&self) -> &Identifier {
+        match self {
+            TokenTransferTransition::V0(v0) => &v0.recipient_owner_id,
+        }
+    }
+
+    fn set_recipient_owner_id(&mut self, recipient_owner_id: Identifier) {
+        match self {
+            TokenTransferTransition::V0(v0) => v0.recipient_owner_id = recipient_owner_id,
+        }
+    }
+}

@@ -14,6 +14,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use platform_value::{Identifier, Value};
+use crate::tokens::allowed_currency::AllowedCurrency;
 
 mod accessors;
 #[cfg(feature = "random-documents")]
@@ -55,6 +56,8 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_transferable: Transferable,
     /// How are these documents traded?
     pub(in crate::data_contract) trade_mode: TradeMode,
+    /// How are these documents traded?
+    pub(in crate::data_contract) allowed_trade_currencies: Vec<AllowedCurrency>,
     /// Is document creation restricted?
     pub(in crate::data_contract) creation_restriction_mode: CreationRestrictionMode,
     /// The data contract id

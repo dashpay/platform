@@ -61,6 +61,7 @@ pub mod voting;
 pub mod core_types;
 
 pub mod withdrawal;
+mod token;
 
 pub use async_trait;
 
