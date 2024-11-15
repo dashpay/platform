@@ -28,8 +28,8 @@ fi
 #  - packages/wasm-dpp/Cargo.toml
 #  - Dockerfile
 if ! [[ -x "$(command -v wasm-bindgen)" ]]; then
-  echo "Wasm-bindgen CLI ${WASM_BINDGEN_VERSION} is not installed. Installing"
-  cargo install --config net.git-fetch-with-cli=true --profile "${CARGO_BUILD_PROFILE}" -f "wasm-bindgen-cli@0.2.86"
+  echo "Wasm-bindgen CLI ${WASM_BINDGEN_VERSION} is not installed."
+  exit 1
 fi
 
 # On a mac, bundled clang won't work - you need to install LLVM manually through brew,

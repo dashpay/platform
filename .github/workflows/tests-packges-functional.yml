@@ -4,10 +4,9 @@ on:
 jobs:
   test-functional:
     name: Run functional tests
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      CHROME_BIN: /usr/bin/brave-browser
       ECR_HOST: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
     steps:
       - name: Check out repo

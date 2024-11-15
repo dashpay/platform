@@ -44,16 +44,30 @@ ENV PATH=$CARGO_HOME/bin:$PATH
 COPY rust-toolchain.toml .
 RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
-    --profile minimal \
     -y \
     --default-toolchain "${TOOLCHAIN_VERSION}" \
     --target wasm32-unknown-unknown
 
-# Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
-# better build caching
-RUN if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    RUSTFLAGS="-C target-feature=-crt-static" \
-    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
-    #  - packages/wasm-dpp/Cargo.toml
-    #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install wasm-bindgen-cli@0.2.86 --locked
+# Download and install cargo-binstall
+ENV BINSTALL_VERSION=1.10.11
+RUN set -ex; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "aarch64" ]; then \
+        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
+    DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
+    curl -L --fail --show-error "$DOWNLOAD_URL" -o /tmp/cargo-binstall.tgz; \
+    tar -xzf /tmp/cargo-binstall.tgz -C /tmp cargo-binstall; \
+    chmod +x /tmp/cargo-binstall; \
+    /tmp/cargo-binstall -y --force cargo-binstall; \
+    rm /tmp/cargo-binstall; \
+    cargo binstall -V
+
+RUN cargo binstall wasm-bindgen-cli@0.2.86 --locked \
+                                           --no-discover-github-token \
+                                           --disable-telemetry \
+                                           --no-track \
+                                           --no-confirm

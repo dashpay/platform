@@ -21,7 +21,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
@@ -68,6 +68,14 @@ jobs:
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
+
+      - name: Install Cargo binstall
+        uses: cargo-bins/cargo-binstall@v1.3.1
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Install wasm-bindgen-cli
+        run: cargo binstall wasm-bindgen-cli@0.2.86
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Build packages
         run: yarn build

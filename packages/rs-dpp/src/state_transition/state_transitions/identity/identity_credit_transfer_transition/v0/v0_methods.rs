@@ -52,21 +52,18 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
                     );
                 }
             }
-            None => {
-                let key = identity
-                    .get_first_public_key_matching(
-                        Purpose::TRANSFER,
-                        SecurityLevel::full_range().into(),
-                        KeyType::all_key_types().into(),
-                        true,
+            None => identity
+                .get_first_public_key_matching(
+                    Purpose::TRANSFER,
+                    SecurityLevel::full_range().into(),
+                    KeyType::all_key_types().into(),
+                    true,
+                )
+                .ok_or_else(|| {
+                    ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
+                        "no transfer public key".to_string(),
                     )
-                    .ok_or_else(|| {
-                        ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
-                            "no transfer public key".to_string(),
-                        )
-                    })?;
-                key
-            }
+                })?,
         };
 
         transition.sign_external(

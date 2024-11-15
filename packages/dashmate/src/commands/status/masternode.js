@@ -22,8 +22,6 @@ export default class MasternodeStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
-   * @param {createRpcClient} createRpcClient
    * @param {Config} config
    * @param getMasternodeScope getMasternodeScope
    * @return {Promise<void>}
@@ -31,8 +29,6 @@ export default class MasternodeStatusCommand extends ConfigBaseCommand {
   async runWithDependencies(
     args,
     flags,
-    dockerCompose,
-    createRpcClient,
     config,
     getMasternodeScope,
   ) {
