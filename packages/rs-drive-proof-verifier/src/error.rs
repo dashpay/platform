@@ -1,5 +1,6 @@
 use dpp::ProtocolError;
 use drive::grovedb::operations::proof::GroveDBProof;
+use drive::query::PathQuery;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
@@ -18,8 +19,9 @@ pub enum Error {
 
     /// GroveDB error, often for issues with proofs
     #[error("grovedb: {error}")]
-    GroveDBError {
+    GroveDBProofVerificationError {
         proof_bytes: Vec<u8>,
+        path_query: PathQuery,
         height: u64,
         time_ms: u64,
         error: String,
