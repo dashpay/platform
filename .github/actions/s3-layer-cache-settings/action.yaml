@@ -82,4 +82,4 @@ runs:
             cacheToManifestNames.push('${{ inputs.name }}');
           }
 
-          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }},name=${manifestNames.join(';')}`);
+          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }},name=${cacheToManifestNames.join(';')}`);
