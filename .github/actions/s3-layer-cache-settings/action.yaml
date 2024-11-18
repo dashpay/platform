@@ -77,7 +77,7 @@ runs:
             shaManifestName,
             headRefManifestName,
           ];
-          
+
           if ('${{ inputs.cache_to_name }}' === 'true') {
             cacheToManifestNames.push('${{ inputs.name }}');
           }
