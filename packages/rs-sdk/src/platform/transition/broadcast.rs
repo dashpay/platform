@@ -1,14 +1,16 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
+use crate::sync::retry;
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::Proof;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
-
+use rs_dapi_client::WrapWithExecutionResult;
+use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
     async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error>;
@@ -22,54 +24,96 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error> {
-        let request = self.broadcast_request_for_state_transition()?;
+        let retry_settings = sdk.dapi_client_settings;
 
-        request
-            .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
+        // async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error>
+        let factory = |request_settings: RequestSettings| async move {
+            let request =
+                self.broadcast_request_for_state_transition()
+                    .map_err(|e| ExecutionError {
+                        inner: e,
+                        address: None,
+                        retries: 0,
+                    })?;
+            request
+                .execute(sdk, request_settings)
+                .await
+                .map_err(|e| e.inner_into())
+        };
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-
-        Ok(())
+        retry(retry_settings, factory)
+            .await
+            .into_inner()
+            .map(|_| ())
     }
 
     async fn broadcast_and_wait(
         &self,
         sdk: &Sdk,
-        _time_out_ms: Option<u64>,
+        time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
-        let request = self.broadcast_request_for_state_transition()?;
-        // TODO: Implement retry logic
-        request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await
-            .into_inner()?;
+        self.broadcast(sdk).await?;
 
-        let request = self.wait_for_state_transition_result_request()?;
+        let retry_settings = sdk.dapi_client_settings;
 
-        let response = request
-            .execute(sdk, RequestSettings::default())
-            .await
-            .into_inner()?;
+        let factory = |request_settings: RequestSettings| async move {
+            let request = self
+                .wait_for_state_transition_result_request()
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: None,
+                    retries: 0,
+                })?;
 
-        let block_info = block_info_from_metadata(response.metadata()?)?;
-        let proof = response.proof_owned()?;
-        let context_provider =
-            sdk.context_provider()
-                .ok_or(Error::from(ContextProviderError::Config(
+            let response = request
+                .execute(sdk, request_settings)
+                .await
+                .map_err(|e| e.inner_into())?;
+
+            let grpc_response = &response.inner;
+            let metadata = grpc_response.metadata().wrap(&response)?.inner;
+            let block_info = block_info_from_metadata(metadata).wrap(&response)?.inner;
+            let proof: &Proof = (*grpc_response).proof().wrap(&response)?.inner;
+
+            let context_provider = sdk.context_provider().ok_or(ExecutionError {
+                inner: Error::from(ContextProviderError::Config(
                     "Context provider not initialized".to_string(),
-                )))?;
+                )),
+                address: Some(response.address.clone()),
+                retries: response.retries,
+            })?;
 
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            self,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &context_provider.as_contract_lookup_fn(),
-            sdk.version(),
-        )?;
+            let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
+                self,
+                &block_info,
+                proof.grovedb_proof.as_slice(),
+                &context_provider.as_contract_lookup_fn(),
+                sdk.version(),
+            )
+            .wrap(&response)?
+            .inner;
 
-        Ok(result)
+            Ok::<_, Error>(result).wrap(&response)
+        };
+
+        let future = retry(retry_settings, factory);
+        match time_out_ms {
+            Some(time_out_ms) => {
+                let timeout = tokio::time::Duration::from_millis(time_out_ms);
+                tokio::time::timeout(timeout, future)
+                    .await
+                    .map_err(|e| {
+                        Error::TimeoutReached(
+                            timeout,
+                            format!("Timeout waiting for state transition result: {:?}", e),
+                        )
+                    })?
+                    .into_inner()
+            }
+            None => future.await.into_inner(),
+        }
+
+        //Result<StateTransitionProofResult, Error>
     }
 }
