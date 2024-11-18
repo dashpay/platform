@@ -210,20 +210,3 @@ jobs:
       - build-images
     secrets: inherit
     uses: ./.github/workflows/tests-packges-functional.yml
-
-  remove-artifacts:
-    name: Remove artifacts
-    needs:
-      - js-packages
-      - js-codeql
-      - test-suite
-      - test-functional
-      - dashmate-e2e-tests
-    runs-on: ubuntu-24.04
-    # Make sure we run this job even if some needed jobs were skipped
-    if: ${{ always() }}
-    steps:
-      - uses: geekyeggo/delete-artifact@v5
-        with:
-          name: js-build-${{ github.sha }}
-        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
