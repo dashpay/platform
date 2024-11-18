@@ -181,7 +181,7 @@ RUN <<EOS
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
-        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
+#        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
@@ -310,13 +310,20 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex; \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        mv .cargo/config-release.toml .cargo/config.toml; \
+    else \
+        export FEATURES_FLAG="--features=console,grovedbg" ; \
+    fi && \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
+        ${FEATURES_FLAG} \
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
@@ -328,7 +335,7 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex; \
     source $HOME/.cargo/env && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
@@ -344,6 +351,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         ${FEATURES_FLAG} \
         --locked && \
     cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
+    # Remove target directory to save space
+    rm -rf target && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 #
@@ -359,7 +368,6 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -375,7 +383,6 @@ COPY . .
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -384,6 +391,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \
+    # Remove target directory to save space
+    rm -rf target && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 #
