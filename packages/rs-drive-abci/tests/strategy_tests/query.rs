@@ -5,7 +5,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashRequest, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
-use dpp::bls_signatures::{Bls12381G2Impl, BlsResult};
+use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
@@ -106,19 +106,20 @@ impl<'a> ProofVerification<'a> {
             Err(e) => return SimpleValidationResult::new_with_error(e.into()),
         };
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let signature = match dpp::bls_signatures::Signature::<Bls12381G2Impl>::try_from(
-            self.signature.as_slice(),
-        ) {
-            Ok(signature) => signature,
-            Err(e) => {
-                return SimpleValidationResult::new_with_error(
-                    AbciError::BlsErrorOfTenderdashThresholdMechanism(
-                        e,
-                        format!("Malformed signature data: {}", hex::encode(self.signature)),
-                    ),
-                );
-            }
-        };
+        let signature =
+            match <Bls12381G2Impl as Pairing>::Signature::from_compressed(self.signature)
+                .into_option()
+            {
+                Some(signature) => Signature::Basic(signature),
+                None => {
+                    return SimpleValidationResult::new_with_error(
+                        AbciError::BlsErrorOfTenderdashThresholdMechanism(
+                            BlsError::InvalidSignature,
+                            format!("malformed signature data: {}", hex::encode(self.signature)),
+                        ),
+                    );
+                }
+            };
         tracing::trace!(
             digest=hex::encode(&digest),
             ?state_id,
