@@ -37,6 +37,9 @@ inputs:
   aws_secret_access_key:
     description: AWS secret access key
     required: true
+  cache_to_name:
+    description: 'Save cache to name manifest (should be used only on default branch)'
+    default: 'false'
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -79,6 +82,7 @@ runs:
         name: ${{ inputs.image_name }}
         region: ${{ inputs.region }}
         bucket: ${{ inputs.bucket }}
+        cache_to_name: ${{ inputs.cache_to_name }}
 
     - name: Set HOME variable to github context
       shell: bash

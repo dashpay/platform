@@ -25,6 +25,9 @@ inputs:
   mode:
     description: Cache mode
     default: max
+  cache_to_name:
+    description: 'Save cache to name manifest (should be used only on default branch)'
+    default: 'false'
 
 outputs:
   cache_to:
@@ -41,14 +44,6 @@ runs:
       id: script
       with:
         script: |
-          const sanitizedHeadRef = '${{ inputs.head_ref }}'.replace(/[^a-zA-Z0-9]/g, '-');
-
-          const manifestNames = [
-            '${{ inputs.name }}_sha_${{ github.sha }}',
-            `${{ inputs.name }}_tag_${ sanitizedHeadRef }`,
-            '${{ inputs.name }}' // TODO: must be only on default branch
-          ];
-
           const settings = {
             type: 's3',
             region: '${{ inputs.region }}',
@@ -61,9 +56,30 @@ runs:
             .map(([key, value]) => `${key}=${value}`)
             .join(',');
 
-          const cacheFrom = manifestNames
+          const sanitizedHeadRef = '${{ inputs.head_ref }}'.replace(/[^a-zA-Z0-9]/g, '-');
+
+          const shaManifestName = '${{ inputs.name }}_sha_${{ github.sha }}';
+          const headRefManifestName = '${{ inputs.name }}_tag_${ sanitizedHeadRef }';
+
+          const cacheFromManifestNames = [
+            shaManifestName,
+            headRefManifestName,
+            '${{ inputs.name }}',
+          ];
+
+          const cacheFrom = cacheFromManifestNames
             .map((name) => `${settingsString},name=${name}`)
             .join('\n');
 
           core.setOutput('cache_from', cacheFrom);
+
+          const cacheToManifestNames = [
+            shaManifestName,
+            headRefManifestName,
+          ];
+          
+          if ('${{ inputs.cache_to_name }}' === 'true') {
+            cacheToManifestNames.push('${{ inputs.name }}');
+          }
+
           core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }},name=${manifestNames.join(';')}`);
