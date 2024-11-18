@@ -9,11 +9,19 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
+use futures::TryFutureExt;
 use rs_dapi_client::WrapWithExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use tokio::time::timeout;
+
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
     async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error>;
+    async fn wait_for_response(
+        &self,
+        sdk: &Sdk,
+        time_out_ms: Option<u64>,
+    ) -> Result<StateTransitionProofResult, Error>;
     async fn broadcast_and_wait(
         &self,
         sdk: &Sdk,
@@ -47,14 +55,11 @@ impl BroadcastStateTransition for StateTransition {
             .into_inner()
             .map(|_| ())
     }
-
-    async fn broadcast_and_wait(
+    async fn wait_for_response(
         &self,
         sdk: &Sdk,
         time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
-        self.broadcast(sdk).await?;
-
         let retry_settings = sdk.dapi_client_settings;
 
         let factory = |request_settings: RequestSettings| async move {
@@ -113,7 +118,29 @@ impl BroadcastStateTransition for StateTransition {
             }
             None => future.await.into_inner(),
         }
+    }
 
-        //Result<StateTransitionProofResult, Error>
+    async fn broadcast_and_wait(
+        &self,
+        sdk: &Sdk,
+        time_out_ms: Option<u64>,
+    ) -> Result<StateTransitionProofResult, Error> {
+        let future = async {
+            self.broadcast(sdk).await?;
+            self.wait_for_response(sdk, time_out_ms).await
+        };
+
+        match time_out_ms {
+            Some(time_out_ms) => timeout(tokio::time::Duration::from_millis(time_out_ms), future)
+                .into_future()
+                .await
+                .map_err(|e| {
+                    Error::TimeoutReached(
+                        tokio::time::Duration::from_millis(time_out_ms),
+                        format!("Timeout waiting for state transition result: {:?}", e),
+                    )
+                })?,
+            None => future.await,
+        }
     }
 }
