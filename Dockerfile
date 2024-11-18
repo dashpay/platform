@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1
+# syntax = docker/dockerfile:1.7-labs
 
 # Docker image for rs-drive-abci
 #
@@ -181,7 +181,6 @@ RUN <<EOS
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
-#        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
@@ -285,14 +284,46 @@ RUN source $HOME/.cargo/env; \
 FROM deps AS build-planner
 
 WORKDIR /platform
-COPY . .
 
-RUN source $HOME/.cargo/env && \
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/dapi-grpc \
+    packages/rs-dapi-grpc-macros \
+    packages/rs-dpp \
+    packages/rs-drive \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-drive-abci \
+    packages/dashpay-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/strategy-tests \
+    packages/simple-signer \
+    packages/rs-json-schema-compatibility-validator \
+    # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
+    packages/rs-drive-proof-verifier \
+    packages/wasm-dpp \
+    packages/rs-dapi-client \
+    packages/rs-sdk \
+    packages/check-features \
+    /platform/
+
+RUN if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        export RELEASE="--release" ; \
+    fi && \
+    source $HOME/.cargo/env && \
     source /root/env && \
-    cargo chef prepare --recipe-path recipe.json
-
-# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
-RUN touch /platform/packages/dapi-grpc/build.rs
+    cargo chef prepare $RELEASE --recipe-path recipe.json
 
 #
 # STAGE: BUILD RS-DRIVE-ABCI
@@ -304,13 +335,12 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
 
-COPY --from=build-planner /platform/recipe.json recipe.json
+COPY --from=build-planner /platform/recipe.json /platform/.cargo /platform/
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     set -ex; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
@@ -327,7 +357,41 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
-COPY . .
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/dapi-grpc \
+    packages/rs-dapi-grpc-macros \
+    packages/rs-dpp \
+    packages/rs-drive \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-drive-abci \
+    packages/dashpay-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/strategy-tests \
+    packages/simple-signer \
+    packages/rs-json-schema-compatibility-validator \
+    # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
+    packages/rs-drive-proof-verifier \
+    packages/wasm-dpp \
+    packages/rs-dapi-client \
+    packages/rs-sdk \
+    packages/check-features \
+    /platform/
+
+# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+#RUN touch /platform/packages/dapi-grpc/build.rs
 
 RUN mkdir /artifacts
 
@@ -350,9 +414,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --package drive-abci \
         ${FEATURES_FLAG} \
         --locked && \
-    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
-    # Remove target directory to save space
-    rm -rf target && \
+    cp target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
+    # Remove /platform to reduce layer size
+    rm -rf /platform && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 #
@@ -378,7 +442,42 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
-COPY . .
+
+# Rust deps
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/rs-dpp \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-json-schema-compatibility-validator \
+    # Common
+    packages/wasm-dpp \
+    packages/dashpay-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/dapi-grpc \
+    # JS deps
+    .yarn \
+    .pnp* \
+    .yarnrc.yml \
+    yarn.lock \
+    package.json \
+    packages/js-grpc-common \
+    packages/js-dapi-client \
+    packages/wallet-lib \
+    packages/js-dash-sdk \
+    packages/dash-spv \
+    /platform/
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
@@ -391,8 +490,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \
-    # Remove target directory to save space
-    rm -rf target && \
+    # Remove target directory and rust packages to save space
+    rm -rf target packages/rs-* && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 #
@@ -413,7 +512,7 @@ RUN mkdir -p /var/log/dash \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
+COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -449,6 +548,9 @@ EXPOSE 29090
 # STAGE: DASHMATE HELPER BUILD
 #
 FROM build-js AS build-dashmate-helper
+
+# Copy dashmate package
+COPY packages/dashmate packages/dashmate
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -494,6 +596,8 @@ ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 #
 FROM build-js AS build-test-suite
 
+COPY packages/platform-test-suite packages/platform-test-suite
+
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN yarn workspaces focus --production @dashevo/platform-test-suite
@@ -511,38 +615,6 @@ LABEL description="Dash Platform test suite"
 WORKDIR /platform
 
 COPY --from=build-test-suite /platform /platform
-
-
-# Copy yarn and Cargo files
-COPY --from=build-test-suite /platform/.yarn /platform/.yarn
-COPY --from=build-test-suite /platform/package.json /platform/yarn.lock \
-    /platform/.yarnrc.yml /platform/.pnp.* /platform/Cargo.lock /platform/rust-toolchain.toml ./
-# Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
-COPY --from=build-test-suite /platform/packages/platform-test-suite/Cargo.toml.template ./Cargo.toml
-
-# Copy only necessary packages from monorepo
-COPY --from=build-test-suite /platform/packages/platform-test-suite packages/platform-test-suite
-COPY --from=build-test-suite /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-test-suite /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-test-suite /platform/packages/js-dash-sdk packages/js-dash-sdk
-COPY --from=build-test-suite /platform/packages/js-dapi-client packages/js-dapi-client
-COPY --from=build-test-suite /platform/packages/js-grpc-common packages/js-grpc-common
-COPY --from=build-test-suite /platform/packages/dapi-grpc packages/dapi-grpc
-COPY --from=build-test-suite /platform/packages/dash-spv packages/dash-spv
-COPY --from=build-test-suite /platform/packages/withdrawals-contract packages/withdrawals-contract
-COPY --from=build-test-suite /platform/packages/rs-platform-value packages/rs-platform-value
-COPY --from=build-test-suite /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-test-suite /platform/packages/feature-flags-contract packages/feature-flags-contract
-COPY --from=build-test-suite /platform/packages/dpns-contract packages/dpns-contract
-COPY --from=build-test-suite /platform/packages/data-contracts packages/data-contracts
-COPY --from=build-test-suite /platform/packages/rs-platform-serialization packages/rs-platform-serialization
-COPY --from=build-test-suite /platform/packages/rs-platform-serialization-derive packages/rs-platform-serialization-derive
-COPY --from=build-test-suite /platform/packages/rs-platform-version packages/rs-platform-version
-COPY --from=build-test-suite /platform/packages/rs-platform-versioning packages/rs-platform-versioning
-COPY --from=build-test-suite /platform/packages/rs-platform-value-convertible packages/rs-platform-value-convertible
-COPY --from=build-test-suite /platform/packages/rs-dpp packages/rs-dpp
-COPY --from=build-test-suite /platform/packages/wasm-dpp packages/wasm-dpp
-
 COPY --from=build-test-suite /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
@@ -553,6 +625,8 @@ ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
 # STAGE: DAPI BUILD
 #
 FROM build-js AS build-dapi
+
+COPY packages/dapi packages/dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -579,7 +653,6 @@ COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
-COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-dapi-client
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
