@@ -19,7 +19,8 @@ const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
 pub struct RequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for a request.
+    /// Timeout for single request (soft limit).
+    /// Note that the total maximum time of execution can exceed  `(timeout + connect_timeout) * retries`.
     pub timeout: Option<Duration>,
     /// Number of retries in case of failed requests. If max retries reached, the last error is returned.
     /// 1 means one request and one retry in case of error, etc.

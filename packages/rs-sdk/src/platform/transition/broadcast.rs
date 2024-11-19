@@ -16,23 +16,28 @@ use tokio::time::timeout;
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
-    async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error>;
+    async fn broadcast(&self, sdk: &Sdk, settings: Option<RequestSettings>) -> Result<(), Error>;
     async fn wait_for_response(
         &self,
         sdk: &Sdk,
+        settings: Option<RequestSettings>,
         time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error>;
     async fn broadcast_and_wait(
         &self,
         sdk: &Sdk,
+        settings: Option<RequestSettings>,
         time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error>;
 }
 
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
-    async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error> {
-        let retry_settings = sdk.dapi_client_settings;
+    async fn broadcast(&self, sdk: &Sdk, settings: Option<RequestSettings>) -> Result<(), Error> {
+        let retry_settings = match settings {
+            Some(s) => sdk.dapi_client_settings.override_by(s),
+            None => sdk.dapi_client_settings,
+        };
 
         // async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error>
         let factory = |request_settings: RequestSettings| async move {
@@ -58,9 +63,13 @@ impl BroadcastStateTransition for StateTransition {
     async fn wait_for_response(
         &self,
         sdk: &Sdk,
+        settings: Option<RequestSettings>,
         time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
-        let retry_settings = sdk.dapi_client_settings;
+        let retry_settings = match settings {
+            Some(s) => sdk.dapi_client_settings.override_by(s),
+            None => sdk.dapi_client_settings,
+        };
 
         let factory = |request_settings: RequestSettings| async move {
             let request = self
@@ -123,11 +132,12 @@ impl BroadcastStateTransition for StateTransition {
     async fn broadcast_and_wait(
         &self,
         sdk: &Sdk,
+        settings: Option<RequestSettings>,
         time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
         let future = async {
-            self.broadcast(sdk).await?;
-            self.wait_for_response(sdk, time_out_ms).await
+            self.broadcast(sdk, settings).await?;
+            self.wait_for_response(sdk, settings, time_out_ms).await
         };
 
         match time_out_ms {

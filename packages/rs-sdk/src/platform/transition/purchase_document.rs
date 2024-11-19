@@ -93,7 +93,9 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             None,
         )?;
 
-        transition.broadcast(sdk).await?;
+        transition
+            .broadcast(sdk, Some(settings.request_settings))
+            .await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         Ok(transition)
     }
@@ -104,7 +106,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
         state_transition: StateTransition,
         _data_contract: Arc<DataContract>,
     ) -> Result<Document, Error> {
-        let result = state_transition.wait_for_response(sdk, None).await?;
+        let result = state_transition.wait_for_response(sdk, None, None).await?;
 
         match result {
             StateTransitionProofResult::VerifiedDocuments(mut documents) => {

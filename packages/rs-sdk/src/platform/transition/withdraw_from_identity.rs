@@ -62,7 +62,9 @@ impl WithdrawFromIdentity for Identity {
             None,
         )?;
 
-        let result = state_transition.broadcast_and_wait(sdk, None).await?;
+        let result = state_transition
+            .broadcast_and_wait(sdk, settings.map(|s| s.request_settings), None)
+            .await?;
 
         match result {
             StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
