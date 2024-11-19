@@ -265,7 +265,7 @@ RUN set -ex; \
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
     # Download and extract the cargo-binstall binary
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall; \
+    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
     rm ./cargo-binstall; \
     source $HOME/.cargo/env; \
     cargo binstall -V
@@ -318,7 +318,7 @@ COPY --parents \
     packages/check-features \
     /platform/
 
-RUN if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+RUN if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         export RELEASE="--release" ; \
     fi && \
     source $HOME/.cargo/env && \
