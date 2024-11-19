@@ -2,11 +2,6 @@ name: Tests
 
 on:
   workflow_dispatch:
-    inputs:
-      rebuild-deps:
-        description: "Rebuild cached Rust dependencies"
-        required: false
-        default: "false"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -41,22 +36,6 @@ jobs:
         with:
           filters: .github/package-filters/rs-packages.yml
 
-  build-rust-deps:
-    name: Prebuild and cache some Rust dependencies
-    runs-on: ubuntu-24.04
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      - name: Precompile librocksdb
-        uses: ./.github/actions/librocksdb
-
   build-js:
     name: Build JS packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
@@ -90,7 +69,6 @@ jobs:
     name: Rust packages
     needs:
       - changes
-      - build-rust-deps
     secrets: inherit
     strategy:
       fail-fast: false
@@ -99,13 +77,6 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-24.04"' }}
-      # FIXME: Clippy fails on github hosted runners, most likely due to RAM usage. Using self-hosted runners for now.
-      # lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
-      lint-runner: '["ubuntu-24.04"]'
-      # Run drive tests on self-hosted 4x
-      # test-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
-      test-runner: '["ubuntu-24.04"]'
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
 
   rs-crates-security:
@@ -181,6 +152,7 @@ jobs:
     secrets: inherit
     needs:
       - changes
+      - build-js
       - build-images
     strategy:
       fail-fast: false

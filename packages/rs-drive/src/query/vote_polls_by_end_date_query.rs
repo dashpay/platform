@@ -9,6 +9,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::query::Query;
 use crate::util::common::encode::{decode_u64, encode_u64};
+use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -29,7 +30,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct VotePollsByEndDateDriveQuery {
     /// What is the start time we are asking for
     pub start_time: Option<(TimestampMillis, TimestampIncluded)>,

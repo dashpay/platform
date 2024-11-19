@@ -21,14 +21,12 @@ inputs:
 runs:
   using: composite
   steps:
-    # Cache librocksdb using s3 bucket
-    - name: Restore cached librocksdb from S3
+    - name: Cache librocksdb
+      uses: actions/cache@v4
       id: librocksdb-cache
-      uses: strophy/actions-cache@opendal-update
       with:
-        bucket: ${{ inputs.bucket }}
-        path: /opt/rocksdb
         key: librocksdb/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
+        path: /opt/rocksdb
 
     - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' || inputs.force == 'true' }}
       shell: bash
