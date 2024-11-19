@@ -380,6 +380,8 @@ COPY --parents \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
+    # These packages are part of workspace and must be here otherwise it builds from scratch
+    # See todo below
     packages/simple-signer \
     packages/rs-json-schema-compatibility-validator \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
@@ -389,9 +391,6 @@ COPY --parents \
     packages/rs-sdk \
     packages/check-features \
     /platform/
-
-# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
-#RUN touch /platform/packages/dapi-grpc/build.rs
 
 RUN mkdir /artifacts
 
@@ -409,6 +408,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
     fi && \
+    # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+    echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
     cargo build \
         --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
