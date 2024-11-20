@@ -10,7 +10,7 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::WrapWithExecutionResult;
+use rs_dapi_client::Wrap;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]

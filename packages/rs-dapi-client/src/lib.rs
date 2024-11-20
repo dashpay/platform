@@ -22,7 +22,7 @@ pub use dapi_client::{DapiClient, DapiClientError};
 pub use dump::DumpData;
 pub use executor::{
     DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult, InnerInto, IntoInner,
-    WrapWithExecutionResult,
+    Wrap,
 };
 use futures::{future::BoxFuture, FutureExt};
 pub use request_settings::RequestSettings;
