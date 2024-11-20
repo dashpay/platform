@@ -11,7 +11,7 @@ use metrics_exporter_prometheus::PrometheusBuilder;
 
 /// Default Prometheus port (29090)
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 29090;
-
+/// Last block time in seconds
 const COUNTER_LAST_BLOCK_TIME: &str = "abci_last_block_time_seconds";
 const COUNTER_LAST_HEIGHT: &str = "abci_last_finalized_height";
 const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";

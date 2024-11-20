@@ -22,12 +22,6 @@ inputs:
     description: User name to use when pushing images to Docker Hub
   dockerhub_token:
     description: Docker Hub token to use
-  cache_mounts:
-    description: Load cache mounts cache
-    default: |
-      cargo_registry_index
-      cargo_registry_cache
-      cargo_git
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
@@ -43,6 +37,9 @@ inputs:
   aws_secret_access_key:
     description: AWS secret access key
     required: true
+  cache_to_name:
+    description: 'Save cache to name manifest (should be used only on default branch)'
+    default: 'false'
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -65,16 +62,9 @@ runs:
         install: true
         driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
         cleanup: false
-        config-inline: |
+        buildkitd-config-inline: |
           [worker.oci]
             gc = false
-
-    - name: Load Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
-      if: ${{ inputs.cache_mounts != '' }}
-      with:
-        bucket: ${{ inputs.bucket }}
-        mounts: ${{ inputs.cache_mounts }}
 
     - name: Set Docker tags and labels from image tag
       id: docker_meta
@@ -90,16 +80,83 @@ runs:
       id: layer_cache_settings
       with:
         name: ${{ inputs.image_name }}
+        region: ${{ inputs.region }}
         bucket: ${{ inputs.bucket }}
+        cache_to_name: ${{ inputs.cache_to_name }}
+
+    - name: Set HOME variable to github context
+      shell: bash
+      run: echo "HOME=$HOME" >> $GITHUB_ENV
+
+    - name: Cargo cache for Docker
+      uses: actions/cache@v4
+      id: cargo-cache
+      with:
+        path: |
+          ${{ env.HOME }}/cargo-cache-registry-index
+          ${{ env.HOME }}/cargo-cache-registry-cache
+          ${{ env.HOME }}/cargo-cache-git-db
+        key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Inject cargo cache into docker
+      uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+      with:
+        cache-map: |
+          {
+            "${{ env.HOME }}/cargo-cache-registry-index": {
+              "target": "/root/.cargo/registry/index",
+              "id": "cargo_registry_index"
+            },
+            "${{ env.HOME }}/cargo-cache-registry-cache": {
+              "target": "/root/.cargo/registry/cache",
+              "id": "cargo_registry_cache"
+            },
+            "${{ env.HOME }}/cargo-cache-git-db": {
+              "target": "/root/.cargo/git/db",
+              "id": "cargo_git"
+            }
+          }
+        skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
+
+    - name: Yarn unplugged cache for Docker
+      uses: actions/cache@v4
+      id: yarn-cache
+      with:
+        path: ${{ env.HOME }}/yarn-unplugged-cache
+        key: ${{ inputs.platform }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+        restore-keys: |
+          ${{ inputs.platform }}-yarn-unplugged-
+
+    - name: Set arch
+      id: arch
+      uses: actions/github-script@v6
+      with:
+        result-encoding: 'string'
+        script: return '${{ inputs.platform }}'.replace('linux/', '');
+
+    - name: Inject cargo cache into docker
+      uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+      with:
+        cache-map: |
+          {
+            "${{ env.HOME }}/yarn-unplugged-cache": {
+              "target": "/tmp/unplugged",
+              "id": "unplugged_${{ steps.arch.outputs.result }}"
+            }
+          }
+        skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
         target: ${{ inputs.target }}
         labels: ${{ steps.docker_meta.outputs.labels }}
+        push: ${{ inputs.push_tags }}
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
         build-args: |
@@ -110,15 +167,6 @@ runs:
           SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
           AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
           AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
-          AWS_REGION=${{ inputs.region }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
-
-# TODO: This is doesn't work
-#    - name: Save Docker mount cache
-#      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
-#      if: ${{ inputs.cache_mounts != '' }}
-#      with:
-#        bucket: ${{ inputs.bucket }}
-#        mounts: ${{ inputs.cache_mounts }}
