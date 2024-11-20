@@ -27,9 +27,12 @@ inputs:
     default: dev
   bucket:
     description: S3 bucket to use for caching, must match runner define in `runs-on`
-    default: multi-runner-cache-x1xibo9c
+    default: ${{ env.AWS_S3_BUCKET }}
   region:
     description: S3 bucket region
+    required: true
+  endpoint:
+    description: S3 endpoint to use for caching
     required: true
   aws_access_key_id:
     description: AWS access key ID
@@ -38,8 +41,8 @@ inputs:
     description: AWS secret access key
     required: true
   cache_to_name:
-    description: 'Save cache to name manifest (should be used only on default branch)'
-    default: 'false'
+    description: "Save cache to name manifest (should be used only on default branch)"
+    default: "false"
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -82,6 +85,7 @@ runs:
         name: ${{ inputs.image_name }}
         region: ${{ inputs.region }}
         bucket: ${{ inputs.bucket }}
+        endpoint: ${{ inputs.endpoint }}
         cache_to_name: ${{ inputs.cache_to_name }}
 
     - name: Set HOME variable to github context
@@ -133,7 +137,7 @@ runs:
       id: arch
       uses: actions/github-script@v6
       with:
-        result-encoding: 'string'
+        result-encoding: "string"
         script: return '${{ inputs.platform }}'.replace('linux/', '');
 
     - name: Inject cargo cache into docker
@@ -164,6 +168,7 @@ runs:
           RUSTC_WRAPPER=sccache
           SCCACHE_BUCKET=${{ inputs.bucket }}
           SCCACHE_REGION=${{ inputs.region }}
+          SCCACHE_ENDPOINT=${{ inputs.endpoint }}
           SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
           AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
           AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}

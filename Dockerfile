@@ -157,6 +157,7 @@ ARG AWS_ACCESS_KEY_ID
 ARG AWS_REGION
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
+ARG SCCACHE_ENDPOINT
 
 # Generate sccache configuration variables and save them to /root/env
 #
@@ -181,6 +182,7 @@ RUN <<EOS
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
+        echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached

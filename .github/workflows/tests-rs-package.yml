@@ -13,6 +13,7 @@ on:
 jobs:
   lint:
     name: Linting
+    environment: backblaze
     runs-on: ubuntu-24.04
     permissions:
       id-token: write
@@ -27,7 +28,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -42,8 +43,9 @@ jobs:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          SCCACHE_REGION: ${{ env.AWS_REGION }}
+          SCCACHE_ENDPOINT: ${{ env.AWS_S3_ENDPOINT }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
@@ -51,6 +53,7 @@ jobs:
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
   formatting:
     name: Formatting
+    environment: backblaze
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -68,13 +71,15 @@ jobs:
       - name: Check formatting
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          SCCACHE_REGION: ${{ env.AWS_REGION }}
+          SCCACHE_ENDPOINT: ${{ env.AWS_S3_ENDPOINT }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
         run: cargo fmt --check --package=${{ inputs.package }}
 
   unused_deps:
     name: Unused dependencies
+    environment: backblaze
     runs-on: ubuntu-24.04
     permissions:
       id-token: write
@@ -87,7 +92,7 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
@@ -107,8 +112,9 @@ jobs:
         uses: lklimek/cargo-machete@feat/workdir
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          SCCACHE_REGION: ${{ env.AWS_REGION }}
+          SCCACHE_ENDPOINT: ${{ env.AWS_S3_ENDPOINT }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
@@ -119,6 +125,7 @@ jobs:
 
   detect_structure_changes:
     name: Detect immutable structure changes
+    environment: backblaze
     runs-on: ubuntu-24.04
     # FIXME: as we use `gh pr view` below, this check can only
     # run on pull requests. We should find a way to run it
@@ -180,6 +187,7 @@ jobs:
 
   test:
     name: Tests
+    environment: backblaze
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -189,7 +197,7 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
@@ -203,8 +211,9 @@ jobs:
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          SCCACHE_REGION: ${{ env.AWS_REGION }}
+          SCCACHE_ENDPOINT: ${{ env.AWS_S3_ENDPOINT }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
@@ -213,6 +222,7 @@ jobs:
 
   check_each_feature:
     name: Check each feature
+    environment: backblaze
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: ${{ inputs.check-each-feature }}
@@ -223,7 +233,7 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
@@ -242,8 +252,9 @@ jobs:
       - name: Check each feature in ${{ inputs.package }}
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          SCCACHE_REGION: ${{ env.AWS_REGION }}
+          SCCACHE_ENDPOINT: ${{ env.AWS_S3_ENDPOINT }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
