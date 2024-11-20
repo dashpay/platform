@@ -9,7 +9,13 @@ pub struct PutSettings {
     pub request_settings: RequestSettings,
     pub identity_nonce_stale_time_s: Option<u64>,
     pub user_fee_increase: Option<UserFeeIncrease>,
-    /// The time to wait for the response of a state transition after it has been broadcast
+    /// Soft limit of total time to wait for state transition to be executed (included in a block).
+    ///
+    /// This is an upper limit, and other settings may affect the actual wait time
+    /// (like DAPI timeouts, [RequestSettings::timeout], [RequestSettings::retries], etc.).
+    /// If you want to use `wait_timeout`, tune `retries` accordingly.
+    ///
+    /// It can be exceeded due to execution of non-cancellable parts of the Sdk.
     pub wait_timeout: Option<Duration>,
 }
 

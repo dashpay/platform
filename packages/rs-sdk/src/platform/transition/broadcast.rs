@@ -67,6 +67,7 @@ impl BroadcastStateTransition for StateTransition {
             None => sdk.dapi_client_settings,
         };
 
+        // prepare a factory that will generate closure which executes actual code
         let factory = |request_settings: RequestSettings| async move {
             let request = self
                 .wait_for_state_transition_result_request()
@@ -114,6 +115,7 @@ impl BroadcastStateTransition for StateTransition {
         };
 
         let future = retry(retry_settings, factory);
+        // run the future with or without timeout, depending on the settings
         let wait_timeout = settings.and_then(|s| s.wait_timeout);
         match wait_timeout {
             Some(timeout) => tokio::time::timeout(timeout, future)

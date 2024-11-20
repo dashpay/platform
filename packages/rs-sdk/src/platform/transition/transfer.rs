@@ -17,6 +17,12 @@ pub trait TransferToIdentity {
     ///
     /// If signing_transfer_key_to_use is not set, we will try to use one in the signer that is
     /// available for the transfer.
+    ///
+    /// This method will resolve once the state transition is executed.
+    ///
+    /// ## Returns
+    ///
+    /// Final balance of the identity after the transfer.
     async fn transfer_credits<S: Signer + Send>(
         &self,
         sdk: &Sdk,

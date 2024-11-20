@@ -58,7 +58,7 @@ pub enum Error {
     #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
     TimeoutReached(Duration, String),
 
-    /// Object already exists
+    /// Returned when an attempt is made to create an object that already exists in the system
     #[error("Object already exists: {0}")]
     AlreadyExists(String),
     /// Generic error
@@ -94,7 +94,10 @@ impl From<DapiClientError> for Error {
                 .map(|consensus_error| {
                     Self::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)))
                 })
-                .unwrap_or_else(Self::Protocol);
+                .unwrap_or_else(|e| {
+                    tracing::debug!("Failed to deserialize consensus error: {}", e);
+                    Self::Protocol(e)
+                });
             }
             // Otherwise we parse the error code and act accordingly
             if status.code() == Code::AlreadyExists {
