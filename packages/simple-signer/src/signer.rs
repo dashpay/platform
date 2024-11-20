@@ -89,7 +89,7 @@ impl Signer for SimpleSigner {
                     ))?;
                 let signature = pk
                     .sign(SignatureSchemes::Basic, data)
-                    .map_err(|e| ProtocolError::Generic(format!("unable to sign {}", e)))?;
+                    .map_err(|e| ProtocolError::Generic(format!("BLS signing failed {}", e)))?;
                 Ok(signature.as_raw_value().to_compressed().to_vec().into())
             }
             KeyType::EDDSA_25519_HASH160 => {

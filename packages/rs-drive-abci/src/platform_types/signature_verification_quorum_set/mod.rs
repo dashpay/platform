@@ -119,7 +119,7 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSet 
 pub enum SignatureVerificationQuorumSetForSaving {
     /// Version 0 of the signature verification quorums
     V0(SignatureVerificationQuorumSetForSavingV0),
-    /// Version 0 of the signature verification quorums
+    /// Version 1 of the signature verification quorums
     V1(SignatureVerificationQuorumSetForSavingV1),
 }
 

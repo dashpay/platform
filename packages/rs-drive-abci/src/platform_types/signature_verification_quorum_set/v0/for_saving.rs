@@ -156,10 +156,10 @@ impl From<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
     }
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
-    fn into(self) -> Vec<QuorumForSavingV0> {
-        self.into_iter()
+impl From<Quorums<VerificationQuorum>> for Vec<QuorumForSavingV0> {
+    fn from(quorums: Quorums<VerificationQuorum>) -> Self {
+        quorums
+            .into_iter()
             .map(|(hash, quorum)| QuorumForSavingV0 {
                 hash: Bytes32::from(hash.as_byte_array()),
                 public_key: bls_signatures::PublicKey::from_bytes(
