@@ -16,6 +16,7 @@ pub struct PutSettings {
     /// If you want to use `wait_timeout`, tune `retries` accordingly.
     ///
     /// It can be exceeded due to execution of non-cancellable parts of the Sdk.
+    // TODO: Simplify timeout logic when waiting for response in Sdk, as having 3 different timeouts is confusing.
     pub wait_timeout: Option<Duration>,
 }
 
