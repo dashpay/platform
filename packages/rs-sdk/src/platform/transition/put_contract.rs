@@ -10,14 +10,14 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 
 use super::broadcast::BroadcastStateTransition;
+use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform
-pub trait PutContract<S: Signer> {
+pub trait PutContract<S: Signer>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     async fn put_to_platform(
@@ -28,19 +28,13 @@ pub trait PutContract<S: Signer> {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
-    /// Waits for the response of a state transition after it has been broadcast
-    async fn wait_for_response(
-        &self,
-        sdk: &Sdk,
-        state_transition: StateTransition,
-    ) -> Result<DataContract, Error>;
-
     /// Puts a contract on platform and waits for the confirmation proof
     async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
         identity_public_key: IdentityPublicKey,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<DataContract, Error>;
 }
 
@@ -82,34 +76,17 @@ impl<S: Signer> PutContract<S> for DataContract {
         Ok(transition)
     }
 
-    async fn wait_for_response(
-        &self,
-        sdk: &Sdk,
-        state_transition: StateTransition,
-    ) -> Result<DataContract, Error> {
-        let result = state_transition.wait_for_response(sdk, None).await?;
-
-        //todo verify
-
-        match result {
-            StateTransitionProofResult::VerifiedDataContract(data_contract) => Ok(data_contract),
-            _ => Err(Error::DapiClientError("proved a non document".to_string())),
-        }
-    }
-
     async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
         identity_public_key: IdentityPublicKey,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<DataContract, Error> {
         let state_transition = self
-            .put_to_platform(sdk, identity_public_key, signer, None)
+            .put_to_platform(sdk, identity_public_key, signer, settings)
             .await?;
 
-        let data_contract =
-            <Self as PutContract<S>>::wait_for_response(self, sdk, state_transition).await?;
-
-        Ok(data_contract)
+        Self::wait_for_response(sdk, state_transition, settings).await
     }
 }
