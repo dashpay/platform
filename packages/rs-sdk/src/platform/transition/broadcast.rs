@@ -1,41 +1,38 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
+use super::put_settings::PutSettings;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::sync::retry;
 use crate::{Error, Sdk};
-use dapi_grpc::platform::v0::Proof;
+use dapi_grpc::platform::v0::{Proof, WaitForStateTransitionResultResponse};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use futures::TryFutureExt;
 use rs_dapi_client::WrapWithExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
-use tokio::time::timeout;
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
-    async fn broadcast(&self, sdk: &Sdk, settings: Option<RequestSettings>) -> Result<(), Error>;
-    async fn wait_for_response(
+    async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error>;
+    async fn wait_for_response<T: TryFrom<StateTransitionProofResult>>(
         &self,
         sdk: &Sdk,
-        settings: Option<RequestSettings>,
-        time_out_ms: Option<u64>,
-    ) -> Result<StateTransitionProofResult, Error>;
-    async fn broadcast_and_wait(
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error>;
+    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult>>(
         &self,
         sdk: &Sdk,
-        settings: Option<RequestSettings>,
-        time_out_ms: Option<u64>,
-    ) -> Result<StateTransitionProofResult, Error>;
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error>;
 }
 
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
-    async fn broadcast(&self, sdk: &Sdk, settings: Option<RequestSettings>) -> Result<(), Error> {
+    async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
         let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s),
+            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
             None => sdk.dapi_client_settings,
         };
 
@@ -60,14 +57,13 @@ impl BroadcastStateTransition for StateTransition {
             .into_inner()
             .map(|_| ())
     }
-    async fn wait_for_response(
+    async fn wait_for_response<T: TryFrom<StateTransitionProofResult>>(
         &self,
         sdk: &Sdk,
-        settings: Option<RequestSettings>,
-        time_out_ms: Option<u64>,
-    ) -> Result<StateTransitionProofResult, Error> {
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error> {
         let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s),
+            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
             None => sdk.dapi_client_settings,
         };
 
@@ -80,12 +76,9 @@ impl BroadcastStateTransition for StateTransition {
                     retries: 0,
                 })?;
 
-            let response = request
-                .execute(sdk, request_settings)
-                .await
-                .map_err(|e| e.inner_into())?;
+            let response = request.execute(sdk, request_settings).await.inner_into()?;
 
-            let grpc_response = &response.inner;
+            let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
             let metadata = grpc_response.metadata().wrap(&response)?.inner;
             let block_info = block_info_from_metadata(metadata).wrap(&response)?.inner;
             let proof: &Proof = (*grpc_response).proof().wrap(&response)?.inner;
@@ -108,49 +101,44 @@ impl BroadcastStateTransition for StateTransition {
             .wrap(&response)?
             .inner;
 
-            Ok::<_, Error>(result).wrap(&response)
+            let variant_name = result.to_string();
+            T::try_from(result)
+                .map_err(|_| {
+                    Error::InvalidProvedResponse(format!(
+                        "invalid proved response: cannot convert from {} to {}",
+                        variant_name,
+                        std::any::type_name::<T>(),
+                    ))
+                })
+                .wrap(&response)
         };
 
         let future = retry(retry_settings, factory);
-        match time_out_ms {
-            Some(time_out_ms) => {
-                let timeout = tokio::time::Duration::from_millis(time_out_ms);
-                tokio::time::timeout(timeout, future)
-                    .await
-                    .map_err(|e| {
-                        Error::TimeoutReached(
-                            timeout,
-                            format!("Timeout waiting for state transition result: {:?}", e),
-                        )
-                    })?
-                    .into_inner()
-            }
+        let wait_timeout = settings.and_then(|s| s.wait_timeout);
+        match wait_timeout {
+            Some(timeout) => tokio::time::timeout(timeout, future)
+                .await
+                .map_err(|e| {
+                    Error::TimeoutReached(
+                        timeout,
+                        format!("Timeout waiting for result of {} (tx id: {}) affecting object {}: {:?}",
+                        self.name(),
+                        self.transaction_id().map(hex::encode).unwrap_or("UNKNOWN".to_string()),
+                        self.unique_identifiers().join(","),
+                         e),
+                    )
+                })?
+                .into_inner(),
             None => future.await.into_inner(),
         }
     }
 
-    async fn broadcast_and_wait(
+    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult>>(
         &self,
         sdk: &Sdk,
-        settings: Option<RequestSettings>,
-        time_out_ms: Option<u64>,
-    ) -> Result<StateTransitionProofResult, Error> {
-        let future = async {
-            self.broadcast(sdk, settings).await?;
-            self.wait_for_response(sdk, settings, time_out_ms).await
-        };
-
-        match time_out_ms {
-            Some(time_out_ms) => timeout(tokio::time::Duration::from_millis(time_out_ms), future)
-                .into_future()
-                .await
-                .map_err(|e| {
-                    Error::TimeoutReached(
-                        tokio::time::Duration::from_millis(time_out_ms),
-                        format!("Timeout waiting for state transition result: {:?}", e),
-                    )
-                })?,
-            None => future.await,
-        }
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error> {
+        self.broadcast(sdk, settings).await?;
+        self.wait_for_response::<T>(sdk, settings).await
     }
 }

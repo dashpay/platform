@@ -1,4 +1,5 @@
 //! Definitions of errors
+use dapi_grpc::tonic::Code;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
@@ -56,6 +57,10 @@ pub enum Error {
     /// SDK operation timeout reached error
     #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
     TimeoutReached(Duration, String),
+
+    /// Object already exists
+    #[error("Object already exists: {0}")]
+    AlreadyExists(String),
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
@@ -78,6 +83,7 @@ pub enum Error {
 impl From<DapiClientError> for Error {
     fn from(value: DapiClientError) -> Self {
         if let DapiClientError::Transport(TransportError::Grpc(status)) = &value {
+            // If we have some consensus error metadata, we deserialize it and return as ConsensusError
             if let Some(consensus_error_value) = status
                 .metadata()
                 .get_bin("dash-serialized-consensus-error-bin")
@@ -90,9 +96,13 @@ impl From<DapiClientError> for Error {
                 })
                 .unwrap_or_else(Self::Protocol);
             }
+            // Otherwise we parse the error code and act accordingly
+            if status.code() == Code::AlreadyExists {
+                return Self::AlreadyExists(status.message().to_string());
+            }
         }
 
-        Self::DapiClientError(format!("{:?}", value))
+        Self::DapiClientError(value.to_string())
     }
 }
 
