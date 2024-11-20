@@ -76,9 +76,7 @@ impl<S: Signer> PutContract<S> for DataContract {
             None,
         )?;
 
-        transition
-            .broadcast(sdk, settings.map(|s| s.request_settings))
-            .await?;
+        transition.broadcast(sdk, settings).await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
         Ok(transition)
@@ -89,7 +87,7 @@ impl<S: Signer> PutContract<S> for DataContract {
         sdk: &Sdk,
         state_transition: StateTransition,
     ) -> Result<DataContract, Error> {
-        let result = state_transition.wait_for_response(sdk, None, None).await?;
+        let result = state_transition.wait_for_response(sdk, None).await?;
 
         //todo verify
 

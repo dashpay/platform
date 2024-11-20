@@ -85,9 +85,7 @@ impl<S: Signer> PutDocument<S> for Document {
         )?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-        transition
-            .broadcast(sdk, Some(settings.request_settings))
-            .await?;
+        transition.broadcast(sdk, Some(settings)).await?;
         Ok(transition)
     }
 
@@ -97,7 +95,7 @@ impl<S: Signer> PutDocument<S> for Document {
         state_transition: StateTransition,
         _data_contract: Arc<DataContract>,
     ) -> Result<Document, Error> {
-        let result = state_transition.wait_for_response(sdk, None, None).await?;
+        let result = state_transition.wait_for_response(sdk, None).await?;
         //todo verify
         match result {
             StateTransitionProofResult::VerifiedDocuments(mut documents) => {
@@ -135,7 +133,7 @@ impl<S: Signer> PutDocument<S> for Document {
             )
             .await?;
 
-        let result = state_transition.broadcast_and_wait(sdk, None, None).await?;
+        let result = state_transition.broadcast_and_wait(sdk, None).await?;
         match result {
             StateTransitionProofResult::VerifiedDocuments(mut documents) => {
                 let document = documents
