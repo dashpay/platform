@@ -177,25 +177,40 @@ export default function obtainZeroSSLCertificateTaskFactory(
             try {
               await verifyDomain(ctx.certificate.id, ctx.apiKey);
             } catch (e) {
-              if (ctx.noRetry !== true) {
-                retry = await task.prompt({
-                  type: 'toggle',
-                  header: chalk`  An error occurred during verification: {red ${e.message}}
+              // Error: The given certificate is not ready for domain verification
+              // Sometimes this error means that certificate is already verified
+              if (e.code === 2831) {
+                const certificate = await getCertificate(ctx.apiKey, ctx.certificate.id);
+                // Just proceed on certificate download if we see it's already issued.
+                if (certificate.status === 'issued') {
+                  return;
+                }
+              }
+
+              if (e.type === 'domain_control_validation_failed') {
+                // Retry on this undocumented error whatever it means
+                await wait(5000);
+              } else {
+                if (ctx.noRetry !== true) {
+                  retry = await task.prompt({
+                    type: 'toggle',
+                    header: chalk`  An error occurred during verification: {red ${e.message}}
 
     Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
     for incoming HTTP connections. You may need to configure your firewall to
     ensure this port is accessible from the public internet. If you are using
     Network Address Translation (NAT), please enable port forwarding for port 80
     and all Dash service ports listed above.`,
-                  message: 'Try again?',
-                  enabled: 'Yes',
-                  disabled: 'No',
-                  initial: true,
-                });
-              }
+                    message: 'Try again?',
+                    enabled: 'Yes',
+                    disabled: 'No',
+                    initial: true,
+                  });
+                }
 
-              if (!retry) {
-                throw e;
+                if (!retry) {
+                  throw e;
+                }
               }
             }
           } while (retry);
