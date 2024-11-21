@@ -50,6 +50,7 @@ outputs:
 
 runs:
   using: composite
+
   steps:
     - name: Login to DockerHub
       uses: docker/login-action@v3
@@ -152,6 +153,16 @@ runs:
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
+    - name: Setup sccache vars
+      uses: ./.github/actions/sccache
+      with:
+        bucket: ${{ inputs.bucket }}
+        region: ${{ inputs.region }}
+        endpoint: ${{ inputs.endpoint }}
+        aws_access_key_id: ${{ inputs.aws_access_key_id }}
+        aws_secret_access_key: ${{ inputs.aws_secret_access_key }}
+        install: false
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v6
@@ -170,10 +181,10 @@ runs:
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           RUSTC_WRAPPER=sccache
-          SCCACHE_BUCKET=${{ env.SCCACHE_BUCKET }}
-          SCCACHE_REGION=${{ env.SCCACHE_REGION }}
-          SCCACHE_ENDPOINT=${{ env.CACHE_S3_ENDPOINT }}
-          SCCACHE_S3_KEY_PREFIX=${{ env.SCCACHE_S3_KEY_PREFIX }}
+          SCCACHE_BUCKET=${{ inputs.bucket }}
+          SCCACHE_REGION=${{ inputs.region }}
+          SCCACHE_ENDPOINT=${{ inputs.endpoint }}
+          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           AWS_PROFILE=sccache
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}

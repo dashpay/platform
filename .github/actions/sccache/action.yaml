@@ -17,12 +17,16 @@ inputs:
   aws_secret_access_key:
     description: AWS secret access key
     required: true
+  install:
+    description: "Install sccache"
+    default: "true"
 
 # TODO: Cache deps here to save 1 minute
 runs:
   using: composite
   steps:
-    - name: Install sccache-cache
+    - name: Install sccache binary
+      if: ${{ inputs.install == 'true' }}
       uses: mozilla-actions/sccache-action@v0.0.6
       with:
         version: "v0.8.2" # Must be the same as in Dockerfile
