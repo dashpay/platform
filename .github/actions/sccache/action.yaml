@@ -34,11 +34,11 @@ runs:
     - name: Configure AWS credentials
       shell: bash
       run: |
-        mkdir --mode=0700 -p "${HOME}/.aws"
+        mkdir -p "${HOME}/.aws"
         echo "[sccache]" >> ${HOME}/.aws/credentials
         echo "aws_access_key_id=${{ inputs.aws_access_key_id }}" >> ${HOME}/.aws/credentials
         echo "aws_secret_access_key=${{ inputs.aws_secret_access_key }}" >> ${HOME}/.aws/credentials
-        chmod 600 ${HOME}/.aws/credentials
+        chmod -R go-rwx ${HOME}/.aws
 
     - name: Configure sccache
       shell: bash
@@ -48,6 +48,6 @@ runs:
         echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
         echo "SCCACHE_REGION=${{ inputs.region }}" >> $GITHUB_ENV
         echo "SCCACHE_ENDPOINT=${{ inputs.endpoint }}" >> $GITHUB_ENV
-        echo "SCCACHE_S3_KEY_PREFIX='${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu'" >> $GITHUB_ENV
+        echo "SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu" >> $GITHUB_ENV
         echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
         echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV

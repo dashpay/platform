@@ -166,14 +166,16 @@ ARG SCCACHE_ENDPOINT
 RUN --mount=type=secret,id=AWS <<EOS
     set -ex -o pipefail
 
+    
+    ### Github Actions ###
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
-        # Github Actions cache
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
         # ACTIONS_RUNTIME_TOKEN is a secret so we load it on demand
         echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)"' >> /root/env
+    
+    ### AWS S3 ###
     elif [ -n "${SCCACHE_BUCKET}" ]; then
-        # AWS S3
         if [ -z "${SCCACHE_REGION}" ] ; then
             # Default to AWS_REGION if not set
             export SCCACHE_REGION=${AWS_REGION}
@@ -182,10 +184,15 @@ RUN --mount=type=secret,id=AWS <<EOS
 
         [ -n "${AWS_REGION}" ] && echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
         [ -n "${AWS_PROFILE}" ] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
-        echo "export AWS_SHARED_CREDENTIALS_FILE=/run/secrets/AWS" >> /root/env
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
         echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
+
+        echo "export AWS_SHARED_CREDENTIALS_FILE=/run/secrets/AWS" >> /root/env
+        # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
+        echo '[ -r "${AWS_SHARED_CREDENTIALS_FILE}" ] || echo "Cannot read ${AWS_SHARED_CREDENTIALS_FILE}"' >> /root/env
+
+    ### memcached ###
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
         echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
@@ -199,6 +206,8 @@ RUN --mount=type=secret,id=AWS <<EOS
     fi
     # for debugging, we display what we generated
     cat /root/env
+
+    stat /run/secrets/AWS
 EOS
 
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
