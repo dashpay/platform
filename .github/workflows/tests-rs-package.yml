@@ -246,6 +246,10 @@ jobs:
         run: |
           echo Verify all features disabled
           set -ex
+          set | grep AWS
+          cat $AWS_SHARED_CREDENTIALS_FILE
+          sccache --start-server
+
           features="${{ steps.crate_info.outputs.features }}"
           fails=""
           RUSTFLAGS="-D warnings"
