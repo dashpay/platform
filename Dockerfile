@@ -169,7 +169,8 @@ RUN <<EOS
         # Github Actions cache
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
-        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
+        # ACTIONS_RUNTIME_TOKEN is a secret so we load it on demand
+        echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)"' >> /root/env
     elif [ -n "${SCCACHE_BUCKET}" ]; then
         # AWS S3
         if [ -z "${SCCACHE_REGION}" ] ; then
@@ -180,7 +181,8 @@ RUN <<EOS
         echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
         echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
-        # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
+        # AWS_SECRET_ACCESS_KEY is a secret so we load it on demand
+        echo 'export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/AWS_SECRET_ACCESS_KEY)"' >> /root/env
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
         echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
@@ -198,11 +200,6 @@ RUN <<EOS
     # for debugging, we display what we generated
     cat /root/env
 EOS
-
-# We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
-# to the final image or to layer cache
-ONBUILD ARG ACTIONS_RUNTIME_TOKEN
-ONBUILD ARG AWS_SECRET_ACCESS_KEY
 
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
 FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
