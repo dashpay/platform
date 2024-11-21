@@ -25,6 +25,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check region
+        shell: bash
+        run: |
+          if [ "${{ vars.AWS_REGION }}"  == "${{ secrets.AWS_REGION }}"]; then
+            echo "AWS_REGION is OK";
+          else
+            echo "Wrong region";
+            exit 1;
+          fi
+
       - name: Configure AWS credentials and bucket region
         uses: ./.github/actions/aws_credentials
         with:
