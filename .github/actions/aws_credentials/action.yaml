@@ -1,0 +1,31 @@
+---
+name: "aws_credentials"
+description: "Configure AWS credentials"
+inputs:
+  aws_access_key_id:
+    description: AWS access key ID
+    required: true
+  aws_secret_access_key:
+    description: AWS secret access key
+    required: true
+  profile:
+    description: AWS profile to use
+    default: "default"
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials
+      shell: bash
+      run: |
+        mkdir -p "${HOME}/.aws"
+        echo "[${{ inputs.profile }}]" >> ${HOME}/.aws/credentials
+        echo "aws_access_key_id=${{ inputs.aws_access_key_id }}" >> ${HOME}/.aws/credentials
+        echo "aws_secret_access_key=${{ inputs.aws_secret_access_key }}" >> ${HOME}/.aws/credentials
+        chmod -R go-rwx ${HOME}/.aws
+
+    - name: Set env variables
+      shell: bash
+      run: |
+        echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
+        echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV
