@@ -174,8 +174,8 @@ runs:
         push: ${{ inputs.push_tags }}
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
-        secret-files:
-          - "${{ env.HOME }}/credentials=AWS"
+        secret-files: |
+          ${{ env.HOME }}/credentials=AWS
         # secrets: |
         #   AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
         build-args: |

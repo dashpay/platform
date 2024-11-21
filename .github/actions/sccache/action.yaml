@@ -34,6 +34,7 @@ runs:
     - name: Configure AWS credentials
       shell: bash
       run: |
+        mkdir --mode=0700 -p "${HOME}/.aws"
         echo "[sccache]" >> ${HOME}/.aws/credentials
         echo "aws_access_key_id=${{ inputs.aws_access_key_id }}" >> ${HOME}/.aws/credentials
         echo "aws_secret_access_key=${{ inputs.aws_secret_access_key }}" >> ${HOME}/.aws/credentials
@@ -42,7 +43,6 @@ runs:
     - name: Configure sccache
       shell: bash
       run: |
-        mkdir -p "${HOME}/.aws"
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
         echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
