@@ -17,6 +17,7 @@ on:
 jobs:
   build-image:
     name: Build ${{ inputs.name }} image
+    environment: test
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
@@ -29,23 +30,25 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        run: aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+        run: aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
         shell: bash
 
       - name: Build and push by SHA
         uses: ./.github/actions/docker
         with:
           image_name: ${{ inputs.image_name }}
-          image_org: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          image_org: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
           target: ${{ inputs.target }}
           platform: linux/amd64
           push_tags: true
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          region: ${{ secrets.AWS_REGION }}
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ env.CACHE_REGION }}
+          bucket: ${{ env.CACHE_S3_BUCKET }}
+          endpoint: ${{ env.CACHE_S3_ENDPOINT }}
+          aws_access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
           cache_to_name: ${{ github.event_name == 'push' && 'true' || 'false' }}
