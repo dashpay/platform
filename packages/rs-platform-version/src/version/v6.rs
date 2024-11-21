@@ -28,8 +28,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_6: ProtocolVersion = 6;
 
-/// This version added a fix to withdrawals so we would rotate to first quorum always.
-
+/// This version adds a fix for nonce validation.
 pub const PLATFORM_V6: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_6,
     drive: DRIVE_VERSION_V2,
