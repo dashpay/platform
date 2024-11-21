@@ -250,7 +250,7 @@ impl DapiRequestExecutor for DapiClient {
                         } else {
                             tracing::debug!(
                                 ?error,
-                                "server returned error, most likely the request is invalid"
+                                "received server error, most likely the request is invalid"
                             );
                         }
                     }
