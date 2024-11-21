@@ -16,7 +16,7 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v4::DRIVE_ABCI_METHOD_VERSIONS_V4;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v3::DRIVE_ABCI_VALIDATION_VERSIONS_V3;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v4::DRIVE_ABCI_VALIDATION_VERSIONS_V4;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v2::DRIVE_VERSION_V2;
@@ -28,14 +28,14 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_6: ProtocolVersion = 6;
 
-/// This version will add multisig support and reduce withdrawal burdens
+/// This version adds a fix for nonce validation.
 pub const PLATFORM_V6: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_6,
     drive: DRIVE_VERSION_V2,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V4,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V3,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V4, // Changed to version 4
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
     },
