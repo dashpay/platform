@@ -181,7 +181,7 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
 
         [ -n "${AWS_REGION}" ] && echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
-        [ -n "${AWS_PROFILE}"] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
+        [ -n "${AWS_PROFILE}" ] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
         echo "export AWS_SHARED_CREDENTIALS_FILE=/run/secrets/AWS" >> /root/env
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
         echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
