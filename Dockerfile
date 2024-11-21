@@ -15,16 +15,26 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
-#   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
-#   - SCCACHE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, SCCACHE_S3_KEY_PREFIX - store caches in S3
-#   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
+# # sccache cache backends
 #
-#
+# To enable sccache support and make the following variables available:
+#    1. For S3 buckets:
+#       - SCCACHE_BUCKET - S3 bucket name
+#       - AWS_PROFILE
+#       - SCCACHE_REGION
+#       - SCCACHE_S3_KEY_PREFIX
+#       - SCCACHE_ENDPOINT
+#       - also, AWS credentials file ($HOME/.aws/credentials) should be provided as a secret file with id=AWS
+#    2. For Github Actions:
+#       - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL
+#       - also, Github Actions token should be provided as a secret file with id=GHA
+#    3. For memcached:
+#       - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
+
 #
 # BUILD PROCESS
 #
@@ -35,7 +45,17 @@
 # 3. Configuration variables are shared between runs using /root/env file.
 
 ARG ALPINE_VERSION=3.18
-ARG RUSTC_WRAPPER
+
+# deps-${RUSTC_WRAPPER:-base}
+# If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
+ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_BUCKET
+ARG SCCACHE_MEMCACHED
+
+# Determine if we have sccache enabled; if yes, use deps-sccache, otherwise use deps-base as a dependency image
+ARG DEPS_IMAGE=${SCCACHE_GHA_ENABLED}${SCCACHE_BUCKET}${SCCACHE_MEMCACHED}
+ARG DEPS_IMAGE=${DEPS_IMAGE:+sccache}
+ARG DEPS_IMAGE=deps-${DEPS_IMAGE:-base}
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
@@ -119,10 +139,10 @@ ENV NODE_ENV=${NODE_ENV}
 #
 # This stage is used to install sccache and configure it.
 # Later on, one should source /root/env before building to use sccache.
-
+# 
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
-# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. It is done using ONBUILD directive, so the secrets are not stored in the
-# final image.
+# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. This is to prevent leaking secrets to the final image. The secrets are
+# loaded using docker buildx `--secret` flag and need to be explicitly mounted with `--mount=type=secret,id=SECRET_ID`.
 
 FROM deps-base AS deps-sccache
 
@@ -139,7 +159,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 #
 # Configure sccache
 #
-ARG RUSTC_WRAPPER
 
 # Disable incremental builds, not supported by sccache
 RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
@@ -153,9 +172,7 @@ ARG SCCACHE_MEMCACHED
 
 # S3 storage
 ARG SCCACHE_BUCKET
-ARG AWS_ACCESS_KEY_ID
 ARG AWS_PROFILE
-ARG AWS_REGION
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
 ARG SCCACHE_ENDPOINT
@@ -166,52 +183,51 @@ ARG SCCACHE_ENDPOINT
 RUN --mount=type=secret,id=AWS <<EOS
     set -ex -o pipefail
 
-    
     ### Github Actions ###
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
         # ACTIONS_RUNTIME_TOKEN is a secret so we load it on demand
-        echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)"' >> /root/env
+        echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/GHA)"' >> /root/env
     
     ### AWS S3 ###
     elif [ -n "${SCCACHE_BUCKET}" ]; then
-        if [ -z "${SCCACHE_REGION}" ] ; then
-            # Default to AWS_REGION if not set
-            export SCCACHE_REGION=${AWS_REGION}
-        fi
-        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
-
-        [ -n "${AWS_REGION}" ] && echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
-        [ -n "${AWS_PROFILE}" ] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
+        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
+        [ -n "${AWS_PROFILE}" ] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
         echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
 
-        echo "export AWS_SHARED_CREDENTIALS_FILE=/run/secrets/AWS" >> /root/env
+        # Configure AWS credentials
+        mkdir --mode=0700 -p "$HOME/.aws"
+        ln -s /run/secrets/AWS "$HOME/.aws/credentials"
+        echo "export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials" >> /root/env
+        
         # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
-        echo '[ -r "${AWS_SHARED_CREDENTIALS_FILE}" ] || echo "Cannot read ${AWS_SHARED_CREDENTIALS_FILE}"' >> /root/env
+        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}"; exit 1; }' >> /root/env
+        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || ls -lR $HOME/.aws' >> /root/env
 
     ### memcached ###
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
         echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
+    else
+        echo "Error: cannot determine sccache cache backend" >&2
+        exit 1
     fi
-
-    if [ -n "${RUSTC_WRAPPER}" ]; then
-        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
-        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
-        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
-        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
-    fi
+    
+    # Configure compilers to use sccache
+    echo "export CXX='sccache clang++'" >> /root/env
+    echo "export CC='sccache clang'" >> /root/env
+    echo "export RUSTC_WRAPPER=sccache" >> /root/env
+    echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
+    
     # for debugging, we display what we generated
     cat /root/env
-
-    stat /run/secrets/AWS
 EOS
 
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
-FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
+FROM ${DEPS_IMAGE} AS deps-compilation
 # Stage intentionally left empty
 
 #
@@ -223,7 +239,24 @@ FROM deps-compilation AS deps-rocksdb
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 
-RUN <<EOS
+
+# RUN --mount=type=secret,id=AWS <<EOS
+# echo Testing sccache configuration
+
+# source /root/env
+# sccache --start-server
+
+# # Build some test project to check if sccache is working
+# mkdir /tmp/sccache-test
+# cd /tmp/sccache-test
+# echo 'int main() { return 0; }' > a.c
+# sccache clang -o a.o -c a.c
+# cd -
+
+# sccache -s
+# EOS
+
+RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
@@ -326,7 +359,8 @@ COPY --parents \
     packages/check-features \
     /platform/
 
-RUN if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+RUN --mount=type=secret,id=AWS \
+if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         export RELEASE="--release" ; \
     fi && \
     source $HOME/.cargo/env && \
