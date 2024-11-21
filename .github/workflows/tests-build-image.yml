@@ -25,29 +25,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check region
-        shell: bash
-        run: |
-          if [ "${{ vars.AWS_REGION }}"  == "${{ secrets.AWS_REGION }}" ]; then
-            echo "AWS_REGION is OK";
-          else
-            echo "Wrong region";
-            exit 1;
-          fi
-
       - name: Configure AWS credentials and bucket region
-        uses: ./.github/actions/aws_credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          profile: ecr
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to ECR
         run: |
           aws ecr get-login-password \
             --region ${{ vars.AWS_REGION  }} \
             --profile ecr | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com
-
         shell: bash
 
       - name: Build and push by SHA
@@ -63,6 +52,6 @@ jobs:
           region: ${{ vars.CACHE_REGION }}
           bucket: ${{ vars.CACHE_S3_BUCKET }}
           endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          aws_access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          cache_access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
           cache_to_name: ${{ github.event_name == 'push' && 'true' || 'false' }}

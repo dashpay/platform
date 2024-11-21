@@ -2,10 +2,10 @@
 name: "aws_credentials"
 description: "Configure AWS credentials"
 inputs:
-  aws_access_key_id:
+  access_key_id:
     description: AWS access key ID
     required: true
-  aws_secret_access_key:
+  secret_access_key:
     description: AWS secret access key
     required: true
   profile:
@@ -20,8 +20,8 @@ runs:
       run: |
         mkdir -p "${HOME}/.aws"
         echo "[${{ inputs.profile }}]" >> ${HOME}/.aws/credentials
-        echo "aws_access_key_id=${{ inputs.aws_access_key_id }}" >> ${HOME}/.aws/credentials
-        echo "aws_secret_access_key=${{ inputs.aws_secret_access_key }}" >> ${HOME}/.aws/credentials
+        echo "aws_access_key_id=${{ inputs.access_key_id }}" >> ${HOME}/.aws/credentials
+        echo "aws_secret_access_key=${{ inputs.secret_access_key }}" >> ${HOME}/.aws/credentials
         chmod -R go-rwx ${HOME}/.aws
 
     - name: Set env variables

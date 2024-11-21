@@ -34,11 +34,11 @@ inputs:
   endpoint:
     description: S3 endpoint to use for caching
     required: true
-  aws_access_key_id:
-    description: AWS access key ID
+  cache_access_key_id:
+    description: Access key ID for s3 cache
     required: true
-  aws_secret_access_key:
-    description: AWS secret access key
+  cache_secret_access_key:
+    description: Secret access key for s3 cache
     required: true
   cache_to_name:
     description: "Save cache to name manifest (should be used only on default branch)"
@@ -159,8 +159,8 @@ runs:
         bucket: ${{ inputs.bucket }}
         region: ${{ inputs.region }}
         endpoint: ${{ inputs.endpoint }}
-        aws_access_key_id: ${{ inputs.aws_access_key_id }}
-        aws_secret_access_key: ${{ inputs.aws_secret_access_key }}
+        access_key_id: ${{ inputs.cache_access_key_id }}
+        secret_access_key: ${{ inputs.cache_secret_access_key }}
         install: false
 
     - name: Build and push Docker image ${{ inputs.image }}
@@ -176,8 +176,6 @@ runs:
         platforms: ${{ inputs.platform }}
         secret-files: |
           AWS=${{ env.HOME }}/.aws/credentials
-        # secrets: |
-        #   AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           SCCACHE_BUCKET=${{ inputs.bucket }}

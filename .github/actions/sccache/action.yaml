@@ -34,8 +34,8 @@ runs:
     - name: Configure AWS credentials
       uses: ./.github/actions/aws_credentials
       with:
-        aws_access_key_id: ${{ inputs.aws_access_key_id }}
-        aws_secret_access_key: ${{ inputs.aws_secret_access_key }}
+        access_key_id: ${{ inputs.aws_access_key_id }}
+        secret_access_key: ${{ inputs.aws_secret_access_key }}
         profile: "sccache"
 
     - name: Configure sccache
