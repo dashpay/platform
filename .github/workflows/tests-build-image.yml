@@ -28,7 +28,7 @@ jobs:
       - name: Check region
         shell: bash
         run: |
-          if [ "${{ vars.AWS_REGION }}"  == "${{ secrets.AWS_REGION }}"]; then
+          if [ "${{ vars.AWS_REGION }}"  == "${{ secrets.AWS_REGION }}" ]; then
             echo "AWS_REGION is OK";
           else
             echo "Wrong region";
