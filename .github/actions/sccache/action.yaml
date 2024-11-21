@@ -42,6 +42,7 @@ runs:
     - name: Configure sccache
       shell: bash
       run: |
+        mkdir -p "${HOME}/.aws"
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
         echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
