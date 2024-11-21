@@ -610,7 +610,11 @@ impl StateTransitionNonceValidationV0 for StateTransition {
 
 impl StateTransitionHasNonceValidationV0 for StateTransition {
     fn has_nonce_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
-        match platform_version.drive_abci.validation_and_processing.has_nonce_validation {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+        {
             0 => {
                 let has_nonce_validation = matches!(
                     self,
@@ -623,7 +627,7 @@ impl StateTransitionHasNonceValidationV0 for StateTransition {
                 );
 
                 Ok(has_nonce_validation)
-            },
+            }
             1 => {
                 // Preferably to use match without wildcard arm (_) to avoid missing cases
                 // in the future when new state transitions are added
