@@ -642,7 +642,7 @@ impl StateTransitionHasNonceValidationV0 for StateTransition {
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::has_nonce_validation".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
