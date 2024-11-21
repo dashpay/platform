@@ -7,7 +7,7 @@ import { TEMPLATES_DIR } from '../../../constants.js';
 export default class VerificationServer {
   /**
    *
-   * @param {πDocker} docker
+   * @param {Docker} docker
    * @param {dockerPull} dockerPull
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
