@@ -50,6 +50,16 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
 pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
 
+/// The default request settings for the SDK, used when the user does not provide any.
+///
+/// Use [SdkBuilder::with_settings] to set custom settings.
+const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
+    retries: Some(3),
+    timeout: None,
+    ban_failed_address: None,
+    connect_timeout: None,
+};
+
 /// a type to represent staleness in seconds
 pub type StalenessInSeconds = u64;
 
@@ -705,7 +715,7 @@ pub struct SdkBuilder {
     ///
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
-    settings: RequestSettings,
+    settings: Option<RequestSettings>,
 
     network: Network,
 
@@ -755,7 +765,7 @@ impl Default for SdkBuilder {
     fn default() -> Self {
         Self {
             addresses: None,
-            settings: RequestSettings::default(),
+            settings: None,
             network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
@@ -836,7 +846,7 @@ impl SdkBuilder {
     ///
     /// See [`RequestSettings`] for more information.
     pub fn with_settings(mut self, settings: RequestSettings) -> Self {
-        self.settings = settings;
+        self.settings = Some(settings);
         self
     }
 
@@ -952,17 +962,18 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
+        let dapi_client_settings = self.settings.unwrap_or(DEFAULT_REQUEST_SETTINGS);
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let dapi = DapiClient::new(addresses, self.settings);
+                let dapi = DapiClient::new(addresses,dapi_client_settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     network: self.network,
-                    dapi_client_settings: self.settings,
+                    dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
@@ -1025,7 +1036,7 @@ impl SdkBuilder {
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
                     network: self.network,
-                    dapi_client_settings: self.settings,
+                    dapi_client_settings,
                     inner:SdkInstance::Mock {
                         mock:mock_sdk.clone(),
                         dapi,
