@@ -227,7 +227,11 @@ impl DapiRequestExecutor for DapiClient {
                                     .address_list
                                     .write()
                                     .expect("can't get address list for write");
-
+                                tracing::warn!(
+                                    ?address,
+                                    ?error,
+                                    "received server error, banning address"
+                                );
                                 address_list.ban_address(&address).map_err(|error| {
                                     ExecutionError {
                                         inner: DapiClientError::AddressList(error),
