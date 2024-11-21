@@ -173,6 +173,8 @@ export default function obtainZeroSSLCertificateTaskFactory(
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx, task) => {
           let retry;
+          let autoRetryCount = 0;
+          const MAX_AUTO_RETRIES = 3; // Adjust based on requirements
           do {
             try {
               await verifyDomain(ctx.certificate.id, ctx.apiKey);
@@ -189,6 +191,14 @@ export default function obtainZeroSSLCertificateTaskFactory(
 
               if (e.type === 'domain_control_validation_failed') {
                 // Retry on this undocumented error whatever it means
+                if (autoRetryCount >= MAX_AUTO_RETRIES) {
+                  throw e;
+                }
+                autoRetryCount++;
+                if (process.env.DEBUG) {
+                  // eslint-disable-next-line no-console
+                  console.warn(`Retry ${autoRetryCount}/${MAX_AUTO_RETRIES} verification due to domain_control_validation_failed error`);
+                }
                 await wait(5000);
               } else {
                 if (ctx.noRetry !== true) {
