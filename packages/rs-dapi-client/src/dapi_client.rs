@@ -240,9 +240,18 @@ impl DapiRequestExecutor for DapiClient {
                                         address: Some(address.clone()),
                                     }
                                 })?;
+                            } else {
+                                tracing::debug!(
+                                    ?address,
+                                    ?error,
+                                    "received server error, we should ban the node but banning is disabled"
+                                );
                             }
                         } else {
-                            tracing::trace!(?error, "received error");
+                            tracing::debug!(
+                                ?error,
+                                "server returned error, most likely the request is invalid"
+                            );
                         }
                     }
                 };
