@@ -7,7 +7,7 @@ import { TEMPLATES_DIR } from '../../../constants.js';
 export default class VerificationServer {
   /**
    *
-   * @param {Docker} docker
+   * @param {πDocker} docker
    * @param {dockerPull} dockerPull
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
@@ -97,29 +97,36 @@ export default class VerificationServer {
 
     await this.dockerPull(image);
 
-    try {
-      this.container = await this.docker.createContainer(opts);
-    } catch (e) {
-      if (e.statusCode === 409) {
+    let retries = 0;
+    const MAX_RETRIES = 3;
+    while (!this.container && retries <= MAX_RETRIES) {
+      try {
+        this.container = await this.docker.createContainer(opts);
+      } catch (e) {
+        // Throw any other error except container name conflict
+        if (e.statusCode !== 409) {
+          throw e;
+        }
+
+        // Container name is already in use
+
         // Remove container
         const danglingContainer = await this.docker.getContainer(name);
-
         await danglingContainer.remove({ force: true });
 
         try {
           await danglingContainer.wait();
         } catch (waitError) {
-          // Skip error if container is already removed
-          if (e.statusCode !== 404) {
-            throw e;
+          // Throw any other error except container not found
+          if (waitError.statusCode !== 404) {
+            throw waitError;
           }
-        }
 
-        // Try to create a container one more type
-        this.container = await this.docker.createContainer(opts);
+          // Skip error if container is already removed
+        }
       }
 
-      throw e;
+      retries++;
     }
 
     this.startedContainers.addContainer(opts.name);
