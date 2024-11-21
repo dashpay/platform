@@ -35,8 +35,7 @@ jobs:
       - name: Login to ECR
         run: |
           aws ecr get-login-password \
-            --region ${{ vars.AWS_REGION  }} \
-            --profile ecr | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com
+            --region ${{ vars.AWS_REGION  }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com
         shell: bash
 
       - name: Build and push by SHA

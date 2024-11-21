@@ -247,8 +247,9 @@ jobs:
           echo Verify all features disabled
           set -ex
           set | grep AWS
-          cat $AWS_SHARED_CREDENTIALS_FILE
-          sccache --start-server
+          cat $HOME/.aws/credentials
+          SCCACHE_LOG=debug sccache --start-server
+          sccache --stop-server
 
           features="${{ steps.crate_info.outputs.features }}"
           fails=""
