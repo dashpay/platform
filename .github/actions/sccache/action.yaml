@@ -1,0 +1,48 @@
+---
+name: "sccache"
+description: "Configure sccache caching"
+inputs:
+  bucket:
+    description: S3 bucket to use for caching
+    required: true
+  region:
+    description: S3 bucket region
+    required: true
+  endpoint:
+    description: S3 endpoint to use for caching
+    required: true
+  aws_access_key_id:
+    description: AWS access key ID
+    required: true
+  aws_secret_access_key:
+    description: AWS secret access key
+    required: true
+
+# TODO: Cache deps here to save 1 minute
+runs:
+  using: composite
+  steps:
+    - name: Install sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.6
+      with:
+        version: "v0.8.2" # Must be the same as in Dockerfile
+
+    - name: Configure AWS credentials
+      shell: bash
+      run: |
+        echo "[sccache]" >> ${HOME}/.aws/credentials
+        echo "aws_access_key_id=${{ inputs.aws_access_key_id }}" >> ${HOME}/.aws/credentials
+        echo "aws_secret_access_key=${{ inputs.aws_secret_access_key }}" >> ${HOME}/.aws/credentials
+        chmod 600 ${HOME}/.aws/credentials
+
+    - name: Configure sccache
+      shell: bash
+      run: |
+        echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
+        echo "SCCACHE_REGION=${{ inputs.region }}" >> $GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=${{ inputs.endpoint }}" >> $GITHUB_ENV
+        echo "SCCACHE_S3_KEY_PREFIX='${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu'" >> $GITHUB_ENV
+        echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
+        echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV

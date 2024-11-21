@@ -163,16 +163,18 @@ runs:
         push: ${{ inputs.push_tags }}
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
-        secrets: |
-          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
+        secret-files:
+          - "${{ env.HOME }}/credentials=AWS"
+        # secrets: |
+        #   AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           RUSTC_WRAPPER=sccache
-          SCCACHE_BUCKET=${{ inputs.bucket }}
-          SCCACHE_REGION=${{ inputs.region }}
-          SCCACHE_ENDPOINT=${{ inputs.endpoint }}
-          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
-          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
+          SCCACHE_BUCKET=${{ env.SCCACHE_BUCKET }}
+          SCCACHE_REGION=${{ env.SCCACHE_REGION }}
+          SCCACHE_ENDPOINT=${{ env.CACHE_S3_ENDPOINT }}
+          SCCACHE_S3_KEY_PREFIX=${{ env.SCCACHE_S3_KEY_PREFIX }}
+          AWS_PROFILE=sccache
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true

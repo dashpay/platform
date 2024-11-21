@@ -154,6 +154,7 @@ ARG SCCACHE_MEMCACHED
 # S3 storage
 ARG SCCACHE_BUCKET
 ARG AWS_ACCESS_KEY_ID
+ARG AWS_PROFILE
 ARG AWS_REGION
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
@@ -162,7 +163,7 @@ ARG SCCACHE_ENDPOINT
 # Generate sccache configuration variables and save them to /root/env
 #
 # We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
-RUN <<EOS
+RUN --mount=type=secret,id=AWS <<EOS
     set -ex -o pipefail
 
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
@@ -177,12 +178,11 @@ RUN <<EOS
             # Default to AWS_REGION if not set
             export SCCACHE_REGION=${AWS_REGION}
         fi
-
-        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
         echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
-        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
-        # AWS_SECRET_ACCESS_KEY is a secret so we load it on demand
-        echo 'export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/AWS_SECRET_ACCESS_KEY)"' >> /root/env
+
+        [ -n "${AWS_REGION}" ] && echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
+        [ -n "${AWS_PROFILE}"] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
+        echo "export AWS_SHARED_CREDENTIALS_FILE=/run/secrets/AWS" >> /root/env
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
         echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
@@ -340,6 +340,7 @@ COPY --from=build-planner /platform/recipe.json /platform/.cargo /platform/
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
     set -ex; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
@@ -397,6 +398,7 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
     set -ex; \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -432,6 +434,7 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -483,6 +486,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
+    --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \

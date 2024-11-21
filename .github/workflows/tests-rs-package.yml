@@ -35,6 +35,15 @@ jobs:
         with:
           components: clippy
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ env.CACHE_S3_BUCKET }}
+          region: ${{ env.CACHE_REGION }}
+          endpoint: ${{ env.CACHE_S3_ENDPOINT }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
@@ -66,7 +75,8 @@ jobs:
           components: rustfmt
           cache: false
 
-      #  This step doesn't need librocksdb, so we don't install it
+      # We don't use cache for this step, nothing to cache here
+      # This step doesn't need librocksdb, so we don't install it
 
       - name: Check formatting
         env:
@@ -99,6 +109,14 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ env.CACHE_S3_BUCKET }}
+          region: ${{ env.CACHE_REGION }}
+          endpoint: ${{ env.CACHE_S3_ENDPOINT }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
@@ -204,6 +222,15 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ env.CACHE_S3_BUCKET }}
+          region: ${{ env.CACHE_REGION }}
+          endpoint: ${{ env.CACHE_S3_ENDPOINT }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
@@ -239,6 +266,15 @@ jobs:
 
       - name: Setup Rust
         uses: ./.github/actions/rust
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ env.CACHE_S3_BUCKET }}
+          region: ${{ env.CACHE_REGION }}
+          endpoint: ${{ env.CACHE_S3_ENDPOINT }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
