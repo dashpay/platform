@@ -4,7 +4,6 @@ import lodash from 'lodash';
 import path from 'path';
 
 import {
-  NETWORK_DEVNET,
   NETWORK_LOCAL,
   NETWORK_MAINNET,
   NETWORK_TESTNET,
