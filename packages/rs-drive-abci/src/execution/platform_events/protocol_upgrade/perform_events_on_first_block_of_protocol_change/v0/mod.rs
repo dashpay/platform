@@ -4,6 +4,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
+use dpp::data_contracts::SystemDataContract;
+use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::drive::identity::key::fetch::{
@@ -51,6 +53,50 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
         }
+
+        if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
+            self.transition_to_version_6(
+                platform_state,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
+    ///
+    /// This function is called during the transition to protocol version 4 to set up
+    /// an empty sum tree at the specified path if it does not already exist.
+    ///
+    /// # Parameters
+    ///
+    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
+    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())`: If the transition to version 4 was successful.
+    /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
+    fn transition_to_version_6(
+        &self,
+        _platform_state: &PlatformState,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // We are adding the withdrawal transactions sum amount tree
+        let contract = load_system_data_contract(SystemDataContract::Wallet, platform_version)?;
+
+        self.drive.insert_contract(
+            &contract,
+            block_info.clone(),
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
 
         Ok(())
     }

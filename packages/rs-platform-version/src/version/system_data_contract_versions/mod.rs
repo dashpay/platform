@@ -9,4 +9,5 @@ pub struct SystemDataContractVersions {
     pub dashpay: FeatureVersion,
     pub masternode_reward_shares: FeatureVersion,
     pub feature_flags: FeatureVersion,
+    pub wallet: FeatureVersion,
 }

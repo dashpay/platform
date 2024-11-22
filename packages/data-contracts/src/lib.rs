@@ -19,6 +19,7 @@ pub enum SystemDataContract {
     FeatureFlags = 2,
     DPNS = 3,
     Dashpay = 4,
+    Wallet = 5,
 }
 
 pub struct DataContractSource {
@@ -37,6 +38,7 @@ impl SystemDataContract {
             SystemDataContract::FeatureFlags => feature_flags_contract::ID_BYTES,
             SystemDataContract::DPNS => dpns_contract::ID_BYTES,
             SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
+            SystemDataContract::Wallet => wallet_contract::ID_BYTES,
         };
         Identifier::new(bytes)
     }
@@ -81,6 +83,13 @@ impl SystemDataContract {
                 version: platform_version.system_data_contracts.dashpay as u32,
                 definitions: dashpay_contract::load_definitions(platform_version)?,
                 document_schemas: dashpay_contract::load_documents_schemas(platform_version)?,
+            },
+            SystemDataContract::Wallet => DataContractSource {
+                id_bytes: wallet_contract::ID_BYTES,
+                owner_id_bytes: wallet_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.wallet as u32,
+                definitions: wallet_contract::load_definitions(platform_version)?,
+                document_schemas: wallet_contract::load_documents_schemas(platform_version)?,
             },
         };
 
