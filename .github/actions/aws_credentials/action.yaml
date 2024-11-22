@@ -2,7 +2,7 @@
 # This file contains configuration of aws credentials file.
 # Its primary use is to prepare a credentials file that will be used as a secrets mount when building Docker images.
 name: "aws_credentials"
-description: "Configure .aws/credentials ${{ inputs.profile }}"
+description: "Configure .aws/credentials"
 inputs:
   access_key_id:
     description: AWS access key ID
