@@ -6,7 +6,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
     DriveAbciValidationVersions, PenaltyAmounts,
 };
 
-pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
+pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
             common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
@@ -52,7 +52,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
             },
             identity_credit_withdrawal_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: Some(0),
+                    basic_structure: Some(1),
                     advanced_structure: None,
                     identity_signatures: None,
                     advanced_minimum_balance_pre_check: Some(0),
@@ -123,7 +123,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,
-                document_create_transition_state_validation: 0,
+                document_create_transition_state_validation: 1,
                 document_delete_transition_state_validation: 0,
                 document_replace_transition_state_validation: 0,
                 document_transfer_transition_state_validation: 0,
@@ -131,7 +131,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
                 document_update_price_transition_state_validation: 0,
             },
         },
-        has_nonce_validation: 0,
+        has_nonce_validation: 1,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

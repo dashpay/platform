@@ -1,12 +1,14 @@
-# syntax = docker/dockerfile:1.5
+# syntax = docker/dockerfile:1.7-labs
 
 # Docker image for rs-drive-abci
 #
 # This image is divided multiple parts:
 # - deps-base - includes all base dependencies and some libraries
 # - deps-sccache - deps image with sccache included
+# - deps-compilation - deps image with all compilation dependencies - it's either deps-base or deps-sccache
+# - deps-rocksdb - build static rocksdb library
 # - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
-# - sources - includes full source code
+# - build-planner - image used to prepare build plan for rs-drive-abci
 # - build-* - actual build process of given image
 # - drive-abci, dashmate-helper, test-suite, dapi - final images
 #
@@ -15,28 +17,30 @@
 # - NODE_ENV - node.js environment name to use to build the library
 # - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
 #   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
+#   - SCCACHE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, SCCACHE_S3_KEY_PREFIX - store caches in S3
 #   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
+#
+#
+#
 # BUILD PROCESS
 #
 # 1. All these --mount... are to cache reusable info between runs.
 # See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
-# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
-# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
-# 3. Github Actions have shared networking configured, so we need to set a random
-# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
+# 2. Github Actions have shared networking configured, so we need to set a random SCCACHE_SERVER_PORT port to avoid
+# conflicts in case of parallel compilation.
+# 3. Configuration variables are shared between runs using /root/env file.
 
 ARG ALPINE_VERSION=3.18
-ARG PROTOC_VERSION=27.3
 ARG RUSTC_WRAPPER
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM node:20-alpine${ALPINE_VERSION} as deps-base
+FROM node:20-alpine${ALPINE_VERSION} AS deps-base
 
 #
 # Install some dependencies
@@ -53,12 +57,20 @@ RUN apk add --no-cache \
         linux-headers \
         llvm-static llvm-dev  \
         openssl-dev \
+        snappy-static snappy-dev \
         perl \
         python3 \
         unzip \
         wget \
         xz \
         zeromq-dev
+
+# Configure snappy, dependency of librocksdb-sys
+RUN <<EOS
+echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
+echo "export SNAPPY_LIB_DIR=/usr/lib" >> /root/env
+echo "export SNAPPY_INCLUDE_DIR=/usr/include" >> /root/env
+EOS
 
 # Configure Node.js
 
@@ -80,9 +92,12 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
         --default-toolchain "${TOOLCHAIN_VERSION}" \
         --target wasm32-unknown-unknown
 
+ONBUILD ENV HOME=/root
+ONBUILD ENV CARGO_HOME=$HOME/.cargo
+
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
-ARG PROTOC_VERSION
+ARG PROTOC_VERSION=27.3
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
@@ -94,15 +109,25 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
 # Select whether we want dev or release
-ARG CARGO_BUILD_PROFILE=dev
-ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
+ENV NODE_ENV=${NODE_ENV}
+
+#
+# DEPS-SCCACHE stage
+#
+# This stage is used to install sccache and configure it.
+# Later on, one should source /root/env before building to use sccache.
+
+# Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
+# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. It is done using ONBUILD directive, so the secrets are not stored in the
+# final image.
 
 FROM deps-base AS deps-sccache
 
-ARG SCCHACHE_VERSION=0.7.1
+# SCCACHE_VERSION must be the same as in github actions, to avoid cache incompatibility
+ARG SCCHACHE_VERSION=0.8.2
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
@@ -115,75 +140,190 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 # Configure sccache
 #
 ARG RUSTC_WRAPPER
-ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
+
+# Disable incremental builds, not supported by sccache
+RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
-ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
-
 ARG ACTIONS_CACHE_URL
-ENV ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}
-
-ARG ACTIONS_RUNTIME_TOKEN
-ENV ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}
 
 # Alternative solution is to use memcache
 ARG SCCACHE_MEMCACHED
-ENV SCCACHE_MEMCACHED=${SCCACHE_MEMCACHED}
 
 # S3 storage
 ARG SCCACHE_BUCKET
-ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
-
-ARG SCCACHE_REGION
-ENV SCCACHE_REGION=${SCCACHE_REGION}
-
-# Disable incremental buildings, not supported by sccache
-ARG CARGO_INCREMENTAL=false
-ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
-
 ARG AWS_ACCESS_KEY_ID
-ARG AWS_SECRET_ACCESS_KEY
+ARG AWS_REGION
+ARG SCCACHE_REGION
+ARG SCCACHE_S3_KEY_PREFIX
+
+# Generate sccache configuration variables and save them to /root/env
+#
+# We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
+RUN <<EOS
+    set -ex -o pipefail
+
+    if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
+        # Github Actions cache
+        echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
+        echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
+        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
+    elif [ -n "${SCCACHE_BUCKET}" ]; then
+        # AWS S3
+        if [ -z "${SCCACHE_REGION}" ] ; then
+            # Default to AWS_REGION if not set
+            export SCCACHE_REGION=${AWS_REGION}
+        fi
+
+        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
+        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
+        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
+        # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
+        echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
+        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
+    elif [ -n "${SCCACHE_MEMCACHED}" ]; then
+        # memcached
+        echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
+    fi
+
+    if [ -n "${RUSTC_WRAPPER}" ]; then
+        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
+        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
+        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
+        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
+    fi
+    # for debugging, we display what we generated
+    cat /root/env
+EOS
+
+# We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
+# to the final image or to layer cache
+ONBUILD ARG ACTIONS_RUNTIME_TOKEN
+ONBUILD ARG AWS_SECRET_ACCESS_KEY
+
+# Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
+FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
+# Stage intentionally left empty
+
+#
+# BUILD ROCKSDB STATIC LIBRARY
+#
+
+FROM deps-compilation AS deps-rocksdb
+
+RUN mkdir -p /tmp/rocksdb
+WORKDIR /tmp/rocksdb
+
+RUN <<EOS
+set -ex -o pipefail
+git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
+source /root/env
+
+if [[ "$TARGETARCH" == "amd64" ]] ; then
+    export PORTABLE=haswell
+else
+    export PORTABLE=1
+fi
+
+make -j$(nproc) static_lib
+mkdir -p /opt/rocksdb/usr/local/lib
+cp librocksdb.a /opt/rocksdb/usr/local/lib/
+cp -r include /opt/rocksdb/usr/local/
+cd /
+rm -rf /tmp/rocksdb
+if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+EOS
+
+# Configure RocksDB env variables
+RUN <<EOS
+echo "export ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a" >> /root/env
+echo "export ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib" >> /root/env
+echo "export ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include" >> /root/env
+EOS
+
 
 #
 # DEPS: FULL DEPENDENCIES LIST
 #
-# This is separate from `deps` to use sccache for caching
-FROM deps-${RUSTC_WRAPPER:-base} AS deps
+FROM deps-rocksdb AS deps
 
-ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 WORKDIR /platform
 
-# Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
-# better build caching
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    source $HOME/.cargo/env && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    RUSTFLAGS="-C target-feature=-crt-static" \
-    CARGO_TARGET_DIR="/platform/target" \
-    # TODO: Build wasm with build.rs
-    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
-    #  - packages/wasm-dpp/Cargo.toml
-    #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
+# Download and install cargo-binstall
+ENV BINSTALL_VERSION=1.10.11
+RUN set -ex; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
+    # Construct download URL
+    DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
+    # Download and extract the cargo-binstall binary
+    curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
+    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
+    rm ./cargo-binstall; \
+    source $HOME/.cargo/env; \
+    cargo binstall -V
+
+RUN source $HOME/.cargo/env; \
+    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+    --locked \
+    --no-discover-github-token \
+    --disable-telemetry \
+    --no-track \
+    --no-confirm
 
 #
 # Rust build planner to speed up builds
 #
 FROM deps AS build-planner
-WORKDIR /platform
-COPY . .
-RUN source $HOME/.cargo/env && \
-    cargo chef prepare --recipe-path recipe.json
 
-# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
-RUN touch /platform/packages/dapi-grpc/build.rs
+WORKDIR /platform
+
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/dapi-grpc \
+    packages/rs-dapi-grpc-macros \
+    packages/rs-dpp \
+    packages/rs-drive \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-drive-abci \
+    packages/dashpay-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/strategy-tests \
+    packages/simple-signer \
+    packages/rs-json-schema-compatibility-validator \
+    # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
+    packages/rs-drive-proof-verifier \
+    packages/wasm-dpp \
+    packages/rs-dapi-client \
+    packages/rs-sdk \
+    packages/check-features \
+    /platform/
+
+RUN if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        export RELEASE="--release" ; \
+    fi && \
+    source $HOME/.cargo/env && \
+    source /root/env && \
+    cargo chef prepare $RELEASE --recipe-path recipe.json
 
 #
 # STAGE: BUILD RS-DRIVE-ABCI
@@ -193,29 +333,64 @@ FROM deps AS build-drive-abci
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
-ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
-
 WORKDIR /platform
 
-COPY --from=build-planner /platform/recipe.json recipe.json
+COPY --from=build-planner /platform/recipe.json /platform/.cargo /platform/
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex; \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        mv .cargo/config-release.toml .cargo/config.toml; \
+    else \
+        export FEATURES_FLAG="--features=console,grovedbg" ; \
+    fi && \
     source $HOME/.cargo/env && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
+        ${FEATURES_FLAG} \
         --locked && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
-COPY . .
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/dapi-grpc \
+    packages/rs-dapi-grpc-macros \
+    packages/rs-dpp \
+    packages/rs-drive \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-drive-abci \
+    packages/dashpay-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/strategy-tests \
+    # These packages are part of workspace and must be here otherwise it builds from scratch
+    # See todo below
+    packages/simple-signer \
+    packages/rs-json-schema-compatibility-validator \
+    # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
+    packages/rs-drive-proof-verifier \
+    packages/wasm-dpp \
+    packages/rs-dapi-client \
+    packages/rs-sdk \
+    packages/check-features \
+    /platform/
 
 RUN mkdir /artifacts
 
@@ -223,33 +398,32 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex; \
     source $HOME/.cargo/env && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
         export OUT_DIRECTORY=release ; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
-        
     fi && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+    echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
     cargo build \
         --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
         ${FEATURES_FLAG} \
         --locked && \
-    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+    cp target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    # Remove /platform to reduce layer size
+    rm -rf /platform
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM deps AS build-js
-
-ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
 
 WORKDIR /platform
 
@@ -259,34 +433,67 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package wasm-dpp \
         --target wasm32-unknown-unknown \
         --locked && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
-COPY . .
+
+# Rust deps
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/rs-dpp \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-json-schema-compatibility-validator \
+    # Common
+    packages/wasm-dpp \
+    packages/dashpay-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/dapi-grpc \
+    # JS deps
+    .yarn \
+    .pnp* \
+    .yarnrc.yml \
+    yarn.lock \
+    package.json \
+    packages/js-grpc-common \
+    packages/js-dapi-client \
+    packages/wallet-lib \
+    packages/js-dash-sdk \
+    packages/dash-spv \
+    /platform/
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     source $HOME/.cargo/env && \
+    source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    # Remove target directory and rust packages to save space
+    rm -rf target packages/rs-*
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
@@ -306,7 +513,7 @@ RUN mkdir -p /var/log/dash \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
+COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -342,6 +549,9 @@ EXPOSE 29090
 # STAGE: DASHMATE HELPER BUILD
 #
 FROM build-js AS build-dashmate-helper
+
+# Copy dashmate package
+COPY packages/dashmate packages/dashmate
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -387,6 +597,8 @@ ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 #
 FROM build-js AS build-test-suite
 
+COPY packages/platform-test-suite packages/platform-test-suite
+
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN yarn workspaces focus --production @dashevo/platform-test-suite
@@ -404,38 +616,6 @@ LABEL description="Dash Platform test suite"
 WORKDIR /platform
 
 COPY --from=build-test-suite /platform /platform
-
-
-# Copy yarn and Cargo files
-COPY --from=build-test-suite /platform/.yarn /platform/.yarn
-COPY --from=build-test-suite /platform/package.json /platform/yarn.lock \
-    /platform/.yarnrc.yml /platform/.pnp.* /platform/Cargo.lock /platform/rust-toolchain.toml ./
-# Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
-COPY --from=build-test-suite /platform/packages/platform-test-suite/Cargo.toml.template ./Cargo.toml
-
-# Copy only necessary packages from monorepo
-COPY --from=build-test-suite /platform/packages/platform-test-suite packages/platform-test-suite
-COPY --from=build-test-suite /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-test-suite /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-test-suite /platform/packages/js-dash-sdk packages/js-dash-sdk
-COPY --from=build-test-suite /platform/packages/js-dapi-client packages/js-dapi-client
-COPY --from=build-test-suite /platform/packages/js-grpc-common packages/js-grpc-common
-COPY --from=build-test-suite /platform/packages/dapi-grpc packages/dapi-grpc
-COPY --from=build-test-suite /platform/packages/dash-spv packages/dash-spv
-COPY --from=build-test-suite /platform/packages/withdrawals-contract packages/withdrawals-contract
-COPY --from=build-test-suite /platform/packages/rs-platform-value packages/rs-platform-value
-COPY --from=build-test-suite /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-test-suite /platform/packages/feature-flags-contract packages/feature-flags-contract
-COPY --from=build-test-suite /platform/packages/dpns-contract packages/dpns-contract
-COPY --from=build-test-suite /platform/packages/data-contracts packages/data-contracts
-COPY --from=build-test-suite /platform/packages/rs-platform-serialization packages/rs-platform-serialization
-COPY --from=build-test-suite /platform/packages/rs-platform-serialization-derive packages/rs-platform-serialization-derive
-COPY --from=build-test-suite /platform/packages/rs-platform-version packages/rs-platform-version
-COPY --from=build-test-suite /platform/packages/rs-platform-versioning packages/rs-platform-versioning
-COPY --from=build-test-suite /platform/packages/rs-platform-value-convertible packages/rs-platform-value-convertible
-COPY --from=build-test-suite /platform/packages/rs-dpp packages/rs-dpp
-COPY --from=build-test-suite /platform/packages/wasm-dpp packages/wasm-dpp
-
 COPY --from=build-test-suite /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
@@ -446,6 +626,8 @@ ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
 # STAGE: DAPI BUILD
 #
 FROM build-js AS build-dapi
+
+COPY packages/dapi packages/dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -472,7 +654,6 @@ COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
-COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-dapi-client
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
