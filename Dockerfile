@@ -341,7 +341,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
-        export RELEASE="--release" ; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
     fi && \
@@ -351,7 +350,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
-        ${RELEASE} \
         ${FEATURES_FLAG} \
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
