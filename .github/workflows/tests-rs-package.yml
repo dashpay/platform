@@ -34,8 +34,8 @@ jobs:
           bucket: ${{ vars.CACHE_S3_BUCKET }}
           region: ${{ vars.CACHE_REGION }}
           endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          aws_access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
@@ -90,8 +90,8 @@ jobs:
           bucket: ${{ vars.CACHE_S3_BUCKET }}
           region: ${{ vars.CACHE_REGION }}
           endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          aws_access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
@@ -191,8 +191,8 @@ jobs:
           bucket: ${{ vars.CACHE_S3_BUCKET }}
           region: ${{ vars.CACHE_REGION }}
           endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          aws_access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
@@ -225,8 +225,8 @@ jobs:
           bucket: ${{ vars.CACHE_S3_BUCKET }}
           region: ${{ vars.CACHE_REGION }}
           endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          aws_access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb

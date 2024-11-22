@@ -205,7 +205,6 @@ RUN --mount=type=secret,id=AWS <<EOS
         
         # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
         echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}"; exit 1; }' >> /root/env
-        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || ls -lR $HOME/.aws' >> /root/env
 
     ### memcached ###
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then

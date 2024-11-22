@@ -11,11 +11,11 @@ inputs:
   endpoint:
     description: S3 endpoint to use for caching
     required: true
-  aws_access_key_id:
-    description: AWS access key ID
+  access_key_id:
+    description: S3 endpoint access key ID
     required: true
-  aws_secret_access_key:
-    description: AWS secret access key
+  secret_access_key:
+    description: S3 endpoint secret access key
     required: true
   install:
     description: "Install sccache"
@@ -34,8 +34,8 @@ runs:
     - name: Configure AWS credentials
       uses: ./.github/actions/aws_credentials
       with:
-        access_key_id: ${{ inputs.aws_access_key_id }}
-        secret_access_key: ${{ inputs.aws_secret_access_key }}
+        access_key_id: ${{ inputs.access_key_id }}
+        secret_access_key: ${{ inputs.secret_access_key }}
         profile: "sccache"
 
     - name: Configure sccache
