@@ -1,6 +1,8 @@
 {
   "txMetadata": {
     "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
     "indices": [
       {
         "name": "ownerId",
