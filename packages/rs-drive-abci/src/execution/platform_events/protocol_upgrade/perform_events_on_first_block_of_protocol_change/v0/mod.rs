@@ -66,20 +66,11 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
+    /// Initializes the wallet contract that supports mobile wallets with additional
+    /// functionality
     ///
-    /// This function is called during the transition to protocol version 4 to set up
-    /// an empty sum tree at the specified path if it does not already exist.
-    ///
-    /// # Parameters
-    ///
-    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
-    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())`: If the transition to version 4 was successful.
-    /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
+    /// This function is called during the transition from protocol version 5 to protocol version 6
+    /// and higher to set up the wallet contract in the platform.
     fn transition_to_version_6(
         &self,
         _platform_state: &PlatformState,
@@ -92,7 +83,7 @@ impl<C> Platform<C> {
 
         self.drive.insert_contract(
             &contract,
-            block_info.clone(),
+            *block_info,
             true,
             Some(transaction),
             platform_version,
