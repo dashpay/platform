@@ -160,9 +160,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 # Configure sccache
 #
 
-# Disable incremental builds, not supported by sccache
-RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
-
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
@@ -215,12 +212,15 @@ RUN --mount=type=secret,id=AWS <<EOS
         exit 1
     fi
     
+    echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
+    
     # Configure compilers to use sccache
     echo "export CXX='sccache clang++'" >> /root/env
     echo "export CC='sccache clang'" >> /root/env
     echo "export RUSTC_WRAPPER=sccache" >> /root/env
-    echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
-    
+    # Disable Rust incremental builds, not supported by sccache
+    echo 'export CARGO_INCREMENTAL=0' >> /root/env
+
     # for debugging, we display what we generated
     cat /root/env
 EOS
