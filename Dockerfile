@@ -669,7 +669,7 @@ COPY --from=build-dapi \
     /platform/packages/dapi-grpc \
     /platform/packages/js-grpc-common \
     /platform/packages/wasm-dpp \
-    /platfrom/
+    /platform/
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
