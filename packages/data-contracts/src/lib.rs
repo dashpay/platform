@@ -9,6 +9,7 @@ pub use feature_flags_contract;
 pub use masternode_reward_shares_contract;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+pub use wallet_contract;
 pub use withdrawals_contract;
 
 #[repr(u8)]
