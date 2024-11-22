@@ -1,3 +1,7 @@
+'@dashevo/wallet-utils-contract': &wallet-utils-contract
+  - .github/workflows/tests*
+  - packages/wallet-utils-contract/**
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -25,6 +29,7 @@ dpp: &dpp
   - *masternode-reward-shares-contract
   - *dpns-contract
   - *withdrawals-contract
+  - *wallet-utils-contract
   - *json-schema-compatibility-validator
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
