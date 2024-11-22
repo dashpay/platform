@@ -26,7 +26,7 @@ inputs:
     description: Cargo build profile, i.e release or dev
     default: dev
   bucket:
-    description: S3 bucket to use for caching, must match runner define in `runs-on`
+    description: S3 bucket to use for caching (both sccache and layer cache)
     required: true
   region:
     description: S3 bucket region

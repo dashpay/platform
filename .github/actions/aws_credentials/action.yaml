@@ -5,10 +5,10 @@ name: "aws_credentials"
 description: "Configure .aws/credentials"
 inputs:
   access_key_id:
-    description: AWS access key ID
+    description: Access key ID
     required: true
   secret_access_key:
-    description: AWS secret access key
+    description: Secret access key
     required: true
   profile:
     description: AWS profile to use
@@ -29,5 +29,5 @@ runs:
     - name: Set env variables
       shell: bash
       run: |
-        echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
+        echo "AWS_PROFILE=${{ inputs.profile }}" >> $GITHUB_ENV
         echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV
