@@ -39,7 +39,7 @@ jobs:
         include:
           - runner: ubuntu-24.04
             platform: linux/amd64
-          - runner: macos-14
+          - runner: ubuntu-24.04
             platform: linux/arm64
     steps:
       - name: Check out repo
@@ -53,6 +53,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        if: ${{ matrix.platform == 'linux/arm64' }}
 
       - name: Build and push by digest
         uses: ./.github/actions/docker
