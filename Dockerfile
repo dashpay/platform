@@ -332,7 +332,7 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
 
-COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /platform/
+COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -424,7 +424,7 @@ FROM deps AS build-js
 
 WORKDIR /platform
 
-COPY --from=build-planner --parents /platform/recipe.json recipe.json
+COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
