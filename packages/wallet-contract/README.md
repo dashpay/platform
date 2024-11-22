@@ -8,7 +8,6 @@ JSON Contracts for Dash Wallet apps
 ## Table of Contents
 
 - [Install](#install)
-- [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
 
