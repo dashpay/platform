@@ -18,12 +18,6 @@ JSON Contracts for Dash Wallet apps
 npm install @dashevo/wallet-contract
 ```
 
-## Usage
-
-```sh
-# TODO ...
-```
-
 ## Contributing
 
 Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues/new/choose) or submit PRs.
