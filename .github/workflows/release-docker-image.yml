@@ -37,9 +37,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: ["self-hosted", "linux", "x64", "ubuntu-platform"]
+          - runner: ubuntu-24.04
             platform: linux/amd64
-          - runner: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+          - runner: macos-14
             platform: linux/arm64
     steps:
       - name: Check out repo
@@ -134,6 +134,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
