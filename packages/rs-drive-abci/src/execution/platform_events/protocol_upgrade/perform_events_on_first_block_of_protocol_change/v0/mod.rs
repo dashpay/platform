@@ -78,7 +78,6 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // We are adding the withdrawal transactions sum amount tree
         let contract = load_system_data_contract(SystemDataContract::Wallet, platform_version)?;
 
         self.drive.insert_contract(
