@@ -26,7 +26,7 @@
       "keyIndex": {
         "type": "integer",
         "minimum": 0,
-        "description": "The index of the owners identity public key used to derive the encryption key.",
+        "description": "The derivation index used to create the encryption key.",
         "position": 0
       },
       "encryptionKeyIndex": {
