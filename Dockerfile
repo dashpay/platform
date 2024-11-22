@@ -306,6 +306,7 @@ COPY --parents \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
+    packages/wallet-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -374,6 +375,7 @@ COPY --parents \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
     packages/dashpay-contract \
+    packages/wallet-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
@@ -462,6 +464,7 @@ COPY --parents \
     packages/wasm-dpp \
     packages/dashpay-contract \
     packages/withdrawals-contract \
+    packages/wallet-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
@@ -569,23 +572,29 @@ LABEL description="Dashmate Helper Node.JS"
 
 WORKDIR /platform
 
-COPY --from=build-dashmate-helper /platform/.yarn /platform/.yarn
-COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
-
 # Copy only necessary packages from monorepo
-COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
-COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
-COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
-COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
-COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
-COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
-COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
-COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
-COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
-COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
+COPY --from=build-dashmate-helper \
+    --parents \
+    /platform/.yarn \
+    /platform/package.json \
+    /platform/yarn.lock \
+    /platform/.yarnrc.yml \
+    /platform/.pnp* \
+    /platform/packages/dashmate \
+    /platform/packages/dashpay-contract \
+    /platform/packages/wallet-lib \
+    /platform/packages/js-dapi-client \
+    /platform/packages/js-grpc-common \
+    /platform/packages/dapi-grpc \
+    /platform/packages/dash-spv \
+    /platform/packages/wallet-contract \
+    /platform/packages/withdrawals-contract \
+    /platform/packages/masternode-reward-shares-contract \
+    /platform/packages/feature-flags-contract \
+    /platform/packages/dpns-contract \
+    /platform/packages/data-contracts \
+    /platform/packages/wasm-dpp \
+    /platform/
 
 ENV DASHMATE_HOME_DIR=/home/dashmate/.dashmate
 ENV DASHMATE_HELPER=1
@@ -646,14 +655,21 @@ RUN apk add --no-cache zeromq-dev
 
 WORKDIR /platform/packages/dapi
 
-COPY --from=build-dapi /platform/.yarn /platform/.yarn
-COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
 # List of required dependencies. Based on:
 # yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
-COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
-COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
-COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
-COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
+
+COPY --from=build-dapi \
+    --parents \
+    /platform/.yarn \
+    /platform/package.json \
+    /platform/yarn.lock \
+    /platform/.yarnrc.yml \
+    /platform/.pnp* \
+    /platform/packages/dapi \
+    /platform/packages/dapi-grpc \
+    /platform/packages/js-grpc-common \
+    /platform/packages/wasm-dpp \
+    /platfrom/
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
