@@ -1,5 +1,5 @@
 [package]
-name = "wallet-contract"
+name = "wallet-utils-contract"
 description = "Wallet data contract schema and tools"
 version = "1.5.0"
 edition = "2021"

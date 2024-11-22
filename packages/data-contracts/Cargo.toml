@@ -16,4 +16,4 @@ dpns-contract = { path = "../dpns-contract" }
 dashpay-contract = { path = "../dashpay-contract" }
 feature-flags-contract = { path = "../feature-flags-contract" }
 platform-value = { path = "../rs-platform-value" }
-wallet-contract = { path = "../wallet-contract" }
+wallet-utils-contract = { path = "../wallet-utils-contract" }

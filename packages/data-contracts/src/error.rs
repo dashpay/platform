@@ -103,10 +103,10 @@ impl From<feature_flags_contract::Error> for Error {
     }
 }
 
-impl From<wallet_contract::Error> for Error {
-    fn from(e: wallet_contract::Error) -> Self {
+impl From<wallet_utils_contract::Error> for Error {
+    fn from(e: wallet_utils_contract::Error) -> Self {
         match e {
-            wallet_contract::Error::UnknownVersionMismatch {
+            wallet_utils_contract::Error::UnknownVersionMismatch {
                 method,
                 known_versions,
                 received,
@@ -115,7 +115,7 @@ impl From<wallet_contract::Error> for Error {
                 known_versions,
                 received,
             },
-            wallet_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+            wallet_utils_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
         }
     }
 }

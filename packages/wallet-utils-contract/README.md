@@ -1,4 +1,4 @@
-# Wallet Contract
+# Wallet Utils Contract
 
 [![Build Status](https://github.com/dashpay/platform/actions/workflows/release.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/release.yml)
 [![NPM version](https://img.shields.io/npm/v/@dashevo/wallet-contract.svg?style=flat-square)](https://npmjs.org/package/@dashevo/wallet-contract)

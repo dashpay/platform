@@ -1,5 +1,5 @@
 {
-  "name": "@dashevo/wallet-contract",
+  "name": "@dashevo/wallet-utils-contract",
   "version": "1.5.0",
   "description": "A contract and helper scripts for Wallet DApp",
   "scripts": {

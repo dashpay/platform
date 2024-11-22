@@ -14,6 +14,8 @@ pub mod document_types {
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
-    serde_json::from_str(include_str!("../../schema/v1/wallet-contract-documents.json"))
-        .map_err(Error::InvalidSchemaJson)
+    serde_json::from_str(include_str!(
+        "../../schema/v1/wallet-utils-contract-documents.json"
+    ))
+    .map_err(Error::InvalidSchemaJson)
 }

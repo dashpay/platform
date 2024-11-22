@@ -72,7 +72,8 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let contract = load_system_data_contract(SystemDataContract::Wallet, platform_version)?;
+        let contract =
+            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
 
         self.drive.insert_contract(
             &contract,
