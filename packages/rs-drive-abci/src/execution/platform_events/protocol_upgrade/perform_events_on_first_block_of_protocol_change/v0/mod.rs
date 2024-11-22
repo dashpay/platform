@@ -55,12 +55,7 @@ impl<C> Platform<C> {
         }
 
         if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
-            self.transition_to_version_6(
-                platform_state,
-                block_info,
-                transaction,
-                platform_version,
-            )?;
+            self.transition_to_version_6(block_info, transaction, platform_version)?;
         }
 
         Ok(())
@@ -73,7 +68,6 @@ impl<C> Platform<C> {
     /// and higher to set up the wallet contract in the platform.
     fn transition_to_version_6(
         &self,
-        _platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
