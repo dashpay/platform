@@ -63,7 +63,7 @@ runs:
           const sanitizedHeadRef = '${{ inputs.head_ref }}'.replace(/[^a-zA-Z0-9]/g, '-');
 
           const shaManifestName = '${{ inputs.name }}_sha_${{ github.sha }}';
-          const headRefManifestName = '${{ inputs.name }}_tag_${ sanitizedHeadRef }';
+          const headRefManifestName = '${{ inputs.name }}_tag_${{ sanitizedHeadRef }}';
 
           const cacheFromManifestNames = [
             shaManifestName,
