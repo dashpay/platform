@@ -189,6 +189,20 @@ impl DocumentReplaceTransitionWasm {
         self.inner.base().data_contract_id().into()
     }
 
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_contract_nonce(&self) -> u64 {
+        self.inner.base().identity_contract_nonce() as u64
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) -> () {
+        let mut base = self.inner.base().clone();
+
+        base.set_identity_contract_nonce(identity_contract_nonce);
+
+        self.inner.set_base(base)
+    }
+
     #[wasm_bindgen(js_name=get)]
     pub fn get(&self, path: String) -> Result<JsValue, JsValue> {
         let document_data = if let Some(ref data) = self.inner.data() {
