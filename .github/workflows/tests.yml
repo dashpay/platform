@@ -53,13 +53,12 @@ jobs:
           - name: Drive
             image_name: drive
             target: drive-abci
-          # TODO: uncomment after testing
-          # - name: DAPI
-          #   image_name: dapi
-          #   target: dapi
-          # - name: Dashmate helper
-          #   image_name: dashmate-helper
-          #   target: dashmate-helper
+          - name: DAPI
+            image_name: dapi
+            target: dapi
+          - name: Dashmate helper
+            image_name: dashmate-helper
+            target: dashmate-helper
     uses: ./.github/workflows/tests-build-image.yml
     with:
       name: ${{ matrix.name }}
@@ -74,10 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: uncomment after testing
-        # rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
-        rs-package:
-          - dpp
+        rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
@@ -105,122 +101,122 @@ jobs:
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-  # TODO: uncomment after testing
-  # js-packages:
-  #   name: JS packages
-  #   needs:
-  #     - changes
-  #     - build-js
-  #   secrets: inherit
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
-  #   uses: ./.github/workflows/tests-js-package.yml
-  #   with:
-  #     package: ${{ matrix.js-package }}
-  #     test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
-  #     skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
 
-  # js-deps-versions:
-  #   name: JS dependency versions check
-  #   if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-  #   runs-on: ubuntu-24.04
-  #   steps:
-  #     - name: Check out repo
-  #       uses: actions/checkout@v4
+  js-packages:
+    name: JS packages
+    needs:
+      - changes
+      - build-js
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
+    uses: ./.github/workflows/tests-js-package.yml
+    with:
+      package: ${{ matrix.js-package }}
+      test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
+      skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
 
-  #     - name: Setup Node.JS
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "20"
+  js-deps-versions:
+    name: JS dependency versions check
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
 
-  #     - name: Enable corepack
-  #       run: corepack enable
+      - name: Setup Node.JS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-  #     - name: Validate workspaces
-  #       run: yarn constraints
+      - name: Enable corepack
+        run: corepack enable
 
-  # js-npm-security:
-  #   name: JS NPM security audit
-  #   if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-  #   runs-on: ubuntu-24.04
-  #   steps:
-  #     - name: Check out repo
-  #       uses: actions/checkout@v4
+      - name: Validate workspaces
+        run: yarn constraints
 
-  #     - name: Enable corepack
-  #       run: corepack enable
+  js-npm-security:
+    name: JS NPM security audit
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
 
-  #     - name: Audit NPM
-  #       run: yarn npm audit --environment production --all --recursive
+      - name: Enable corepack
+        run: corepack enable
 
-  # js-codeql:
-  #   name: JS code security audit
-  #   needs: build-js
-  #   secrets: inherit
-  #   uses: ./.github/workflows/tests-codeql.yml
+      - name: Audit NPM
+        run: yarn npm audit --environment production --all --recursive
 
-  # dashmate-e2e-tests:
-  #   name: Dashmate E2E tests
-  #   secrets: inherit
-  #   needs:
-  #     - changes
-  #     - build-js
-  #     - build-images
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - name: Local network
-  #           test-pattern: test/e2e/localNetwork.spec.js
-  #           restore_local_network_data: true
-  #         - name: Testnet fullnode
-  #           test-pattern: test/e2e/testnetFullnode.spec.js
-  #           restore_local_network_data: false
-  #         - name: Testnet Evonode
-  #           test-pattern: test/e2e/testnetEvonode.spec.js
-  #           restore_local_network_data: false
-  #   uses: ./.github/workflows/tests-dashmate.yml
-  #   with:
-  #     name: ${{ matrix.name }}
-  #     test-pattern: ${{ matrix.test-pattern }}
-  #     restore_local_network_data: ${{ matrix.restore_local_network_data }}
-  #   if: contains(needs.changes.outputs.js-packages, 'dashmate')
+  js-codeql:
+    name: JS code security audit
+    needs: build-js
+    secrets: inherit
+    uses: ./.github/workflows/tests-codeql.yml
 
-  # test-suite:
-  #   name: Test Suite
-  #   needs:
-  #     - build-js
-  #     - build-images
-  #   secrets: inherit
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - name: Test Suite
-  #           command: test:suite
-  #           batch_index: 0
-  #           batch_total: 0
-  #         - name: Test Suite in browser (1)
-  #           command: test:browsers
-  #           batch_index: 0
-  #           batch_total: 2
-  #         - name: Test Suite in browser (2)
-  #           command: test:browsers
-  #           batch_index: 1
-  #           batch_total: 2
-  #   uses: ./.github/workflows/tests-test-suite.yml
-  #   with:
-  #     name: ${{ matrix.name }}
-  #     command: ${{ matrix.command }}
-  #     batch_total: ${{ matrix.batch_total }}
-  #     batch_index: ${{ matrix.batch_index }}
+  dashmate-e2e-tests:
+    name: Dashmate E2E tests
+    secrets: inherit
+    needs:
+      - changes
+      - build-js
+      - build-images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Local network
+            test-pattern: test/e2e/localNetwork.spec.js
+            restore_local_network_data: true
+          - name: Testnet fullnode
+            test-pattern: test/e2e/testnetFullnode.spec.js
+            restore_local_network_data: false
+          - name: Testnet Evonode
+            test-pattern: test/e2e/testnetEvonode.spec.js
+            restore_local_network_data: false
+    uses: ./.github/workflows/tests-dashmate.yml
+    with:
+      name: ${{ matrix.name }}
+      test-pattern: ${{ matrix.test-pattern }}
+      restore_local_network_data: ${{ matrix.restore_local_network_data }}
+    if: contains(needs.changes.outputs.js-packages, 'dashmate')
 
-  # test-functional:
-  #   name: Packages functional tests
-  #   needs:
-  #     - build-js
-  #     - build-images
-  #   secrets: inherit
-  #   uses: ./.github/workflows/tests-packges-functional.yml
+  test-suite:
+    name: Test Suite
+    needs:
+      - build-js
+      - build-images
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Test Suite
+            command: test:suite
+            batch_index: 0
+            batch_total: 0
+          - name: Test Suite in browser (1)
+            command: test:browsers
+            batch_index: 0
+            batch_total: 2
+          - name: Test Suite in browser (2)
+            command: test:browsers
+            batch_index: 1
+            batch_total: 2
+    uses: ./.github/workflows/tests-test-suite.yml
+    with:
+      name: ${{ matrix.name }}
+      command: ${{ matrix.command }}
+      batch_total: ${{ matrix.batch_total }}
+      batch_index: ${{ matrix.batch_index }}
+
+  test-functional:
+    name: Packages functional tests
+    needs:
+      - build-js
+      - build-images
+    secrets: inherit
+    uses: ./.github/workflows/tests-packges-functional.yml
