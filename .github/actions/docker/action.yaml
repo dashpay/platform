@@ -86,6 +86,7 @@ runs:
         region: ${{ inputs.cache_region }}
         bucket: ${{ inputs.cache_bucket }}
         endpoint: ${{ inputs.cache_endpoint }}
+        prefix: "cache-layers/${{ inputs.platform }}/"
         cache_to_name: ${{ inputs.cache_to_name }}
 
     - name: Set HOME variable to github context
@@ -160,6 +161,7 @@ runs:
         endpoint: ${{ inputs.cache_endpoint }}
         access_key_id: ${{ inputs.cache_access_key_id }}
         secret_access_key: ${{ inputs.cache_secret_access_key }}
+        platform: ${{ inputs.platform }}
         install: false
 
     - name: Build and push Docker image ${{ inputs.image }}
