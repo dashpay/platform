@@ -61,7 +61,6 @@ jobs:
 
       - name: Build JS packages
         run: yarn build
-
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Ignore only already cached artifacts
