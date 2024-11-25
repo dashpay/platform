@@ -92,6 +92,17 @@ impl DataContractUpdateTransitionWasm {
     pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
         self.0.set_user_fee_increase(user_fee_increase);
     }
+
+    #[wasm_bindgen(js_name=getSignature)]
+    pub fn get_signature(&self) -> Buffer {
+        Buffer::from_bytes(self.0.signature().as_slice())
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
+    }
+
     // #[wasm_bindgen(js_name=toJSON)]
     // pub fn to_json(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
     //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();

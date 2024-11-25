@@ -423,6 +423,11 @@ impl IdentityUpdateTransitionWasm {
         Buffer::from_bytes_owned(self.0.signature().to_vec())
     }
 
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
+    }
+
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
