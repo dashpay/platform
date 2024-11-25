@@ -1935,6 +1935,22 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/wallet-utils-contract@workspace:packages/wallet-utils-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/wallet-utils-contract@workspace:packages/wallet-utils-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^8.53.0"
+    eslint-config-airbnb-base: "npm:^15.0.0"
+    eslint-plugin-import: "npm:^2.29.0"
+    mocha: "npm:^10.2.0"
+    sinon: "npm:^17.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/wasm-dpp@workspace:*, @dashevo/wasm-dpp@workspace:packages/wasm-dpp":
   version: 0.0.0-use.local
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"

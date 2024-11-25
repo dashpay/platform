@@ -306,6 +306,7 @@ COPY --parents \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
+    packages/wallet-utils-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -318,10 +319,7 @@ COPY --parents \
     packages/check-features \
     /platform/
 
-RUN if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        export RELEASE="--release" ; \
-    fi && \
-    source $HOME/.cargo/env && \
+RUN source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef prepare $RELEASE --recipe-path recipe.json
 
@@ -335,7 +333,7 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
 
-COPY --from=build-planner /platform/recipe.json /platform/.cargo /platform/
+COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -374,6 +372,7 @@ COPY --parents \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
     packages/dashpay-contract \
+    packages/wallet-utils-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
@@ -462,6 +461,7 @@ COPY --parents \
     packages/wasm-dpp \
     packages/dashpay-contract \
     packages/withdrawals-contract \
+    packages/wallet-utils-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
@@ -569,6 +569,7 @@ LABEL description="Dashmate Helper Node.JS"
 
 WORKDIR /platform
 
+# TODO: Do one COPY with --parents
 COPY --from=build-dashmate-helper /platform/.yarn /platform/.yarn
 COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
 
@@ -580,6 +581,7 @@ COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
+COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
@@ -646,6 +648,7 @@ RUN apk add --no-cache zeromq-dev
 
 WORKDIR /platform/packages/dapi
 
+# TODO: Do one COPY with --parents
 COPY --from=build-dapi /platform/.yarn /platform/.yarn
 COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
 # List of required dependencies. Based on:
