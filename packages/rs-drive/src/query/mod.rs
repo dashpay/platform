@@ -1503,9 +1503,6 @@ impl<'a> DriveDocumentQuery<'a> {
     /// here the * denotes the area needing a conditional
     /// We need a conditional subquery on Ford to say only things after Ford (with Ford included)
     /// We need a conditional subquery on Escape to say only things after Escape (with Escape included)
-    ///
-    /// The index property used to identify the document within its type.
-    /// This helps in determining the position of the document in query results.
     fn recursive_insert_on_query(
         query: &mut Query,
         left_over_index_properties: &[&IndexProperty],
@@ -1763,7 +1760,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
                 DriveDocumentQuery::recursive_conditional_insert_on_query(
                     &mut non_conditional_query,
-                    lower_start_at_key, //todo
+                    lower_start_at_key,
                     left_over,
                     unique,
                     starts_at_document,
