@@ -36,7 +36,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ vars.CACHE_REGION   }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -52,8 +52,8 @@ jobs:
           set -x
 
           # Login to ECR
-          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ vars.AWS_REGION  }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
 
           SHA_TAG=sha-${{ github.sha }}
 
@@ -115,4 +115,3 @@ jobs:
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
-

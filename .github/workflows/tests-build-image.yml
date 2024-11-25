@@ -25,6 +25,7 @@ jobs:
         with:
           fetch-depth: 0
 
+      # AWS credentials only needed for ECR login
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:

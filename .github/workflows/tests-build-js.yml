@@ -11,7 +11,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION  }}
 
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
@@ -41,6 +41,16 @@ jobs:
           target: wasm32-unknown-unknown
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION   }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
       - name: Install Cargo binstall
         uses: cargo-bins/cargo-binstall@v1.3.1
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
@@ -51,11 +61,7 @@ jobs:
 
       - name: Build JS packages
         run: yarn build
-        env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
+
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Ignore only already cached artifacts
@@ -87,4 +93,3 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-

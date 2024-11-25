@@ -33,13 +33,6 @@ jobs:
         env:
           TAG_PREFIX: v
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
         with:
@@ -58,6 +51,17 @@ jobs:
           target: wasm32-unknown-unknown
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.AWS_REGION  }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
@@ -73,10 +77,7 @@ jobs:
         run: yarn build
         env:
           CARGO_BUILD_PROFILE: release
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
+
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Set suffix
@@ -230,10 +231,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # TODO: Do we still need this?
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION  }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
