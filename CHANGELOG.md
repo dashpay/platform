@@ -1,4 +1,4 @@
-## [1.6.0-dev.1](https://github.com/dashpay/platform/compare/v1.5.0...v1.6.0-dev.1) (2024-11-25)
+## [1.6.0-dev.1](https://github.com/dashpay/platform/compare/v1.5.1...v1.6.0-dev.1) (2024-11-25)
 
 
 ### Features
