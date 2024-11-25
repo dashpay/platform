@@ -1,3 +1,66 @@
+## [1.6.0-dev.1.1](https://github.com/dashpay/platform/compare/v1.5.0...v1.6.0-dev.1.1) (2024-11-25)
+
+
+### Features
+
+* hardcoded identity transfers in strategy tests ([#2322](https://github.com/dashpay/platform/issues/2322))
+* integrate wallet contract ([#2345](https://github.com/dashpay/platform/issues/2345))
+* **sdk:** fetch many and return metadata and proof to client ([#2331](https://github.com/dashpay/platform/issues/2331))
+* **sdk:** including grovedb proof bytes when error in proof verification ([#2332](https://github.com/dashpay/platform/issues/2332))
+
+
+### Bug Fixes
+
+* **dashmate:** container name is already in use ([#2341](https://github.com/dashpay/platform/issues/2341))
+* **dashmate:** failing doctor with drive metrics enabled ([#2348](https://github.com/dashpay/platform/issues/2348))
+* **dashmate:** various ZeroSSL cert verification errors ([#2339](https://github.com/dashpay/platform/issues/2339))
+* document query start after ([#2347](https://github.com/dashpay/platform/issues/2347))
+* **drive:** apply batch is not using transaction in `remove_all_votes_given_by_identities` ([#2309](https://github.com/dashpay/platform/issues/2309))
+* **drive:** nonce already present in past internal error ([#2343](https://github.com/dashpay/platform/issues/2343))
+* **drive:** uncommitted state if db transaction fails ([#2305](https://github.com/dashpay/platform/issues/2305))
+* incorrect dashd tag
+* mn_rr activated before we have quorums
+* platform status
+* wrong migration version
+
+
+### Build System
+
+* adjust docker build context ([#2336](https://github.com/dashpay/platform/issues/2336))
+* use cargo binstall to speed up builds ([#2321](https://github.com/dashpay/platform/issues/2321))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to 21.2 nightly
+* make protocol version 6 ([#2327](https://github.com/dashpay/platform/issues/2327))
+* make sure we activated mn_rr
+* remove `deprecatedrpc=hpmn`
+* remove unnecessary migration
+* **sdk:** expose proof verifier errors ([#2333](https://github.com/dashpay/platform/issues/2333))
+* **sdk:** vote poll queries encoding ([#2334](https://github.com/dashpay/platform/issues/2334))
+* switch core to 22 rc1
+* update core image
+* update Core only for testnet/local/devnet
+* update the image to recent nightly
+
+
+### Code Refactoring
+
+* remove unused import
+* remove unused import
+
+
+### Continuous Integration
+
+* do not run test on push ([#2308](https://github.com/dashpay/platform/issues/2308))
+* improve caching ([#2329](https://github.com/dashpay/platform/issues/2329))
+* prebuilt librocksdb in docker image ([#2318](https://github.com/dashpay/platform/issues/2318))
+* run devcontainers workflow only on push to master ([#2295](https://github.com/dashpay/platform/issues/2295))
+* switch release workflow to github runners ([#2346](https://github.com/dashpay/platform/issues/2346))
+* switch to free runners ([#2319](https://github.com/dashpay/platform/issues/2319))
+* use prebuilt librocksdb in github actions ([#2316](https://github.com/dashpay/platform/issues/2316))
+
 ## [1.5.0](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0) (2024-11-01)
 
 ### ⚠ BREAKING CHANGES
