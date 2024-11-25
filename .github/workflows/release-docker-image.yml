@@ -33,19 +33,23 @@ jobs:
   build-image:
     name: Build ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 180
     strategy:
       matrix:
         include:
-          - runner: ["self-hosted", "linux", "x64", "ubuntu-platform"]
+          - runner: ubuntu-24.04
             platform: linux/amd64
-          - runner: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+          - runner: ubuntu-24.04
             platform: linux/arm64
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        if: ${{ matrix.platform == 'linux/arm64' }}
 
       - name: Build and push by digest
         uses: ./.github/actions/docker
@@ -129,6 +133,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
