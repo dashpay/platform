@@ -338,6 +338,11 @@ impl IdentityCreditTransferTransitionWasm {
             .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
+    }
+
     #[wasm_bindgen]
     pub fn sign(
         &mut self,

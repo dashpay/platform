@@ -142,6 +142,16 @@ impl DocumentsBatchTransitionWasm {
         self.0.set_identity_contract_nonce(nonce as u64);
     }
 
+    #[wasm_bindgen(js_name=getSignature)]
+    pub fn get_signature(&self) -> Buffer {
+        Buffer::from_bytes(self.0.signature().as_slice())
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
+    }
+
     // #[wasm_bindgen(js_name=toJSON)]
     // pub fn to_json(&self) -> Result<JsValue, JsValue> {
     //     let value = self.0.to_json(false).with_js_error()?;
