@@ -4679,7 +4679,8 @@ fn test_dpns_query_start_after_with_null_id() {
                     .expect("we should be able to deserialize the document");
             let normalized_label_value = document
                 .get("normalizedLabel")
-                .expect("we should be able to get the first name");
+                .cloned()
+                .unwrap_or(Value::Null);
             if normalized_label_value.is_null() {
                 String::from("")
             } else {
@@ -5138,7 +5139,7 @@ fn test_withdrawals_query_start_after_query_by_owner_id() {
             ["$ownerId", "==", "A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ"]
         ],
         "startAfter":  "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD",
-        "limit": 2,
+        "limit": 3,
     });
 
     // This will use the identity recent index
@@ -5183,6 +5184,8 @@ fn test_withdrawals_query_start_after_query_by_owner_id() {
         })
         .collect();
 
+    // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
+    // empty tree and consumes a limit
     let a_names = [
         "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
         "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu".to_string(),

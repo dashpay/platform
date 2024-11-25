@@ -1567,6 +1567,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         document_type,
                         included,
                     } = start_at_document_inner;
+                    println!("document is {}", document);
                     let start_at_key = document
                         .get_raw_for_document_type(
                             first.name.as_str(),
@@ -1630,6 +1631,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     // │   │   │   │   │   ├── 4
                     // │   │   │   │   │   │   ├── 1f7a8...
                     // │   │   │   │   │   │   └── 2c9b3...
+                    println!("going to call recursive_insert_on_query on non_conditional_query {} with left_over {:?}", non_conditional_query, left_over);
                     DriveDocumentQuery::recursive_insert_on_query(
                         &mut non_conditional_query,
                         left_over,
@@ -1640,15 +1642,16 @@ impl<'a> DriveDocumentQuery<'a> {
                         platform_version,
                     )?;
 
-                    // DriveDocumentQuery::recursive_conditional_insert_on_query(
-                    //     &mut non_conditional_query,
-                    //     left_over,
-                    //     unique,
-                    //     start_at_document_inner,
-                    //     left_to_right,
-                    //     order_by,
-                    //     platform_version,
-                    // )?;
+                    DriveDocumentQuery::recursive_conditional_insert_on_query(
+                        &mut non_conditional_query,
+                        start_at_key,
+                        left_over,
+                        unique,
+                        start_at_document_inner,
+                        left_to_right,
+                        order_by,
+                        platform_version,
+                    )?;
 
                     query.set_subquery(non_conditional_query);
                 } else {
@@ -1672,19 +1675,18 @@ impl<'a> DriveDocumentQuery<'a> {
     }
     fn recursive_conditional_insert_on_query(
         query: &mut Query,
+        conditional_value: Option<Vec<u8>>,
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
         starts_at_document: &StartAtDocument,
         default_left_to_right: bool,
         order_by: Option<&IndexMap<String, OrderClause>>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<Query>, Error> {
+    ) -> Result<(), Error> {
         match left_over_index_properties.split_first() {
             None => {
                 match unique {
                     true => {
-                        query.set_subquery_key(vec![0]);
-
                         // In the case things are NULL we allow to have multiple values
                         let inner_query = Self::inner_query_from_starts_at_for_id(
                             Some(starts_at_document),
@@ -1697,25 +1699,18 @@ impl<'a> DriveDocumentQuery<'a> {
                         );
                     }
                     false => {
-                        query.set_subquery_key(vec![0]);
-                        // we just get all by document id order ascending
-                        let full_query =
-                            Self::inner_query_from_starts_at_for_id(None, default_left_to_right);
-                        query.set_subquery(full_query);
-
                         let inner_query = Self::inner_query_from_starts_at_for_id(
                             Some(starts_at_document),
                             default_left_to_right,
                         );
 
                         query.add_conditional_subquery(
-                            QueryItem::Key(b"".to_vec()),
+                            QueryItem::Key(conditional_value.unwrap_or_default()),
                             Some(vec![vec![0]]),
                             Some(inner_query),
                         );
                     }
                 }
-                Ok(None)
             }
             Some((first, left_over)) => {
                 let left_to_right = if let Some(order_by) = order_by {
@@ -1730,11 +1725,10 @@ impl<'a> DriveDocumentQuery<'a> {
                 let StartAtDocument {
                     document,
                     document_type,
-                    included,
                     ..
                 } = starts_at_document;
 
-                let start_at_key = document
+                let lower_start_at_key = document
                     .get_raw_for_document_type(
                         first.name.as_str(),
                         *document_type,
@@ -1744,12 +1738,12 @@ impl<'a> DriveDocumentQuery<'a> {
                     .ok()
                     .flatten();
 
-                // We should always include if we have left_over
-                let non_conditional_included =
-                    !left_over.is_empty() || *included || start_at_key.is_none();
+                // We include it if we are not unique,
+                // or if we are unique but the value is empty
+                let non_conditional_included = !unique || lower_start_at_key.is_none();
 
                 let mut non_conditional_query = Self::inner_query_starts_from_key(
-                    start_at_key.clone(),
+                    lower_start_at_key.clone(),
                     left_to_right,
                     non_conditional_included,
                 );
@@ -1764,36 +1758,25 @@ impl<'a> DriveDocumentQuery<'a> {
                     platform_version,
                 )?;
 
-                if let Some(start_at_key) = start_at_key {
-                    match left_over.split_first() {
-                        None => {}
-                        Some((next, lower_left_over)) => {
-                            let mut conditional_query = non_conditional_query.clone();
-                            DriveDocumentQuery::recursive_insert_on_query(
-                                &mut conditional_query,
-                                lower_left_over,
-                                unique,
-                                Some(starts_at_document),
-                                left_to_right,
-                                order_by,
-                                platform_version,
-                            )?;
+                DriveDocumentQuery::recursive_conditional_insert_on_query(
+                    &mut non_conditional_query,
+                    lower_start_at_key, //todo
+                    left_over,
+                    unique,
+                    starts_at_document,
+                    left_to_right,
+                    order_by,
+                    platform_version,
+                )?;
 
-                            non_conditional_query.add_conditional_subquery(
-                                QueryItem::Key(start_at_key),
-                                Some(vec![next.name.as_bytes().to_vec()]),
-                                Some(conditional_query),
-                            );
-                        }
-                    }
-                }
-
-                query.set_subquery(non_conditional_query);
-
-                query.set_subquery_key(first.name.as_bytes().to_vec());
-                Ok(None)
+                query.add_conditional_subquery(
+                    QueryItem::Key(conditional_value.unwrap_or_default()),
+                    Some(vec![first.name.as_bytes().to_vec()]),
+                    Some(non_conditional_query),
+                );
             }
         }
+        Ok(())
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
