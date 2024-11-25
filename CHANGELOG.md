@@ -14,9 +14,7 @@
 * **dashmate:** failing doctor with drive metrics enabled ([#2348](https://github.com/dashpay/platform/issues/2348))
 * **dashmate:** various ZeroSSL cert verification errors ([#2339](https://github.com/dashpay/platform/issues/2339))
 * document query start after ([#2347](https://github.com/dashpay/platform/issues/2347))
-* **drive:** apply batch is not using transaction in `remove_all_votes_given_by_identities` ([#2309](https://github.com/dashpay/platform/issues/2309))
 * **drive:** nonce already present in past internal error ([#2343](https://github.com/dashpay/platform/issues/2343))
-* **drive:** uncommitted state if db transaction fails ([#2305](https://github.com/dashpay/platform/issues/2305))
 
 
 ### Build System
