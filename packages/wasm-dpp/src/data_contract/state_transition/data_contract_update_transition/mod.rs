@@ -78,6 +78,15 @@ impl DataContractUpdateTransitionWasm {
         self.0.state_transition_type() as u32
     }
 
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase() as u16
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
     // #[wasm_bindgen(js_name=toJSON)]
     // pub fn to_json(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
     //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
