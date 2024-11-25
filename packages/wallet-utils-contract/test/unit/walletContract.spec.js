@@ -74,6 +74,14 @@ describe('Wallet Contract', () => {
             .to
             .equal('keyIndex');
         });
+
+        it('should be a non-negative integer', async () => {
+          rawTxMetadataDocument.keyIndex = -1;
+          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+          expect(error.keyword).to.equal('minimum');
+        });
       });
 
       describe('encryptionKeyIndex', () => {
@@ -90,6 +98,14 @@ describe('Wallet Contract', () => {
           expect(error.params.missingProperty)
             .to
             .equal('encryptionKeyIndex');
+        });
+
+        it('should be a non-negative integer', async () => {
+          rawTxMetadataDocument.encryptionKeyIndex = -1;
+          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+          expect(error.keyword).to.equal('minimum');
         });
       });
 
