@@ -5202,6 +5202,110 @@ fn test_withdrawals_query_start_after_query_by_owner_id() {
 
 #[cfg(feature = "server")]
 #[test]
+fn test_withdrawals_query_start_after_query_by_owner_id_desc() {
+    // We create 10 withdrawals owned by 2 identities
+    let (drive, contract) = setup_withdrawal_tests(10, Some(2), 11456);
+
+    let platform_version = PlatformVersion::latest();
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let expected_app_hash = vec![
+        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
+        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+    ];
+
+    assert_eq!(root_hash.as_slice(), expected_app_hash);
+
+    // Document Ids are
+    // document v0 : id:2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:09 updated_at:2024-11-21 12:31:09 amount:(i64)646767 coreFeePerByte:(i64)0 outputScript:bytes 00952c808390e575c8dd29fc07ccfed7b428e1ec2ffcb23e pooling:(i64)0 status:(i64)1 transactionIndex:(i64)4 transactionSignHeight:(i64)303186
+    // document v0 : id:3T4aKmidGKA4ETnWYSedm6ETzrcdkfPL2r3D6eg6CSib owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)971045 coreFeePerByte:(i64)0 outputScript:bytes 525dfc160c160a7a52ef3301a7e55fccf41d73857f50a55a4d pooling:(i64)0 status:(i64)1 transactionIndex:(i64)2 transactionSignHeight:(i64)248787
+    // document v0 : id:3X2QfUfR8EeVZQAKmEjcue5xDv3CZXrfPTgXkZ5vQo13 owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)122155 coreFeePerByte:(i64)0 outputScript:bytes f76eb8b953ff41040d906c25a4ae42884bedb41a07fc3a pooling:(i64)0 status:(i64)3 transactionIndex:(i64)7 transactionSignHeight:(i64)310881
+    // document v0 : id:5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:30:59 updated_at:2024-11-21 12:30:59 amount:(i64)725014 coreFeePerByte:(i64)0 outputScript:bytes 51f203a755a7ff25ba8645841f80403ee98134690b2c0dd5e2 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)1 transactionSignHeight:(i64)4072
+    // document v0 : id:74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)151943 coreFeePerByte:(i64)0 outputScript:bytes 9db03f4c8a51e4e9855e008aae6121911b4831699c53ed pooling:(i64)0 status:(i64)1 transactionIndex:(i64)5 transactionSignHeight:(i64)343099
+    // document v0 : id:8iqDAFxTzHYcmUWtcNnCRoj9Fss4HE1G3GP3HhVAZJhn owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:13 updated_at:2024-11-21 12:31:13 amount:(i64)409642 coreFeePerByte:(i64)0 outputScript:bytes 19fe0a2458a47e1726191f4dc94d11bcfacf821d024043 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)8 transactionSignHeight:(i64)304397
+    // document v0 : id:BdH274iP17nhquQVY4KMCAM6nwyPRc8AFJkUT91vxhbc owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:03 updated_at:2024-11-21 12:31:03 amount:(i64)81005 coreFeePerByte:(i64)0 outputScript:bytes 2666e87b6cc7ddf2b63e7e52c348818c05e5562efa48f5 pooling:(i64)0 status:(i64)0
+    // document v0 : id:CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)455074 coreFeePerByte:(i64)0 outputScript:bytes acde2e1652771b50a2c68fd330ee1d4b8e115631ce72375432 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)3 transactionSignHeight:(i64)261103
+    // document v0 : id:DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:05 updated_at:2024-11-21 12:31:05 amount:(i64)271303 coreFeePerByte:(i64)0 outputScript:bytes 0b845e8c3a4679f1913172f7fd939cc153f458519de8ed3d pooling:(i64)0 status:(i64)0
+    // document v0 : id:FDnvFN7e72LcZEojTWNmJTP7uzok3BtvbKnaa5gjqCpW owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)123433 coreFeePerByte:(i64)0 outputScript:bytes 82712473b2d0fc5663afb1a08006913ccccbf38e091a8cc7 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)6 transactionSignHeight:(i64)319518
+
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "==", "A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ"]
+        ],
+        "startAfter":  "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu",
+        "limit": 3,
+        "orderBy": [
+            ["$updatedAt", "desc"]
+        ]
+    });
+
+    // This will use the identity recent index
+    // {
+    //     "name": "identityRecent",
+    //     "properties": [
+    //     {
+    //         "$ownerId": "asc"
+    //     },
+    //     {
+    //         "$updatedAt": "asc"
+    //     },
+    //     {
+    //         "status": "asc"
+    //     }
+    //     ],
+    //     "unique": false
+    // },
+
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let domain_document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("contract should have a domain document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        domain_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            document.id().to_string(Encoding::Base58)
+        })
+        .collect();
+
+    // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
+    // empty tree and consumes a limit
+    let a_names = [
+        "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
+        "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+    ];
+
+    assert_eq!(names, a_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+}
+
+#[cfg(feature = "server")]
+#[test]
 fn test_query_a_b_c_d_e_contract() {
     let drive: Drive = setup_drive_with_initial_state_structure(None);
 

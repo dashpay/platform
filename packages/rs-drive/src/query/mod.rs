@@ -2148,8 +2148,6 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
 
-        print!("{}", path_query);
-
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
