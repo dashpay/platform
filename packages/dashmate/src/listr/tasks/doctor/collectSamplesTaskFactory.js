@@ -296,7 +296,7 @@ export default function collectSamplesTaskFactory(
               // eslint-disable-next-line no-param-reassign
               task.output = 'Reading Drive metrics';
 
-              const url = `http://${config.get('platform.drive.abci.rpc.host')}:${config.get('platform.drive.abci.rpc.port')}/metrics`;
+              const url = `http://${config.get('platform.drive.abci.metrics.host')}:${config.get('platform.drive.abci.metrics.port')}/metrics`;
 
               const result = fetchTextOrError(url);
 
