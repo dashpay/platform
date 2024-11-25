@@ -39,9 +39,11 @@ jobs:
         shell: bash
 
       - name: Unset AWS credentials to avoid conflicts
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          unset-current-credentials: true
+        shell: bash
+        run: |
+          set | grep AWS
+          unset AWS_ACCESS_KEY_ID
+          unset AWS_SECRET_ACCESS_KEY
 
       - name: Build and push by SHA
         uses: ./.github/actions/docker
