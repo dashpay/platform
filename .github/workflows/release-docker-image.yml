@@ -63,7 +63,7 @@ jobs:
           cargo_profile: ${{ inputs.cargo_profile }}
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          cache_region: ${{ vars.CACHE_REGION   }}
+          cache_region: ${{ vars.CACHE_REGION }}
           cache_bucket: ${{ vars.CACHE_S3_BUCKET }}
           cache_endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
           cache_access_key_id: ${{ secrets.CACHE_KEY_ID }}

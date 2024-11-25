@@ -55,7 +55,7 @@ jobs:
         uses: ./.github/actions/sccache
         with:
           bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.AWS_REGION  }}
+          region: ${{ vars.AWS_REGION }}
           endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
           access_key_id: ${{ secrets.CACHE_KEY_ID }}
           secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}

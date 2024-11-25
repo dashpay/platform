@@ -50,10 +50,10 @@ jobs:
 
       - name: Replace with pre-built images
         run: |
-          set -x
+          set -e
 
           # Login to ECR
-          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com"
+          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
 
           SHA_TAG=sha-${{ github.sha }}
 
