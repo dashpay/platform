@@ -39,6 +39,8 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "replace" => Ok(DocumentTransitionActionType::Replace),
             "delete" => Ok(DocumentTransitionActionType::Delete),
             "transfer" => Ok(DocumentTransitionActionType::Transfer),
+            "purchase" => Ok(DocumentTransitionActionType::Purchase),
+            "updatePrice" => Ok(DocumentTransitionActionType::UpdatePrice),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
             ))),
