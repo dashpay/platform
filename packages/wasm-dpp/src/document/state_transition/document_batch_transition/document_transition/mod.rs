@@ -83,7 +83,7 @@ impl DocumentTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name=hasPrefundedBalance)]
+    #[wasm_bindgen(js_name=getPrefundedVotingBalance)]
     pub fn get_prefunded_voting_balance(&self) -> Result<JsValue, JsValue> {
         match &self.0 {
             DocumentTransition::Create(create_transition) => {
