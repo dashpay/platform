@@ -318,10 +318,7 @@ COPY --parents \
     packages/check-features \
     /platform/
 
-RUN if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        export RELEASE="--release" ; \
-    fi && \
-    source $HOME/.cargo/env && \
+RUN source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef prepare $RELEASE --recipe-path recipe.json
 
@@ -335,7 +332,7 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
 
-COPY --from=build-planner /platform/recipe.json /platform/.cargo /platform/
+COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
