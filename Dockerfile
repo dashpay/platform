@@ -193,7 +193,7 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
         [ -n "${AWS_PROFILE}" ] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
         echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
-        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
+        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}'" >> /root/env
 
         # Configure AWS credentials
         mkdir --mode=0700 -p "$HOME/.aws"
