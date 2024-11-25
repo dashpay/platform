@@ -50,7 +50,6 @@ outputs:
 
 runs:
   using: composite
-
   steps:
     - name: Login to DockerHub
       uses: docker/login-action@v3
@@ -167,6 +166,10 @@ runs:
     - name: Unset AWS credentials to avoid conflicts
       shell: bash
       run: |
+        if [ ! -f "$HOME/.aws/credentials" ]; then
+          echo "Error: AWS credentials file not found"
+          exit 1
+        fi
         echo AWS_DEFAULT_REGION='' >> $GITHUB_ENV
         echo AWS_REGION='' >> $GITHUB_ENV
         echo AWS_ACCESS_KEY_ID='' >> $GITHUB_ENV
