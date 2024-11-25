@@ -24,19 +24,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # AWS credentials only needed for ECR login
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
-
       - name: Login to ECR
-        run: |
-          aws ecr get-login-password \
-            --region ${{ vars.AWS_REGION  }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com
-        shell: bash
+        uses: ./.github/actions/aws_ecr_login
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION }}
+          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
 
       - name: Build and push by SHA
         uses: ./.github/actions/docker

@@ -31,12 +31,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Login to ECR
+        uses: ./.github/actions/aws_ecr_login
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION }}
+          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -53,7 +54,6 @@ jobs:
 
           # Login to ECR
           DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com"
-          aws ecr get-login-password --region ${{ vars.AWS_REGION  }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
 
           SHA_TAG=sha-${{ github.sha }}
 
