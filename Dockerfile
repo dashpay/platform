@@ -184,7 +184,7 @@ RUN --mount=type=secret,id=AWS <<EOS
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
-        # ACTIONS_RUNTIME_TOKEN is a secret so we load it on demand
+        # ACTIONS_RUNTIME_TOKEN is a secret so we quote it here, and it will be loaded when `source /root/env` is run
         echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/GHA)"' >> /root/env
     
     ### AWS S3 ###
@@ -201,7 +201,10 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials" >> /root/env
         
         # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
-        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}"; exit 1; }' >> /root/env
+        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { 
+            echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}; did you use RUN --mount=type=secret,id=AWS ?"; 
+            exit 1; 
+        }' >> /root/env
 
     ### memcached ###
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then

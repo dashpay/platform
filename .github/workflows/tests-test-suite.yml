@@ -46,7 +46,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Login to ECR
-        run: aws ecr get-login-password --region ${{ vars.AWS_REGION  }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
+        run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
 
       - name: Start local network
         uses: ./.github/actions/local-network

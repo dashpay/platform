@@ -21,13 +21,23 @@ runs:
       shell: bash
       run: |
         mkdir -p "${HOME}/.aws"
-        echo "[${{ inputs.profile }}]" >> ${HOME}/.aws/credentials
-        echo "aws_access_key_id=${{ inputs.access_key_id }}" >> ${HOME}/.aws/credentials
-        echo "aws_secret_access_key=${{ inputs.secret_access_key }}" >> ${HOME}/.aws/credentials
+        cat >> ${HOME}/.aws/credentials << EOF
+        [${{ inputs.profile }}]
+        aws_access_key_id=${{ inputs.access_key_id }}
+        aws_secret_access_key=${{ inputs.secret_access_key }}
+        EOF
         chmod -R go-rwx ${HOME}/.aws
 
     - name: Set env variables
       shell: bash
       run: |
+        # Exit on any error  
+        set -euo pipefail  
+        # Validate AWS_PROFILE is not empty  
+        if [ -z "${{ inputs.profile }}" ]; then  
+          echo "Error: AWS_PROFILE cannot be empty"
+          exit 1
+        fi
+        # Export variables        
         echo "AWS_PROFILE=${{ inputs.profile }}" >> $GITHUB_ENV
         echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV
