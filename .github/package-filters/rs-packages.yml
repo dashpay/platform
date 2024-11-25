@@ -1,4 +1,4 @@
-'@dashevo/wallet-utils-contract': &wallet-utils-contract
+wallet-utils-contract: &wallet-utils-contract
   - .github/workflows/tests*
   - packages/wallet-utils-contract/**
 
