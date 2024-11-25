@@ -97,6 +97,28 @@ impl DocumentCreateTransitionWasm {
         self.inner.set_base(base)
     }
 
+    #[wasm_bindgen(js_name = getPrefundedVotingBalance)]
+    pub fn get_prefunded_voting_balance(&self) -> Result<JsValue, JsValue> {
+        let prefunded_voting_balance = self.inner.prefunded_voting_balance().clone();
+
+        match prefunded_voting_balance {
+            None => {
+                Ok(JsValue::null())
+            },
+            Some((index_name, credits)) => {
+                let js_object = js_sys::Object::new();
+
+                js_sys::Reflect::set(
+                    &js_object,
+                    &JsValue::from_str(&index_name),
+                    &JsValue::from(credits),
+                )?;
+
+                Ok(JsValue::from(js_object))
+            }
+        }
+    }
+
     //     // AbstractDocumentTransitionMethods
     //     #[wasm_bindgen(js_name=getId)]
     //     pub fn id(&self) -> IdentifierWrapper {
