@@ -163,6 +163,15 @@ runs:
         secret_access_key: ${{ inputs.cache_secret_access_key }}
         install: false
 
+    # Unset AWS credentials to avoid conflicts, as we use credentials in ~/.aws/credentials generated in sccache action.
+    - name: Unset AWS credentials to avoid conflicts
+      shell: bash
+      run: |
+        echo AWS_DEFAULT_REGION='' >> $GITHUB_ENV
+        echo AWS_REGION='' >> $GITHUB_ENV
+        echo AWS_ACCESS_KEY_ID='' >> $GITHUB_ENV
+        echo AWS_SECRET_ACCESS_KEY='' >> $GITHUB_ENV
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v6
