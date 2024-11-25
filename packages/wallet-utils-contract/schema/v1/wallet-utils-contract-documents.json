@@ -1,17 +1,9 @@
 {
   "txMetadata": {
     "type": "object",
-    "documentsMutable": false,
+    "documentsMutable": true,
     "canBeDeleted": true,
     "indices": [
-      {
-        "name": "ownerId",
-        "properties": [
-          {
-            "$ownerId": "asc"
-          }
-        ]
-      },
       {
         "name": "ownerIdAndCreatedAt",
         "properties": [
@@ -19,7 +11,7 @@
             "$ownerId": "asc"
           },
           {
-            "$createdAt": "asc"
+            "$updatedAt": "asc"
           }
         ]
       }
@@ -50,7 +42,7 @@
       "keyIndex",
       "encryptionKeyIndex",
       "encryptedMetadata",
-      "$createdAt"
+      "$updatedAt"
     ],
     "additionalProperties": false
   }
