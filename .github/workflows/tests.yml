@@ -87,7 +87,6 @@ jobs:
 
   rs-crates-security:
     name: Rust crates security audit
-    environment: test
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     steps:

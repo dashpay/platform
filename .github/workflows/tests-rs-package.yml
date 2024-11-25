@@ -13,7 +13,6 @@ on:
 jobs:
   lint:
     name: Linting
-    environment: test
     runs-on: ubuntu-24.04
     permissions:
       id-token: write
@@ -50,7 +49,6 @@ jobs:
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
   formatting:
     name: Formatting
-    environment: test
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -71,7 +69,6 @@ jobs:
 
   unused_deps:
     name: Unused dependencies
-    environment: test
     runs-on: ubuntu-24.04
     permissions:
       id-token: write
@@ -113,7 +110,6 @@ jobs:
 
   detect_structure_changes:
     name: Detect immutable structure changes
-    environment: test
     runs-on: ubuntu-24.04
     # FIXME: as we use `gh pr view` below, this check can only
     # run on pull requests. We should find a way to run it
@@ -175,7 +171,6 @@ jobs:
 
   test:
     name: Tests
-    environment: test
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -208,7 +203,6 @@ jobs:
 
   check_each_feature:
     name: Check each feature
-    environment: test
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: ${{ inputs.check-each-feature }}
