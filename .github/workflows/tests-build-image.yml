@@ -41,9 +41,10 @@ jobs:
       - name: Unset AWS credentials to avoid conflicts
         shell: bash
         run: |
-          set | grep AWS
-          unset AWS_ACCESS_KEY_ID
-          unset AWS_SECRET_ACCESS_KEY
+          echo AWS_DEFAULT_REGION='' >> $GITHUB_ENV
+          echo AWS_REGION='' >> $GITHUB_ENV
+          echo AWS_ACCESS_KEY_ID='' >> $GITHUB_ENV
+          echo AWS_SECRET_ACCESS_KEY='' >> $GITHUB_ENV
 
       - name: Build and push by SHA
         uses: ./.github/actions/docker
