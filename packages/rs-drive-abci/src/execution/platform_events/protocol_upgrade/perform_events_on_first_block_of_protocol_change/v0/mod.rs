@@ -4,6 +4,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
+use dpp::data_contracts::SystemDataContract;
+use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::drive::identity::key::fetch::{
@@ -51,6 +53,35 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
         }
+
+        if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
+            self.transition_to_version_6(block_info, transaction, platform_version)?;
+        }
+
+        Ok(())
+    }
+
+    /// Initializes the wallet contract that supports mobile wallets with additional
+    /// functionality
+    ///
+    /// This function is called during the transition from protocol version 5 to protocol version 6
+    /// and higher to set up the wallet contract in the platform.
+    fn transition_to_version_6(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let contract =
+            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
+
+        self.drive.insert_contract(
+            &contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
 
         Ok(())
     }
