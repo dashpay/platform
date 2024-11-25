@@ -1380,6 +1380,8 @@ impl<'a> DriveDocumentQuery<'a> {
         }
         Ok(inner_query)
     }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     fn recursive_create_query(
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
@@ -1567,7 +1569,6 @@ impl<'a> DriveDocumentQuery<'a> {
                         document_type,
                         included,
                     } = start_at_document_inner;
-                    println!("document is {}", document);
                     let start_at_key = document
                         .get_raw_for_document_type(
                             first.name.as_str(),
@@ -1631,7 +1632,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     // │   │   │   │   │   ├── 4
                     // │   │   │   │   │   │   ├── 1f7a8...
                     // │   │   │   │   │   │   └── 2c9b3...
-                    println!("going to call recursive_insert_on_query on non_conditional_query {} with left_over {:?}", non_conditional_query, left_over);
+                    // println!("going to call recursive_insert_on_query on non_conditional_query {} with left_over {:?}", non_conditional_query, left_over);
                     DriveDocumentQuery::recursive_insert_on_query(
                         &mut non_conditional_query,
                         left_over,
@@ -1673,6 +1674,8 @@ impl<'a> DriveDocumentQuery<'a> {
             }
         }
     }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     fn recursive_conditional_insert_on_query(
         query: &mut Query,
         conditional_value: Option<Vec<u8>>,
