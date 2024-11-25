@@ -38,6 +38,11 @@ jobs:
             --region ${{ vars.AWS_REGION  }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION  }}.amazonaws.com
         shell: bash
 
+      - name: Unset AWS credentials to avoid conflicts
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          unset-current-credentials: true
+
       - name: Build and push by SHA
         uses: ./.github/actions/docker
         with:
