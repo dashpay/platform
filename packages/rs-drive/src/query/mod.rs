@@ -1813,8 +1813,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 !(self
                     .internal_clauses
                     .equal_clauses
-                    .get(field.name.as_str())
-                    .is_some()
+                    .contains_key(field.name.as_str())
                     || (last_clause.is_some() && last_clause.unwrap().field == field.name)
                     || (subquery_clause.is_some() && subquery_clause.unwrap().field == field.name))
             })
