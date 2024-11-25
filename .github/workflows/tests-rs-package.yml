@@ -240,10 +240,6 @@ jobs:
         run: |
           echo Verify all features disabled
           set -ex
-          set | grep AWS
-          cat $HOME/.aws/credentials
-          SCCACHE_LOG=debug sccache --start-server
-          sccache --stop-server
 
           features="${{ steps.crate_info.outputs.features }}"
           fails=""
