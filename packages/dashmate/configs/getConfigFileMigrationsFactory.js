@@ -1035,6 +1035,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.6.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
             options.core.docker.image = 'dashpay/dashd:22.0.0-rc.1';
           });
         return configFile;
