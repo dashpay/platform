@@ -5,7 +5,7 @@
     "canBeDeleted": true,
     "indices": [
       {
-        "name": "ownerIdAndCreatedAt",
+        "name": "updated",
         "properties": [
           {
             "$ownerId": "asc"
