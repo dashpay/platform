@@ -182,7 +182,7 @@ runs:
           SCCACHE_BUCKET=${{ inputs.cache_bucket }}
           SCCACHE_REGION=${{ inputs.cache_region }}
           SCCACHE_ENDPOINT=${{ inputs.cache_endpoint }}
-          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          SCCACHE_S3_KEY_PREFIX=${{ env.SCCACHE_S3_KEY_PREFIX }}
           SCCACHE_VERSION=${{ env.SCCACHE_VERSION }}
           AWS_PROFILE=sccache
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}

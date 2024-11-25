@@ -82,12 +82,6 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    - name: Install sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.6
-      with:
-        version: "v0.8.2" # Must be the same as in Dockerfile
-      if: inputs.cache == 'true'
-
     - name: Set HOME variable to github context
       shell: bash
       run: echo "HOME=$HOME" >> $GITHUB_ENV

@@ -18,8 +18,9 @@ inputs:
     description: S3 endpoint secret access key
     required: true
   platform:
-    description: "Platform and architecture to use when caching; helps to avoid invalid cache on different arch"
-    required: true
+    description: "Platform and architecture to use when caching; defaults to linux/amd64"
+    required: false
+    default: "linux/amd64"
   install:
     description: "Install sccache"
     default: "true"
@@ -53,6 +54,6 @@ runs:
         echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
         echo "SCCACHE_REGION=${{ inputs.region }}" >> $GITHUB_ENV
         echo "SCCACHE_ENDPOINT=${{ inputs.endpoint }}" >> $GITHUB_ENV
-        echo "SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache/${{ inputs.platform }}/" >> $GITHUB_ENV
+        echo "SCCACHE_S3_KEY_PREFIX=sccache/${{ inputs.platform }}/" >> $GITHUB_ENV
         # "SCCACHE_VERSION" is used inside Docker to install the same version of sccache
         echo "SCCACHE_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
