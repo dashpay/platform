@@ -48,9 +48,9 @@ jobs:
           push_tags: true
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          region: ${{ vars.CACHE_REGION }}
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          cache_region: ${{ vars.CACHE_REGION }}
+          cache_bucket: ${{ vars.CACHE_S3_BUCKET }}
+          cache_endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
           cache_access_key_id: ${{ secrets.CACHE_KEY_ID }}
           cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
           cache_to_name: ${{ github.event_name == 'push' && 'true' || 'false' }}
