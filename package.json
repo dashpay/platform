@@ -57,6 +57,7 @@
     "packages/feature-flags-contract",
     "packages/js-dapi-client",
     "packages/wallet-lib",
+    "packages/wallet-utils-contract",
     "packages/js-dash-sdk",
     "packages/dapi",
     "packages/dashmate",

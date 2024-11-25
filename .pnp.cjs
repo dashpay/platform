@@ -70,6 +70,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/wallet-lib"\
     },\
     {\
+      "name": "@dashevo/wallet-utils-contract",\
+      "reference": "workspace:packages/wallet-utils-contract"\
+    },\
+    {\
       "name": "@dashevo/wasm-dpp",\
       "reference": "workspace:packages/wasm-dpp"\
     },\
@@ -94,6 +98,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
     ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
+    ["@dashevo/wallet-utils-contract", ["workspace:packages/wallet-utils-contract"]],\
     ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
     ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
     ["dash", ["workspace:packages/js-dash-sdk"]],\
@@ -3082,6 +3087,24 @@ const RAW_RUNTIME_STATE =
           ["webpack", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:5.94.0"],\
           ["webpack-cli", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:4.9.1"],\
           ["winston", "npm:3.3.3"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["@dashevo/wallet-utils-contract", [\
+      ["workspace:packages/wallet-utils-contract", {\
+        "packageLocation": "./packages/wallet-utils-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/wallet-utils-contract", "workspace:packages/wallet-utils-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["eslint", "npm:8.53.0"],\
+          ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
+          ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
+          ["mocha", "npm:10.2.0"],\
+          ["sinon", "npm:17.0.1"],\
+          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
