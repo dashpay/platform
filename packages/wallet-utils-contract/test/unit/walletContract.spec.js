@@ -7,7 +7,7 @@ const {
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const { expect } = require('chai');
-const walletContractDocumentsSchema = require('../../schema/v1/wallet-contract-documents.json');
+const walletContractDocumentsSchema = require('../../schema/v1/wallet-utils-contract-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
@@ -85,11 +85,11 @@ describe('Wallet Contract', () => {
           const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
-              .to
-              .equal('required');
+            .to
+            .equal('required');
           expect(error.params.missingProperty)
-              .to
-              .equal('encryptionKeyIndex');
+            .to
+            .equal('encryptionKeyIndex');
         });
       });
 
@@ -102,11 +102,11 @@ describe('Wallet Contract', () => {
           const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
-              .to
-              .equal('required');
+            .to
+            .equal('required');
           expect(error.params.missingProperty)
-              .to
-              .equal('encryptedMetadata');
+            .to
+            .equal('encryptedMetadata');
         });
 
         it('should be not shorter than 32 bytes', async () => {
@@ -117,11 +117,11 @@ describe('Wallet Contract', () => {
           const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
-              .to
-              .equal('minBytes');
+            .to
+            .equal('minItems');
           expect(error.instancePath)
-              .to
-              .equal('/encryptedMetadata');
+            .to
+            .equal('/encryptedMetadata');
         });
 
         it('should be not longer than 4096 bytes', async () => {
@@ -132,11 +132,11 @@ describe('Wallet Contract', () => {
           const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
-              .to
-              .equal('maxItems');
+            .to
+            .equal('maxItems');
           expect(error.instancePath)
-              .to
-              .equal('/encryptedMetadata');
+            .to
+            .equal('/encryptedMetadata');
         });
       });
 
