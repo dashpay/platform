@@ -1,6 +1,14 @@
 ---
 name: "sccache"
-description: "Configure sccache caching"
+description: |
+  Configure sccache caching. 
+
+  This action installs sccache and configures it to use an S3 bucket for caching.
+  It also sets environment variables to use when building Rust projects.
+
+  It can conflict with other actions that define AWS credentials or set AWS_PROFILE env variable.
+  Manually set AWS_PROFILE=sccache and unset AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in case
+  of conflicting settings.
 inputs:
   bucket:
     description: S3 bucket to use for caching
@@ -30,7 +38,7 @@ inputs:
     required: false
 outputs:
   env_vars:
-    description: "Environment variables to set"
+    description: "Environment variables set by this action"
     value: |
       AWS_PROFILE=sccache
       CARGO_INCREMENTAL=0
@@ -40,8 +48,8 @@ outputs:
       SCCACHE_ENDPOINT=${{ inputs.endpoint }}
       SCCACHE_S3_KEY_PREFIX=sccache/${{ inputs.platform }}/
       SCCACHE_VERSION=${{ inputs.version }}
-      CC="sccache cc"
-      CXX="sccache c++"
+      CC="sccache clang"
+      CXX="sccache clang++"
 
 # TODO: Cache deps here to save 1 minute
 runs:
@@ -63,6 +71,7 @@ runs:
     - name: Configure sccache
       shell: bash
       run: |
+        echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
         echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV

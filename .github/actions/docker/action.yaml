@@ -1,6 +1,13 @@
 ---
 name: "Build and push docker image"
-description: "Build and push docker image by digest with Rust caching"
+description: |
+  Build and push docker image by digest with extensive caching.
+
+  This action builds and pushes a Docker image to Docker Hub.
+  It uses caching for Rust dependencies and Docker layers.
+  It also provides sccache settings to the docker builder for caching Rust compilation.
+
+  Layers cache and sccache will use the same credentials and S3 bucket, but different prefixes.
 inputs:
   image_name:
     description: Name of image in Docker Hub, like `drive`

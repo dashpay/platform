@@ -1,8 +1,14 @@
 ---
-# This file contains configuration of aws credentials file.
-# Its primary use is to prepare a credentials file that will be used as a secrets mount when building Docker images.
 name: "aws_credentials"
-description: "Configure .aws/credentials"
+description: |
+  Configure .aws/credentials file with provided access key ID and secret access key.
+
+  This action creates a credentials file in ${HOME}/.aws/credentials with the provided access key ID and secret access key.
+  It also sets AWS_PROFILE and AWS_SHARED_CREDENTIALS_FILE environment variables to use this profile.
+
+  It can conflict with other actions that define AWS credentials or set AWS_PROFILE env variable.
+  Explicitly set AWS_PROFILE=sccache and unset AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in case
+  of conflicting settings.
 inputs:
   access_key_id:
     description: Access key ID
@@ -11,7 +17,7 @@ inputs:
     description: Secret access key
     required: true
   profile:
-    description: AWS profile to use
+    description: AWS profile to use; set AWS_PROFILE env variable to use this profile
     default: "default"
 
 runs:

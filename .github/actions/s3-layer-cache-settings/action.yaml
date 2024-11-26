@@ -6,6 +6,8 @@ description: |
     - name and head ref to hit all builds for this branch with this name
     - just name to hit all builds for this name
 
+  To correcly use caching, ensure buildx has AWS_PROFILE environment set to value of `aws_profile` output.
+
 inputs:
   name:
     description: "Cache key name will be used as a prefix for all docker image manifests"
@@ -47,7 +49,7 @@ outputs:
     value: ${{ steps.script.outputs.cache_from }}
   aws_profile:
     description: "AWS profile to use for s3 cache, to set inside AWS_PROFILE env var"
-    value: docker-layers
+    value: layers
 
 runs:
   using: composite
@@ -55,9 +57,9 @@ runs:
     - name: Configure AWS credentials for s3 layers
       uses: ./.github/actions/aws_credentials
       with:
-        access_key_id: ${{ inputs.access_key_id }}
-        secret_access_key: ${{ inputs.secret_access_key }}
-        profile: "docker-layers"
+        access_key_id: ${{ inputs.s3_access_key_id }}
+        secret_access_key: ${{ inputs.s3_secret_access_key }}
+        profile: "layers"
 
     - uses: actions/github-script@v6
       id: script
