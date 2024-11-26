@@ -186,7 +186,7 @@ impl AddressList {
 
         self.addresses
             .iter()
-            .filter(move |addr| {
+            .filter(|addr| {
                 addr.banned_until
                     .map(|banned_until| banned_until < now)
                     .unwrap_or(true)
