@@ -4,10 +4,9 @@
 //! inside a tokio runtime. This module spawns async futures in active tokio runtime, and retrieves the result
 //! using a channel.
 
-use crate::Error;
 use arc_swap::ArcSwap;
 use drive_proof_verifier::error::ContextProviderError;
-use rs_dapi_client::{AddressList, CanRetry, ExecutionError, ExecutionResult, RequestSettings};
+use rs_dapi_client::{AddressList, AddressListError, CanRetry, ExecutionResult, RequestSettings};
 use std::{
     fmt::Debug,
     future::Future,
@@ -193,36 +192,68 @@ where
             let mut func = inner_fn.lock().await;
             let result = (*func)(*settings).await;
 
+            // Ban or unban the address based on the result
             match &result {
                 Ok(response) => {
                     // Unban the address if it was banned and node responded successfully this time
                     if response.address.is_banned() {
-                        address_list
-                            .unban_address(&response.address)
-                            .map_err(|error| ExecutionError {
-                                inner: Error::from(rs_dapi_client::DapiClientError::AddressList(
-                                    error,
-                                )),
-                                retries: response.retries,
-                                address: Some(response.address.clone()),
-                            })?;
+                        match address_list.unban_address(&response.address) {
+                            Ok(_) => {
+                                tracing::debug!(
+                                    address = ?response.address,
+                                    "unban successfully responded address {}",
+                                    response.address,
+                                )
+                            }
+                            // The address might be already removed from the list
+                            // by background process (i.e., SML update), and it's fine.
+                            Err(AddressListError::AddressNotFound(_)) => {
+                                tracing::debug!(
+                                    address = ?response.address,
+                                    "unable to unban address {}. it's not in the list",
+                                    response.address
+                                );
+                            }
+                            Err(AddressListError::InvalidAddressUri(_)) => {
+                                unreachable!("unban address doesn't return InvalidAddressUri")
+                            }
+                        }
                     }
                 }
                 Err(error) => {
+                    // Ban address if it failed and can be retried
                     if error.can_retry() {
+                        // Address must be present
                         if let Some(address) = &error.address {
+                            // And ban logic must be enabled for this request
                             if settings.ban_failed_address.unwrap_or(true) {
-                                address_list.ban_address(address).map_err(
-                                    |address_list_error| ExecutionError {
-                                        inner: Error::from(
-                                            rs_dapi_client::DapiClientError::AddressList(
-                                                address_list_error,
-                                            ),
-                                        ),
-                                        retries: error.retries,
-                                        address: Some(address.clone()),
-                                    },
-                                )?;
+                                match address_list.ban_address(address) {
+                                    Ok(_) => {
+                                        tracing::warn!(
+                                            ?address,
+                                            ?error,
+                                            "received server error, banning address {address}"
+                                        );
+                                    }
+                                    // The address might be already removed from the list
+                                    // by background process (i.e., SML update), and it's fine.
+                                    Err(AddressListError::AddressNotFound(_)) => {
+                                        tracing::debug!(
+                                            ?address,
+                                            ?error,
+                                            "unable to ban address {address}. it's not in the list"
+                                        );
+                                    }
+                                    Err(AddressListError::InvalidAddressUri(_)) => {
+                                        unreachable!("ban address doesn't return InvalidAddressUri")
+                                    }
+                                }
+                            } else {
+                                tracing::debug!(
+                                    ?address,
+                                    ?error,
+                                    "received server error, we should ban the node but banning is disabled"
+                                );
                             }
                         }
                     }

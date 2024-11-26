@@ -198,14 +198,26 @@ impl DapiRequestExecutor for DapiClient {
                     Ok(_) => {
                         // Unban the address if it was banned and node responded successfully this time
                         if address.is_banned() {
-                            self.address_list.unban_address(&address).map_err(|error| {
-                                ExecutionError {
-                                    inner: DapiClientError::AddressList(error),
-                                    retries: retries_counter
-                                        .load(std::sync::atomic::Ordering::Acquire),
-                                    address: Some(address.clone()),
+                            match self.address_list.unban_address(&address) {
+                                Ok(_) => {
+                                    tracing::debug!(
+                                        ?address,
+                                        "unban successfully responded address {}",
+                                        address
+                                    );
                                 }
-                            })?;
+                                // The address might be already removed from the list
+                                // by background process (i.e., SML update), and it's fine.
+                                Err(AddressListError::AddressNotFound(_)) => {
+                                    tracing::debug!(
+                                        ?address,
+                                        "unable to unban address {address}. it's not in the list"
+                                    );
+                                }
+                                Err(AddressListError::InvalidAddressUri(_)) => {
+                                    unreachable!("unban address doesn't return InvalidAddressUri")
+                                }
+                            }
                         }
 
                         tracing::trace!(?response, "received {} response", response_name);
@@ -213,19 +225,29 @@ impl DapiRequestExecutor for DapiClient {
                     Err(error) => {
                         if error.can_retry() {
                             if applied_settings.ban_failed_address {
-                                tracing::warn!(
-                                    ?address,
-                                    ?error,
-                                    "received server error, banning address"
-                                );
-                                self.address_list.ban_address(&address).map_err(|error| {
-                                    ExecutionError {
-                                        inner: DapiClientError::AddressList(error),
-                                        retries: retries_counter
-                                            .load(std::sync::atomic::Ordering::Acquire),
-                                        address: Some(address.clone()),
+                                match self.address_list.ban_address(&address) {
+                                    Ok(_) => {
+                                        tracing::warn!(
+                                            ?address,
+                                            ?error,
+                                            "received server error, banning address {address}"
+                                        );
                                     }
-                                })?;
+                                    // The address might be already removed from the list
+                                    // by background process (i.e., SML update), and it's fine.
+                                    Err(AddressListError::AddressNotFound(_)) => {
+                                        tracing::debug!(
+                                            ?address,
+                                            ?error,
+                                            "unable to unban address {address}. it's not in the list"
+                                        );
+                                    }
+                                    Err(AddressListError::InvalidAddressUri(_)) => {
+                                        unreachable!(
+                                            "unban address doesn't return InvalidAddressUri"
+                                        )
+                                    }
+                                }
                             } else {
                                 tracing::debug!(
                                     ?address,
