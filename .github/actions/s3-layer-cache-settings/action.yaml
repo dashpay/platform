@@ -45,11 +45,9 @@ outputs:
   cache_from:
     description: "String with s3-based cache configuration for docker buildx cache-from option"
     value: ${{ steps.script.outputs.cache_from }}
-  env_vars:
-    description: "Environment variables to set before running docker buildx"
-    value: |
-      AWS_PROFILE=docker-layers
-      AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials
+  aws_profile:
+    description: "AWS profile to use for s3 cache, to set inside AWS_PROFILE env var"
+    value: docker-layers
 
 runs:
   using: composite
