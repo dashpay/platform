@@ -159,7 +159,7 @@ where
 }
 
 /// Convert Result<T,TE> to ExecutionResult<R,E>, taking context from ExecutionResponse.
-pub trait Wrap<R, RE, W>: Sized {
+pub trait WrapToExecutionResult<R, RE, W>: Sized {
     /// Convert self (eg. some [Result]) to [ExecutionResult], taking context information from `W` (eg. ExecutionResponse).
     ///
     /// This function simplifies processing of results by wrapping them into ExecutionResult.
@@ -195,15 +195,15 @@ pub trait Wrap<R, RE, W>: Sized {
     ///    panic!("Expected error");
     /// }
     /// ```
-    fn wrap(self, result: &W) -> ExecutionResult<R, RE>;
+    fn wrap_to_execution_result(self, result: &W) -> ExecutionResult<R, RE>;
 }
 
-impl<R, RE, TR, IR, IRE> Wrap<R, RE, ExecutionResponse<TR>> for Result<IR, IRE>
+impl<R, RE, TR, IR, IRE> WrapToExecutionResult<R, RE, ExecutionResponse<TR>> for Result<IR, IRE>
 where
     R: From<IR>,
     RE: From<IRE>,
 {
-    fn wrap(self, result: &ExecutionResponse<TR>) -> ExecutionResult<R, RE> {
+    fn wrap_to_execution_result(self, result: &ExecutionResponse<TR>) -> ExecutionResult<R, RE> {
         match self {
             Ok(r) => ExecutionResult::Ok(ExecutionResponse {
                 inner: r.into(),

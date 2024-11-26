@@ -10,7 +10,7 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::Wrap;
+use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
@@ -80,9 +80,17 @@ impl BroadcastStateTransition for StateTransition {
             let response = request.execute(sdk, request_settings).await.inner_into()?;
 
             let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
-            let metadata = grpc_response.metadata().wrap(&response)?.inner;
-            let block_info = block_info_from_metadata(metadata).wrap(&response)?.inner;
-            let proof: &Proof = (*grpc_response).proof().wrap(&response)?.inner;
+            let metadata = grpc_response
+                .metadata()
+                .wrap_to_execution_result(&response)?
+                .inner;
+            let block_info = block_info_from_metadata(metadata)
+                .wrap_to_execution_result(&response)?
+                .inner;
+            let proof: &Proof = (*grpc_response)
+                .proof()
+                .wrap_to_execution_result(&response)?
+                .inner;
 
             let context_provider = sdk.context_provider().ok_or(ExecutionError {
                 inner: Error::from(ContextProviderError::Config(
@@ -99,7 +107,7 @@ impl BroadcastStateTransition for StateTransition {
                 &context_provider.as_contract_lookup_fn(),
                 sdk.version(),
             )
-            .wrap(&response)?
+            .wrap_to_execution_result(&response)?
             .inner;
 
             let variant_name = result.to_string();
@@ -111,7 +119,7 @@ impl BroadcastStateTransition for StateTransition {
                         std::any::type_name::<T>(),
                     ))
                 })
-                .wrap(&response)
+                .wrap_to_execution_result(&response)
         };
 
         let future = retry(retry_settings, factory);
