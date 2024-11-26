@@ -93,6 +93,15 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
       - name: Audit crates
         uses: rustsec/audit-check@v1
         with:

@@ -9,10 +9,6 @@ inputs:
     description: RocksDB version, eg. "8.10.2"
     required: false
     default: "8.10.2"
-  bucket:
-    description: S3 bucket to use for caching
-    required: false
-    default: multi-runner-cache-x1xibo9c
   force:
     description: Force rebuild
     required: false
