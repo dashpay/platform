@@ -171,7 +171,7 @@ pub trait WrapToExecutionResult<R, RE, W>: Sized {
     /// ## Example
     ///
     /// ```rust
-    /// use rs_dapi_client::{ExecutionResponse, ExecutionResult, Wrap};
+    /// use rs_dapi_client::{ExecutionResponse, ExecutionResult, WrapToExecutionResult};
     ///
     /// fn some_request() -> ExecutionResult<i8, String> {
     ///     Ok(ExecutionResponse {
@@ -186,7 +186,7 @@ pub trait WrapToExecutionResult<R, RE, W>: Sized {
     /// }
     ///
     /// let response = some_request().expect("request should succeed");
-    /// let result: ExecutionResult<i32, String> = next_step().wrap(&response);
+    /// let result: ExecutionResult<i32, String> = next_step().wrap_to_execution_result(&response);
     ///
     /// if let ExecutionResult::Err(error) = result {
     ///    assert_eq!(error.inner, "next error");
