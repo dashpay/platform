@@ -5,6 +5,7 @@ use dash_sdk::platform::{types::evonode::EvoNode, FetchUnproved};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
 use drive_proof_verifier::types::EvoNodeStatus;
 use http::Uri;
+use std::ops::Deref;
 use std::time::Duration;
 /// Given some existing evonode URIs, WHEN we connect to them, THEN we get status.
 use tokio::time::timeout;
@@ -18,7 +19,8 @@ async fn test_evonode_status() {
 
     let addresses = cfg.address_list();
 
-    for address in addresses {
+    for address in addresses.iter() {
+        let address = address.deref();
         let node = EvoNode::new(address.clone());
         match timeout(
             Duration::from_secs(3),
