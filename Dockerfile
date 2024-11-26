@@ -103,7 +103,6 @@ ARG TARGETARCH
 WORKDIR /platform
 
 
-# TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
 COPY rust-toolchain.toml .
 RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
@@ -114,6 +113,10 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
 
 ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
+
+# Configure Rust toolchain
+# It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
+RUN echo 'source $HOME/.cargo/env' >> /root/env
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -296,7 +299,9 @@ WORKDIR /platform
 
 # Download and install cargo-binstall
 ENV BINSTALL_VERSION=1.10.11
-RUN set -ex; \
+RUN --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env; \
     if [ "$TARGETARCH" = "amd64" ]; then \
         CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
@@ -310,10 +315,10 @@ RUN set -ex; \
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
     ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
     rm ./cargo-binstall; \
-    source $HOME/.cargo/env; \
     cargo binstall -V
 
-RUN source $HOME/.cargo/env; \
+RUN --mount=type=secret,id=AWS \
+    source /root/env; \
     cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
@@ -363,7 +368,6 @@ COPY --parents \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
-    source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef prepare $RELEASE --recipe-path recipe.json
 
@@ -385,13 +389,12 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
+    source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
     fi && \
-    source $HOME/.cargo/env && \
-    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
@@ -444,7 +447,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
-    source $HOME/.cargo/env && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
@@ -479,7 +481,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
-    source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -532,7 +533,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     --mount=type=secret,id=AWS \
-    source $HOME/.cargo/env && \
     source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
