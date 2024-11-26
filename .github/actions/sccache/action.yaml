@@ -71,5 +71,5 @@ runs:
         echo "SCCACHE_S3_KEY_PREFIX=sccache/${{ inputs.platform }}/" >> $GITHUB_ENV
         # "SCCACHE_VERSION" is used inside Docker to install the same version of sccache
         echo "SCCACHE_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
-        echo "CC=\"sccache cc\"" >> $GITHUB_ENV
-        echo "CXX=\"sccache c++\"" >> $GITHUB_ENV
+        echo "CC=\"sccache clang\"" >> $GITHUB_ENV
+        echo "CXX=\"sccache clang++\"" >> $GITHUB_ENV
