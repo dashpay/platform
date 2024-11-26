@@ -3,10 +3,12 @@
 use chrono::Utc;
 use dapi_grpc::tonic::codegen::http;
 use dapi_grpc::tonic::transport::Uri;
+use dashmap::setref::multiple::RefMulti;
+use dashmap::DashSet;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
-use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
@@ -103,7 +105,7 @@ pub enum AddressListError {
 /// for [DapiRequest](crate::DapiRequest) execution.
 #[derive(Debug, Clone)]
 pub struct AddressList {
-    addresses: HashSet<Address>,
+    addresses: Arc<DashSet<Address>>,
     base_ban_period: Duration,
 }
 
@@ -128,14 +130,14 @@ impl AddressList {
     /// Creates an empty [AddressList] with adjustable base ban time.
     pub fn with_settings(base_ban_period: Duration) -> Self {
         AddressList {
-            addresses: HashSet::new(),
+            addresses: Arc::new(DashSet::new()),
             base_ban_period,
         }
     }
 
     /// Bans address
-    pub(crate) fn ban_address(&mut self, address: &Address) -> Result<(), AddressListError> {
-        if !self.addresses.remove(address) {
+    pub fn ban_address(&self, address: &Address) -> Result<(), AddressListError> {
+        if self.addresses.remove(address).is_none() {
             return Err(AddressListError::AddressNotFound(address.uri.clone()));
         };
 
@@ -148,8 +150,8 @@ impl AddressList {
     }
 
     /// Clears address' ban record
-    pub(crate) fn unban_address(&mut self, address: &Address) -> Result<(), AddressListError> {
-        if !self.addresses.remove(address) {
+    pub fn unban_address(&self, address: &Address) -> Result<(), AddressListError> {
+        if self.addresses.remove(address).is_none() {
             return Err(AddressListError::AddressNotFound(address.uri.clone()));
         };
 
@@ -177,29 +179,19 @@ impl AddressList {
     }
 
     /// Randomly select a not banned address.
-    pub fn get_live_address(&self) -> Option<&Address> {
+    pub fn get_live_address(&self) -> Option<RefMulti<Address>> {
         let mut rng = SmallRng::from_entropy();
 
-        self.unbanned().into_iter().choose(&mut rng)
-    }
-
-    /// Get all addresses that are not banned.
-    fn unbanned(&self) -> Vec<&Address> {
         let now = chrono::Utc::now();
 
         self.addresses
             .iter()
-            .filter(|addr| {
+            .filter(move |addr| {
                 addr.banned_until
                     .map(|banned_until| banned_until < now)
                     .unwrap_or(true)
             })
-            .collect()
-    }
-
-    /// Get number of available, not banned addresses.
-    pub fn available(&self) -> usize {
-        self.unbanned().len()
+            .choose(&mut rng)
     }
 
     /// Get number of all addresses, both banned and not banned.
@@ -213,6 +205,11 @@ impl AddressList {
     /// Banned addresses are also counted.
     pub fn is_empty(&self) -> bool {
         self.addresses.is_empty()
+    }
+
+    /// Get an iterator over all addresses.
+    pub fn iter(&self) -> impl Iterator<Item = RefMulti<Address>> {
+        self.addresses.iter()
     }
 }
 
@@ -236,14 +233,5 @@ impl FromIterator<Uri> for AddressList {
         }
 
         address_list
-    }
-}
-
-impl IntoIterator for AddressList {
-    type Item = Address;
-    type IntoIter = std::collections::hash_set::IntoIter<Address>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.addresses.into_iter()
     }
 }

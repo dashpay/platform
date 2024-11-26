@@ -5,7 +5,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::Instrument;
 
@@ -72,7 +72,7 @@ impl Mockable for DapiClientError {
 /// Access point to DAPI.
 #[derive(Debug, Clone)]
 pub struct DapiClient {
-    address_list: Arc<RwLock<AddressList>>,
+    address_list: AddressList,
     settings: RequestSettings,
     pool: ConnectionPool,
     #[cfg(feature = "dump")]
@@ -86,7 +86,7 @@ impl DapiClient {
         let address_count = 3 * address_list.len();
 
         Self {
-            address_list: Arc::new(RwLock::new(address_list)),
+            address_list,
             settings,
             pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]
@@ -95,7 +95,7 @@ impl DapiClient {
     }
 
     /// Return the [DapiClient] address list.
-    pub fn address_list(&self) -> &Arc<RwLock<AddressList>> {
+    pub fn address_list(&self) -> &AddressList {
         &self.address_list
     }
 }
@@ -140,17 +140,12 @@ impl DapiRequestExecutor for DapiClient {
             let retries_counter = Arc::clone(retries_counter_arc_ref);
 
             // Try to get an address to initialize transport on:
-            let address_list = self
+            let address_result = self
                 .address_list
-                .read()
-                .expect("can't get address list for read");
-
-            let address_result = address_list
                 .get_live_address()
+                .as_deref()
                 .cloned()
                 .ok_or(DapiClientError::NoAvailableAddresses);
-
-            drop(address_list);
 
             let _span = tracing::trace_span!(
                 "execute request",
@@ -203,12 +198,7 @@ impl DapiRequestExecutor for DapiClient {
                     Ok(_) => {
                         // Unban the address if it was banned and node responded successfully this time
                         if address.is_banned() {
-                            let mut address_list = self
-                                .address_list
-                                .write()
-                                .expect("can't get address list for write");
-
-                            address_list.unban_address(&address).map_err(|error| {
+                            self.address_list.unban_address(&address).map_err(|error| {
                                 ExecutionError {
                                     inner: DapiClientError::AddressList(error),
                                     retries: retries_counter
@@ -223,12 +213,7 @@ impl DapiRequestExecutor for DapiClient {
                     Err(error) => {
                         if error.can_retry() {
                             if applied_settings.ban_failed_address {
-                                let mut address_list = self
-                                    .address_list
-                                    .write()
-                                    .expect("can't get address list for write");
-
-                                address_list.ban_address(&address).map_err(|error| {
+                                self.address_list.ban_address(&address).map_err(|error| {
                                     ExecutionError {
                                         inner: DapiClientError::AddressList(error),
                                         retries: retries_counter

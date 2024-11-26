@@ -4,15 +4,17 @@
 //! inside a tokio runtime. This module spawns async futures in active tokio runtime, and retrieves the result
 //! using a channel.
 
+use crate::Error;
 use arc_swap::ArcSwap;
 use drive_proof_verifier::error::ContextProviderError;
-use rs_dapi_client::{CanRetry, ExecutionResult, RequestSettings};
+use rs_dapi_client::{AddressList, CanRetry, ExecutionError, ExecutionResult, RequestSettings};
 use std::{
     fmt::Debug,
     future::Future,
     sync::{mpsc::SendError, Arc},
 };
 use tokio::{runtime::TryCurrentError, sync::Mutex};
+
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
     /// Not running inside tokio runtime
@@ -138,8 +140,9 @@ async fn worker<F: Future>(
 /// }
 /// #[tokio::main]
 ///     async fn main() {
+///     let address_list = rs_dapi_client::AddressList::default();
 ///     let global_settings = RequestSettings::default();
-///     dash_sdk::sync::retry(global_settings, retry_test_function).await.expect_err("should fail");
+///     dash_sdk::sync::retry(&address_list, global_settings, retry_test_function).await.expect_err("should fail");
 /// }
 /// ```
 ///
@@ -154,6 +157,7 @@ async fn worker<F: Future>(
 ///
 /// - [`::backon`] crate that is used by this function.
 pub async fn retry<Fut, FutureFactoryFn, R, E>(
+    address_list: &AddressList,
     settings: RequestSettings,
     future_factory_fn: FutureFactoryFn,
 ) -> ExecutionResult<R, E>
@@ -187,21 +191,59 @@ where
         async move {
             let settings = closure_settings.load_full().clone();
             let mut func = inner_fn.lock().await;
-            (*func)(*settings).await
+            let result = (*func)(*settings).await;
+
+            match &result {
+                Ok(response) => {
+                    // Unban the address if it was banned and node responded successfully this time
+                    if response.address.is_banned() {
+                        address_list
+                            .unban_address(&response.address)
+                            .map_err(|error| ExecutionError {
+                                inner: Error::from(rs_dapi_client::DapiClientError::AddressList(
+                                    error,
+                                )),
+                                retries: response.retries,
+                                address: Some(response.address.clone()),
+                            })?;
+                    }
+                }
+                Err(error) => {
+                    if error.can_retry() {
+                        if let Some(address) = &error.address {
+                            if settings.ban_failed_address.unwrap_or(true) {
+                                address_list.ban_address(address).map_err(
+                                    |address_list_error| ExecutionError {
+                                        inner: Error::from(
+                                            rs_dapi_client::DapiClientError::AddressList(
+                                                address_list_error,
+                                            ),
+                                        ),
+                                        retries: error.retries,
+                                        address: Some(address.clone()),
+                                    },
+                                )?;
+                            }
+                        }
+                    }
+                }
+            };
+
+            result
         }
     };
 
-    let  result= ::backon::Retryable::retry(closure,backoff_strategy)
+    let result = ::backon::Retryable::retry(closure, backoff_strategy)
         .when(|e| {
             if e.can_retry() {
-                // requests sent for current execution attempt; 
+                // requests sent for current execution attempt;
                 let requests_sent = e.retries + 1;
 
-                // requests sent in all preceeding attempts; user expects `settings.retries +1`                           
+                // requests sent in all preceeding attempts; user expects `settings.retries +1`
                 retries += requests_sent;
                 let all_requests_sent = retries;
 
-                if all_requests_sent <=max_retries { // we account for for initial request
+                if all_requests_sent <= max_retries { // we account for initial request
                     tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
                     let new_settings = RequestSettings {
                         retries: Some(max_retries - all_requests_sent), // limit num of retries for lower layer
@@ -352,6 +394,8 @@ mod test {
         for _ in 0..1 {
             let counter = Arc::new(AtomicUsize::new(0));
 
+            let address_list = AddressList::default();
+
             // we retry 5 times, and expect 5 retries + 1 initial request
             let mut global_settings = RequestSettings::default();
             global_settings.retries = Some(expected_requests - 1);
@@ -361,7 +405,7 @@ mod test {
                 retry_test_function(s, counter)
             };
 
-            retry(global_settings, closure)
+            retry(&address_list, global_settings, closure)
                 .await
                 .expect_err("should fail");
 
