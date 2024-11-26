@@ -15,16 +15,26 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
-#   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
-#   - SCCACHE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, SCCACHE_S3_KEY_PREFIX - store caches in S3
-#   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
+# # sccache cache backends
 #
-#
+# To enable sccache support and make the following variables available:
+#    1. For S3 buckets:
+#       - SCCACHE_BUCKET - S3 bucket name
+#       - AWS_PROFILE
+#       - SCCACHE_REGION
+#       - SCCACHE_S3_KEY_PREFIX
+#       - SCCACHE_ENDPOINT
+#       - also, AWS credentials file ($HOME/.aws/credentials) should be provided as a secret file with id=AWS
+#    2. For Github Actions:
+#       - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL
+#       - also, Github Actions token should be provided as a secret file with id=GHA
+#    3. For memcached:
+#       - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
+
 #
 # BUILD PROCESS
 #
@@ -35,7 +45,17 @@
 # 3. Configuration variables are shared between runs using /root/env file.
 
 ARG ALPINE_VERSION=3.18
-ARG RUSTC_WRAPPER
+
+# deps-${RUSTC_WRAPPER:-base}
+# If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
+ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_BUCKET
+ARG SCCACHE_MEMCACHED
+
+# Determine if we have sccache enabled; if yes, use deps-sccache, otherwise use deps-base as a dependency image
+ARG DEPS_IMAGE=${SCCACHE_GHA_ENABLED}${SCCACHE_BUCKET}${SCCACHE_MEMCACHED}
+ARG DEPS_IMAGE=${DEPS_IMAGE:+sccache}
+ARG DEPS_IMAGE=deps-${DEPS_IMAGE:-base}
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
@@ -83,7 +103,6 @@ ARG TARGETARCH
 WORKDIR /platform
 
 
-# TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
 COPY rust-toolchain.toml .
 RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
@@ -94,6 +113,10 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
 
 ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
+
+# Configure Rust toolchain
+# It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
+RUN echo 'source $HOME/.cargo/env' >> /root/env
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -119,10 +142,10 @@ ENV NODE_ENV=${NODE_ENV}
 #
 # This stage is used to install sccache and configure it.
 # Later on, one should source /root/env before building to use sccache.
-
+# 
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
-# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. It is done using ONBUILD directive, so the secrets are not stored in the
-# final image.
+# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. This is to prevent leaking secrets to the final image. The secrets are
+# loaded using docker buildx `--secret` flag and need to be explicitly mounted with `--mount=type=secret,id=SECRET_ID`.
 
 FROM deps-base AS deps-sccache
 
@@ -139,10 +162,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 #
 # Configure sccache
 #
-ARG RUSTC_WRAPPER
-
-# Disable incremental builds, not supported by sccache
-RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
@@ -153,57 +172,67 @@ ARG SCCACHE_MEMCACHED
 
 # S3 storage
 ARG SCCACHE_BUCKET
-ARG AWS_ACCESS_KEY_ID
-ARG AWS_REGION
+ARG AWS_PROFILE
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
+ARG SCCACHE_ENDPOINT
 
 # Generate sccache configuration variables and save them to /root/env
 #
 # We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
-RUN <<EOS
+RUN --mount=type=secret,id=AWS <<EOS
     set -ex -o pipefail
 
+    ### Github Actions ###
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
-        # Github Actions cache
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
-        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
+        # ACTIONS_RUNTIME_TOKEN is a secret so we quote it here, and it will be loaded when `source /root/env` is run
+        echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/GHA)"' >> /root/env
+    
+    ### AWS S3 ###
     elif [ -n "${SCCACHE_BUCKET}" ]; then
-        # AWS S3
-        if [ -z "${SCCACHE_REGION}" ] ; then
-            # Default to AWS_REGION if not set
-            export SCCACHE_REGION=${AWS_REGION}
-        fi
-
-        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
-        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
-        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
-        # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
-        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
+        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
+        [ -n "${AWS_PROFILE}" ] && echo "export AWS_PROFILE='${AWS_PROFILE}'" >> /root/env
+        echo "export SCCACHE_ENDPOINT='${SCCACHE_ENDPOINT}'" >> /root/env
+        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}'" >> /root/env
+
+        # Configure AWS credentials
+        mkdir --mode=0700 -p "$HOME/.aws"
+        ln -s /run/secrets/AWS "$HOME/.aws/credentials"
+        echo "export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials" >> /root/env
+        
+        # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
+        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { 
+            echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}; did you use RUN --mount=type=secret,id=AWS ?"; 
+            exit 1; 
+        }' >> /root/env
+
+    ### memcached ###
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
         echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
+    else
+        echo "Error: cannot determine sccache cache backend" >&2
+        exit 1
     fi
+    
+    echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
+    
+    # Configure compilers to use sccache
+    echo "export CXX='sccache clang++'" >> /root/env
+    echo "export CC='sccache clang'" >> /root/env
+    echo "export RUSTC_WRAPPER=sccache" >> /root/env
+    # Disable Rust incremental builds, not supported by sccache
+    echo 'export CARGO_INCREMENTAL=0' >> /root/env
 
-    if [ -n "${RUSTC_WRAPPER}" ]; then
-        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
-        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
-        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
-        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
-    fi
     # for debugging, we display what we generated
     cat /root/env
 EOS
 
-# We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
-# to the final image or to layer cache
-ONBUILD ARG ACTIONS_RUNTIME_TOKEN
-ONBUILD ARG AWS_SECRET_ACCESS_KEY
-
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
-FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
+FROM ${DEPS_IMAGE} AS deps-compilation
 # Stage intentionally left empty
 
 #
@@ -215,7 +244,24 @@ FROM deps-compilation AS deps-rocksdb
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 
-RUN <<EOS
+
+# RUN --mount=type=secret,id=AWS <<EOS
+# echo Testing sccache configuration
+
+# source /root/env
+# sccache --start-server
+
+# # Build some test project to check if sccache is working
+# mkdir /tmp/sccache-test
+# cd /tmp/sccache-test
+# echo 'int main() { return 0; }' > a.c
+# sccache clang -o a.o -c a.c
+# cd -
+
+# sccache -s
+# EOS
+
+RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
@@ -253,7 +299,9 @@ WORKDIR /platform
 
 # Download and install cargo-binstall
 ENV BINSTALL_VERSION=1.10.11
-RUN set -ex; \
+RUN --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env; \
     if [ "$TARGETARCH" = "amd64" ]; then \
         CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
@@ -267,10 +315,10 @@ RUN set -ex; \
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
     ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
     rm ./cargo-binstall; \
-    source $HOME/.cargo/env; \
     cargo binstall -V
 
-RUN source $HOME/.cargo/env; \
+RUN --mount=type=secret,id=AWS \
+    source /root/env; \
     cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
@@ -319,7 +367,7 @@ COPY --parents \
     packages/check-features \
     /platform/
 
-RUN source $HOME/.cargo/env && \
+RUN --mount=type=secret,id=AWS \
     source /root/env && \
     cargo chef prepare $RELEASE --recipe-path recipe.json
 
@@ -339,14 +387,14 @@ COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
     set -ex; \
+    source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
     fi && \
-    source $HOME/.cargo/env && \
-    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
@@ -397,8 +445,8 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
     set -ex; \
-    source $HOME/.cargo/env && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
@@ -432,7 +480,7 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    source $HOME/.cargo/env && \
+    --mount=type=secret,id=AWS \
     source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -484,7 +532,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
-    source $HOME/.cargo/env && \
+    --mount=type=secret,id=AWS \
     source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \

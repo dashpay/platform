@@ -47,13 +47,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         if: ${{ matrix.platform == 'linux/arm64' }}
@@ -70,9 +63,11 @@ jobs:
           cargo_profile: ${{ inputs.cargo_profile }}
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          region: ${{ secrets.AWS_REGION }}
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          cache_region: ${{ vars.CACHE_REGION }}
+          cache_bucket: ${{ vars.CACHE_S3_BUCKET }}
+          cache_endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          cache_access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Export digest
         run: |

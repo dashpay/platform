@@ -1,4 +1,4 @@
-name: 'Get S3 Docker Layer Cache settings'
+name: "Get S3 Docker Layer Cache settings"
 description: |
   This action generates string with s3-based cache configuration for docker buildx.
   It defines three manifests:
@@ -6,12 +6,14 @@ description: |
     - name and head ref to hit all builds for this branch with this name
     - just name to hit all builds for this name
 
+  To correcly use caching, ensure buildx has AWS_PROFILE environment set to value of `aws_profile` output.
+
 inputs:
   name:
-    description: 'Cache key name will be used as a prefix for all docker image manifests'
+    description: "Cache key name will be used as a prefix for all docker image manifests"
     required: true
   head_ref:
-    description: 'Head ref for an additional manifest to hit all builds for this head'
+    description: "Head ref for an additional manifest to hit all builds for this head"
     default: ${{ github.ref }}
   region:
     description: S3 region
@@ -19,27 +21,46 @@ inputs:
   bucket:
     description: S3 bucket name
     required: true
+  endpoint:
+    description: S3 endpoint to use for caching
+    required: false
   prefix:
     description: S3 key prefix
-    default: 'cache-layers/'
+    default: "cache-layers/"
+  s3_access_key_id:
+    description: Access key ID for S3 cache
+    required: true
+  s3_secret_access_key:
+    description: Secret access key for S3 cache
+    required: true
   mode:
     description: Cache mode
     default: max
   cache_to_name:
-    description: 'Save cache to name manifest (should be used only on default branch)'
-    default: 'false'
+    description: "Save cache to name manifest (should be used only on default branch)"
+    default: "false"
 
 outputs:
   cache_to:
-    description: 'String with s3-based cache configuration for docker buildx cache-to option'
+    description: "String with s3-based cache configuration for docker buildx cache-to option"
     value: ${{ steps.script.outputs.cache_to }}
   cache_from:
-    description: 'String with s3-based cache configuration for docker buildx cache-from option'
+    description: "String with s3-based cache configuration for docker buildx cache-from option"
     value: ${{ steps.script.outputs.cache_from }}
+  aws_profile:
+    description: "AWS profile to use for s3 cache, to set inside AWS_PROFILE env var"
+    value: layers
 
 runs:
   using: composite
   steps:
+    - name: Configure AWS credentials for s3 layers
+      uses: ./.github/actions/aws_credentials
+      with:
+        access_key_id: ${{ inputs.s3_access_key_id }}
+        secret_access_key: ${{ inputs.s3_secret_access_key }}
+        profile: "layers"
+
     - uses: actions/github-script@v6
       id: script
       with:
@@ -49,6 +70,7 @@ runs:
             region: '${{ inputs.region }}',
             bucket: '${{ inputs.bucket }}',
             prefix: '${{ inputs.prefix }}',
+            endpoint_url: '${{ inputs.endpoint }}',
           };
 
           const settingsString = Object.entries(settings)
@@ -59,7 +81,7 @@ runs:
           const sanitizedHeadRef = '${{ inputs.head_ref }}'.replace(/[^a-zA-Z0-9]/g, '-');
 
           const shaManifestName = '${{ inputs.name }}_sha_${{ github.sha }}';
-          const headRefManifestName = '${{ inputs.name }}_tag_${ sanitizedHeadRef }';
+          const headRefManifestName = '${{ inputs.name }}_tag_' + sanitizedHeadRef;
 
           const cacheFromManifestNames = [
             shaManifestName,
