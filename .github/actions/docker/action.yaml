@@ -88,6 +88,8 @@ runs:
         endpoint: ${{ inputs.cache_endpoint }}
         prefix: "cache-layers/${{ inputs.platform }}/"
         cache_to_name: ${{ inputs.cache_to_name }}
+        s3_access_key_id: ${{ inputs.cache_access_key_id }}
+        s3_secret_access_key: ${{ inputs.cache_secret_access_key }}
 
     - name: Set HOME variable to github context
       shell: bash
@@ -153,8 +155,9 @@ runs:
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
-    - name: Setup sccache vars
+    - name: Configure sccache settings
       uses: ./.github/actions/sccache
+      id: sccache
       with:
         bucket: ${{ inputs.cache_bucket }}
         region: ${{ inputs.cache_region }}
@@ -167,6 +170,7 @@ runs:
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v6
+      env: ${{ steps.layer_cache_settings.outputs.env_vars }}
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
@@ -177,14 +181,7 @@ runs:
         platforms: ${{ inputs.platform }}
         secret-files: |
           AWS=${{ env.HOME }}/.aws/credentials
-        build-args: |
-          CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
-          SCCACHE_BUCKET=${{ inputs.cache_bucket }}
-          SCCACHE_REGION=${{ inputs.cache_region }}
-          SCCACHE_ENDPOINT=${{ inputs.cache_endpoint }}
-          SCCACHE_S3_KEY_PREFIX=${{ env.SCCACHE_S3_KEY_PREFIX }}
-          SCCACHE_VERSION=${{ env.SCCACHE_VERSION }}
-          AWS_PROFILE=sccache
+        build-args: ${{ steps.sccache.outputs.env_vars }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true

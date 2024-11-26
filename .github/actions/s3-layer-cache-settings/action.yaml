@@ -25,6 +25,12 @@ inputs:
   prefix:
     description: S3 key prefix
     default: "cache-layers/"
+  s3_access_key_id:
+    description: Access key ID for S3 cache
+    required: true
+  s3_secret_access_key:
+    description: Secret access key for S3 cache
+    required: true
   mode:
     description: Cache mode
     default: max
@@ -39,10 +45,22 @@ outputs:
   cache_from:
     description: "String with s3-based cache configuration for docker buildx cache-from option"
     value: ${{ steps.script.outputs.cache_from }}
+  env_vars:
+    description: "Environment variables to set before running docker buildx"
+    value: |
+      AWS_PROFILE=docker-layers
+      AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials
 
 runs:
   using: composite
   steps:
+    - name: Configure AWS credentials for s3 layers
+      uses: ./.github/actions/aws_credentials
+      with:
+        access_key_id: ${{ inputs.access_key_id }}
+        secret_access_key: ${{ inputs.secret_access_key }}
+        profile: "docker-layers"
+
     - uses: actions/github-script@v6
       id: script
       with:
