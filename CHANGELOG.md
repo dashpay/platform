@@ -5,9 +5,15 @@
 
 * **sdk:** retry broadcast operations (#2337)
 
+
 ### Features
 
 * **sdk:** retry broadcast operations ([#2337](https://github.com/dashpay/platform/issues/2337))
+
+
+### Reverted
+
+* **dashmate:** update Core to version 22
 
 
 ### Continuous Integration
@@ -41,7 +47,7 @@
 
 ### Miscellaneous Chores
 
-* **dashmate:** update Core to 21.2 nightly
+* **dashmate:** update Core to version 22
 * **sdk:** expose proof verifier errors ([#2333](https://github.com/dashpay/platform/issues/2333))
 * **sdk:** vote poll queries encoding ([#2334](https://github.com/dashpay/platform/issues/2334))
 
