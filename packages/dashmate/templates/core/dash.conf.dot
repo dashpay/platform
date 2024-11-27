@@ -108,7 +108,7 @@ devnet={{=it.core.devnet.name}}
 powtargetspacing={{=it.core.devnet.powTargetSpacing}}
 minimumdifficultyblocks={{=it.core.devnet.minimumDifficultyBlocks}}
 highsubsidyblocks=500
-highsubsidyfactor=10
+  highsubsidyfactor=100
 llmqchainlocks={{=it.core.devnet.llmq.chainLocks}}
 llmqinstantsenddip0024={{=it.core.devnet.llmq.instantSend}}
 llmqplatform={{=it.core.devnet.llmq.platform}}
