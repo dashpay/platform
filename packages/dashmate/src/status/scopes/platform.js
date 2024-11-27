@@ -1,3 +1,4 @@
+import prettyMs from 'pretty-ms';
 import { PortStateEnum } from '../enums/portState.js';
 import DockerComposeError from '../../docker/errors/DockerComposeError.js';
 import providers from '../providers.js';
