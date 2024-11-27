@@ -35,8 +35,9 @@ async fn test_evonode_status() {
                     status.chain.latest_block_height > 0,
                     "latest block height must be positive"
                 );
-                assert!(
-                    status.node.pro_tx_hash.unwrap_or_default().len() == ProTxHash::LEN,
+                assert_eq!(
+                    status.node.pro_tx_hash.unwrap_or_default().len(),
+                    ProTxHash::LEN,
                     "latest block hash must be non-empty"
                 );
                 // Add more specific assertions based on expected status properties

@@ -6,7 +6,8 @@
 
 use arc_swap::ArcSwap;
 use drive_proof_verifier::error::ContextProviderError;
-use rs_dapi_client::{AddressList, AddressListError, CanRetry, ExecutionResult, RequestSettings};
+use rs_dapi_client::{ban_failed_address, AddressList, CanRetry, ExecutionResult, RequestSettings};
+use std::fmt::Display;
 use std::{
     fmt::Debug,
     future::Future,
@@ -163,7 +164,7 @@ pub async fn retry<Fut, FutureFactoryFn, R, E>(
 where
     Fut: Future<Output = ExecutionResult<R, E>>,
     FutureFactoryFn: FnMut(RequestSettings) -> Fut,
-    E: CanRetry + Debug,
+    E: CanRetry + Display + Debug,
 {
     let max_retries = settings.retries.unwrap_or_default();
 
@@ -193,72 +194,7 @@ where
             let result = (*func)(*settings).await;
 
             // Ban or unban the address based on the result
-            match &result {
-                Ok(response) => {
-                    // Unban the address if it was banned and node responded successfully this time
-                    if response.address.is_banned() {
-                        match address_list.unban_address(&response.address) {
-                            Ok(_) => {
-                                tracing::debug!(
-                                    address = ?response.address,
-                                    "unban successfully responded address {}",
-                                    response.address,
-                                )
-                            }
-                            // The address might be already removed from the list
-                            // by background process (i.e., SML update), and it's fine.
-                            Err(AddressListError::AddressNotFound(_)) => {
-                                tracing::debug!(
-                                    address = ?response.address,
-                                    "unable to unban address {}. it's not in the list",
-                                    response.address
-                                );
-                            }
-                            Err(AddressListError::InvalidAddressUri(_)) => {
-                                unreachable!("unban address doesn't return InvalidAddressUri")
-                            }
-                        }
-                    }
-                }
-                Err(error) => {
-                    // Ban address if it failed and can be retried
-                    if error.can_retry() {
-                        // Address must be present
-                        if let Some(address) = &error.address {
-                            // And ban logic must be enabled for this request
-                            if settings.ban_failed_address.unwrap_or(true) {
-                                match address_list.ban_address(address) {
-                                    Ok(_) => {
-                                        tracing::warn!(
-                                            ?address,
-                                            ?error,
-                                            "received server error, banning address {address}"
-                                        );
-                                    }
-                                    // The address might be already removed from the list
-                                    // by background process (i.e., SML update), and it's fine.
-                                    Err(AddressListError::AddressNotFound(_)) => {
-                                        tracing::debug!(
-                                            ?address,
-                                            ?error,
-                                            "unable to ban address {address}. it's not in the list"
-                                        );
-                                    }
-                                    Err(AddressListError::InvalidAddressUri(_)) => {
-                                        unreachable!("ban address doesn't return InvalidAddressUri")
-                                    }
-                                }
-                            } else {
-                                tracing::debug!(
-                                    ?address,
-                                    ?error,
-                                    "received server error, we should ban the node but banning is disabled"
-                                );
-                            }
-                        }
-                    }
-                }
-            };
+            ban_failed_address(address_list, &result, &settings.finalize());
 
             result
         }
@@ -304,6 +240,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use derive_more::Display;
     use http::Uri;
     use rs_dapi_client::ExecutionError;
     use std::{
@@ -387,7 +324,7 @@ mod test {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Display)]
     enum MockError {
         Generic,
     }

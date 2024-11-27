@@ -17,7 +17,7 @@ pub use address_list::Address;
 pub use address_list::AddressList;
 pub use address_list::AddressListError;
 pub use connection_pool::ConnectionPool;
-pub use dapi_client::{DapiClient, DapiClientError};
+pub use dapi_client::{ban_failed_address, DapiClient, DapiClientError};
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
 pub use executor::{
