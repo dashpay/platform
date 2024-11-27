@@ -1,3 +1,19 @@
+## [1.6.0-dev.2](https://github.com/dashpay/platform/compare/v1.6.0-dev.1...v1.6.0-dev.2) (2024-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** retry broadcast operations (#2337)
+
+### Features
+
+* **sdk:** retry broadcast operations ([#2337](https://github.com/dashpay/platform/issues/2337))
+
+
+### Continuous Integration
+
+* change s3 cache provider to optimize costs ([#2344](https://github.com/dashpay/platform/issues/2344))
+
 ## [1.6.0-dev.1](https://github.com/dashpay/platform/compare/v1.5.1...v1.6.0-dev.1) (2024-11-25)
 
 
