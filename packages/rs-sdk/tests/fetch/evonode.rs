@@ -5,10 +5,10 @@ use dash_sdk::platform::{types::evonode::EvoNode, FetchUnproved};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
 use drive_proof_verifier::types::EvoNodeStatus;
 use http::Uri;
+use rs_dapi_client::Address;
 use std::time::Duration;
 /// Given some existing evonode URIs, WHEN we connect to them, THEN we get status.
 use tokio::time::timeout;
-use rs_dapi_client::Address;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_evonode_status() {

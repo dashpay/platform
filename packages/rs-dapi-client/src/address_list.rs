@@ -53,7 +53,9 @@ impl TryFrom<Uri> for Address {
 
     fn try_from(value: Uri) -> Result<Self, Self::Error> {
         if value.host().is_none() {
-            return Err(AddressListError::InvalidAddressUri("uri must contain host".to_string()));
+            return Err(AddressListError::InvalidAddressUri(
+                "uri must contain host".to_string(),
+            ));
         }
 
         Ok(Address {

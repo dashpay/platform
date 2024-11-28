@@ -131,7 +131,10 @@ impl Config {
             false => "http",
         };
 
-        let address: Address = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port).parse().expect("valid address");
+        let address: Address =
+            format!("{}://{}:{}", scheme, self.platform_host, self.platform_port)
+                .parse()
+                .expect("valid address");
 
         AddressList::from_iter([address])
     }
