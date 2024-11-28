@@ -139,7 +139,7 @@ impl AddressList {
     pub fn ban(&self, address: &Address) -> bool {
         let mut guard = self.addresses.write().unwrap();
 
-        let Some(mut status) = guard.get_mut(address) else {
+        let Some(status) = guard.get_mut(address) else {
             return false;
         };
 
@@ -153,7 +153,7 @@ impl AddressList {
     pub fn unban(&self, address: &Address) -> bool {
         let mut guard = self.addresses.write().unwrap();
 
-        let Some(mut status) = guard.get_mut(address) else {
+        let Some(status) = guard.get_mut(address) else {
             return false;
         };
 
@@ -206,7 +206,7 @@ impl AddressList {
 
     /// Randomly select a not banned address.
     pub fn get_live_address(&self) -> Option<Address> {
-        let mut guard = self.addresses.read().unwrap();
+        let guard = self.addresses.read().unwrap();
 
         let mut rng = SmallRng::from_entropy();
 
@@ -214,7 +214,7 @@ impl AddressList {
 
         guard
             .iter()
-            .filter(|(addr, status)| {
+            .filter(|(_, status)| {
                 status
                     .banned_until
                     .map(|banned_until| banned_until < now)
