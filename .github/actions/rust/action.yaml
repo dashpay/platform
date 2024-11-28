@@ -31,7 +31,7 @@ runs:
         fi
 
         echo "TOOLCHAIN_VERSION=$TOOLCHAIN_VERSION" >> $GITHUB_ENV
-        echo "::set-output name=version::$TOOLCHAIN_VERSION"
+        echo "version=$TOOLCHAIN_VERSION"  >> $GITHUB_OUTPUT
 
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
@@ -81,12 +81,6 @@ runs:
         unzip -o /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
-
-    - name: Install sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.6
-      with:
-        version: "v0.8.2" # Must be the same as in Dockerfile
-      if: inputs.cache == 'true'
 
     - name: Set HOME variable to github context
       shell: bash

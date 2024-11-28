@@ -227,7 +227,11 @@ impl DapiRequestExecutor for DapiClient {
                                     .address_list
                                     .write()
                                     .expect("can't get address list for write");
-
+                                tracing::warn!(
+                                    ?address,
+                                    ?error,
+                                    "received server error, banning address"
+                                );
                                 address_list.ban_address(&address).map_err(|error| {
                                     ExecutionError {
                                         inner: DapiClientError::AddressList(error),
@@ -236,9 +240,18 @@ impl DapiRequestExecutor for DapiClient {
                                         address: Some(address.clone()),
                                     }
                                 })?;
+                            } else {
+                                tracing::debug!(
+                                    ?address,
+                                    ?error,
+                                    "received server error, we should ban the node but banning is disabled"
+                                );
                             }
                         } else {
-                            tracing::trace!(?error, "received error");
+                            tracing::debug!(
+                                ?error,
+                                "received server error, most likely the request is invalid"
+                            );
                         }
                     }
                 };

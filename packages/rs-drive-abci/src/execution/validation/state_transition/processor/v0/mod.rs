@@ -85,7 +85,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     };
 
     // Only identity top up and identity create do not have nonces validation
-    if state_transition.has_nonces_validation() {
+    if state_transition.has_nonce_validation(platform_version)? {
         // Validating identity contract nonce, this must happen after validating the signature
         let result = state_transition.validate_nonces(
             &platform.into(),
@@ -383,12 +383,11 @@ pub(crate) trait StateTransitionNonceValidationV0 {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+}
 
-    /// True if the state transition validates nonces, either identity nonces or identity contract
-    /// nonces
-    fn has_nonces_validation(&self) -> bool {
-        true
-    }
+pub(crate) trait StateTransitionHasNonceValidationV0 {
+    /// True if the state transition has nonces validation.
+    fn has_nonce_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error>;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -607,17 +606,50 @@ impl StateTransitionNonceValidationV0 for StateTransition {
             _ => Ok(SimpleConsensusValidationResult::new()),
         }
     }
+}
 
-    fn has_nonces_validation(&self) -> bool {
-        matches!(
-            self,
-            StateTransition::DocumentsBatch(_)
-                | StateTransition::DataContractCreate(_)
-                | StateTransition::DataContractUpdate(_)
-                | StateTransition::IdentityUpdate(_)
-                | StateTransition::IdentityCreditTransfer(_)
-                | StateTransition::IdentityCreditWithdrawal(_)
-        )
+impl StateTransitionHasNonceValidationV0 for StateTransition {
+    fn has_nonce_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .has_nonce_validation
+        {
+            0 => {
+                let has_nonce_validation = matches!(
+                    self,
+                    StateTransition::DocumentsBatch(_)
+                        | StateTransition::DataContractCreate(_)
+                        | StateTransition::DataContractUpdate(_)
+                        | StateTransition::IdentityUpdate(_)
+                        | StateTransition::IdentityCreditTransfer(_)
+                        | StateTransition::IdentityCreditWithdrawal(_)
+                );
+
+                Ok(has_nonce_validation)
+            }
+            1 => {
+                // Preferably to use match without wildcard arm (_) to avoid missing cases
+                // in the future when new state transitions are added
+                let has_nonce_validation = match self {
+                    StateTransition::DocumentsBatch(_)
+                    | StateTransition::DataContractCreate(_)
+                    | StateTransition::DataContractUpdate(_)
+                    | StateTransition::IdentityUpdate(_)
+                    | StateTransition::IdentityCreditTransfer(_)
+                    | StateTransition::IdentityCreditWithdrawal(_)
+                    | StateTransition::MasternodeVote(_) => true,
+                    StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => false,
+                };
+
+                Ok(has_nonce_validation)
+            }
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "StateTransition::has_nonce_validation".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
     }
 }
 

@@ -1,6 +1,13 @@
 ---
 name: "Build and push docker image"
-description: "Build and push docker image by digest with Rust caching"
+description: |
+  Build and push docker image by digest with extensive caching.
+
+  This action builds and pushes a Docker image to Docker Hub.
+  It uses caching for Rust dependencies and Docker layers.
+  It also provides sccache settings to the docker builder for caching Rust compilation.
+
+  Layers cache and sccache will use the same credentials and S3 bucket, but different prefixes.
 inputs:
   image_name:
     description: Name of image in Docker Hub, like `drive`
@@ -25,21 +32,24 @@ inputs:
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
-  bucket:
-    description: S3 bucket to use for caching, must match runner define in `runs-on`
-    default: multi-runner-cache-x1xibo9c
-  region:
+  cache_bucket:
+    description: S3 bucket to use for caching (both sccache and layer cache)
+    required: true
+  cache_region:
     description: S3 bucket region
     required: true
-  aws_access_key_id:
-    description: AWS access key ID
+  cache_endpoint:
+    description: S3 endpoint to use for caching
     required: true
-  aws_secret_access_key:
-    description: AWS secret access key
+  cache_access_key_id:
+    description: Access key ID for s3 cache
+    required: true
+  cache_secret_access_key:
+    description: Secret access key for s3 cache
     required: true
   cache_to_name:
-    description: 'Save cache to name manifest (should be used only on default branch)'
-    default: 'false'
+    description: "Save cache to name manifest (should be used only on default branch)"
+    default: "false"
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -80,9 +90,13 @@ runs:
       id: layer_cache_settings
       with:
         name: ${{ inputs.image_name }}
-        region: ${{ inputs.region }}
-        bucket: ${{ inputs.bucket }}
+        region: ${{ inputs.cache_region }}
+        bucket: ${{ inputs.cache_bucket }}
+        endpoint: ${{ inputs.cache_endpoint }}
+        prefix: "cache-layers/${{ inputs.platform }}/"
         cache_to_name: ${{ inputs.cache_to_name }}
+        s3_access_key_id: ${{ inputs.cache_access_key_id }}
+        s3_secret_access_key: ${{ inputs.cache_secret_access_key }}
 
     - name: Set HOME variable to github context
       shell: bash
@@ -133,7 +147,7 @@ runs:
       id: arch
       uses: actions/github-script@v6
       with:
-        result-encoding: 'string'
+        result-encoding: "string"
         script: return '${{ inputs.platform }}'.replace('linux/', '');
 
     - name: Inject cargo cache into docker
@@ -148,9 +162,24 @@ runs:
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
+    - name: Configure sccache settings
+      uses: ./.github/actions/sccache
+      id: sccache
+      with:
+        bucket: ${{ inputs.cache_bucket }}
+        region: ${{ inputs.cache_region }}
+        endpoint: ${{ inputs.cache_endpoint }}
+        access_key_id: ${{ inputs.cache_access_key_id }}
+        secret_access_key: ${{ inputs.cache_secret_access_key }}
+        platform: ${{ inputs.platform }}
+        install: false
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v6
+      env:
+        # AWS profile to be used by layer cache; sccache settings are passed via build-args
+        AWS_PROFILE: ${{ steps.layer_cache_settings.outputs.aws_profile }}
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
@@ -159,14 +188,9 @@ runs:
         push: ${{ inputs.push_tags }}
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
-        build-args: |
-          CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
-          RUSTC_WRAPPER=sccache
-          SCCACHE_BUCKET=${{ inputs.bucket }}
-          SCCACHE_REGION=${{ inputs.region }}
-          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
-          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
+        secret-files: |
+          AWS=${{ env.HOME }}/.aws/credentials
+        build-args: ${{ steps.sccache.outputs.env_vars }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
