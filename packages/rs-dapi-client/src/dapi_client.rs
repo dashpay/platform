@@ -113,23 +113,17 @@ pub fn ban_failed_address<R, E>(
     match &result {
         Ok(response) => {
             // Unban the address if it was banned and node responded successfully this time
-            if response.address.is_banned() {
-                match address_list.unban_address(&response.address) {
-                    Ok(_) => {
-                        tracing::debug!(address = ?response.address, "unban successfully responded address {}", response.address);
-                    }
+            if address_list.is_banned(&response.address) {
+                if address_list.unban(&response.address) {
+                    tracing::debug!(address = ?response.address, "unban successfully responded address {}", response.address);
+                } else {
                     // The address might be already removed from the list
                     // by background process (i.e., SML update), and it's fine.
-                    Err(AddressListError::AddressNotFound(_)) => {
-                        tracing::debug!(
-                            address = ?response.address,
-                            "unable to unban address {} because it's not in the list anymore",
-                            response.address
-                        );
-                    }
-                    Err(AddressListError::InvalidAddressUri(_)) => {
-                        unreachable!("unban address doesn't return InvalidAddressUri")
-                    }
+                    tracing::debug!(
+                        address = ?response.address,
+                        "unable to unban address {} because it's not in the list anymore",
+                        response.address
+                    );
                 }
             }
         }
@@ -137,26 +131,20 @@ pub fn ban_failed_address<R, E>(
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
-                        match address_list.ban_address(address) {
-                            Ok(_) => {
-                                tracing::warn!(
-                                    ?address,
-                                    ?error,
-                                    "ban address {address} due to error: {error}"
-                                );
-                            }
+                        if address_list.ban(address) {
+                            tracing::warn!(
+                                ?address,
+                                ?error,
+                                "ban address {address} due to error: {error}"
+                            );
+                        } else {
                             // The address might be already removed from the list
                             // by background process (i.e., SML update), and it's fine.
-                            Err(AddressListError::AddressNotFound(_)) => {
-                                tracing::debug!(
-                                    ?address,
-                                    ?error,
-                                    "unable to ban address {address} because it's not in the list anymore"
-                                );
-                            }
-                            Err(AddressListError::InvalidAddressUri(_)) => {
-                                unreachable!("ban address doesn't return InvalidAddressUri")
-                            }
+                            tracing::debug!(
+                                ?address,
+                                ?error,
+                                "unable to ban address {address} because it's not in the list anymore"
+                            );
                         }
                     } else {
                         tracing::debug!(
@@ -219,8 +207,6 @@ impl DapiRequestExecutor for DapiClient {
             let address_result = self
                 .address_list
                 .get_live_address()
-                .as_deref()
-                .cloned()
                 .ok_or(DapiClientError::NoAvailableAddresses);
 
             let _span = tracing::trace_span!(
