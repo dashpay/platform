@@ -1,8 +1,7 @@
-use crate::{Error, Sdk};
-
 use super::broadcast::BroadcastStateTransition;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::{Error, Sdk};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
