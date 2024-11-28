@@ -41,7 +41,7 @@ impl Waitable for Document {
         sdk: &Sdk,
         state_transition: StateTransition,
         settings: Option<PutSettings>,
-    ) -> Result<Self, crate::Error> {
+    ) -> Result<Self, Error> {
         let doc_id = if let StateTransition::DocumentsBatch(transition) = &state_transition {
             let ids = transition.modified_data_ids();
             if ids.len() != 1 {
@@ -88,7 +88,7 @@ impl Waitable for Identity {
         sdk: &Sdk,
         state_transition: StateTransition,
         settings: Option<PutSettings>,
-    ) -> Result<Self, crate::Error> {
+    ) -> Result<Self, Error> {
         let result: Result<Self, Error> = state_transition.wait_for_response(sdk, settings).await;
 
         match result {
