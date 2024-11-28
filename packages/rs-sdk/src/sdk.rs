@@ -184,7 +184,7 @@ enum SdkInstance {
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
         mock: Arc<Mutex<MockDashPlatformSdk>>,
-
+        address_list: AddressList,
         /// Platform version configured for this Sdk
         version: &'static PlatformVersion,
     },
@@ -558,9 +558,7 @@ impl Sdk {
         match &self.inner {
             SdkInstance::Dapi { dapi, .. } => dapi.address_list(),
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { .. } => {
-                unimplemented!("mock Sdk does not have address list")
-            }
+            SdkInstance::Mock { address_list, .. } => address_list,
         }
     }
 }
@@ -1020,10 +1018,11 @@ impl SdkBuilder {
                 let sdk= Sdk {
                     network: self.network,
                     dapi_client_settings: self.settings,
-                    inner:SdkInstance::Mock {
-                        mock:mock_sdk.clone(),
+                    inner: SdkInstance::Mock {
+                        mock: mock_sdk.clone(),
                         dapi,
-                        version:self.version,
+                        address_list: AddressList::new(),
+                        version: self.version,
                     },
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
