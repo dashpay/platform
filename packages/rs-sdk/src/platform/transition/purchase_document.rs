@@ -1,11 +1,8 @@
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use std::sync::Arc;
 
 use crate::{Error, Sdk};
 
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
@@ -18,8 +15,8 @@ use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBat
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
+
+use super::broadcast::BroadcastStateTransition;
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
@@ -96,16 +93,8 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             None,
         )?;
 
-        let request = transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
-
+        transition.broadcast(sdk, Some(settings)).await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-
         Ok(transition)
     }
 
@@ -113,26 +102,9 @@ impl<S: Signer> PurchaseDocument<S> for Document {
         &self,
         sdk: &Sdk,
         state_transition: StateTransition,
-        data_contract: Arc<DataContract>,
+        _data_contract: Arc<DataContract>,
     ) -> Result<Document, Error> {
-        let request = state_transition.wait_for_state_transition_result_request()?;
-        // TODO: Implement retry logic
-        let response = request
-            .execute(sdk, RequestSettings::default())
-            .await
-            .into_inner()?;
-
-        let block_info = block_info_from_metadata(response.metadata()?)?;
-
-        let proof = response.proof_owned()?;
-
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &|_| Ok(Some(data_contract.clone())),
-            sdk.version(),
-        )?;
+        let result = state_transition.wait_for_response(sdk, None).await?;
 
         match result {
             StateTransitionProofResult::VerifiedDocuments(mut documents) => {
