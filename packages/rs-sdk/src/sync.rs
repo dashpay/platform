@@ -112,6 +112,7 @@ async fn worker<F: Future>(
 ///
 /// ## Parameters
 ///
+/// - `address_list` - list of addresses to be used for the requests.
 /// - `settings` - global settings with any request-specific settings overrides applied.
 /// - `future_factory_fn` - closure that returns a future that should be retried. It should take [`RequestSettings`] as
 ///   an argument and return [`ExecutionResult`].
