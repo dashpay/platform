@@ -80,7 +80,7 @@ jobs:
           ls -lah ${{ env.DIGEST_DIR_PATH }}
 
       - name: Upload digest
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DIGEST_NAME }}
           path: ${{ env.DIGEST_DIR_PATH }}/*
