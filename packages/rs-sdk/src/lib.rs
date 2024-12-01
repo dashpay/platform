@@ -32,8 +32,8 @@
 //!
 //! 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
-//! [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
-//! for more details.
+//!    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
+//!    for more details.
 //! 3. [`DriveQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
 //!
 //! ## Testability
@@ -62,8 +62,6 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
-#[cfg(feature = "mocks")]
-mod core_client;
 pub mod error;
 mod internal_cache;
 pub mod mock;
@@ -73,8 +71,13 @@ pub mod sdk;
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
+pub use dashcore_rpc;
 pub use dpp;
+pub use drive;
+pub use drive_proof_verifier::types as query_types;
+pub use drive_proof_verifier::Error as ProofVerifierError;
 pub use rs_dapi_client as dapi_client;
+pub mod sync;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

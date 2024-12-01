@@ -64,6 +64,9 @@ async function createGrpcErrorFromDriveResponse(code, info) {
   const message = decodedInfo.message;
   const data = decodedInfo.data || {};
 
+  const serializedConsensusError = data.serializedError;
+  delete data.serializedError;
+
   // gRPC error codes
   if (code <= 16) {
     const CommonErrorClass = COMMON_ERROR_CLASSES[code.toString()];
@@ -111,9 +114,15 @@ async function createGrpcErrorFromDriveResponse(code, info) {
 
   // DPP errors
   if (code >= 10000 && code < 50000) {
+    const consensusMetadata = {
+      ...createRawMetadata(data),
+      code,
+      'dash-serialized-consensus-error-bin': Buffer.from(serializedConsensusError),
+    };
+
     let consensusError;
     try {
-      consensusError = deserializeConsensusError(data.serializedError || []);
+      consensusError = deserializeConsensusError(serializedConsensusError);
     } catch (e) {
       logger.error({
         err: e,
@@ -128,7 +137,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 10000 && code < 20000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata(data) },
+        consensusMetadata,
       );
     }
 
@@ -137,7 +146,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
       return new GrpcError(
         GrpcErrorCodes.UNAUTHENTICATED,
         consensusError.message,
-        { code, ...createRawMetadata(data) },
+        consensusMetadata,
       );
     }
 
@@ -145,7 +154,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 30000 && code < 40000) {
       return new FailedPreconditionGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata(data) },
+        consensusMetadata,
       );
     }
 
@@ -153,7 +162,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 40000 && code < 50000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata(data) },
+        consensusMetadata,
       );
     }
   }

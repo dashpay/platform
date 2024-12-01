@@ -22,7 +22,7 @@ mod tests {
 
         #[test]
         fn should_add_to_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -89,7 +89,7 @@ mod tests {
 
         #[test]
         fn should_fail_if_balance_is_not_persisted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -111,7 +111,7 @@ mod tests {
 
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
 
             let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
@@ -194,7 +194,7 @@ mod tests {
 
         #[test]
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
             let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
                 .expect("expected an identity");
@@ -273,7 +273,7 @@ mod tests {
 
         #[test]
         fn should_estimate_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -337,7 +337,7 @@ mod tests {
 
         #[test]
         fn should_remove_from_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -405,7 +405,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -481,7 +481,7 @@ mod tests {
 
         #[test]
         fn should_do_nothing_if_there_is_no_balance_change() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -505,7 +505,7 @@ mod tests {
 
         #[test]
         fn should_add_to_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -570,7 +570,7 @@ mod tests {
 
         #[test]
         fn should_fail_if_balance_is_not_persisted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -590,7 +590,7 @@ mod tests {
 
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -665,7 +665,7 @@ mod tests {
 
         #[test]
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -734,7 +734,7 @@ mod tests {
 
         #[test]
         fn should_remove_from_balance_less_amount() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -788,7 +788,7 @@ mod tests {
 
         #[test]
         fn should_remove_from_balance_bigger_amount_and_get_into_debt() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -861,7 +861,7 @@ mod tests {
 
         #[test]
         fn should_return_error_if_required_amount_bigger_than_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 

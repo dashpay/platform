@@ -2,13 +2,13 @@
 
 use std::time::Duration;
 
-use super::{CanRetry, TransportClient, TransportRequest};
+use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
-use dapi_grpc::tonic::transport::Uri;
+use dapi_grpc::tonic::transport::{ClientTlsConfig, Uri};
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
@@ -18,8 +18,16 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
-fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channel {
-    let mut builder = Channel::builder(uri);
+fn create_channel(
+    uri: Uri,
+    settings: Option<&AppliedRequestSettings>,
+) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
+    let mut builder = Channel::builder(uri).tls_config(
+        ClientTlsConfig::new()
+            .with_native_roots()
+            .with_webpki_roots()
+            .assume_http2(true),
+    )?;
 
     if let Some(settings) = settings {
         if let Some(timeout) = settings.connect_timeout {
@@ -27,58 +35,89 @@ fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channe
         }
     }
 
-    builder.connect_lazy()
+    Ok(builder.connect_lazy())
 }
 
 impl TransportClient for PlatformGrpcClient {
-    type Error = dapi_grpc::tonic::Status;
-
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
-            Self::new(create_channel(uri.clone(), None)).into()
-        })
-        .into()
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(PoolPrefix::Platform, &uri, None, || {
+                match create_channel(uri.clone(), None) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                }
+            })?
+            .into())
     }
 
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self {
-        pool.get_or_create(PoolPrefix::Platform, &uri, Some(settings), || {
-            Self::new(create_channel(uri.clone(), Some(settings))).into()
-        })
-        .into()
+    ) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(
+                PoolPrefix::Platform,
+                &uri,
+                Some(settings),
+                || match create_channel(uri.clone(), Some(settings)) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                },
+            )?
+            .into())
     }
 }
 
 impl TransportClient for CoreGrpcClient {
-    type Error = dapi_grpc::tonic::Status;
-
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(PoolPrefix::Core, &uri, None, || {
-            Self::new(create_channel(uri.clone(), None)).into()
-        })
-        .into()
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(PoolPrefix::Core, &uri, None, || {
+                match create_channel(uri.clone(), None) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                }
+            })?
+            .into())
     }
 
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self {
-        pool.get_or_create(PoolPrefix::Core, &uri, Some(settings), || {
-            Self::new(create_channel(uri.clone(), Some(settings))).into()
-        })
-        .into()
+    ) -> Result<Self, TransportError> {
+        Ok(pool
+            .get_or_create(
+                PoolPrefix::Core,
+                &uri,
+                Some(settings),
+                || match create_channel(uri.clone(), Some(settings)) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                },
+            )?
+            .into())
     }
 }
 
 impl CanRetry for dapi_grpc::tonic::Status {
-    fn is_node_failure(&self) -> bool {
+    fn can_retry(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
+
         matches!(
             code,
             Ok | DataLoss
@@ -93,8 +132,38 @@ impl CanRetry for dapi_grpc::tonic::Status {
     }
 }
 
-/// A shortcut to link between gRPC request type, response type, client and its
-/// method in order to represent it in a form of types and data.
+/// Macro to implement the `TransportRequest` trait for a given request type, response type, client type, and settings.
+///
+/// # Parameters
+///
+/// - `$request:ty`: The request type for which the `TransportRequest` trait will be implemented.
+/// - `$response:ty`: The response type returned by the transport request.
+/// - `$client:ty`: The client type used to execute the transport request (eg. generated by `tonic` crate).
+/// - `$settings:expr`: The settings to be used for the transport request; these settings will override client's
+///   default settings, but can still be overriden by arguments to
+///   the [`DapiRequestExecutor::execute`](crate::DapiRequestExecutor::execute) method.
+/// - `$($method:tt)+`: The method of `$client` to be called to execute the request.
+///
+/// # Example
+///
+/// ```compile_fail
+/// impl_transport_request_grpc!(
+///     MyRequestType,
+///     MyResponseType,
+///     MyClientType,
+///     my_settings,
+///     my_method
+/// );
+/// ```
+///
+/// This will generate an implementation of the `TransportRequest` trait for `MyRequestType`
+/// that uses `MyClientType` to execute the `my_method` method, with the specified `my_settings`.
+///
+/// The generated implementation will:
+/// - Define the associated types `Client` and `Response`.
+/// - Set the `SETTINGS_OVERRIDES` constant to the provided settings.
+/// - Implement the `method_name` function to return the name of the method as a string.
+/// - Implement the `execute_transport` function to execute the transport request using the provided client and settings.
 macro_rules! impl_transport_request_grpc {
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
@@ -112,7 +181,7 @@ macro_rules! impl_transport_request_grpc {
                 self,
                 client: &'c mut Self::Client,
                 settings: &AppliedRequestSettings,
-            ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>>
             {
                 let mut grpc_request = self.into_request();
 
@@ -122,6 +191,7 @@ macro_rules! impl_transport_request_grpc {
 
                 client
                     .$($method)+(grpc_request)
+                    .map_err(TransportError::Grpc)
                     .map_ok(|response| response.into_inner())
                     .boxed()
             }
@@ -376,6 +446,15 @@ impl_transport_request_grpc!(
     get_total_credits_in_platform
 );
 
+// rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetCurrentQuorumsInfoRequest,
+    platform_proto::GetCurrentQuorumsInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_current_quorums_info
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(
@@ -411,4 +490,13 @@ impl_transport_request_grpc!(
         ..RequestSettings::default()
     },
     subscribe_to_transactions_with_proofs
+);
+
+// rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetStatusRequest,
+    platform_proto::GetStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_status
 );

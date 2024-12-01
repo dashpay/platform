@@ -1,8 +1,10 @@
 //! Withdrawal transactions definitions and processing
+
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::dashcore::{Transaction, VarInt};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use tenderdash_abci::proto::types::VoteExtension;
 use tenderdash_abci::proto::{abci::ExtendVoteExtension, types::VoteExtensionType};
@@ -48,19 +50,64 @@ impl UnsignedWithdrawalTxs {
     }
 
     /// Verifies that the collection of unsigned withdrawal transactions matches the given votes extensions
-    /// created based on these transactions
-    pub fn are_matching_with_vote_extensions(&self, other: &[VoteExtension]) -> bool {
+    /// created based on these transactions.
+    /// Returns a mapping from transactions to their corresponding vote extensions if they match, or `None` if they don't.
+    pub fn verify_and_match_with_vote_extensions<'a>(
+        &'a self,
+        other: &'a [VoteExtension],
+    ) -> Option<BTreeMap<&'a Transaction, &'a VoteExtension>> {
         if self.0.len() != other.len() {
-            return false;
-        };
+            return None;
+        }
 
-        !self.0.iter().zip(other.iter()).any(|(tx, vote_extension)| {
+        // Build a map from sign_request_id to VoteExtension
+        let mut vote_extension_map = HashMap::new();
+        for vote_extension in other {
+            // Ensure that each signature is 96 bytes (size of a bls sig)
+            if vote_extension.signature.len() != 96 {
+                return None;
+            }
+            // Ensure sign_request_id is Some
+            if let Some(sign_request_id) = &vote_extension.sign_request_id {
+                vote_extension_map.insert(sign_request_id.clone(), vote_extension);
+            } else {
+                // If sign_request_id is None, we cannot match, return None
+                return None;
+            }
+        }
+
+        let mut tx_to_vote_extension_map = BTreeMap::new();
+
+        // For each transaction, check if a matching vote extension exists
+        for tx in &self.0 {
             let extend_vote_extension = tx_to_extend_vote_extension(tx);
+            let sign_request_id = match &extend_vote_extension.sign_request_id {
+                Some(id) => id,
+                None => {
+                    // If sign_request_id is None, we cannot match, return None
+                    return None;
+                }
+            };
 
-            vote_extension.r#type != extend_vote_extension.r#type
-                || vote_extension.sign_request_id != extend_vote_extension.sign_request_id
-                || vote_extension.extension != extend_vote_extension.extension
-        })
+            match vote_extension_map.get(sign_request_id) {
+                Some(vote_extension) => {
+                    if vote_extension.r#type != extend_vote_extension.r#type
+                        || vote_extension.extension != extend_vote_extension.extension
+                    {
+                        return None;
+                    } else {
+                        // All good, insert into map
+                        tx_to_vote_extension_map.insert(tx, *vote_extension);
+                    }
+                }
+                None => {
+                    // No matching vote extension found
+                    return None;
+                }
+            }
+        }
+
+        Some(tx_to_vote_extension_map)
     }
 }
 
@@ -112,7 +159,7 @@ impl From<&UnsignedWithdrawalTxs> for Vec<ExtendVoteExtension> {
     }
 }
 
-fn tx_to_extend_vote_extension(tx: &Transaction) -> ExtendVoteExtension {
+pub(crate) fn tx_to_extend_vote_extension(tx: &Transaction) -> ExtendVoteExtension {
     let request_id = make_extend_vote_request_id(tx);
     let extension = tx.txid().as_byte_array().to_vec();
 

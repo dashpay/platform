@@ -44,14 +44,17 @@ use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
+use transitions::create_identity_credit_transfer_transition;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::RangeInclusive;
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::data_contract::document_type::DocumentType;
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
-use dpp::ProtocolError;
+use dpp::{dash_to_duffs, ProtocolError};
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
@@ -144,7 +147,7 @@ pub struct StartIdentities {
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
-    pub hard_coded: Vec<(Identity, StateTransition)>,
+    pub hard_coded: Vec<(Identity, Option<StateTransition>)>,
 }
 
 /// Identities to register on the first block of the strategy
@@ -153,6 +156,7 @@ pub struct IdentityInsertInfo {
     pub frequency: Frequency,
     pub start_keys: u8,
     pub extra_keys: KeyMaps,
+    pub start_balance_range: RangeInclusive<Credits>,
 }
 
 impl Default for IdentityInsertInfo {
@@ -161,6 +165,7 @@ impl Default for IdentityInsertInfo {
             frequency: Default::default(),
             start_keys: 5,
             extra_keys: Default::default(),
+            start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
         }
     }
 }
@@ -1167,7 +1172,10 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity top-up operation
-                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                    OperationType::IdentityTopUp(_amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        // todo: use amount ranges
                         // Use a cyclic iterator over the identities to ensure we can create 'count' transitions
                         let cyclic_identities = current_identities.iter().cycle();
 
@@ -1261,13 +1269,16 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity withdrawal operation
-                    OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
+                    OperationType::IdentityWithdrawal(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
                         for i in 0..count {
                             let index = (i as usize) % current_identities.len();
                             let random_identity = &mut current_identities[index];
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    amount_range.clone(),
                                     identity_nonce_counter,
                                     signer,
                                     rng,
@@ -1277,38 +1288,65 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity transfer operation
-                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                    OperationType::IdentityTransfer(identity_transfer_info) => {
                         for _ in 0..count {
-                            let identities_count = current_identities.len();
-                            if identities_count == 0 {
-                                break;
-                            }
+                            // Handle the case where specific sender, recipient, and amount are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+                                let recipient = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.to)
+                                    .expect(
+                                        "Expected to find recipient identity in hardcoded start identities",
+                                    );
 
-                            // Select a random identity from the current_identities for the sender
-                            let random_index_sender = rng.gen_range(0..identities_count);
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    &sender,
+                                    &recipient,
+                                    identity_nonce_counter,
+                                    signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
+                                    transfer_info.amount,
+                                );
+                                operations.push(state_transition);
+                            } else if current_identities.len() > 1 {
+                                // Handle the case where no sender, recipient, and amount are provided
 
-                            // Clone current_identities to a Vec for manipulation
-                            let mut unused_identities: Vec<_> =
-                                current_identities.iter().cloned().collect();
-                            unused_identities.remove(random_index_sender); // Remove the sender
-                            let unused_identities_count = unused_identities.len();
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
 
-                            // Select a random identity from the remaining ones for the recipient
-                            let random_index_recipient = rng.gen_range(0..unused_identities_count);
-                            let recipient = &unused_identities[random_index_recipient];
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
 
-                            // Use the sender index on the original slice
-                            let sender = &mut current_identities[random_index_sender];
+                                // Clone current_identities to a Vec for manipulation
+                                let mut unused_identities: Vec<_> =
+                                    current_identities.iter().cloned().collect();
+                                unused_identities.remove(random_index_sender); // Remove the sender
+                                let unused_identities_count = unused_identities.len();
 
-                            let state_transition =
-                                crate::transitions::create_identity_credit_transfer_transition(
+                                // Select a random identity from the remaining ones for the recipient
+                                let random_index_recipient =
+                                    rng.gen_range(0..unused_identities_count);
+                                let recipient = &unused_identities[random_index_recipient];
+
+                                // Use the sender index on the original slice
+                                let sender = &mut current_identities[random_index_sender];
+
+                                let state_transition = create_identity_credit_transfer_transition(
                                     sender,
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
                                     300000,
                                 );
-                            operations.push(state_transition);
+                                operations.push(state_transition);
+                            }
                         }
                     }
 
@@ -1853,6 +1891,7 @@ mod tests {
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
     use crate::{StartIdentities, Strategy};
+    use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -1902,6 +1941,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &mut simple_signer,
             &mut rng,
             platform_version,

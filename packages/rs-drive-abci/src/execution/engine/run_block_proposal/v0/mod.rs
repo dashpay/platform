@@ -269,6 +269,14 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
+        // Rebroadcast expired withdrawals if they exist
+        self.rebroadcast_expired_withdrawal_documents(
+            &block_info,
+            &last_committed_platform_state,
+            transaction,
+            platform_version,
+        )?;
+
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
         if block_state_info.core_chain_locked_height() != last_block_core_height {
@@ -285,6 +293,8 @@ where
         // required for signature verification (core height and quorum hash)
         // Then we save unsigned transaction bytes to block execution context
         // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
+        // Also, the dequeued untiled transaction added to the broadcasted transaction queue to for further
+        // resigning in case of failures.
         let unsigned_withdrawal_transaction_bytes = self
             .dequeue_and_build_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
@@ -321,7 +331,20 @@ where
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_info,
+            last_committed_platform_state,
             Some(transaction),
+            platform_version,
+        )?;
+
+        // Cleans up the expired locks for withdrawal amounts
+        // to update daily withdrawal limit
+        // This is for example when we make a withdrawal for 30 Dash
+        // But we can only withdraw 1000 Dash a day
+        // after the withdrawal we should only be able to withdraw 970 Dash
+        // But 24 hours later that locked 30 comes back
+        self.clean_up_expired_locks_of_withdrawal_amounts(
+            &block_info,
+            transaction,
             platform_version,
         )?;
 
@@ -330,7 +353,7 @@ where
         let mut block_execution_context: BlockExecutionContext =
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
-                epoch_info: epoch_info.clone(),
+                epoch_info,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,

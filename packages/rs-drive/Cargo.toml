@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "1.3.1"
+version = "1.6.0-dev.2"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -31,7 +31,7 @@ dpp = { path = "../rs-dpp", features = [
 ], default-features = false, optional = true }
 thiserror = { version = "1.0.63" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-derive_more = { version = "0.99.17" }
+derive_more = { version = "1.0", features = ["from"] }
 hex = { version = "0.4.3" }
 
 # optional dependencies
@@ -40,9 +40,10 @@ ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-nul
 arc-swap = { version = "1.7.0", optional = true }
 serde = { version = "1.0.197", features = ["derive"], optional = true }
 rand = { version = "0.8.4", features = ["small_rng"], optional = true }
-moka = { version = "0.11.1", features = [
+moka = { version = "0.12", features = [
   "future",
   "futures-util",
+  "sync",
 ], optional = true }
 bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.22.1", optional = true }
@@ -50,16 +51,16 @@ tempfile = { version = "3", optional = true }
 enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
-itertools = { version = "0.11.0", optional = true }
-grovedb = { version = "2.0.3", optional = true, default-features = false }
-grovedb-costs = { version = "2.0.3", optional = true  }
-grovedb-path = { version = "2.0.3" }
-grovedb-storage = { version = "2.0.3", optional = true }
-grovedb-version = { version = "2.0.3"}
-grovedb-epoch-based-storage-flags = { version = "2.0.3"}
+itertools = { version = "0.13", optional = true }
+grovedb = { version = "2.1.0", optional = true, default-features = false }
+grovedb-costs = { version = "2.1.0", optional = true }
+grovedb-path = { version = "2.1.0" }
+grovedb-storage = { version = "2.1.0", optional = true }
+grovedb-version = { version = "2.1.0" }
+grovedb-epoch-based-storage-flags = { version = "2.1.0" }
 
 [dev-dependencies]
-criterion = "0.3.5"
+criterion = "0.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
@@ -77,6 +78,7 @@ dpp = { path = "../rs-dpp", features = [
 ], default-features = false }
 once_cell = "1.7"
 serde_json = { version = "1.0", features = ["preserve_order"] }
+assert_matches = "1.5.0"
 
 [[bench]]
 name = "benchmarks"

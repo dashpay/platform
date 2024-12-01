@@ -60,10 +60,11 @@ mod tests {
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::json_document::json_document_to_document;
+    use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -154,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -250,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_contact_request_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -315,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -380,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_average_case_cost_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -445,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_unknown_state_cost_dashpay_fee_for_add_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -521,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_fee_for_documents_detail() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -614,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_add_dpns_document_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 

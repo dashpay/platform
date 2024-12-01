@@ -18,6 +18,7 @@ mod tests {
     use platform_version::version;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::patches::PatchFn;
+    use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
 
     #[test]
@@ -105,6 +106,7 @@ mod tests {
 
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(PROTOCOL_VERSION_1)
                     .build_with_mock_rpc();
 
                 // Run chain before the first patch

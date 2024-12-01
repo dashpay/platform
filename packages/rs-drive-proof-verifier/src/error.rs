@@ -1,4 +1,5 @@
 use dpp::ProtocolError;
+use drive::grovedb::operations::proof::GroveDBProof;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +15,15 @@ pub enum Error {
     /// Drive error
     #[error("dash drive: {error}")]
     DriveError { error: String },
+
+    /// GroveDB error, often for issues with proofs
+    #[error("grovedb: {error}")]
+    GroveDBError {
+        proof_bytes: Vec<u8>,
+        height: u64,
+        time_ms: u64,
+        error: String,
+    },
 
     /// Dash Protocol error
     #[error("dash protocol: {error}")]
@@ -106,6 +116,10 @@ pub enum ContextProviderError {
     /// Core Fork Error
     #[error("activation fork error: {0}")]
     ActivationForkError(String),
+
+    /// Async error, eg. when tokio runtime fails
+    #[error("async error: {0}")]
+    AsyncError(String),
 }
 
 impl From<drive::error::Error> for Error {

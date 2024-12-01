@@ -99,17 +99,19 @@ impl<C> Platform<C> {
             // If cached_fee_version is non-empty
             if let Some((_, last_fee_version)) = previous_fee_versions_map.iter().last() {
                 // Insert the new (epoch_index, fee_version) only if the new fee_version is different from the last_fee_version.
-                if *last_fee_version != platform_version.fee_version {
+                if last_fee_version.fee_version_number
+                    != platform_version.fee_version.fee_version_number
+                {
                     previous_fee_versions_map.insert(
                         epoch_info.current_epoch_index(),
-                        platform_version.fee_version.clone(),
+                        &platform_version.fee_version,
                     );
                 }
             // In case of empty cached_fee_version, insert the new (epoch_index, fee_version)
             } else {
                 previous_fee_versions_map.insert(
                     epoch_info.current_epoch_index(),
-                    platform_version.fee_version.clone(),
+                    &platform_version.fee_version,
                 );
             }
 

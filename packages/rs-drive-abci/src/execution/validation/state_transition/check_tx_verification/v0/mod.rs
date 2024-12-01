@@ -15,7 +15,7 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionHasNonceValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
@@ -45,7 +45,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             }
 
             // Only identity top up and identity create do not have nonces validation
-            if state_transition.has_nonces_validation() {
+            if state_transition.has_nonce_validation(platform_version)? {
                 let result = state_transition.validate_nonces(
                     &platform.into(),
                     platform.state.last_block_info(),
@@ -135,6 +135,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 // Validating structure
                 let result = state_transition.validate_advanced_structure_from_state(
+                    platform.state.last_block_info(),
+                    platform.config.network,
                     &action,
                     maybe_identity.as_ref(),
                     &mut state_transition_execution_context,
@@ -238,7 +240,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
-                if state_transition.has_nonces_validation() {
+                if state_transition.has_nonce_validation(platform_version)? {
                     let result = state_transition.validate_nonces(
                         &platform.into(),
                         platform.state.last_block_info(),

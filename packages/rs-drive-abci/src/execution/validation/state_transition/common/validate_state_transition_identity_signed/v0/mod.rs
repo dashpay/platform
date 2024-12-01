@@ -74,17 +74,11 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
         let owner_id = self.owner_id();
 
-        let security_levels =
-            self.security_level_requirement()
+        let allowed_purposes =
+            self.purpose_requirement()
                 .ok_or(ProtocolError::CorruptedCodeExecution(
-                    "state_transition does not have security level".to_string(),
+                    "state_transition does not have a key purpose requirement".to_string(),
                 ))?;
-
-        let purpose = self
-            .purpose_requirement()
-            .ok_or(ProtocolError::CorruptedCodeExecution(
-                "state_transition does not have a key purpose requirement".to_string(),
-            ))?;
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
@@ -169,12 +163,18 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
             return Ok(validation_result);
         }
 
-        if purpose != public_key.purpose() {
+        if !allowed_purposes.contains(&public_key.purpose()) {
             validation_result.add_error(SignatureError::InvalidSignaturePublicKeyPurposeError(
-                InvalidSignaturePublicKeyPurposeError::new(public_key.purpose(), purpose),
+                InvalidSignaturePublicKeyPurposeError::new(public_key.purpose(), allowed_purposes),
             ));
             return Ok(validation_result);
         }
+
+        let security_levels = self
+            .security_level_requirement(public_key.purpose())
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "state_transition does not have security level".to_string(),
+            ))?;
 
         if !security_levels.contains(&public_key.security_level()) {
             validation_result.add_error(

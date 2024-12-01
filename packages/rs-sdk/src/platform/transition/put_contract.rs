@@ -1,11 +1,8 @@
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use std::collections::BTreeMap;
 
 use crate::{Error, Sdk};
 
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -15,10 +12,8 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use drive::drive::Drive;
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+
+use super::broadcast::BroadcastStateTransition;
 
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform
@@ -81,13 +76,7 @@ impl<S: Signer> PutContract<S> for DataContract {
             None,
         )?;
 
-        let request = transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default().request_settings)
-            .await?;
-
+        transition.broadcast(sdk, settings).await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
         Ok(transition)
@@ -98,26 +87,7 @@ impl<S: Signer> PutContract<S> for DataContract {
         sdk: &Sdk,
         state_transition: StateTransition,
     ) -> Result<DataContract, Error> {
-        let request = state_transition.wait_for_state_transition_result_request()?;
-
-        let response = request.execute(sdk, RequestSettings::default()).await?;
-
-        let block_info = block_info_from_metadata(response.metadata()?)?;
-
-        let proof = response.proof_owned()?;
-        let context_provider =
-            sdk.context_provider()
-                .ok_or(Error::from(ContextProviderError::Config(
-                    "Context provider not initialized".to_string(),
-                )))?;
-
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &context_provider.as_contract_lookup_fn(),
-            sdk.version(),
-        )?;
+        let result = state_transition.wait_for_response(sdk, None).await?;
 
         //todo verify
 

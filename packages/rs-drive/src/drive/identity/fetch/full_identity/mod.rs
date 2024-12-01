@@ -17,7 +17,7 @@ mod tests {
 
         #[test]
         fn should_get_full_identities() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
 
             let identities: BTreeMap<[u8; 32], Option<Identity>> =
@@ -60,7 +60,7 @@ mod tests {
 
         #[test]
         fn should_return_none_if_identity_is_not_present() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -80,7 +80,7 @@ mod tests {
 
         #[test]
         fn should_get_a_full_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
 
             let identity = Identity::random_identity(3, Some(14), platform_version)

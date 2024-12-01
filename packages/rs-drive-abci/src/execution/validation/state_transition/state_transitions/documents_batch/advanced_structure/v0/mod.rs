@@ -1,6 +1,8 @@
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
 use dpp::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
+use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::PartialIdentity;
@@ -36,6 +38,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 {
     fn validate_advanced_structure_from_state_v0(
         &self,
+        block_info: &BlockInfo,
+        network: Network,
         action: &DocumentsBatchTransitionAction,
         identity: &PartialIdentity,
         execution_context: &mut StateTransitionExecutionContext,
@@ -46,6 +50,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state_v0(
         &self,
+        block_info: &BlockInfo,
+        network: Network,
         action: &DocumentsBatchTransitionAction,
         identity: &PartialIdentity,
         execution_context: &mut StateTransitionExecutionContext,
@@ -119,7 +125,12 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         for transition in action.transitions() {
             match transition {
                 DocumentTransitionAction::CreateAction(create_action) => {
-                    let result = create_action.validate_structure(identity.id, platform_version)?;
+                    let result = create_action.validate_structure(
+                        identity.id,
+                        block_info,
+                        network,
+                        platform_version,
+                    )?;
                     if !result.is_valid() {
                         let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                             BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),

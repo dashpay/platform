@@ -1,25 +1,28 @@
-/// This module dedicated for a versioned add_enqueue_untied_withdrawal_transaction_operations
+/// This module is dedicated for a versioned add_enqueue_untied_withdrawal_transaction_operations
 pub mod add_enqueue_untied_withdrawal_transaction_operations;
-/// This module dedicated for a versioned dequeue_untied_withdrawal_transactions
+/// This module is dedicated for a versioned dequeue_untied_withdrawal_transactions
 pub mod dequeue_untied_withdrawal_transactions;
+
+/// This module is dedicated to removing broadcasted withdrawal transactions after core says they were completed
+pub mod remove_broadcasted_withdrawal_transactions_after_completion;
+
+/// This module is dedicated to moving broadcasted withdrawal transactions back to the main queue
+pub mod move_broadcasted_withdrawal_transactions_back_to_queue_operations;
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::identity::withdrawals::{
-        WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-    };
     use crate::util::batch::DriveOperation;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::version::PlatformVersion;
+    use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_enqueue_and_dequeue() {
-        let drive = setup_drive_with_initial_state_structure();
-
         let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let transaction = drive.grove.start_transaction();
 
@@ -39,6 +42,7 @@ mod tests {
         drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawals,
+                100,
                 &mut drive_operations,
                 platform_version,
             )

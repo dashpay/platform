@@ -155,17 +155,14 @@ describe('createGrpcTransportError', () => {
 
   it('should return InvalidRequestDPPError', async () => {
     // grpc-js expects Buffer
-    let driveErrorDataBin = cbor.encode({
-      serializedError: new ProtocolVersionParsingError('test').serialize(),
-      ...errorData,
-    });
+    let serializedError = new ProtocolVersionParsingError('test').serialize();
 
     // and grpc-web expects string
     // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
-      driveErrorDataBin = driveErrorDataBin.toString('base64');
+      serializedError = serializedError.toString('base64');
     }
-    metadata.set('drive-error-data-bin', driveErrorDataBin);
+    metadata.set('dash-serialized-consensus-error-bin', serializedError);
 
     const grpcError = new GrpcError(
       10001,
