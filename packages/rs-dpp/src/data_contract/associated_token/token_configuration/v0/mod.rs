@@ -71,17 +71,20 @@ pub struct ChangeControlRules {
 }
 
 impl ChangeControlRules {
-    pub fn can_change_to(&self, other: &ChangeControlRules,         contract_owner_id: &Identifier,
-                         main_group: &(BTreeSet<Identifier>, RequiredSigners), action_taker: &ActionTaker) {
+    pub fn can_change_to(
+        &self,
+        other: &ChangeControlRules,
+        contract_owner_id: &Identifier,
+        main_group: &(BTreeSet<Identifier>, RequiredSigners),
+        action_taker: &ActionTaker,
+    ) {
         let ChangeControlRules {
-            authorized_to_make_change, 
-            authorized_to_change_to_authorized_action_takers, 
-            changing_authorized_action_takers_to_no_one_allowed, 
-            changing_authorized_action_takers_to_contract_owner_allowed
+            authorized_to_make_change,
+            authorized_to_change_to_authorized_action_takers,
+            changing_authorized_action_takers_to_no_one_allowed,
+            changing_authorized_action_takers_to_contract_owner_allowed,
         } = self;
-        
-        
-    }  
+    }
 }
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]

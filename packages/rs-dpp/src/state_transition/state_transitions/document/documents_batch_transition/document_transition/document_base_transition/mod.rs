@@ -1,3 +1,4 @@
+pub mod document_base_transition_trait;
 mod fields;
 mod from_document;
 pub mod v0;

@@ -13,8 +13,8 @@ use crate::data_contract::document_type::restricted_creation::CreationRestrictio
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
-use platform_value::{Identifier, Value};
 use crate::tokens::allowed_currency::AllowedCurrency;
+use platform_value::{Identifier, Value};
 
 mod accessors;
 #[cfg(feature = "random-documents")]

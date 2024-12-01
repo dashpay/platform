@@ -55,6 +55,8 @@ service Platform {
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
   rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
   rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
+  rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
+  rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1214,4 +1216,70 @@ message GetCurrentQuorumsInfoResponse {
     ResponseMetadata metadata = 5;
   }
   oneof version { GetCurrentQuorumsInfoResponseV0 v0 = 1; }
+}
+
+message GetIdentityTokenBalancesRequest {
+  message GetIdentityTokenBalancesRequestV0 {
+    bytes identity_id = 1;            // ID of the identity
+    repeated bytes contract_ids = 2;  // List of token contract IDs
+    bool prove = 3;                   // Flag to request a proof as the response
+  }
+  oneof version {
+    GetIdentityTokenBalancesRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentityTokenBalancesResponse {
+  message GetIdentityTokenBalancesResponseV0 {
+    message TokenBalanceEntry {
+      bytes contract_id = 1;  // Token contract ID
+      uint64 balance = 2;     // Token balance for the contract
+    }
+
+    message TokenBalances {
+      repeated TokenBalanceEntry token_balances = 1;  // List of token balances
+    }
+
+    oneof result {
+      TokenBalances token_balances = 1;  // Actual token balances
+      Proof proof = 2;                   // Proof of the token balances, if requested
+    }
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+  }
+  oneof version {
+    GetIdentityTokenBalancesResponseV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesTokenBalancesRequest {
+  message GetIdentitiesTokenBalancesRequestV0 {
+    bytes contract_id = 1;            // Token contract ID
+    repeated bytes identity_ids = 2;  // List of identity IDs
+    bool prove = 3;                   // Flag to request a proof as the response
+  }
+  oneof version {
+    GetIdentitiesTokenBalancesRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesTokenBalancesResponse {
+  message GetIdentitiesTokenBalancesResponseV0 {
+    message IdentityTokenBalanceEntry {
+      bytes identity_id = 1;  // Identity ID
+      uint64 balance = 2;     // Token balance for the identity
+    }
+
+    message IdentityTokenBalances {
+      repeated IdentityTokenBalanceEntry identity_token_balances = 1;  // List of identity token balances
+    }
+
+    oneof result {
+      IdentityTokenBalances identity_token_balances = 1;  // Actual identity token balances
+      Proof proof = 2;                                    // Proof of the balances, if requested
+    }
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+  }
+  oneof version {
+    GetIdentitiesTokenBalancesResponseV0 v0 = 1;
+  }
 }

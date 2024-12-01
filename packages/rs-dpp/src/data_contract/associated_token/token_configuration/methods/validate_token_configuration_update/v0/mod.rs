@@ -34,7 +34,7 @@ impl TokenConfiguration {
         } = new_config.as_cow_v0();
 
         if max_supply != new_max_supply {
-            max_supply_can_be_increased.
+            // max_supply_can_be_increased
         }
 
         SimpleConsensusValidationResult::new()

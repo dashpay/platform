@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 use platform_value::Value;
 use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
 
-impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
+impl DocumentBaseTransitionAccessors for DocumentReplaceTransition {
     fn base(&self) -> &DocumentBaseTransition {
         match self {
             DocumentReplaceTransition::V0(v0) => &v0.base,
@@ -23,7 +24,9 @@ impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
             DocumentReplaceTransition::V0(v0) => v0.base = base,
         }
     }
+}
 
+impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
     fn revision(&self) -> Revision {
         match self {
             DocumentReplaceTransition::V0(v0) => v0.revision,

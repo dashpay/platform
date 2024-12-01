@@ -1,4 +1,3 @@
-mod from_document;
 pub mod v0_methods;
 
 use crate::prelude::Revision;
@@ -9,8 +8,8 @@ use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::documents_batch_transition::document_base_transition::TokenBaseTransition;
+pub use super::super::token_base_transition::IDENTIFIER_FIELDS;
+use crate::state_transition::documents_batch_transition::token_base_transition::TokenBaseTransition;
 
 mod property_names {
     pub const REVISION: &str = "$revision";

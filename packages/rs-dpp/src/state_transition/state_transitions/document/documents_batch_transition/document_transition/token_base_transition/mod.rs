@@ -1,5 +1,5 @@
 mod fields;
-mod from_document;
+pub mod token_base_transition_accessors;
 pub mod v0;
 mod v0_methods;
 
@@ -8,9 +8,8 @@ mod v0_methods;
     feature = "state-transition-json-conversion"
 ))]
 use crate::data_contract::DataContract;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
-    TokenBaseTransitionV0, DocumentTransitionObjectLike,
-};
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
+use crate::state_transition::documents_batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 #[cfg(any(
     feature = "state-transition-value-conversion",
     feature = "state-transition-json-conversion"

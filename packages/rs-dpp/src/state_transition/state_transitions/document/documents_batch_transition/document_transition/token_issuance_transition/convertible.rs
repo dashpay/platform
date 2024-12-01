@@ -14,6 +14,8 @@ use crate::state_transition::data_contract_update_transition::IDENTIFIER_FIELDS;
     feature = "state-transition-value-conversion"
 ))]
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::state_transition::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 #[cfg(feature = "state-transition-json-conversion")]
 use crate::state_transition::documents_batch_transition::token_issuance_transition::v0::BINARY_FIELDS;
 #[cfg(any(
@@ -23,8 +25,6 @@ use crate::state_transition::documents_batch_transition::token_issuance_transiti
 use crate::state_transition::documents_batch_transition::token_issuance_transition::TokenIssuanceTransition;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition::token_issuance_transition::TokenIssuanceTransitionV0;
-#[cfg(feature = "state-transition-value-conversion")]
-use crate::state_transition::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 #[cfg(any(
     feature = "state-transition-json-conversion",
     feature = "state-transition-value-conversion"

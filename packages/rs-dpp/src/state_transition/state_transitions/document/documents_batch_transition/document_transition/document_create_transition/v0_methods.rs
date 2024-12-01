@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 use platform_value::{Value};
 use crate::fee::Credits;
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 
-impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
+impl DocumentBaseTransitionAccessors for DocumentCreateTransition {
     fn base(&self) -> &DocumentBaseTransition {
         match self {
             DocumentCreateTransition::V0(v0) => &v0.base,
@@ -23,7 +24,9 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
             DocumentCreateTransition::V0(v0) => v0.base = base,
         }
     }
+}
 
+impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
     fn entropy(&self) -> [u8; 32] {
         match self {
             DocumentCreateTransition::V0(v0) => v0.entropy,

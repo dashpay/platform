@@ -1,7 +1,7 @@
 pub(in crate::state_transition::state_transitions::document::documents_batch_transition) mod property_names {
     pub const ID: &str = "$id";
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
-    pub const DOCUMENT_TYPE: &str = "$type";
+    pub const TOKEN_ID: &str = "$tokenId";
     pub const ACTION: &str = "$action";
     pub const IDENTITY_CONTRACT_NONCE: &str = "$identityContractNonce";
 }

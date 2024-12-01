@@ -1,8 +1,6 @@
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-
-use crate::state_transition::documents_batch_transition::document_base_transition::TokenBaseTransition;
-
 use crate::prelude::IdentityNonce;
+use crate::state_transition::documents_batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::documents_batch_transition::token_base_transition::TokenBaseTransition;
 use platform_value::Identifier;
 
 impl TokenBaseTransitionV0Methods for TokenBaseTransition {
@@ -18,15 +16,15 @@ impl TokenBaseTransitionV0Methods for TokenBaseTransition {
         }
     }
 
-    fn document_type_name(&self) -> &String {
+    fn token_id(&self) -> u16 {
         match self {
-            TokenBaseTransition::V0(v0) => v0.document_type_name(),
+            TokenBaseTransition::V0(v0) => v0.token_id(),
         }
     }
 
-    fn set_document_type_name(&mut self, document_type_name: String) {
+    fn set_token_id(&mut self, token_id: u16) {
         match self {
-            TokenBaseTransition::V0(v0) => v0.set_document_type_name(document_type_name),
+            TokenBaseTransition::V0(v0) => v0.set_token_id(token_id),
         }
     }
 

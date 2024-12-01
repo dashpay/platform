@@ -16,9 +16,9 @@ pub mod document_purchase_transition;
 pub mod document_replace_transition;
 pub mod document_transfer_transition;
 pub mod document_update_price_transition;
+pub mod token_base_transition;
 pub mod token_issuance_transition;
 pub mod token_transfer_transition;
-pub mod token_base_transition;
 
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;

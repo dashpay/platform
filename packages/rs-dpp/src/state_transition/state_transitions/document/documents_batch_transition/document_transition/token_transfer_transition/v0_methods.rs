@@ -1,10 +1,11 @@
 use platform_value::Identifier;
 use crate::prelude::Revision;
-use crate::state_transition::documents_batch_transition::document_base_transition::TokenBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::TokenTransferTransition;
+use crate::state_transition::documents_batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::documents_batch_transition::TokenTransferTransition;
+use crate::state_transition::documents_batch_transition::token_base_transition::TokenBaseTransition;
 
-impl TokenTransferTransitionV0Methods for TokenTransferTransition {
+impl TokenBaseTransitionAccessors for TokenTransferTransition {
     fn base(&self) -> &TokenBaseTransition {
         match self {
             TokenTransferTransition::V0(v0) => &v0.base,
@@ -22,7 +23,9 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransition {
             TokenTransferTransition::V0(v0) => v0.base = base,
         }
     }
+}
 
+impl TokenTransferTransitionV0Methods for TokenTransferTransition {
     fn revision(&self) -> Revision {
         match self {
             TokenTransferTransition::V0(v0) => v0.revision,

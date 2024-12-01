@@ -1,20 +1,11 @@
 use platform_value::Identifier;
 
 use crate::prelude::Revision;
-
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-
 use crate::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
 
-pub trait DocumentTransferTransitionV0Methods {
-    /// Returns a reference to the `base` field of the `DocumentReplaceTransitionV0`.
-    fn base(&self) -> &DocumentBaseTransition;
-    /// Returns a mut reference to the `base` field of the `DocumentReplaceTransitionV0`.
-    fn base_mut(&mut self) -> &mut DocumentBaseTransition;
-
-    /// Sets the value of the `base` field in the `DocumentReplaceTransitionV0`.
-    fn set_base(&mut self, base: DocumentBaseTransition);
-
+pub trait DocumentTransferTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `revision` field of the `DocumentReplaceTransitionV0`.
     fn revision(&self) -> Revision;
 
@@ -31,7 +22,7 @@ pub trait DocumentTransferTransitionV0Methods {
     fn set_recipient_owner_id(&mut self, recipient_owner_id: Identifier);
 }
 
-impl DocumentTransferTransitionV0Methods for DocumentTransferTransitionV0 {
+impl DocumentBaseTransitionAccessors for DocumentTransferTransitionV0 {
     fn base(&self) -> &DocumentBaseTransition {
         &self.base
     }
@@ -43,7 +34,9 @@ impl DocumentTransferTransitionV0Methods for DocumentTransferTransitionV0 {
     fn set_base(&mut self, base: DocumentBaseTransition) {
         self.base = base;
     }
+}
 
+impl DocumentTransferTransitionV0Methods for DocumentTransferTransitionV0 {
     fn revision(&self) -> Revision {
         self.revision
     }

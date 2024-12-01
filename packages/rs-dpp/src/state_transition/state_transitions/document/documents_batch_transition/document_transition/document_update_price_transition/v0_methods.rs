@@ -1,10 +1,11 @@
 use crate::fee::Credits;
 use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentUpdatePriceTransition;
 
-impl DocumentUpdatePriceTransitionV0Methods for DocumentUpdatePriceTransition {
+impl DocumentBaseTransitionAccessors for DocumentUpdatePriceTransition {
     fn base(&self) -> &DocumentBaseTransition {
         match self {
             DocumentUpdatePriceTransition::V0(v0) => &v0.base,
@@ -22,7 +23,9 @@ impl DocumentUpdatePriceTransitionV0Methods for DocumentUpdatePriceTransition {
             DocumentUpdatePriceTransition::V0(v0) => v0.base = base,
         }
     }
+}
 
+impl DocumentUpdatePriceTransitionV0Methods for DocumentUpdatePriceTransition {
     fn revision(&self) -> Revision {
         match self {
             DocumentUpdatePriceTransition::V0(v0) => v0.revision,

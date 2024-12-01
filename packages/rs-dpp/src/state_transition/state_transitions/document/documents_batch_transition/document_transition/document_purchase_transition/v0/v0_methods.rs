@@ -1,20 +1,10 @@
 use crate::fee::Credits;
 use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 
-pub trait DocumentPurchaseTransitionV0Methods {
-    /// Returns a reference to the `base` field of the `DocumentCreateTransitionV0`.
-    fn base(&self) -> &DocumentBaseTransition;
-    fn base_mut(&mut self) -> &mut DocumentBaseTransition;
-
-    /// Sets the value of the `base` field in the `DocumentCreateTransitionV0`.
-    ///
-    /// # Arguments
-    ///
-    /// * `base` - A value of type `DocumentBaseTransition` to set.
-    fn set_base(&mut self, base: DocumentBaseTransition);
-
+pub trait DocumentPurchaseTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `revision` field of the `DocumentReplaceTransitionV0`.
     fn revision(&self) -> Revision;
 
@@ -23,7 +13,7 @@ pub trait DocumentPurchaseTransitionV0Methods {
     fn price(&self) -> Credits;
 }
 
-impl DocumentPurchaseTransitionV0Methods for DocumentPurchaseTransitionV0 {
+impl DocumentBaseTransitionAccessors for DocumentPurchaseTransitionV0 {
     fn base(&self) -> &DocumentBaseTransition {
         &self.base
     }
@@ -33,9 +23,11 @@ impl DocumentPurchaseTransitionV0Methods for DocumentPurchaseTransitionV0 {
     }
 
     fn set_base(&mut self, base: DocumentBaseTransition) {
-        self.base = base
+        self.base = base;
     }
+}
 
+impl DocumentPurchaseTransitionV0Methods for DocumentPurchaseTransitionV0 {
     fn revision(&self) -> Revision {
         self.revision
     }

@@ -1,6 +1,5 @@
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::TokenBaseTransitionV0;
-
 use crate::prelude::IdentityNonce;
+use crate::state_transition::documents_batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `TokenBaseTransitionV0`
@@ -12,10 +11,10 @@ pub trait TokenBaseTransitionV0Methods {
     fn set_id(&mut self, id: Identifier);
 
     /// Returns the document type name.
-    fn document_type_name(&self) -> &String;
+    fn token_id(&self) -> u16;
 
-    /// Sets the document type name.
-    fn set_document_type_name(&mut self, document_type_name: String);
+    /// Sets the token id.
+    fn set_token_id(&mut self, token_id: u16);
 
     /// Returns the data contract ID.
     fn data_contract_id(&self) -> Identifier;
@@ -36,12 +35,12 @@ impl TokenBaseTransitionV0Methods for TokenBaseTransitionV0 {
         self.id = id;
     }
 
-    fn document_type_name(&self) -> &String {
-        &self.document_type_name
+    fn token_id(&self) -> u16 {
+        self.token_id
     }
 
-    fn set_document_type_name(&mut self, document_type_name: String) {
-        self.document_type_name = document_type_name;
+    fn set_token_id(&mut self, token_id: u16) {
+        self.token_id = token_id;
     }
 
     fn data_contract_id(&self) -> Identifier {
