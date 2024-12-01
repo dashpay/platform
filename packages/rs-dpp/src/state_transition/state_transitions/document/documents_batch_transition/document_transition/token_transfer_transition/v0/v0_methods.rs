@@ -1,7 +1,5 @@
 use platform_value::Identifier;
 
-use crate::prelude::Revision;
-
 use crate::state_transition::documents_batch_transition::document_transition::token_transfer_transition::TokenTransferTransitionV0;
 use crate::state_transition::documents_batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::token_base_transition::TokenBaseTransition;
@@ -22,10 +20,10 @@ impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {
 
 pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     /// Returns a reference to the `revision` field of the `DocumentReplaceTransitionV0`.
-    fn revision(&self) -> Revision;
+    fn amount(&self) -> u64;
 
     /// Sets the value of the `revision` field in the `DocumentReplaceTransitionV0`.
-    fn set_revision(&mut self, revision: Revision);
+    fn set_amount(&mut self, amount: u64);
 
     /// Returns the `recipient_owner_id` field of the `DocumentReplaceTransitionV0`.
     fn recipient_owner_id(&self) -> Identifier;
@@ -38,12 +36,12 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
 }
 
 impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
-    fn revision(&self) -> Revision {
-        self.revision
+    fn amount(&self) -> u64 {
+        self.amount
     }
 
-    fn set_revision(&mut self, revision: Revision) {
-        self.revision = revision;
+    fn set_amount(&mut self, amount: u64) {
+        self.amount = amount;
     }
 
     fn recipient_owner_id(&self) -> Identifier {

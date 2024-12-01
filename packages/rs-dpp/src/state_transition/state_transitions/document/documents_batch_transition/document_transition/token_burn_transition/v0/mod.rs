@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 mod property_names {
     pub const AMOUNT: &str = "$amount";
 }
-/// The Identifier fields in [`TokenIssuanceTransition`]
+/// The Identifier fields in [`TokenBurnTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
@@ -18,12 +18,12 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display("Base: {base}, Amount: {amount}")]
-pub struct TokenIssuanceTransitionV0 {
+#[display("Base: {base}, Amount: {burn_amount}")]
+pub struct TokenBurnTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
 
-    /// How much should we issue
-    pub amount: u64,
+    /// How much should we burn
+    pub burn_amount: u64,
 }

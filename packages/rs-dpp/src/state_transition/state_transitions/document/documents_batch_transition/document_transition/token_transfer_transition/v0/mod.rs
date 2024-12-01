@@ -12,8 +12,7 @@ pub use super::super::token_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::documents_batch_transition::token_base_transition::TokenBaseTransition;
 
 mod property_names {
-    pub const REVISION: &str = "$revision";
-
+    pub const AMOUNT: &str = "$amount";
     pub const RECIPIENT_OWNER_ID: &str = "recipientOwnerId";
 }
 
@@ -24,9 +23,9 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[display(
-    "Base: {}, Revision: {}, Recipient: {:?}",
+    "Base: {}, Amount: {}, Recipient: {:?}",
     "base",
-    "revision",
+    "amount",
     "recipient_owner_id"
 )]
 pub struct TokenTransferTransitionV0 {
@@ -34,9 +33,9 @@ pub struct TokenTransferTransitionV0 {
     pub base: TokenBaseTransition,
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(rename = "$revision")
+        serde(rename = "$amount")
     )]
-    pub revision: Revision,
+    pub amount: u64,
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
         serde(rename = "recipientOwnerId")

@@ -26,15 +26,15 @@ impl TokenBaseTransitionAccessors for TokenTransferTransition {
 }
 
 impl TokenTransferTransitionV0Methods for TokenTransferTransition {
-    fn revision(&self) -> Revision {
+    fn amount(&self) -> u64 {
         match self {
-            TokenTransferTransition::V0(v0) => v0.revision,
+            TokenTransferTransition::V0(v0) => v0.amount,
         }
     }
 
-    fn set_revision(&mut self, revision: Revision) {
+    fn set_amount(&mut self, amount: u64) {
         match self {
-            TokenTransferTransition::V0(v0) => v0.revision = revision,
+            TokenTransferTransition::V0(v0) => v0.amount = amount,
         }
     }
 
