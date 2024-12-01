@@ -30,8 +30,10 @@ pub mod rpc;
 
 /// Core utilities
 pub mod core;
+
 /// Metrics subsystem
 pub mod metrics;
+
 /// Test helpers and fixtures
 #[cfg(any(feature = "mocks", test))]
 pub mod test;

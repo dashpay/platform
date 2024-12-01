@@ -12,6 +12,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
@@ -27,7 +28,7 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct ContestedDocumentVotePollVotesDriveQuery {
     /// What vote poll are we asking for?
     pub vote_poll: ContestedDocumentResourceVotePoll,

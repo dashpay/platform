@@ -124,6 +124,18 @@ where
 /// Result of request execution
 pub type ExecutionResult<R, E> = Result<ExecutionResponse<R>, ExecutionError<E>>;
 
+impl<R, E> From<ExecutionResponse<R>> for ExecutionResult<R, E> {
+    fn from(response: ExecutionResponse<R>) -> Self {
+        ExecutionResult::<R, E>::Ok(response)
+    }
+}
+
+impl<R, E> From<ExecutionError<E>> for ExecutionResult<R, E> {
+    fn from(e: ExecutionError<E>) -> Self {
+        ExecutionResult::<R, E>::Err(e)
+    }
+}
+
 impl<R, E> IntoInner<Result<R, E>> for ExecutionResult<R, E> {
     fn into_inner(self) -> Result<R, E> {
         match self {
@@ -142,6 +154,67 @@ where
         match self {
             Ok(response) => Ok(response.inner_into()),
             Err(error) => Err(error.inner_into()),
+        }
+    }
+}
+
+/// Convert Result<T,TE> to ExecutionResult<R,E>, taking context from ExecutionResponse.
+pub trait WrapToExecutionResult<R, RE, W>: Sized {
+    /// Convert self (eg. some [Result]) to [ExecutionResult], taking context information from `W` (eg. ExecutionResponse).
+    ///
+    /// This function simplifies processing of results by wrapping them into ExecutionResult.
+    /// It is useful when you have execution result retrieved in previous step and you want to
+    /// add it to the result of the current step.
+    ///
+    /// Useful when chaining multiple commands and you want to keep track of retries and address.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// use rs_dapi_client::{ExecutionResponse, ExecutionResult, WrapToExecutionResult};
+    ///
+    /// fn some_request() -> ExecutionResult<i8, String> {
+    ///     Ok(ExecutionResponse {
+    ///         inner: 42,
+    ///         retries: 123,
+    ///         address: "http://127.0.0.1".parse().expect("create mock address"),
+    ///     })
+    /// }
+    ///
+    /// fn next_step() -> Result<i32, String> {
+    ///     Err("next error".to_string())
+    /// }
+    ///
+    /// let response = some_request().expect("request should succeed");
+    /// let result: ExecutionResult<i32, String> = next_step().wrap_to_execution_result(&response);
+    ///
+    /// if let ExecutionResult::Err(error) = result {
+    ///    assert_eq!(error.inner, "next error");
+    ///    assert_eq!(error.retries, 123);
+    /// } else {
+    ///    panic!("Expected error");
+    /// }
+    /// ```
+    fn wrap_to_execution_result(self, result: &W) -> ExecutionResult<R, RE>;
+}
+
+impl<R, RE, TR, IR, IRE> WrapToExecutionResult<R, RE, ExecutionResponse<TR>> for Result<IR, IRE>
+where
+    R: From<IR>,
+    RE: From<IRE>,
+{
+    fn wrap_to_execution_result(self, result: &ExecutionResponse<TR>) -> ExecutionResult<R, RE> {
+        match self {
+            Ok(r) => ExecutionResult::Ok(ExecutionResponse {
+                inner: r.into(),
+                retries: result.retries,
+                address: result.address.clone(),
+            }),
+            Err(e) => ExecutionResult::Err(ExecutionError {
+                inner: e.into(),
+                retries: result.retries,
+                address: Some(result.address.clone()),
+            }),
         }
     }
 }

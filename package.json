@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -57,6 +57,7 @@
     "packages/feature-flags-contract",
     "packages/js-dapi-client",
     "packages/wallet-lib",
+    "packages/wallet-utils-contract",
     "packages/js-dash-sdk",
     "packages/dapi",
     "packages/dashmate",
@@ -92,7 +93,8 @@
     "ws": "^8.17.1",
     "body-parser": "^1.20.3",
     "path-to-regexp": "^1.9.0",
-    "cookie": "^0.7.0"
+    "cookie": "^0.7.0",
+    "cross-spawn": "^7.0.5"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"
