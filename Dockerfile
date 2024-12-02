@@ -263,11 +263,8 @@ set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
 
-if [[ "$TARGETARCH" == "amd64" ]] ; then
-    export PORTABLE=haswell
-else
-    export PORTABLE=1
-fi
+# Support any CPU architecture
+export PORTABLE=1
 
 make -j$(nproc) static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
