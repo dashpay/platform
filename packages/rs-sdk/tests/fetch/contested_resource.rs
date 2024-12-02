@@ -232,11 +232,11 @@ async fn contested_resources_limit_PLAN_656() {
 /// None
 #[test_case::test_case(|_q| {}, Ok("ContestedResources([ContestedResource(Text(".into()); "unmodified base query is Ok")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok("".into()); "index value empty string is Ok")]
-#[test_case::test_case(|q| q.document_type_name = "some random non-existing name".to_string(), Err(r#"code: InvalidArgument, message: "document type some random non-existing name not found"#); "non existing document type returns InvalidArgument")]
-#[test_case::test_case(|q| q.index_name = "nx index".to_string(), Err(r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
-#[test_case::test_case(|q| q.index_name = "dashIdentityId".to_string(), Err(r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
+#[test_case::test_case(|q| q.document_type_name = "some random non-existing name".to_string(), Err(r#"status: InvalidArgument, message: "document type some random non-existing name not found"#); "non existing document type returns InvalidArgument")]
+#[test_case::test_case(|q| q.index_name = "nx index".to_string(), Err(r#"status: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
+#[test_case::test_case(|q| q.index_name = "dashIdentityId".to_string(), Err(r#"status: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
 // Disabled due to bug PLAN-653
-// #[test_case::test_case(|q| q.start_at_value = Some((Value::Array(vec![]), true)), Err(r#"code: InvalidArgument"#); "start_at_value wrong index type returns InvalidArgument PLAN-653")]
+// #[test_case::test_case(|q| q.start_at_value = Some((Value::Array(vec![]), true)), Err(r#"status: InvalidArgument"#); "start_at_value wrong index type returns InvalidArgument PLAN-653")]
 #[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "start_index_values empty vec returns top-level keys")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok(r#"ContestedResources([])"#.into()); "start_index_values empty string returns zero results")]
 #[test_case::test_case(|q| {
@@ -276,8 +276,8 @@ async fn contested_resources_limit_PLAN_656() {
     q.end_index_values = vec![Value::Text("zzz non existing".to_string())]
 }, Ok("ContestedResources([])".into()); "Non-existing end_index_values returns error")]
 #[test_case::test_case(|q| q.end_index_values = vec![Value::Array(vec![0.into(), 1.into()])], Err("incorrect index values error: too many end index values were provided"); "wrong type of end_index_values should return InvalidArgument")]
-#[test_case::test_case(|q| q.limit = Some(0), Err(r#"code: InvalidArgument"#); "limit 0 returns InvalidArgument")]
-#[test_case::test_case(|q| q.limit = Some(u16::MAX), Err(r#"code: InvalidArgument"#); "limit u16::MAX returns InvalidArgument")]
+#[test_case::test_case(|q| q.limit = Some(0), Err(r#"status: InvalidArgument"#); "limit 0 returns InvalidArgument")]
+#[test_case::test_case(|q| q.limit = Some(u16::MAX), Err(r#"status: InvalidArgument"#); "limit u16::MAX returns InvalidArgument")]
 // Disabled due to bug PLAN-656
 // #[test_case::test_case(|q| {
 //     q.start_index_values = vec![Value::Text("dash".to_string())];

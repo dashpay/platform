@@ -289,7 +289,7 @@ impl MappingConfig {
         create_dir_all(&self.out_dir)?;
 
         self.builder
-            .compile(&[self.protobuf_file], &self.proto_includes)
+            .compile_protos(&[self.protobuf_file], &self.proto_includes)
     }
 }
 

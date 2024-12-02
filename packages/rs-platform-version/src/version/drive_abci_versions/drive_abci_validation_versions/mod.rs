@@ -1,12 +1,14 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
+    pub has_nonce_validation: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,

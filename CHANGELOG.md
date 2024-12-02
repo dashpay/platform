@@ -1,3 +1,81 @@
+## [1.6.0-dev.2](https://github.com/dashpay/platform/compare/v1.6.0-dev.1...v1.6.0-dev.2) (2024-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** retry broadcast operations (#2337)
+
+
+### Features
+
+* **sdk:** retry broadcast operations ([#2337](https://github.com/dashpay/platform/issues/2337))
+
+
+### Reverted
+
+* **dashmate:** update Core to version 22
+
+
+### Continuous Integration
+
+* change s3 cache provider to optimize costs ([#2344](https://github.com/dashpay/platform/issues/2344))
+
+## [1.6.0-dev.1](https://github.com/dashpay/platform/compare/v1.5.1...v1.6.0-dev.1) (2024-11-25)
+
+
+### Features
+
+* integrate wallet contract ([#2345](https://github.com/dashpay/platform/issues/2345))
+* **sdk:** fetch many and return metadata and proof to client ([#2331](https://github.com/dashpay/platform/issues/2331))
+* **sdk:** including grovedb proof bytes when error in proof verification ([#2332](https://github.com/dashpay/platform/issues/2332))
+
+
+### Bug Fixes
+
+* **dashmate:** container name is already in use ([#2341](https://github.com/dashpay/platform/issues/2341))
+* **dashmate:** failing doctor with drive metrics enabled ([#2348](https://github.com/dashpay/platform/issues/2348))
+* **dashmate:** various ZeroSSL cert verification errors ([#2339](https://github.com/dashpay/platform/issues/2339))
+* document query start after ([#2347](https://github.com/dashpay/platform/issues/2347))
+* **drive:** nonce already present in past internal error ([#2343](https://github.com/dashpay/platform/issues/2343))
+
+
+### Build System
+
+* adjust docker build context ([#2336](https://github.com/dashpay/platform/issues/2336))
+* use cargo binstall to speed up builds ([#2321](https://github.com/dashpay/platform/issues/2321))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to version 22
+* **sdk:** expose proof verifier errors ([#2333](https://github.com/dashpay/platform/issues/2333))
+* **sdk:** vote poll queries encoding ([#2334](https://github.com/dashpay/platform/issues/2334))
+
+
+### Continuous Integration
+
+* improve caching ([#2329](https://github.com/dashpay/platform/issues/2329))
+* prebuilt librocksdb in docker image ([#2318](https://github.com/dashpay/platform/issues/2318))
+* run devcontainers workflow only on push to master ([#2295](https://github.com/dashpay/platform/issues/2295))
+* switch release workflow to github runners ([#2346](https://github.com/dashpay/platform/issues/2346))
+* switch test workflow to github runners ([#2319](https://github.com/dashpay/platform/issues/2319))
+* use prebuilt librocksdb in github actions ([#2316](https://github.com/dashpay/platform/issues/2316))
+
+
+### Tests
+
+* hardcoded identity transfers in strategy tests ([#2322](https://github.com/dashpay/platform/issues/2322))
+
+
+### [1.5.1](https://github.com/dashpay/platform/compare/v1.5.0...v1.5.1) (2024-11-04)
+
+### Bug Fixes
+
+* **drive:** apply batch is not using transaction in `remove_all_votes_given_by_identities` ([#2309](https://github.com/dashpay/platform/issues/2309))
+* **drive:** uncommitted state if db transaction fails ([#2305](https://github.com/dashpay/platform/issues/2305))
+
+
+
 ## [1.5.0](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0) (2024-11-01)
 
 ### ⚠ BREAKING CHANGES
