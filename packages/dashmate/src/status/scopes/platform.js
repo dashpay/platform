@@ -6,6 +6,7 @@ import { DockerStatusEnum } from '../enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import determineStatus from '../determineStatus.js';
 import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
+import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
 /**
  * @returns {getPlatformScopeFactory}
@@ -218,7 +219,8 @@ export default function getPlatformScopeFactory(
       // Throw an error if it's not a Drive issue
       if (!(e instanceof DockerComposeError
         && e.dockerComposeExecutionResult
-        && e.dockerComposeExecutionResult.exitCode !== 0)) {
+        && e.dockerComposeExecutionResult.exitCode !== 0)
+          && !(e instanceof ServiceIsNotRunningError)) {
         throw e;
       }
     }
