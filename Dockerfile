@@ -131,9 +131,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
-# Select whether we want dev or release
-ONBUILD ARG CARGO_BUILD_PROFILE=dev
-
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
 
@@ -325,6 +322,10 @@ RUN --mount=type=secret,id=AWS \
     --disable-telemetry \
     --no-track \
     --no-confirm
+
+
+# Select whether we want dev or release
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 #
 # Rust build planner to speed up builds

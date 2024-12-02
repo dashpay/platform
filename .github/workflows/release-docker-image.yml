@@ -68,6 +68,8 @@ jobs:
           cache_endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
           cache_access_key_id: ${{ secrets.CACHE_KEY_ID }}
           cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          # On release, we generate a new "base" image, so we need to save cache to name manifest, like '.../drive'
+          cache_to_name: ${{ github.event_name == 'release' && 'true' || 'false' }}
 
       - name: Export digest
         run: |
@@ -78,7 +80,7 @@ jobs:
           ls -lah ${{ env.DIGEST_DIR_PATH }}
 
       - name: Upload digest
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DIGEST_NAME }}
           path: ${{ env.DIGEST_DIR_PATH }}/*

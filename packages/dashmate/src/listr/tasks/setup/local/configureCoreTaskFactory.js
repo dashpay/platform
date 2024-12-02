@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import DashCoreLib from '@dashevo/dashcore-lib';
 import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import waitForNodesToHaveTheSameSporks from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
 import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
 
@@ -92,40 +93,9 @@ export default function configureCoreTaskFactory(
               },
             },
             {
-              title: 'Create wallet',
-              task: async () => {
-                const disablePrivateKeys = false;
-                const createBlankWallet = false;
-                const walletPassphrase = '';
-                const avoidReuse = false;
-                const loadOnStartup = true;
-                const descriptors = false;
-
-                await ctx.coreService.getRpcClient().createWallet(
-                  'main',
-                  disablePrivateKeys,
-                  createBlankWallet,
-                  walletPassphrase,
-                  avoidReuse,
-                  descriptors,
-                  loadOnStartup,
-                );
-              },
-            },
-            {
-              title: 'Generating funds to use as a collateral for masternodes',
-              task: () => {
-                const amount = HPMN_COLLATERAL_AMOUNT * configGroup.length;
-                return generateToAddressTask(
-                  configGroup.find((c) => c.getName() === 'local_seed'),
-                  amount,
-                );
-              },
-            },
-            {
-              title: 'Activating v19 and v20',
+              title: 'Activating DIP3',
               task: () => new Observable(async (observer) => {
-                const dip3ActivationHeight = 901;
+                const dip3ActivationHeight = 1000;
                 const blocksToGenerateInOneStep = 10;
 
                 let blocksGenerated = 0;
@@ -155,6 +125,37 @@ export default function configureCoreTaskFactory(
 
                 return this;
               }),
+            },
+            {
+              title: 'Create wallet',
+              task: async () => {
+                const disablePrivateKeys = false;
+                const createBlankWallet = false;
+                const walletPassphrase = '';
+                const avoidReuse = false;
+                const loadOnStartup = true;
+                const descriptors = false;
+
+                await ctx.coreService.getRpcClient().createWallet(
+                  'main',
+                  disablePrivateKeys,
+                  createBlankWallet,
+                  walletPassphrase,
+                  avoidReuse,
+                  descriptors,
+                  loadOnStartup,
+                );
+              },
+            },
+            {
+              title: 'Generating funds to use as a collateral for masternodes',
+              task: () => {
+                const amount = HPMN_COLLATERAL_AMOUNT * configGroup.length;
+                return generateToAddressTask(
+                  configGroup.find((c) => c.getName() === 'local_seed'),
+                  amount,
+                );
+              },
             },
             {
               title: 'Register masternodes',
@@ -276,6 +277,51 @@ export default function configureCoreTaskFactory(
               },
             },
             {
+              title: 'Wait for nodes to have the same sporks',
+              task: () => waitForNodesToHaveTheSameSporks(ctx.coreServices),
+            },
+            {
+              title: 'Activating DIP8 to enable ChainLocks',
+              task: () => new Observable(async (observer) => {
+                let isDip8Activated = false;
+                let blockchainInfo;
+
+                let blocksGenerated = 0;
+
+                const blocksToGenerateInOneStep = 10;
+
+                do {
+                  ({
+                    result: blockchainInfo,
+                  } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
+
+                  isDip8Activated = blockchainInfo.softforks.dip0008.active;
+
+                  if (isDip8Activated) {
+                    break;
+                  }
+
+                  await generateBlocks(
+                    ctx.seedCoreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
+
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (!isDip8Activated);
+
+                observer.next(`DIP8 has been activated at height ${blockchainInfo.softforks.dip0008.height}`);
+
+                observer.complete();
+
+                return this;
+              }),
+            },
+            {
               title: 'Wait for nodes to have the same height',
               task: () => waitForNodesToHaveTheSameHeight(
                 ctx.rpcClients,
@@ -302,30 +348,28 @@ export default function configureCoreTaskFactory(
               task: () => enableCoreQuorumsTask(),
             },
             {
-              title: 'Wait for nodes to have the same height',
-              task: () => waitForNodesToHaveTheSameHeight(
-                ctx.rpcClients,
-                WAIT_FOR_NODES_TIMEOUT,
-              ),
-            },
-            {
-              title: 'Activating v21 fork',
+              title: 'Activating V20 fork',
               task: () => new Observable(async (observer) => {
-                const dip3ActivationHeight = 1001;
-                const blocksToGenerateInOneStep = 10;
+                let isV20Activated = false;
+                let blockchainInfo;
 
                 let blocksGenerated = 0;
-                let {
-                  result: currentBlockHeight,
-                } = await ctx.coreService.getRpcClient().getBlockCount();
+
+                const blocksToGenerateInOneStep = 10;
 
                 do {
                   ({
-                    result: currentBlockHeight,
-                  } = await ctx.coreService.getRpcClient().getBlockCount());
+                    result: blockchainInfo,
+                  } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
+
+                  isV20Activated = blockchainInfo.softforks && blockchainInfo.softforks.v20
+                    && blockchainInfo.softforks.v20.active;
+                  if (isV20Activated) {
+                    break;
+                  }
 
                   await generateBlocks(
-                    ctx.coreService,
+                    ctx.seedCoreService,
                     blocksToGenerateInOneStep,
                     NETWORK_LOCAL,
                     // eslint-disable-next-line no-loop-func
@@ -335,7 +379,70 @@ export default function configureCoreTaskFactory(
                       observer.next(`${blocksGenerated} blocks generated`);
                     },
                   );
-                } while (dip3ActivationHeight > currentBlockHeight);
+                } while (!isV20Activated);
+
+                observer.next(`V20 fork has been activated at height ${blockchainInfo.softforks.v20.height}`);
+
+                observer.complete();
+
+                return this;
+              }),
+            },
+            {
+              title: 'Wait for nodes to have the same height',
+              task: () => waitForNodesToHaveTheSameHeight(
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
+              ),
+            },
+            {
+              title: 'Enable EHF spork',
+              task: async () => new Observable(async (observer) => {
+                const seedRpcClient = ctx.seedCoreService.getRpcClient();
+                const {
+                  result: initialCoreChainLockedHeight,
+                } = await seedRpcClient.getBlockCount();
+
+                await activateCoreSpork(
+                  seedRpcClient,
+                  'SPORK_24_TEST_EHF',
+                  initialCoreChainLockedHeight,
+                );
+
+                let isEhfActivated = false;
+                let blockchainInfo;
+
+                let blocksGenerated = 0;
+
+                const blocksToGenerateInOneStep = 48;
+
+                do {
+                  ({
+                    result: blockchainInfo,
+                  } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
+
+                  isEhfActivated = blockchainInfo.softforks && blockchainInfo.softforks.mn_rr
+                    && blockchainInfo.softforks.mn_rr.active;
+                  if (isEhfActivated) {
+                    break;
+                  }
+
+                  await ctx.bumpMockTime(blocksToGenerateInOneStep);
+
+                  await generateBlocks(
+                    ctx.seedCoreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
+
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (!isEhfActivated);
+
+                observer.next(`EHF has been activated at height ${blockchainInfo.softforks.mn_rr.height}`);
 
                 observer.complete();
 
