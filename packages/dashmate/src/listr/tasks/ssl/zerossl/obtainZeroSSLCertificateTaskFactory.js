@@ -166,15 +166,26 @@ export default function obtainZeroSSLCertificateTaskFactory(
       {
         title: 'Start verification server',
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
-        task: async () => verificationServer.start(),
+        task: async (ctx) => {
+          await verificationServer.start();
+
+          const isResponding = await verificationServer.waitForServerIsResponding();
+
+          if (!isResponding) {
+            throw new Error(`Verification server is not responding.
+Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
+for incoming HTTP connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`);
+          }
+        },
       },
       {
         title: 'Verify certificate IP address',
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx, task) => {
           let retry;
-          let autoRetryCount = 0;
-          const MAX_AUTO_RETRIES = 3; // Adjust based on requirements
           do {
             try {
               await verifyDomain(ctx.certificate.id, ctx.apiKey);
@@ -189,38 +200,37 @@ export default function obtainZeroSSLCertificateTaskFactory(
                 }
               }
 
-              if (e.type === 'domain_control_validation_failed') {
-                // Retry on this undocumented error whatever it means
-                if (autoRetryCount >= MAX_AUTO_RETRIES) {
-                  throw e;
-                }
-                autoRetryCount++;
-                if (process.env.DEBUG) {
-                  // eslint-disable-next-line no-console
-                  console.warn(`Retry ${autoRetryCount}/${MAX_AUTO_RETRIES} verification due to domain_control_validation_failed error`);
-                }
-                await wait(5000);
-              } else {
-                if (ctx.noRetry !== true) {
-                  retry = await task.prompt({
-                    type: 'toggle',
-                    header: chalk`  An error occurred during verification: {red ${e.message}}
+              // If retry is disabled, throw the error
+              // or prompt the user to retry
+              if (ctx.noRetry !== true) {
+                let errorMessage = e.message;
 
-    Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
-    for incoming HTTP connections. You may need to configure your firewall to
-    ensure this port is accessible from the public internet. If you are using
-    Network Address Translation (NAT), please enable port forwarding for port 80
-    and all Dash service ports listed above.`,
-                    message: 'Try again?',
-                    enabled: 'Yes',
-                    disabled: 'No',
-                    initial: true,
-                  });
+                // Get the error message from details if it exists
+                if (e.type === 'domain_control_validation_failed' && e.details[ctx.externalIp]) {
+                  const errorDetails = Object.values(e.details[ctx.externalIp])[0];
+                  if (errorDetails.error) {
+                    errorMessage = errorDetails.error_info;
+                  }
                 }
 
-                if (!retry) {
-                  throw e;
-                }
+                retry = await task.prompt({
+                  type: 'toggle',
+                  header: chalk`  An error occurred during verification: {red ${errorMessage}}
+
+  Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
+  for incoming HTTP connections. You may need to configure your firewall to
+  ensure this port is accessible from the public internet. If you are using
+  Network Address Translation (NAT), please enable port forwarding for port 80
+  and all Dash service ports listed above.`,
+                  message: 'Try again?',
+                  enabled: 'Yes',
+                  disabled: 'No',
+                  initial: true,
+                });
+              }
+
+              if (!retry) {
+                throw e;
               }
             }
           } while (retry);
