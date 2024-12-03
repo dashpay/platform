@@ -340,6 +340,14 @@ RUN --mount=type=secret,id=AWS \
     --no-track \
     --no-confirm
 
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env && \
+    cargo install https://github.com/pkgw/elfx86exts@0.6.2 --locked && \
+    cargo clean
 
 #
 # Rust build planner to speed up builds
@@ -584,6 +592,8 @@ VOLUME /var/log/dash
 
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
+# See what CPU capabilities are required
+RUN elfx86exts /usr/bin/drive-abci
 
 #
 # Create new non-root user
