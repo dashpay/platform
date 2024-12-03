@@ -1,3 +1,21 @@
+### [1.6.2](https://github.com/dashpay/platform/compare/v1.6.1...v1.6.2) (2024-12-03)
+
+
+### Bug Fixes
+
+* **dashmate:** status command fails if drive is not running ([#2364](https://github.com/dashpay/platform/issues/2364))
+* **dashmate:** zero ssl verification passes without being verified ([#2365](https://github.com/dashpay/platform/issues/2365))
+
+
+### Miscellaneous Chores
+
+* ignore leveldb deprecation warnings ([#2366](https://github.com/dashpay/platform/issues/2366))
+
+
+### Build System
+
+* enable drive image for Ivy Bridge CPU ([#2363](https://github.com/dashpay/platform/issues/2363))
+
 ### [1.6.1](https://github.com/dashpay/platform/compare/v1.6.0...v1.6.1) (2024-11-29)
 
 ## [1.6.0-dev.2](https://github.com/dashpay/platform/compare/v1.6.0-dev.1...v1.6.0-dev.2) (2024-11-27)
