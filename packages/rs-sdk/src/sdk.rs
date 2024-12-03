@@ -10,6 +10,7 @@ use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::tonic::transport::Certificate;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
@@ -750,7 +751,7 @@ pub struct SdkBuilder {
     pub(crate) cancel_token: CancellationToken,
 
     /// CA certificate to use for TLS connections.
-    ca_certificate: Option<Vec<u8>>,
+    ca_certificate: Option<Certificate>,
 }
 
 impl Default for SdkBuilder {
@@ -838,8 +839,8 @@ impl SdkBuilder {
     /// Used mainly for testing purposes and local networks.
     ///
     /// If not set, uses standard system CA certificates.
-    pub fn with_ca_certificate(mut self, pem_certificate: &[u8]) -> Self {
-        self.ca_certificate = Some(pem_certificate.to_vec());
+    pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
+        self.ca_certificate = Some(pem_certificate);
         self
     }
 
@@ -851,8 +852,21 @@ impl SdkBuilder {
         self,
         certificate_file_path: impl AsRef<std::path::Path>,
     ) -> std::io::Result<Self> {
-        let pem = std::fs::read(certificate_file_path).expect("failed to read file");
-        Ok(self.with_ca_certificate(&pem))
+        let pem = std::fs::read(certificate_file_path)?;
+
+        // parse the certificate and check if it's valid
+        let mut verified_pem = std::io::BufReader::new(pem.as_slice());
+        rustls_pemfile::certs(&mut verified_pem)
+            .next()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "No valid certificates found in the file",
+                )
+            })??;
+
+        let cert = Certificate::from_pem(pem);
+        Ok(self.with_ca_certificate(cert))
     }
 
     /// Configure request settings.
@@ -984,7 +998,7 @@ impl SdkBuilder {
             Some(addresses) => {
                 let mut dapi = DapiClient::new(addresses, self.settings);
                 if let Some(pem) = self.ca_certificate {
-                    dapi = dapi.with_ca_certificate(&pem);
+                    dapi = dapi.with_ca_certificate(pem);
                 }
 
                 #[cfg(feature = "mocks")]

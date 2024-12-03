@@ -106,8 +106,8 @@ impl DapiClient {
     ///
     /// # Returns
     /// [DapiClient] with CA certificate set.
-    pub fn with_ca_certificate(mut self, pem_ca_cert: &[u8]) -> Self {
-        self.ca_certificate = Some(Certificate::from_pem(pem_ca_cert));
+    pub fn with_ca_certificate(mut self, ca_cert: Certificate) -> Self {
+        self.ca_certificate = Some(ca_cert);
 
         self
     }
