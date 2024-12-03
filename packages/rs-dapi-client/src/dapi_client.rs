@@ -103,7 +103,7 @@ impl DapiClient {
 
 /// Ban address in case of retryable error or unban it
 /// if it was banned, and the request was successful.
-pub fn ban_failed_address<R, E>(
+pub fn update_address_ban_status<R, E>(
     address_list: &AddressList,
     result: &ExecutionResult<R, E>,
     applied_settings: &AppliedRequestSettings,
@@ -278,7 +278,7 @@ impl DapiRequestExecutor for DapiClient {
                         }
                     });
 
-                ban_failed_address::<R::Response, DapiClientError>(
+                update_address_ban_status::<R::Response, DapiClientError>(
                     &self.address_list,
                     &execution_result,
                     &applied_settings,

@@ -6,7 +6,9 @@
 
 use arc_swap::ArcSwap;
 use drive_proof_verifier::error::ContextProviderError;
-use rs_dapi_client::{ban_failed_address, AddressList, CanRetry, ExecutionResult, RequestSettings};
+use rs_dapi_client::{
+    update_address_ban_status, AddressList, CanRetry, ExecutionResult, RequestSettings,
+};
 use std::fmt::Display;
 use std::{
     fmt::Debug,
@@ -195,7 +197,7 @@ where
             let result = (*func)(*settings).await;
 
             // Ban or unban the address based on the result
-            ban_failed_address(address_list, &result, &settings.finalize());
+            update_address_ban_status(address_list, &result, &settings.finalize());
 
             result
         }
