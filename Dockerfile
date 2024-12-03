@@ -346,7 +346,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
-    cargo install https://github.com/pkgw/elfx86exts@0.6.2 --locked && \
+    cargo install --git https://github.com/pkgw/elfx86exts@0.6.2 --locked && \
     cargo clean
 
 #
