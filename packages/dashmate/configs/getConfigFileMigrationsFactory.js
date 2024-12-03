@@ -1040,6 +1040,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.6.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+          });
+        return configFile;
+      },
     };
   }
 
