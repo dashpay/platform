@@ -157,6 +157,9 @@ impl DapiRequestExecutor for DapiClient {
         let retries_counter_arc = Arc::new(AtomicUsize::new(0));
         let retries_counter_arc_ref = &retries_counter_arc;
 
+        // We need reference so that the closure is FnMut
+        let applied_settings = &applied_settings;
+
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
         let routine = move || {
@@ -208,7 +211,7 @@ impl DapiRequestExecutor for DapiClient {
 
                 let mut transport_client = R::Client::with_uri_and_settings(
                     address.uri().clone(),
-                    &applied_settings,
+                    applied_settings,
                     &pool,
                 )
                 .map_err(|error| ExecutionError {
@@ -218,7 +221,7 @@ impl DapiRequestExecutor for DapiClient {
                 })?;
 
                 let response = transport_request
-                    .execute_transport(&mut transport_client, &applied_settings)
+                    .execute_transport(&mut transport_client, applied_settings)
                     .await
                     .map_err(DapiClientError::Transport);
 
