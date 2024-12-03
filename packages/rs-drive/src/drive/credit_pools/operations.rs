@@ -52,7 +52,7 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
             let platform_version = PlatformVersion::latest();
 
@@ -65,7 +65,7 @@ mod tests {
 
         #[test]
         fn test_epoch_trees_are_created() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
             let transaction = drive.grove.start_transaction();
 
@@ -106,7 +106,7 @@ mod tests {
 
         #[test]
         fn test_update_and_get_value() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::latest();

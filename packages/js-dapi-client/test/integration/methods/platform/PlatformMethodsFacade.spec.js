@@ -4,6 +4,7 @@ const {
     GetDataContractResponse,
     GetDocumentsResponse,
     GetIdentityResponse,
+    GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashResponse,
     GetIdentitiesContractKeysResponse,
     GetEpochsInfoResponse,
@@ -27,6 +28,7 @@ const PlatformMethodsFacade = require('../../../../lib/methods/platform/Platform
 
 const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
 const { GetIdentityResponseV0 } = GetIdentityResponse;
+const { GetIdentityBalanceResponseV0 } = GetIdentityBalanceResponse;
 const { GetIdentityByPublicKeyHashResponseV0 } = GetIdentityByPublicKeyHashResponse;
 const { GetIdentitiesContractKeysResponseV0 } = GetIdentitiesContractKeysResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
@@ -314,6 +316,24 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentityKeys(Buffer.alloc(32), [0, 1], 100, {});
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityBalance', () => {
+    it('should get identity balance', async () => {
+      const response = new GetIdentityBalanceResponse();
+
+      response.setV0(
+        new GetIdentityBalanceResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setBalance(1337),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityBalance('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M');
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

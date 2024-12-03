@@ -47,7 +47,7 @@ pub trait ContextProvider: Send + Sync {
     /// # Returns
     ///
     /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
-    /// We use Arc to avoid copying the data contract.
+    ///   We use Arc to avoid copying the data contract.
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
     fn get_data_contract(
         &self,

@@ -177,11 +177,11 @@ mod tests {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::config::DriveConfig;
-        use platform_version::version::PlatformVersion;
+        use platform_version::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = PlatformVersion::first();
             let platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     drive: DriveConfig {
@@ -190,6 +190,7 @@ mod tests {
                     },
                     ..Default::default()
                 })
+                .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -200,6 +201,7 @@ mod tests {
                 .unwrap()
                 .expect("should obtain root hash");
 
+            // This should never be changed
             assert_eq!(
                 hex::encode(root_hash),
                 "dc5b0d4be407428adda2315db7d782e64015cbe2d2b7df963f05622390dc3c9f"

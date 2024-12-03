@@ -11,7 +11,7 @@ mod reward_share {
 
     #[test]
     fn test_owner_id_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -47,7 +47,7 @@ mod reward_share {
 
     #[test]
     fn test_owner_id_and_pay_to_id_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 

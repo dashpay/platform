@@ -1,0 +1,73 @@
+{
+  "name": "Dash Platform Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "arcanis.vscode-zipfs",
+        "chrmarti.regex",
+        "davidanson.vscode-markdownlint",
+        "ms-vscode.cmake-tools",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vadimcn.vscode-lldb",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "zhangyue.rust-mod-generator",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+  "remoteUser": "vscode",
+  "mounts": [
+    {
+      "source": "devcontainer-platform-cargo-registry-index-${devcontainerId}",
+      "target": "/home/vscode/.cargo/registry",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-cargo-registry-cache-${devcontainerId}",
+      "target": "/home/vscode/.cargo/registry/cache",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-cargo-git-db-${devcontainerId}",
+      "target": "/home/vscode/.cargo/git/db",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-target-${devcontainerId}",
+      "target": "${containerWorkspaceFolder}/target",
+      "type": "volume"
+    }
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": "true",
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": "true"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest",
+      "ppa": "false"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": 20,
+      "installYarnUsingApt": false
+    },
+    "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/schlich/devcontainer-features/starship:0": {},
+  },
+  "postCreateCommand": {
+    "git-safe": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "cargo-permissions": "sudo chown -R vscode:vscode /home/vscode/.cargo ${containerWorkspaceFolder}/target"
+  }
+}

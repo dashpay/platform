@@ -21,6 +21,7 @@ where
         // Remove any votes that
 
         self.remove_votes_for_removed_masternodes(
+            block_info,
             last_committed_platform_state,
             block_platform_state,
             transaction,
@@ -30,6 +31,7 @@ where
         // Check for any vote polls that might have ended
 
         self.check_for_ended_vote_polls(
+            last_committed_platform_state,
             block_platform_state,
             block_info,
             transaction,

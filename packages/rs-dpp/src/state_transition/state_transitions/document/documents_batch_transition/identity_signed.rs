@@ -1,4 +1,4 @@
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::{KeyID, Purpose, SecurityLevel};
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
@@ -17,9 +17,11 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         }
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
         match self {
-            DocumentsBatchTransition::V0(transition) => transition.security_level_requirement(),
+            DocumentsBatchTransition::V0(transition) => {
+                transition.security_level_requirement(purpose)
+            }
         }
     }
 }

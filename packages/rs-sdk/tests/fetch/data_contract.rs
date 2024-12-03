@@ -137,7 +137,7 @@ async fn test_data_contracts_2_nx() {
 async fn test_data_contract_history_read() {
     let cfg = Config::new();
     let id = Identifier::from_string(
-        "20d16030541c0494e84064e2e72b5ec620546305849a2f9d5893a5e65072364d",
+        "eacc9ceb6c11ee1ae82afb5590d78d686f43bc0f0e0cd65de1e23c150e41f97f",
         Encoding::Hex,
     )
     .unwrap();
@@ -147,6 +147,11 @@ async fn test_data_contract_history_read() {
     let result = DataContractHistory::fetch(&sdk, LimitQuery::from((id, 10))).await;
 
     assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
-    let (_, contract) = result.unwrap().unwrap().pop_first().unwrap();
+    let (_, contract) = result
+        .expect("request should succeed")
+        .expect("data contract should exist")
+        .into_iter()
+        .next()
+        .expect("data contract");
     assert_eq!(contract.id(), id);
 }

@@ -214,7 +214,7 @@ impl Drive {
             )?;
             if !inserted {
                 return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                    "reference already exists",
+                    "reference already exists".to_string(),
                 )));
             }
         }

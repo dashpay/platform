@@ -6,8 +6,10 @@ use crate::util::object_size_info::path_key_info::PathKeyInfo::{
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
+use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb_storage::worst_case_costs::WorstKeyLength;
 use std::collections::HashSet;
+use std::fmt;
 
 /// Path key info
 #[derive(Clone, Debug)]
@@ -23,6 +25,79 @@ pub enum PathKeyInfo<'a, const N: usize> {
     PathKeyRef((Vec<Vec<u8>>, &'a [u8])),
     /// A path size
     PathKeySize(KeyInfoPath, KeyInfo),
+}
+
+/// Assume KeyInfoPath and KeyInfo implement Display.
+/// If they do not, you need to implement Display for them as well.
+impl<'a, const N: usize> fmt::Display for PathKeyInfo<'a, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Helper function to format KeyInfo
+        fn format_key_info(key_info: &KeyInfo) -> String {
+            match key_info {
+                KeyInfo::KnownKey(vec) => format!("KnownKey(\"{}\")", hex_to_ascii(vec)),
+                KeyInfo::MaxKeySize {
+                    unique_id,
+                    max_size,
+                } => {
+                    format!(
+                        "MaxKeySize(unique_id: \"{}\", max_size: {})",
+                        hex_to_ascii(unique_id),
+                        max_size
+                    )
+                }
+            }
+        }
+
+        // Helper function to format KeyInfoPath
+        fn format_key_info_path(key_info_path: &KeyInfoPath) -> String {
+            let formatted_keys: Vec<String> = key_info_path
+                .0
+                .iter()
+                .map(|key_info| format_key_info(key_info))
+                .collect();
+            format!("[{}]", formatted_keys.join(", "))
+        }
+
+        match self {
+            PathKeyInfo::PathFixedSizeKey((path, key)) => {
+                write!(f, "PathFixedSizeKey(path: [")?;
+                for p in path.iter() {
+                    write!(f, "\"{}\" ", hex_to_ascii(p))?;
+                }
+                write!(f, "], key: \"{}\")", hex_to_ascii(key))
+            }
+            PathKeyInfo::PathFixedSizeKeyRef((path, key)) => {
+                write!(f, "PathFixedSizeKeyRef(path: [")?;
+                for p in path.iter() {
+                    write!(f, "\"{}\" ", hex_to_ascii(p))?;
+                }
+                write!(f, "], key: \"{}\")", hex_to_ascii(key))
+            }
+            PathKeyInfo::PathKey((path, key)) => {
+                write!(f, "PathKey(path: [")?;
+                for p in path.iter() {
+                    write!(f, "\"{}\" ", hex_to_ascii(p))?;
+                }
+                write!(f, "], key: \"{}\")", hex_to_ascii(key))
+            }
+            PathKeyInfo::PathKeyRef((path, key)) => {
+                write!(f, "PathKeyRef(path: [")?;
+                for p in path.iter() {
+                    write!(f, "\"{}\" ", hex_to_ascii(p))?;
+                }
+                write!(f, "], key: \"{}\")", hex_to_ascii(key))
+            }
+            PathKeyInfo::PathKeySize(path_info, key_info) => {
+                let formatted_path_info = format_key_info_path(path_info);
+                let formatted_key_info = format_key_info(key_info);
+                write!(
+                    f,
+                    "PathKeySize(path_info: {}, key_info: {})",
+                    formatted_path_info, formatted_key_info
+                )
+            }
+        }
+    }
 }
 
 impl<'a> TryFrom<Vec<Vec<u8>>> for PathKeyInfo<'a, 0> {

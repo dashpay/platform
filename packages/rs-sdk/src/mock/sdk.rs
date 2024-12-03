@@ -1,8 +1,13 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
+use super::MockResponse;
 use crate::{
-    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
+    platform::{
+        types::{evonode::EvoNode, identity::IdentityRequest},
+        DocumentQuery, Fetch, FetchMany, Query,
+    },
+    sync::block_on,
     Error, Sdk,
 };
 use arc_swap::ArcSwapOption;
@@ -18,12 +23,10 @@ use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
-    DapiClient, DumpData,
+    DapiClient, DumpData, ExecutionResponse,
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
-
-use super::MockResponse;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
@@ -79,6 +82,17 @@ impl MockDashPlatformSdk {
         self.platform_version
     }
 
+    /// Load all expectations from files in a directory asynchronously.
+    ///
+    /// See [MockDashPlatformSdk::load_expectations_sync()] for more details.
+    #[deprecated(since = "1.4.0", note = "use load_expectations_sync")]
+    pub async fn load_expectations<P: AsRef<std::path::Path> + Send + 'static>(
+        &mut self,
+        dir: P,
+    ) -> Result<&mut Self, Error> {
+        self.load_expectations_sync(dir)
+    }
+
     /// Load all expectations from files in a directory.
     ///
     ///
@@ -86,7 +100,7 @@ impl MockDashPlatformSdk {
     /// This function can be used to load expectations after the Sdk is created, or use alternative location.
     /// Expectation files must be prefixed with [DapiClient::DUMP_FILE_PREFIX] and
     /// have `.json` extension.
-    pub async fn load_expectations<P: AsRef<std::path::Path>>(
+    pub fn load_expectations_sync<P: AsRef<std::path::Path>>(
         &mut self,
         dir: P,
     ) -> Result<&mut Self, Error> {
@@ -111,99 +125,83 @@ impl MockDashPlatformSdk {
             .map(|f| f.path())
             .collect();
 
+        let mut dapi = block_on(self.dapi.clone().lock_owned())?;
+
         for filename in &files {
             let basename = filename.file_name().unwrap().to_str().unwrap();
             let request_type = basename.split('_').nth(1).unwrap_or_default();
 
             match request_type {
-                "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
+                "DocumentQuery" => load_expectation::<DocumentQuery>(&mut dapi, filename)?,
                 "GetEpochsInfoRequest" => {
-                    self.load_expectation::<proto::GetEpochsInfoRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?
                 }
                 "GetDataContractRequest" => {
-                    self.load_expectation::<proto::GetDataContractRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetDataContractRequest>(&mut dapi, filename)?
                 }
                 "GetDataContractsRequest" => {
-                    self.load_expectation::<proto::GetDataContractsRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetDataContractsRequest>(&mut dapi, filename)?
                 }
                 "GetDataContractHistoryRequest" => {
-                    self.load_expectation::<proto::GetDataContractHistoryRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetDataContractHistoryRequest>(&mut dapi, filename)?
                 }
-                "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
+                "IdentityRequest" => load_expectation::<IdentityRequest>(&mut dapi, filename)?,
                 "GetIdentityRequest" => {
-                    self.load_expectation::<proto::GetIdentityRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetIdentityRequest>(&mut dapi, filename)?
                 }
 
                 "GetIdentityBalanceRequest" => {
-                    self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetIdentityBalanceRequest>(&mut dapi, filename)?
                 }
                 "GetIdentityContractNonceRequest" => {
-                    self.load_expectation::<proto::GetIdentityContractNonceRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetIdentityContractNonceRequest>(&mut dapi, filename)?
                 }
-                "GetIdentityBalanceAndRevisionRequest" => {
-                    self.load_expectation::<proto::GetIdentityBalanceAndRevisionRequest>(filename)
-                        .await?
-                }
+                "GetIdentityBalanceAndRevisionRequest" => load_expectation::<
+                    proto::GetIdentityBalanceAndRevisionRequest,
+                >(&mut dapi, filename)?,
                 "GetIdentityKeysRequest" => {
-                    self.load_expectation::<proto::GetIdentityKeysRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetIdentityKeysRequest>(&mut dapi, filename)?
                 }
-                "GetProtocolVersionUpgradeStateRequest" => {
-                    self.load_expectation::<proto::GetProtocolVersionUpgradeStateRequest>(filename)
-                        .await?
-                }
+                "GetProtocolVersionUpgradeStateRequest" => load_expectation::<
+                    proto::GetProtocolVersionUpgradeStateRequest,
+                >(&mut dapi, filename)?,
                 "GetProtocolVersionUpgradeVoteStatusRequest" => {
-                    self.load_expectation::<proto::GetProtocolVersionUpgradeVoteStatusRequest>(
-                        filename,
-                    )
-                    .await?
+                    load_expectation::<proto::GetProtocolVersionUpgradeVoteStatusRequest>(
+                        &mut dapi, filename,
+                    )?
                 }
                 "GetContestedResourcesRequest" => {
-                    self.load_expectation::<proto::GetContestedResourcesRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetContestedResourcesRequest>(&mut dapi, filename)?
                 }
-                "GetContestedResourceVoteStateRequest" => {
-                    self.load_expectation::<proto::GetContestedResourceVoteStateRequest>(filename)
-                        .await?
-                }
+                "GetContestedResourceVoteStateRequest" => load_expectation::<
+                    proto::GetContestedResourceVoteStateRequest,
+                >(&mut dapi, filename)?,
                 "GetContestedResourceVotersForIdentityRequest" => {
-                    self.load_expectation::<proto::GetContestedResourceVotersForIdentityRequest>(
-                        filename,
-                    )
-                    .await?
+                    load_expectation::<proto::GetContestedResourceVotersForIdentityRequest>(
+                        &mut dapi, filename,
+                    )?
                 }
                 "GetContestedResourceIdentityVotesRequest" => {
-                    self.load_expectation::<proto::GetContestedResourceIdentityVotesRequest>(
-                        filename,
-                    )
-                    .await?
+                    load_expectation::<proto::GetContestedResourceIdentityVotesRequest>(
+                        &mut dapi, filename,
+                    )?
                 }
                 "GetVotePollsByEndDateRequest" => {
-                    self.load_expectation::<proto::GetVotePollsByEndDateRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetVotePollsByEndDateRequest>(&mut dapi, filename)?
                 }
-                "GetPrefundedSpecializedBalanceRequest" => {
-                    self.load_expectation::<proto::GetPrefundedSpecializedBalanceRequest>(filename)
-                        .await?
-                }
+                "GetPrefundedSpecializedBalanceRequest" => load_expectation::<
+                    proto::GetPrefundedSpecializedBalanceRequest,
+                >(&mut dapi, filename)?,
                 "GetPathElementsRequest" => {
-                    self.load_expectation::<proto::GetPathElementsRequest>(filename)
-                        .await?
+                    load_expectation::<proto::GetPathElementsRequest>(&mut dapi, filename)?
                 }
-                "GetTotalCreditsInPlatformRequest" => {
-                    self.load_expectation::<proto::GetTotalCreditsInPlatformRequest>(filename)
-                        .await?
-                }
+                "GetTotalCreditsInPlatformRequest" => load_expectation::<
+                    proto::GetTotalCreditsInPlatformRequest,
+                >(&mut dapi, filename)?,
+                "EvoNode" => load_expectation::<EvoNode>(&mut dapi, filename)?,
                 _ => {
                     return Err(Error::Config(format!(
-                        "unknown request type {} in {}",
+                        "unknown request type {} in {}, missing match arm in load_expectations?",
                         request_type,
                         filename.display()
                     )))
@@ -212,21 +210,6 @@ impl MockDashPlatformSdk {
         }
 
         Ok(self)
-    }
-
-    async fn load_expectation<T: TransportRequest>(&mut self, path: &PathBuf) -> Result<(), Error> {
-        let data = DumpData::<T>::load(path)
-            .map_err(|e| {
-                Error::Config(format!(
-                    "cannot load mock expectations from {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?
-            .deserialize();
-
-        self.dapi.lock().await.expect(&data.0, &data.1)?;
-        Ok(())
     }
 
     /// Expect a [Fetch] request and return provided object.
@@ -300,7 +283,7 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
-    /// Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
+    ///   Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
     /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
@@ -326,20 +309,23 @@ impl MockDashPlatformSdk {
         K: Ord,
         O: FetchMany<K, R>,
         Q: Query<<O as FetchMany<K, R>>::Request>,
-        R: FromIterator<(K, Option<O>)> + MockResponse + Send + Default,
+        R,
     >(
         &mut self,
         query: Q,
         objects: Option<R>,
     ) -> Result<&mut Self, Error>
     where
-        R: MockResponse,
-        <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
-        R: FromProof<
+        R: FromIterator<(K, Option<O>)>
+            + MockResponse
+            + FromProof<
                 <O as FetchMany<K, R>>::Request,
                 Request = <O as FetchMany<K, R>>::Request,
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
-            > + Sync,
+            > + Sync
+            + Send
+            + Default,
+        <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
         self.expect(grpc_request, objects).await?;
@@ -376,7 +362,14 @@ impl MockDashPlatformSdk {
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
         // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
-        dapi_guard.expect(&grpc_request, &Ok(Default::default()))?;
+        dapi_guard.expect(
+            &grpc_request,
+            &Ok(ExecutionResponse {
+                inner: Default::default(),
+                retries: 0,
+                address: "http://127.0.0.1".parse().expect("failed to parse address"),
+            }),
+        )?;
 
         Ok(())
     }
@@ -426,4 +419,26 @@ impl MockDashPlatformSdk {
             None
         }
     }
+}
+
+/// Load expectation from file and save it to `dapi_guard` mock Dapi client.
+///
+/// This function is used to load expectations from files in a directory.
+/// It is implemented without reference to the `MockDashPlatformSdk` object
+/// to make it easier to use in async context.
+fn load_expectation<T: TransportRequest>(
+    dapi_guard: &mut OwnedMutexGuard<MockDapiClient>,
+    path: &PathBuf,
+) -> Result<(), Error> {
+    let data = DumpData::<T>::load(path)
+        .map_err(|e| {
+            Error::Config(format!(
+                "cannot load mock expectations from {}: {}",
+                path.display(),
+                e
+            ))
+        })?
+        .deserialize();
+    dapi_guard.expect(&data.0, &data.1)?;
+    Ok(())
 }

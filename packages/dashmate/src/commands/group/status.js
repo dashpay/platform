@@ -86,7 +86,7 @@ export default class GroupStatusCommand extends GroupBaseCommand {
             plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus) || 'n/a';
           } else {
             plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus) || 'n/a';
-            plain['Platform Version'] = scope.platform.tenderdash.version || 'n/a';
+            plain['Platform Version'] = scope.platform.drive.version || 'n/a';
             plain['Platform Block Height'] = scope.platform.tenderdash.latestBlockHeight || 'n/a';
             plain['Platform Peers'] = scope.platform.tenderdash.peers || 'n/a';
             plain['Platform Network'] = scope.platform.tenderdash.network || 'n/a';

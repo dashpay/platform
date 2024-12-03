@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn should_return_none_if_contract_not_exist() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let result = drive
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn should_return_fees_for_non_existing_contract_if_epoch_is_passed() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let result = drive

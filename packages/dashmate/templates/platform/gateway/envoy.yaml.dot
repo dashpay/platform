@@ -156,6 +156,13 @@
                   cluster: dapi_api
                   # Upstream response timeout
                   timeout: 10s
+              # DAPI broadcastStateTransition endpoint
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/getStatus"
+                route:
+                  cluster: dapi_api
+                  # Upstream response timeout
+                  timeout: 10s
               # getProofs endpoint only for internal use (DAPI -> Drive)
               - match:
                   path: "/org.dash.platform.dapi.v0.Platform/getProofs"

@@ -1320,6 +1320,443 @@ export namespace GetIdentitiesContractKeysResponse {
   }
 }
 
+export class GetEvonodesProposedEpochBlocksByIdsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0 | undefined;
+  setV0(value?: GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0): void;
+
+  getVersionCase(): GetEvonodesProposedEpochBlocksByIdsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByIdsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByIdsRequest): GetEvonodesProposedEpochBlocksByIdsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByIdsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByIdsRequest;
+  static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByIdsRequest, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByIdsRequest;
+}
+
+export namespace GetEvonodesProposedEpochBlocksByIdsRequest {
+  export type AsObject = {
+    v0?: GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.AsObject,
+  }
+
+  export class GetEvonodesProposedEpochBlocksByIdsRequestV0 extends jspb.Message {
+    hasEpoch(): boolean;
+    clearEpoch(): void;
+    getEpoch(): number;
+    setEpoch(value: number): void;
+
+    clearIdsList(): void;
+    getIdsList(): Array<Uint8Array | string>;
+    getIdsList_asU8(): Array<Uint8Array>;
+    getIdsList_asB64(): Array<string>;
+    setIdsList(value: Array<Uint8Array | string>): void;
+    addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByIdsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByIdsRequestV0): GetEvonodesProposedEpochBlocksByIdsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByIdsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByIdsRequestV0;
+    static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByIdsRequestV0, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByIdsRequestV0;
+  }
+
+  export namespace GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+    export type AsObject = {
+      epoch: number,
+      idsList: Array<Uint8Array | string>,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetEvonodesProposedEpochBlocksResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0 | undefined;
+  setV0(value?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0): void;
+
+  getVersionCase(): GetEvonodesProposedEpochBlocksResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksResponse): GetEvonodesProposedEpochBlocksResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksResponse;
+  static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksResponse, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksResponse;
+}
+
+export namespace GetEvonodesProposedEpochBlocksResponse {
+  export type AsObject = {
+    v0?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.AsObject,
+  }
+
+  export class GetEvonodesProposedEpochBlocksResponseV0 extends jspb.Message {
+    hasEvonodesProposedBlockCountsInfo(): boolean;
+    clearEvonodesProposedBlockCountsInfo(): void;
+    getEvonodesProposedBlockCountsInfo(): GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks | undefined;
+    setEvonodesProposedBlockCountsInfo(value?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetEvonodesProposedEpochBlocksResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksResponseV0): GetEvonodesProposedEpochBlocksResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksResponseV0;
+    static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksResponseV0, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksResponseV0;
+  }
+
+  export namespace GetEvonodesProposedEpochBlocksResponseV0 {
+    export type AsObject = {
+      evonodesProposedBlockCountsInfo?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class EvonodeProposedBlocks extends jspb.Message {
+      getProTxHash(): Uint8Array | string;
+      getProTxHash_asU8(): Uint8Array;
+      getProTxHash_asB64(): string;
+      setProTxHash(value: Uint8Array | string): void;
+
+      getCount(): number;
+      setCount(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): EvonodeProposedBlocks.AsObject;
+      static toObject(includeInstance: boolean, msg: EvonodeProposedBlocks): EvonodeProposedBlocks.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: EvonodeProposedBlocks, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): EvonodeProposedBlocks;
+      static deserializeBinaryFromReader(message: EvonodeProposedBlocks, reader: jspb.BinaryReader): EvonodeProposedBlocks;
+    }
+
+    export namespace EvonodeProposedBlocks {
+      export type AsObject = {
+        proTxHash: Uint8Array | string,
+        count: number,
+      }
+    }
+
+    export class EvonodesProposedBlocks extends jspb.Message {
+      clearEvonodesProposedBlockCountsList(): void;
+      getEvonodesProposedBlockCountsList(): Array<GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks>;
+      setEvonodesProposedBlockCountsList(value: Array<GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks>): void;
+      addEvonodesProposedBlockCounts(value?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks, index?: number): GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): EvonodesProposedBlocks.AsObject;
+      static toObject(includeInstance: boolean, msg: EvonodesProposedBlocks): EvonodesProposedBlocks.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: EvonodesProposedBlocks, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): EvonodesProposedBlocks;
+      static deserializeBinaryFromReader(message: EvonodesProposedBlocks, reader: jspb.BinaryReader): EvonodesProposedBlocks;
+    }
+
+    export namespace EvonodesProposedBlocks {
+      export type AsObject = {
+        evonodesProposedBlockCountsList: Array<GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.AsObject>,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      EVONODES_PROPOSED_BLOCK_COUNTS_INFO = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetEvonodesProposedEpochBlocksByRangeRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0 | undefined;
+  setV0(value?: GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0): void;
+
+  getVersionCase(): GetEvonodesProposedEpochBlocksByRangeRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByRangeRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByRangeRequest): GetEvonodesProposedEpochBlocksByRangeRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByRangeRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByRangeRequest;
+  static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByRangeRequest, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByRangeRequest;
+}
+
+export namespace GetEvonodesProposedEpochBlocksByRangeRequest {
+  export type AsObject = {
+    v0?: GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.AsObject,
+  }
+
+  export class GetEvonodesProposedEpochBlocksByRangeRequestV0 extends jspb.Message {
+    hasEpoch(): boolean;
+    clearEpoch(): void;
+    getEpoch(): number;
+    setEpoch(value: number): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    hasStartAt(): boolean;
+    clearStartAt(): void;
+    getStartAt(): Uint8Array | string;
+    getStartAt_asU8(): Uint8Array;
+    getStartAt_asB64(): string;
+    setStartAt(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    getStartCase(): GetEvonodesProposedEpochBlocksByRangeRequestV0.StartCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByRangeRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByRangeRequestV0): GetEvonodesProposedEpochBlocksByRangeRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByRangeRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByRangeRequestV0;
+    static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByRangeRequestV0, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByRangeRequestV0;
+  }
+
+  export namespace GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+    export type AsObject = {
+      epoch: number,
+      limit: number,
+      startAfter: Uint8Array | string,
+      startAt: Uint8Array | string,
+      prove: boolean,
+    }
+
+    export enum StartCase {
+      START_NOT_SET = 0,
+      START_AFTER = 3,
+      START_AT = 4,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentitiesBalancesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0 | undefined;
+  setV0(value?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0): void;
+
+  getVersionCase(): GetIdentitiesBalancesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentitiesBalancesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesRequest): GetIdentitiesBalancesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentitiesBalancesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentitiesBalancesRequest;
+  static deserializeBinaryFromReader(message: GetIdentitiesBalancesRequest, reader: jspb.BinaryReader): GetIdentitiesBalancesRequest;
+}
+
+export namespace GetIdentitiesBalancesRequest {
+  export type AsObject = {
+    v0?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.AsObject,
+  }
+
+  export class GetIdentitiesBalancesRequestV0 extends jspb.Message {
+    clearIdsList(): void;
+    getIdsList(): Array<Uint8Array | string>;
+    getIdsList_asU8(): Array<Uint8Array>;
+    getIdsList_asB64(): Array<string>;
+    setIdsList(value: Array<Uint8Array | string>): void;
+    addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentitiesBalancesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesRequestV0): GetIdentitiesBalancesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentitiesBalancesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentitiesBalancesRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentitiesBalancesRequestV0, reader: jspb.BinaryReader): GetIdentitiesBalancesRequestV0;
+  }
+
+  export namespace GetIdentitiesBalancesRequestV0 {
+    export type AsObject = {
+      idsList: Array<Uint8Array | string>,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentitiesBalancesResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0 | undefined;
+  setV0(value?: GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0): void;
+
+  getVersionCase(): GetIdentitiesBalancesResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentitiesBalancesResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesResponse): GetIdentitiesBalancesResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentitiesBalancesResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentitiesBalancesResponse;
+  static deserializeBinaryFromReader(message: GetIdentitiesBalancesResponse, reader: jspb.BinaryReader): GetIdentitiesBalancesResponse;
+}
+
+export namespace GetIdentitiesBalancesResponse {
+  export type AsObject = {
+    v0?: GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.AsObject,
+  }
+
+  export class GetIdentitiesBalancesResponseV0 extends jspb.Message {
+    hasIdentitiesBalances(): boolean;
+    clearIdentitiesBalances(): void;
+    getIdentitiesBalances(): GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances | undefined;
+    setIdentitiesBalances(value?: GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetIdentitiesBalancesResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentitiesBalancesResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesResponseV0): GetIdentitiesBalancesResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentitiesBalancesResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentitiesBalancesResponseV0;
+    static deserializeBinaryFromReader(message: GetIdentitiesBalancesResponseV0, reader: jspb.BinaryReader): GetIdentitiesBalancesResponseV0;
+  }
+
+  export namespace GetIdentitiesBalancesResponseV0 {
+    export type AsObject = {
+      identitiesBalances?: GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class IdentityBalance extends jspb.Message {
+      getIdentityId(): Uint8Array | string;
+      getIdentityId_asU8(): Uint8Array;
+      getIdentityId_asB64(): string;
+      setIdentityId(value: Uint8Array | string): void;
+
+      hasBalance(): boolean;
+      clearBalance(): void;
+      getBalance(): number;
+      setBalance(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): IdentityBalance.AsObject;
+      static toObject(includeInstance: boolean, msg: IdentityBalance): IdentityBalance.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: IdentityBalance, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): IdentityBalance;
+      static deserializeBinaryFromReader(message: IdentityBalance, reader: jspb.BinaryReader): IdentityBalance;
+    }
+
+    export namespace IdentityBalance {
+      export type AsObject = {
+        identityId: Uint8Array | string,
+        balance: number,
+      }
+    }
+
+    export class IdentitiesBalances extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance>;
+      setEntriesList(value: Array<GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance>): void;
+      addEntries(value?: GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance, index?: number): GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): IdentitiesBalances.AsObject;
+      static toObject(includeInstance: boolean, msg: IdentitiesBalances): IdentitiesBalances.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: IdentitiesBalances, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): IdentitiesBalances;
+      static deserializeBinaryFromReader(message: IdentitiesBalances, reader: jspb.BinaryReader): IdentitiesBalances;
+    }
+
+    export namespace IdentitiesBalances {
+      export type AsObject = {
+        entriesList: Array<GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.AsObject>,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      IDENTITIES_BALANCES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetProofsRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -4904,6 +5341,660 @@ export namespace GetPathElementsResponse {
       RESULT_NOT_SET = 0,
       ELEMENTS = 1,
       PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetStatusRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetStatusRequest.GetStatusRequestV0 | undefined;
+  setV0(value?: GetStatusRequest.GetStatusRequestV0): void;
+
+  getVersionCase(): GetStatusRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetStatusRequest): GetStatusRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetStatusRequest;
+  static deserializeBinaryFromReader(message: GetStatusRequest, reader: jspb.BinaryReader): GetStatusRequest;
+}
+
+export namespace GetStatusRequest {
+  export type AsObject = {
+    v0?: GetStatusRequest.GetStatusRequestV0.AsObject,
+  }
+
+  export class GetStatusRequestV0 extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetStatusRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetStatusRequestV0): GetStatusRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetStatusRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetStatusRequestV0;
+    static deserializeBinaryFromReader(message: GetStatusRequestV0, reader: jspb.BinaryReader): GetStatusRequestV0;
+  }
+
+  export namespace GetStatusRequestV0 {
+    export type AsObject = {
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetStatusResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetStatusResponse.GetStatusResponseV0 | undefined;
+  setV0(value?: GetStatusResponse.GetStatusResponseV0): void;
+
+  getVersionCase(): GetStatusResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetStatusResponse): GetStatusResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetStatusResponse;
+  static deserializeBinaryFromReader(message: GetStatusResponse, reader: jspb.BinaryReader): GetStatusResponse;
+}
+
+export namespace GetStatusResponse {
+  export type AsObject = {
+    v0?: GetStatusResponse.GetStatusResponseV0.AsObject,
+  }
+
+  export class GetStatusResponseV0 extends jspb.Message {
+    hasVersion(): boolean;
+    clearVersion(): void;
+    getVersion(): GetStatusResponse.GetStatusResponseV0.Version | undefined;
+    setVersion(value?: GetStatusResponse.GetStatusResponseV0.Version): void;
+
+    hasNode(): boolean;
+    clearNode(): void;
+    getNode(): GetStatusResponse.GetStatusResponseV0.Node | undefined;
+    setNode(value?: GetStatusResponse.GetStatusResponseV0.Node): void;
+
+    hasChain(): boolean;
+    clearChain(): void;
+    getChain(): GetStatusResponse.GetStatusResponseV0.Chain | undefined;
+    setChain(value?: GetStatusResponse.GetStatusResponseV0.Chain): void;
+
+    hasNetwork(): boolean;
+    clearNetwork(): void;
+    getNetwork(): GetStatusResponse.GetStatusResponseV0.Network | undefined;
+    setNetwork(value?: GetStatusResponse.GetStatusResponseV0.Network): void;
+
+    hasStateSync(): boolean;
+    clearStateSync(): void;
+    getStateSync(): GetStatusResponse.GetStatusResponseV0.StateSync | undefined;
+    setStateSync(value?: GetStatusResponse.GetStatusResponseV0.StateSync): void;
+
+    hasTime(): boolean;
+    clearTime(): void;
+    getTime(): GetStatusResponse.GetStatusResponseV0.Time | undefined;
+    setTime(value?: GetStatusResponse.GetStatusResponseV0.Time): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetStatusResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetStatusResponseV0): GetStatusResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetStatusResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetStatusResponseV0;
+    static deserializeBinaryFromReader(message: GetStatusResponseV0, reader: jspb.BinaryReader): GetStatusResponseV0;
+  }
+
+  export namespace GetStatusResponseV0 {
+    export type AsObject = {
+      version?: GetStatusResponse.GetStatusResponseV0.Version.AsObject,
+      node?: GetStatusResponse.GetStatusResponseV0.Node.AsObject,
+      chain?: GetStatusResponse.GetStatusResponseV0.Chain.AsObject,
+      network?: GetStatusResponse.GetStatusResponseV0.Network.AsObject,
+      stateSync?: GetStatusResponse.GetStatusResponseV0.StateSync.AsObject,
+      time?: GetStatusResponse.GetStatusResponseV0.Time.AsObject,
+    }
+
+    export class Version extends jspb.Message {
+      hasSoftware(): boolean;
+      clearSoftware(): void;
+      getSoftware(): GetStatusResponse.GetStatusResponseV0.Version.Software | undefined;
+      setSoftware(value?: GetStatusResponse.GetStatusResponseV0.Version.Software): void;
+
+      hasProtocol(): boolean;
+      clearProtocol(): void;
+      getProtocol(): GetStatusResponse.GetStatusResponseV0.Version.Protocol | undefined;
+      setProtocol(value?: GetStatusResponse.GetStatusResponseV0.Version.Protocol): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Version.AsObject;
+      static toObject(includeInstance: boolean, msg: Version): Version.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Version, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Version;
+      static deserializeBinaryFromReader(message: Version, reader: jspb.BinaryReader): Version;
+    }
+
+    export namespace Version {
+      export type AsObject = {
+        software?: GetStatusResponse.GetStatusResponseV0.Version.Software.AsObject,
+        protocol?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.AsObject,
+      }
+
+      export class Software extends jspb.Message {
+        getDapi(): string;
+        setDapi(value: string): void;
+
+        hasDrive(): boolean;
+        clearDrive(): void;
+        getDrive(): string;
+        setDrive(value: string): void;
+
+        hasTenderdash(): boolean;
+        clearTenderdash(): void;
+        getTenderdash(): string;
+        setTenderdash(value: string): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): Software.AsObject;
+        static toObject(includeInstance: boolean, msg: Software): Software.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: Software, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): Software;
+        static deserializeBinaryFromReader(message: Software, reader: jspb.BinaryReader): Software;
+      }
+
+      export namespace Software {
+        export type AsObject = {
+          dapi: string,
+          drive: string,
+          tenderdash: string,
+        }
+      }
+
+      export class Protocol extends jspb.Message {
+        hasTenderdash(): boolean;
+        clearTenderdash(): void;
+        getTenderdash(): GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash | undefined;
+        setTenderdash(value?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash): void;
+
+        hasDrive(): boolean;
+        clearDrive(): void;
+        getDrive(): GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive | undefined;
+        setDrive(value?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): Protocol.AsObject;
+        static toObject(includeInstance: boolean, msg: Protocol): Protocol.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: Protocol, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): Protocol;
+        static deserializeBinaryFromReader(message: Protocol, reader: jspb.BinaryReader): Protocol;
+      }
+
+      export namespace Protocol {
+        export type AsObject = {
+          tenderdash?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.AsObject,
+          drive?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.AsObject,
+        }
+
+        export class Tenderdash extends jspb.Message {
+          getP2p(): number;
+          setP2p(value: number): void;
+
+          getBlock(): number;
+          setBlock(value: number): void;
+
+          serializeBinary(): Uint8Array;
+          toObject(includeInstance?: boolean): Tenderdash.AsObject;
+          static toObject(includeInstance: boolean, msg: Tenderdash): Tenderdash.AsObject;
+          static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+          static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+          static serializeBinaryToWriter(message: Tenderdash, writer: jspb.BinaryWriter): void;
+          static deserializeBinary(bytes: Uint8Array): Tenderdash;
+          static deserializeBinaryFromReader(message: Tenderdash, reader: jspb.BinaryReader): Tenderdash;
+        }
+
+        export namespace Tenderdash {
+          export type AsObject = {
+            p2p: number,
+            block: number,
+          }
+        }
+
+        export class Drive extends jspb.Message {
+          getLatest(): number;
+          setLatest(value: number): void;
+
+          getCurrent(): number;
+          setCurrent(value: number): void;
+
+          serializeBinary(): Uint8Array;
+          toObject(includeInstance?: boolean): Drive.AsObject;
+          static toObject(includeInstance: boolean, msg: Drive): Drive.AsObject;
+          static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+          static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+          static serializeBinaryToWriter(message: Drive, writer: jspb.BinaryWriter): void;
+          static deserializeBinary(bytes: Uint8Array): Drive;
+          static deserializeBinaryFromReader(message: Drive, reader: jspb.BinaryReader): Drive;
+        }
+
+        export namespace Drive {
+          export type AsObject = {
+            latest: number,
+            current: number,
+          }
+        }
+      }
+    }
+
+    export class Time extends jspb.Message {
+      getLocal(): number;
+      setLocal(value: number): void;
+
+      hasBlock(): boolean;
+      clearBlock(): void;
+      getBlock(): number;
+      setBlock(value: number): void;
+
+      hasGenesis(): boolean;
+      clearGenesis(): void;
+      getGenesis(): number;
+      setGenesis(value: number): void;
+
+      hasEpoch(): boolean;
+      clearEpoch(): void;
+      getEpoch(): number;
+      setEpoch(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Time.AsObject;
+      static toObject(includeInstance: boolean, msg: Time): Time.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Time, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Time;
+      static deserializeBinaryFromReader(message: Time, reader: jspb.BinaryReader): Time;
+    }
+
+    export namespace Time {
+      export type AsObject = {
+        local: number,
+        block: number,
+        genesis: number,
+        epoch: number,
+      }
+    }
+
+    export class Node extends jspb.Message {
+      getId(): Uint8Array | string;
+      getId_asU8(): Uint8Array;
+      getId_asB64(): string;
+      setId(value: Uint8Array | string): void;
+
+      hasProTxHash(): boolean;
+      clearProTxHash(): void;
+      getProTxHash(): Uint8Array | string;
+      getProTxHash_asU8(): Uint8Array;
+      getProTxHash_asB64(): string;
+      setProTxHash(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Node.AsObject;
+      static toObject(includeInstance: boolean, msg: Node): Node.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Node, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Node;
+      static deserializeBinaryFromReader(message: Node, reader: jspb.BinaryReader): Node;
+    }
+
+    export namespace Node {
+      export type AsObject = {
+        id: Uint8Array | string,
+        proTxHash: Uint8Array | string,
+      }
+    }
+
+    export class Chain extends jspb.Message {
+      getCatchingUp(): boolean;
+      setCatchingUp(value: boolean): void;
+
+      getLatestBlockHash(): Uint8Array | string;
+      getLatestBlockHash_asU8(): Uint8Array;
+      getLatestBlockHash_asB64(): string;
+      setLatestBlockHash(value: Uint8Array | string): void;
+
+      getLatestAppHash(): Uint8Array | string;
+      getLatestAppHash_asU8(): Uint8Array;
+      getLatestAppHash_asB64(): string;
+      setLatestAppHash(value: Uint8Array | string): void;
+
+      getLatestBlockHeight(): number;
+      setLatestBlockHeight(value: number): void;
+
+      getEarliestBlockHash(): Uint8Array | string;
+      getEarliestBlockHash_asU8(): Uint8Array;
+      getEarliestBlockHash_asB64(): string;
+      setEarliestBlockHash(value: Uint8Array | string): void;
+
+      getEarliestAppHash(): Uint8Array | string;
+      getEarliestAppHash_asU8(): Uint8Array;
+      getEarliestAppHash_asB64(): string;
+      setEarliestAppHash(value: Uint8Array | string): void;
+
+      getEarliestBlockHeight(): number;
+      setEarliestBlockHeight(value: number): void;
+
+      getMaxPeerBlockHeight(): number;
+      setMaxPeerBlockHeight(value: number): void;
+
+      hasCoreChainLockedHeight(): boolean;
+      clearCoreChainLockedHeight(): void;
+      getCoreChainLockedHeight(): number;
+      setCoreChainLockedHeight(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Chain.AsObject;
+      static toObject(includeInstance: boolean, msg: Chain): Chain.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Chain, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Chain;
+      static deserializeBinaryFromReader(message: Chain, reader: jspb.BinaryReader): Chain;
+    }
+
+    export namespace Chain {
+      export type AsObject = {
+        catchingUp: boolean,
+        latestBlockHash: Uint8Array | string,
+        latestAppHash: Uint8Array | string,
+        latestBlockHeight: number,
+        earliestBlockHash: Uint8Array | string,
+        earliestAppHash: Uint8Array | string,
+        earliestBlockHeight: number,
+        maxPeerBlockHeight: number,
+        coreChainLockedHeight: number,
+      }
+    }
+
+    export class Network extends jspb.Message {
+      getChainId(): string;
+      setChainId(value: string): void;
+
+      getPeersCount(): number;
+      setPeersCount(value: number): void;
+
+      getListening(): boolean;
+      setListening(value: boolean): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Network.AsObject;
+      static toObject(includeInstance: boolean, msg: Network): Network.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Network, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Network;
+      static deserializeBinaryFromReader(message: Network, reader: jspb.BinaryReader): Network;
+    }
+
+    export namespace Network {
+      export type AsObject = {
+        chainId: string,
+        peersCount: number,
+        listening: boolean,
+      }
+    }
+
+    export class StateSync extends jspb.Message {
+      getTotalSyncedTime(): number;
+      setTotalSyncedTime(value: number): void;
+
+      getRemainingTime(): number;
+      setRemainingTime(value: number): void;
+
+      getTotalSnapshots(): number;
+      setTotalSnapshots(value: number): void;
+
+      getChunkProcessAvgTime(): number;
+      setChunkProcessAvgTime(value: number): void;
+
+      getSnapshotHeight(): number;
+      setSnapshotHeight(value: number): void;
+
+      getSnapshotChunksCount(): number;
+      setSnapshotChunksCount(value: number): void;
+
+      getBackfilledBlocks(): number;
+      setBackfilledBlocks(value: number): void;
+
+      getBackfillBlocksTotal(): number;
+      setBackfillBlocksTotal(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): StateSync.AsObject;
+      static toObject(includeInstance: boolean, msg: StateSync): StateSync.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: StateSync, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): StateSync;
+      static deserializeBinaryFromReader(message: StateSync, reader: jspb.BinaryReader): StateSync;
+    }
+
+    export namespace StateSync {
+      export type AsObject = {
+        totalSyncedTime: number,
+        remainingTime: number,
+        totalSnapshots: number,
+        chunkProcessAvgTime: number,
+        snapshotHeight: number,
+        snapshotChunksCount: number,
+        backfilledBlocks: number,
+        backfillBlocksTotal: number,
+      }
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetCurrentQuorumsInfoRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0 | undefined;
+  setV0(value?: GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0): void;
+
+  getVersionCase(): GetCurrentQuorumsInfoRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetCurrentQuorumsInfoRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoRequest): GetCurrentQuorumsInfoRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetCurrentQuorumsInfoRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoRequest;
+  static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoRequest, reader: jspb.BinaryReader): GetCurrentQuorumsInfoRequest;
+}
+
+export namespace GetCurrentQuorumsInfoRequest {
+  export type AsObject = {
+    v0?: GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.AsObject,
+  }
+
+  export class GetCurrentQuorumsInfoRequestV0 extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetCurrentQuorumsInfoRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoRequestV0): GetCurrentQuorumsInfoRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetCurrentQuorumsInfoRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoRequestV0;
+    static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoRequestV0, reader: jspb.BinaryReader): GetCurrentQuorumsInfoRequestV0;
+  }
+
+  export namespace GetCurrentQuorumsInfoRequestV0 {
+    export type AsObject = {
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetCurrentQuorumsInfoResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0 | undefined;
+  setV0(value?: GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0): void;
+
+  getVersionCase(): GetCurrentQuorumsInfoResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetCurrentQuorumsInfoResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoResponse): GetCurrentQuorumsInfoResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetCurrentQuorumsInfoResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoResponse;
+  static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoResponse, reader: jspb.BinaryReader): GetCurrentQuorumsInfoResponse;
+}
+
+export namespace GetCurrentQuorumsInfoResponse {
+  export type AsObject = {
+    v0?: GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.AsObject,
+  }
+
+  export class ValidatorV0 extends jspb.Message {
+    getProTxHash(): Uint8Array | string;
+    getProTxHash_asU8(): Uint8Array;
+    getProTxHash_asB64(): string;
+    setProTxHash(value: Uint8Array | string): void;
+
+    getNodeIp(): string;
+    setNodeIp(value: string): void;
+
+    getIsBanned(): boolean;
+    setIsBanned(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ValidatorV0.AsObject;
+    static toObject(includeInstance: boolean, msg: ValidatorV0): ValidatorV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ValidatorV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ValidatorV0;
+    static deserializeBinaryFromReader(message: ValidatorV0, reader: jspb.BinaryReader): ValidatorV0;
+  }
+
+  export namespace ValidatorV0 {
+    export type AsObject = {
+      proTxHash: Uint8Array | string,
+      nodeIp: string,
+      isBanned: boolean,
+    }
+  }
+
+  export class ValidatorSetV0 extends jspb.Message {
+    getQuorumHash(): Uint8Array | string;
+    getQuorumHash_asU8(): Uint8Array;
+    getQuorumHash_asB64(): string;
+    setQuorumHash(value: Uint8Array | string): void;
+
+    getCoreHeight(): number;
+    setCoreHeight(value: number): void;
+
+    clearMembersList(): void;
+    getMembersList(): Array<GetCurrentQuorumsInfoResponse.ValidatorV0>;
+    setMembersList(value: Array<GetCurrentQuorumsInfoResponse.ValidatorV0>): void;
+    addMembers(value?: GetCurrentQuorumsInfoResponse.ValidatorV0, index?: number): GetCurrentQuorumsInfoResponse.ValidatorV0;
+
+    getThresholdPublicKey(): Uint8Array | string;
+    getThresholdPublicKey_asU8(): Uint8Array;
+    getThresholdPublicKey_asB64(): string;
+    setThresholdPublicKey(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ValidatorSetV0.AsObject;
+    static toObject(includeInstance: boolean, msg: ValidatorSetV0): ValidatorSetV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ValidatorSetV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ValidatorSetV0;
+    static deserializeBinaryFromReader(message: ValidatorSetV0, reader: jspb.BinaryReader): ValidatorSetV0;
+  }
+
+  export namespace ValidatorSetV0 {
+    export type AsObject = {
+      quorumHash: Uint8Array | string,
+      coreHeight: number,
+      membersList: Array<GetCurrentQuorumsInfoResponse.ValidatorV0.AsObject>,
+      thresholdPublicKey: Uint8Array | string,
+    }
+  }
+
+  export class GetCurrentQuorumsInfoResponseV0 extends jspb.Message {
+    clearQuorumHashesList(): void;
+    getQuorumHashesList(): Array<Uint8Array | string>;
+    getQuorumHashesList_asU8(): Array<Uint8Array>;
+    getQuorumHashesList_asB64(): Array<string>;
+    setQuorumHashesList(value: Array<Uint8Array | string>): void;
+    addQuorumHashes(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getCurrentQuorumHash(): Uint8Array | string;
+    getCurrentQuorumHash_asU8(): Uint8Array;
+    getCurrentQuorumHash_asB64(): string;
+    setCurrentQuorumHash(value: Uint8Array | string): void;
+
+    clearValidatorSetsList(): void;
+    getValidatorSetsList(): Array<GetCurrentQuorumsInfoResponse.ValidatorSetV0>;
+    setValidatorSetsList(value: Array<GetCurrentQuorumsInfoResponse.ValidatorSetV0>): void;
+    addValidatorSets(value?: GetCurrentQuorumsInfoResponse.ValidatorSetV0, index?: number): GetCurrentQuorumsInfoResponse.ValidatorSetV0;
+
+    getLastBlockProposer(): Uint8Array | string;
+    getLastBlockProposer_asU8(): Uint8Array;
+    getLastBlockProposer_asB64(): string;
+    setLastBlockProposer(value: Uint8Array | string): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetCurrentQuorumsInfoResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoResponseV0): GetCurrentQuorumsInfoResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetCurrentQuorumsInfoResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoResponseV0;
+    static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoResponseV0, reader: jspb.BinaryReader): GetCurrentQuorumsInfoResponseV0;
+  }
+
+  export namespace GetCurrentQuorumsInfoResponseV0 {
+    export type AsObject = {
+      quorumHashesList: Array<Uint8Array | string>,
+      currentQuorumHash: Uint8Array | string,
+      validatorSetsList: Array<GetCurrentQuorumsInfoResponse.ValidatorSetV0.AsObject>,
+      lastBlockProposer: Uint8Array | string,
+      metadata?: ResponseMetadata.AsObject,
     }
   }
 

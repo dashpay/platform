@@ -1,0 +1,11 @@
+# This is a config file used by Docker build process when building release version of drive-abci.
+# Hopefully it can be removed once profile-rustflags is stabilized, see https://github.com/rust-lang/cargo/issues/10271
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"

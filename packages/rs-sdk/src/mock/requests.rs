@@ -1,8 +1,9 @@
 use super::MockDashPlatformSdk;
+use dpp::bincode::config::standard;
 use dpp::{
     bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
-    dashcore::{hashes::Hash, ProTxHash},
+    dashcore::{hashes::Hash as CoreHash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
     identity::IdentityPublicKey,
@@ -14,12 +15,14 @@ use dpp::{
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
+use drive::grovedb::Element;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
-    MasternodeProtocolVote, PrefundedSpecializedBalance, TotalCreditsInPlatform,
-    VotePollsGroupedByTimestamp, Voters,
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
+    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
+    ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
+    Voters,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, hash::Hash};
 
 static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
@@ -112,6 +115,29 @@ impl<K: Ord + MockResponse, V: MockResponse> MockResponse for BTreeMap<K, V> {
     }
 }
 
+impl<K: Hash + Eq + MockResponse, V: MockResponse> MockResponse for IndexMap<K, V> {
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (data, _): (IndexMap<Vec<u8>, Vec<u8>>, _) =
+            bincode::serde::decode_from_slice(buf, BINCODE_CONFIG).expect("decode IndexMap");
+
+        data.into_iter()
+            .map(|(k, v)| (K::mock_deserialize(sdk, &k), V::mock_deserialize(sdk, &v)))
+            .collect()
+    }
+
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let data: IndexMap<Vec<u8>, Vec<u8>> = self
+            .iter()
+            .map(|(k, v)| (k.mock_serialize(sdk), v.mock_serialize(sdk)))
+            .collect();
+
+        bincode::serde::encode_to_vec(data, BINCODE_CONFIG).expect("encode IndexMap")
+    }
+}
+
 /// Serialize and deserialize the object for mocking using bincode.
 ///
 /// Use this macro when the object implements platform serialization.
@@ -164,6 +190,29 @@ impl MockResponse for Document {
     }
 }
 
+impl MockResponse for Element {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Create a bincode configuration
+        let config = standard();
+
+        // Serialize using the specified configuration
+        bincode::encode_to_vec(self, config).expect("Failed to serialize Element")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // Create a bincode configuration
+        let config = standard();
+
+        // Deserialize using the specified configuration
+        bincode::decode_from_slice(buf, config)
+            .expect("Failed to deserialize Element")
+            .0
+    }
+}
+
 impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         (self.0).to_be_bytes().to_vec()
@@ -206,7 +255,21 @@ impl MockResponse for ProTxHash {
     {
         let data = platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
             .expect("decode ProTxHash");
-        ProTxHash::from_raw_hash(Hash::from_byte_array(data))
+        ProTxHash::from_raw_hash(CoreHash::from_byte_array(data))
+    }
+}
+
+impl MockResponse for ProposerBlockCounts {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let data = RetrievedValues::<Identifier, u64>::mock_deserialize(sdk, buf);
+        ProposerBlockCounts(data)
     }
 }
 
@@ -229,3 +292,5 @@ impl_mock_response!(VotePollsGroupedByTimestamp);
 impl_mock_response!(PrefundedSpecializedBalance);
 impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
+impl_mock_response!(EvoNodeStatus);
+impl_mock_response!(CurrentQuorumsInfo);

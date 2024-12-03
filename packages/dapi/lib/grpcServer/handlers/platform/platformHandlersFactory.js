@@ -18,6 +18,7 @@ const {
     BroadcastStateTransitionRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
+    GetStatusRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -25,6 +26,8 @@ const {
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
+      GetStatusRequest: PBJSGetStatusRequest,
+      GetStatusResponse: PBJSGetStatusResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -45,12 +48,14 @@ const getConsensusParamsHandlerFactory = require(
 const unimplementedHandlerFactory = require(
   './unimplementedHandlerFactory',
 );
+const getStatusHandlerFactory = require('./getStatusHandlerFactory');
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
 const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
 const waitForTransactionResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
 const getExistingTransactionResultFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/getExistingTransactionResult');
 const getConsensusParamsFactory = require('../../../externalApis/tenderdash/getConsensusParamsFactory');
+const requestTenderRpcFactory = require('../../../externalApis/tenderdash/requestTenderRpc');
 
 /**
  * @param {jaysonClient} rpcClient
@@ -69,10 +74,13 @@ function platformHandlersFactory(
 ) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
+  const requestTenderRpc = requestTenderRpcFactory(rpcClient);
+
   // broadcastStateTransition
   const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
     rpcClient,
     createGrpcErrorFromDriveResponse,
+    requestTenderRpc,
   );
 
   const wrappedBroadcastStateTransition = jsonToProtobufHandlerWrapper(
@@ -118,7 +126,7 @@ function platformHandlersFactory(
     wrapInErrorHandler(waitForStateTransitionResultHandler),
   );
 
-  // get Consensus Params
+  // Get Consensus Params
   const getConsensusParams = getConsensusParamsFactory(rpcClient);
   const getConsensusParamsHandler = getConsensusParamsHandlerFactory(getConsensusParams);
 
@@ -131,6 +139,24 @@ function platformHandlersFactory(
       PBJSGetConsensusParamsResponse,
     ),
     wrapInErrorHandler(getConsensusParamsHandler),
+  );
+
+  // Get Status
+  const getStatusHandler = getStatusHandlerFactory(
+    blockchainListener,
+    driveClient,
+    rpcClient,
+  );
+
+  const wrappedGetStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetStatusRequest,
+      PBJSGetStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetStatusResponse,
+    ),
+    wrapInErrorHandler(getStatusHandler),
   );
 
   return {
@@ -154,6 +180,7 @@ function platformHandlersFactory(
     getProtocolVersionUpgradeState: wrapInErrorHandler(unimplementedHandlerFactory('getProtocolVersionUpgradeState')),
     getIdentityContractNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityContractNonce')),
     getIdentityNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityNonce')),
+    getStatus: wrappedGetStatus,
   };
 }
 

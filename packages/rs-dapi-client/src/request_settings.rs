@@ -20,9 +20,13 @@ const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
 pub struct RequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for a request.
+    /// Timeout for single request (soft limit).
+    ///
+    /// Note that the total maximum time of execution can exceed `(timeout + connect_timeout) * retries`
+    /// as it accounts for internal processing time between retries.
     pub timeout: Option<Duration>,
-    /// Number of retries until returning the last error.
+    /// Number of retries in case of failed requests. If max retries reached, the last error is returned.
+    /// 1 means one request and one retry in case of error, etc.
     pub retries: Option<usize>,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: Option<bool>,

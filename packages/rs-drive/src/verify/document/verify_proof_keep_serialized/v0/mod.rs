@@ -24,7 +24,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// * The path query fails to verify against the given proof.
     /// * Converting the element into bytes fails.
     #[inline(always)]
-    pub(crate) fn verify_proof_keep_serialized_v0(
+    pub(super) fn verify_proof_keep_serialized_v0(
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
@@ -39,6 +39,7 @@ impl<'a> DriveDocumentQuery<'a> {
         } else {
             self.construct_path_query(None, platform_version)
         }?;
+
         let (root_hash, proved_key_values) = if self.start_at.is_some() {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {

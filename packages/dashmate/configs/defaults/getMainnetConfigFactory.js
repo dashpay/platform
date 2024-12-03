@@ -26,13 +26,6 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
           subnet: '172.26.24.0/24',
         },
       },
-      core: {
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'mainnet', 'core.log'),
-          },
-        },
-      },
       network: NETWORK_MAINNET,
       platform: {
         enable: false,
@@ -60,6 +53,11 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
                   host: '152.42.151.147',
                   port: 26656,
                 },
+                {
+                  id: 'fdc2239c1e0e62f3a192823d6e068d012620a2d1',
+                  host: 'seed-1.pshenmic.dev',
+                  port: 26656,
+                },
               ],
             },
             mempool: {
@@ -71,8 +69,13 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
               ttlNumBlocks: 0,
             },
             genesis: {
-              chain_id: 'dash-1',
+              chain_id: 'evo1',
               validator_quorum_type: 4,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
           abci: {

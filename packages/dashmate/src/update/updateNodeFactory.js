@@ -31,7 +31,7 @@ export default function updateNodeFactory(getServiceList, docker) {
                 name, title, image, updated: 'error',
               });
             } else {
-              let updated = null;
+              let updated = 'error';
 
               stream.on('data', (data) => {
                 // parse all stdout and gather Status message

@@ -3,6 +3,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -14,6 +15,7 @@ where
     /// Removes the votes for removed masternodes
     pub(super) fn remove_votes_for_removed_masternodes_v0(
         &self,
+        block_info: &BlockInfo,
         last_committed_platform_state: &PlatformState,
         block_platform_state: &PlatformState,
         transaction: TransactionArg,
@@ -29,6 +31,9 @@ where
                     .iter()
                     .map(|pro_tx_hash| pro_tx_hash.as_byte_array().to_vec())
                     .collect(),
+                block_info.height,
+                self.config.network,
+                self.config.abci.chain_id.as_str(),
                 transaction,
                 platform_version,
             )?;
