@@ -58,7 +58,7 @@ sanitize-filename = { version = "0.5.0" }
 test-case = { version = "3.3.1" }
 
 [features]
-default = ["mocks", "network-testing"]
+default = ["mocks", "offline-testing"]
 
 mocks = [
   "dep:serde",
