@@ -114,9 +114,19 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
 ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
 
-# Configure Rust toolchain
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
+# Configure Rust toolchain and C / C++ compiler
+RUN <<EOS
 # It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
-RUN echo 'source $HOME/.cargo/env' >> /root/env
+echo 'source $HOME/.cargo/env' >> /root/env
+
+# Enable gcc / g++ optimizations
+if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
+    echo "export CFLAGS=-march=haswell" >> /root/env
+    echo "export CXXFLAGS=-march=haswell" >> /root/env
+fi
+EOS
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -258,13 +268,23 @@ WORKDIR /tmp/rocksdb
 # sccache -s
 # EOS
 
+# Select whether we want dev or release
+# This variable will be also visibe in next stages
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
 
-# Support any CPU architecture
-export PORTABLE=1
+# For x86-64 release, tune the build to use haswell optimizations.
+# It requires 64-bit extensions, MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, CX16, SAHF, FXSR, AVX, XSAVE, PCLMUL, 
+# FSGSBASE, RDRND, F16C, AVX2, BMI, BMI2, LZCNT, FMA, MOVBE and HLE instruction set support.
+if [[ "$TARGETARCH" == "amd64" ]] && [[ "$CARGO_BUILD_PROFILE" == "release" ]] ; then
+    export PORTABLE=haswell
+else
+    export PORTABLE=1
+fi
 
 make -j$(nproc) static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
@@ -320,9 +340,6 @@ RUN --mount=type=secret,id=AWS \
     --no-track \
     --no-confirm
 
-
-# Select whether we want dev or release
-ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 #
 # Rust build planner to speed up builds
