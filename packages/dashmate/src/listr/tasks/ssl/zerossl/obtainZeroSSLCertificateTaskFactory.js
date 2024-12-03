@@ -208,7 +208,7 @@ and all Dash service ports listed above.`);
                 // Get the error message from details if it exists
                 if (e.type === 'domain_control_validation_failed' && e.details[ctx.externalIp]) {
                   const errorDetails = Object.values(e.details[ctx.externalIp])[0];
-                  if (errorDetails.error) {
+                  if (errorDetails?.error) {
                     errorMessage = errorDetails.error_info;
                   }
                 }
