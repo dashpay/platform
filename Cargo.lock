@@ -1133,6 +1133,7 @@ dependencies = [
  "http",
  "lru",
  "rs-dapi-client",
+ "rustls-pemfile",
  "sanitize-filename",
  "serde",
  "serde_json",
