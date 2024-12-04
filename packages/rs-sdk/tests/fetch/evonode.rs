@@ -17,9 +17,7 @@ async fn test_evonode_status() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_evonode_status").await;
 
-    let addresses = cfg.address_list();
-
-    for address in addresses {
+    for (address, _status) in cfg.address_list() {
         let node = EvoNode::new(address.clone());
         match timeout(
             Duration::from_secs(3),
@@ -34,8 +32,9 @@ async fn test_evonode_status() {
                     status.chain.latest_block_height > 0,
                     "latest block height must be positive"
                 );
-                assert!(
-                    status.node.pro_tx_hash.unwrap_or_default().len() == ProTxHash::LEN,
+                assert_eq!(
+                    status.node.pro_tx_hash.unwrap_or_default().len(),
+                    ProTxHash::LEN,
                     "latest block hash must be non-empty"
                 );
                 // Add more specific assertions based on expected status properties

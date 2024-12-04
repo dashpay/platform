@@ -131,9 +131,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
-# Select whether we want dev or release
-ONBUILD ARG CARGO_BUILD_PROFILE=dev
-
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
 
@@ -266,11 +263,8 @@ set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
 
-if [[ "$TARGETARCH" == "amd64" ]] ; then
-    export PORTABLE=haswell
-else
-    export PORTABLE=1
-fi
+# Support any CPU architecture
+export PORTABLE=1
 
 make -j$(nproc) static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
@@ -325,6 +319,10 @@ RUN --mount=type=secret,id=AWS \
     --disable-telemetry \
     --no-track \
     --no-confirm
+
+
+# Select whether we want dev or release
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 #
 # Rust build planner to speed up builds

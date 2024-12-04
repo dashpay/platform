@@ -6,13 +6,17 @@
 
 use arc_swap::ArcSwap;
 use drive_proof_verifier::error::ContextProviderError;
-use rs_dapi_client::{CanRetry, ExecutionResult, RequestSettings};
+use rs_dapi_client::{
+    update_address_ban_status, AddressList, CanRetry, ExecutionResult, RequestSettings,
+};
+use std::fmt::Display;
 use std::{
     fmt::Debug,
     future::Future,
     sync::{mpsc::SendError, Arc},
 };
 use tokio::{runtime::TryCurrentError, sync::Mutex};
+
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
     /// Not running inside tokio runtime
@@ -110,6 +114,7 @@ async fn worker<F: Future>(
 ///
 /// ## Parameters
 ///
+/// - `address_list` - list of addresses to be used for the requests.
 /// - `settings` - global settings with any request-specific settings overrides applied.
 /// - `future_factory_fn` - closure that returns a future that should be retried. It should take [`RequestSettings`] as
 ///   an argument and return [`ExecutionResult`].
@@ -138,8 +143,9 @@ async fn worker<F: Future>(
 /// }
 /// #[tokio::main]
 ///     async fn main() {
+///     let address_list = rs_dapi_client::AddressList::default();
 ///     let global_settings = RequestSettings::default();
-///     dash_sdk::sync::retry(global_settings, retry_test_function).await.expect_err("should fail");
+///     dash_sdk::sync::retry(&address_list, global_settings, retry_test_function).await.expect_err("should fail");
 /// }
 /// ```
 ///
@@ -154,13 +160,14 @@ async fn worker<F: Future>(
 ///
 /// - [`::backon`] crate that is used by this function.
 pub async fn retry<Fut, FutureFactoryFn, R, E>(
+    address_list: &AddressList,
     settings: RequestSettings,
     future_factory_fn: FutureFactoryFn,
 ) -> ExecutionResult<R, E>
 where
     Fut: Future<Output = ExecutionResult<R, E>>,
     FutureFactoryFn: FnMut(RequestSettings) -> Fut,
-    E: CanRetry + Debug,
+    E: CanRetry + Display + Debug,
 {
     let max_retries = settings.retries.unwrap_or_default();
 
@@ -187,11 +194,16 @@ where
         async move {
             let settings = closure_settings.load_full().clone();
             let mut func = inner_fn.lock().await;
-            (*func)(*settings).await
+            let result = (*func)(*settings).await;
+
+            // Ban or unban the address based on the result
+            update_address_ban_status(address_list, &result, &settings.finalize());
+
+            result
         }
     };
 
-    let  result= ::backon::Retryable::retry(closure,backoff_strategy)
+    let result = ::backon::Retryable::retry(closure, backoff_strategy)
         .when(|e| {
             if e.can_retry() {
                 // requests sent for current execution attempt;
@@ -201,7 +213,7 @@ where
                 retries += requests_sent;
                 let all_requests_sent = retries;
 
-                if all_requests_sent <=max_retries { // we account for for initial request
+                if all_requests_sent <= max_retries { // we account for initial request
                     tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
                     let new_settings = RequestSettings {
                         retries: Some(max_retries - all_requests_sent), // limit num of retries for lower layer
@@ -231,6 +243,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use derive_more::Display;
+    use http::Uri;
     use rs_dapi_client::ExecutionError;
     use std::{
         future::Future,
@@ -313,7 +327,7 @@ mod test {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Display)]
     enum MockError {
         Generic,
     }
@@ -351,6 +365,8 @@ mod test {
         for _ in 0..1 {
             let counter = Arc::new(AtomicUsize::new(0));
 
+            let address_list = AddressList::default();
+
             // we retry 5 times, and expect 5 retries + 1 initial request
             let mut global_settings = RequestSettings::default();
             global_settings.retries = Some(expected_requests - 1);
@@ -360,7 +376,7 @@ mod test {
                 retry_test_function(s, counter)
             };
 
-            retry(global_settings, closure)
+            retry(&address_list, global_settings, closure)
                 .await
                 .expect_err("should fail");
 
