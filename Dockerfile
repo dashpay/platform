@@ -482,7 +482,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     rm -rf /platform
 
 # See what CPU capabilities are required
-RUN set -ex; \
+RUN  --mount=type=secret,id=AWS \
+    set -ex; \
     source /root/env && \
     elfx86exts /artifacts/drive-abci
 
