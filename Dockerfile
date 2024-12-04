@@ -346,8 +346,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
-    cargo install --git https://github.com/pkgw/elfx86exts --locked && \
-    cargo clean
+    cargo install --git https://github.com/pkgw/elfx86exts --locked
 
 #
 # Rust build planner to speed up builds
