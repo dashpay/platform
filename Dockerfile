@@ -122,9 +122,14 @@ RUN <<EOS
 echo 'source $HOME/.cargo/env' >> /root/env
 
 # Enable gcc / g++ optimizations
-if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
-    echo "export CFLAGS=-march=haswell" >> /root/env
-    echo "export CXXFLAGS=-march=haswell" >> /root/env
+if [[ "$TARGETARCH" == "amd64" ]] ; then
+    if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
+        echo "export CFLAGS=-march=haswell" >> /root/env
+        echo "export CXXFLAGS=-march=haswell" >> /root/env
+    else
+        echo "export CFLAGS=-march=x86-64" >> /root/env
+        echo "export CXXFLAGS=-march=x86-64" >> /root/env
+    fi
 fi
 EOS
 
