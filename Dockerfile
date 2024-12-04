@@ -124,12 +124,16 @@ echo 'source $HOME/.cargo/env' >> /root/env
 # Enable gcc / g++ optimizations
 if [[ "$TARGETARCH" == "amd64" ]] ; then
     if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
-        echo "export CFLAGS=-march=haswell" >> /root/env
-        echo "export CXXFLAGS=-march=haswell" >> /root/env
+        echo "export CFLAGS=-march=x86-64-v3" >> /root/env
+        echo "export CXXFLAGS=-march=x86-64-v3" >> /root/env
+        echo "PORTABLE=x86-64-v3" >> /root/env
     else
         echo "export CFLAGS=-march=x86-64" >> /root/env
         echo "export CXXFLAGS=-march=x86-64" >> /root/env
+        echo "PORTABLE=1" >> /root/env
     fi
+else
+    echo "PORTABLE=1" >> /root/env
 fi
 EOS
 
@@ -281,15 +285,6 @@ RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
-
-# For x86-64 release, tune the build to use haswell optimizations.
-# It requires 64-bit extensions, MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, CX16, SAHF, FXSR, AVX, XSAVE, PCLMUL, 
-# FSGSBASE, RDRND, F16C, AVX2, BMI, BMI2, LZCNT, FMA, MOVBE and HLE instruction set support.
-if [[ "$TARGETARCH" == "amd64" ]] && [[ "$CARGO_BUILD_PROFILE" == "release" ]] ; then
-    export PORTABLE=haswell
-else
-    export PORTABLE=1
-fi
 
 make -j$(nproc) static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
