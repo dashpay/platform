@@ -5,6 +5,7 @@ jobs:
   build-js:
     name: Build JS
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4

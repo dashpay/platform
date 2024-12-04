@@ -18,6 +18,7 @@ jobs:
   build-image:
     name: Build ${{ inputs.name }} image
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

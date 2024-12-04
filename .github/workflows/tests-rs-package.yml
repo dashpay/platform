@@ -124,6 +124,7 @@ jobs:
 
   detect_structure_changes:
     name: Detect immutable structure changes
+    timeout-minutes: 10
     runs-on: ubuntu-24.04
     # FIXME: as we use `gh pr view` below, this check can only
     # run on pull requests. We should find a way to run it
