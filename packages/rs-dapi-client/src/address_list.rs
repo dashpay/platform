@@ -207,7 +207,7 @@ impl AddressList {
     /// Add a node [Address] to [AddressList] by [Uri].
     /// Returns false if the address is already in the list.
     pub fn add_uri(&mut self, uri: Uri) -> bool {
-        self.addresses.insert(uri.try_into().expect("valid uri"))
+        self.add(Address::try_from(uri).expect("valid uri"))
     }
 
     /// Randomly select a not banned address.
