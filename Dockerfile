@@ -333,20 +333,12 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 elfx86exts@0.6.2 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
     --no-track \
     --no-confirm
-
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=secret,id=AWS \
-    set -ex; \
-    source /root/env && \
-    cargo install --git https://github.com/pkgw/elfx86exts --locked
 
 #
 # Rust build planner to speed up builds
