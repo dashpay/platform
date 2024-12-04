@@ -481,6 +481,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     # Remove /platform to reduce layer size
     rm -rf /platform
 
+# See what CPU capabilities are required
+RUN set -ex; \
+    source /root/env && \
+    elfx86exts /artifacts/drive-abci
+
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
@@ -583,8 +588,6 @@ VOLUME /var/log/dash
 
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
-# See what CPU capabilities are required
-RUN elfx86exts /usr/bin/drive-abci
 
 #
 # Create new non-root user
