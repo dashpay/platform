@@ -234,7 +234,7 @@ impl DapiRequestExecutor for DapiClient {
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
                 let address = address_result.map_err(|inner| ExecutionError {
                     inner,
-                    retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
+                    retries: retries_counter.load(std::sync::atomic::Ordering::Relaxed),
                     address: None,
                 })?;
 
@@ -247,7 +247,7 @@ impl DapiRequestExecutor for DapiClient {
                 )
                 .map_err(|error| ExecutionError {
                     inner: DapiClientError::Transport(error),
-                    retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
+                    retries: retries_counter.load(std::sync::atomic::Ordering::Relaxed),
                     address: Some(address.clone()),
                 })?;
 
@@ -256,7 +256,7 @@ impl DapiRequestExecutor for DapiClient {
                     .await
                     .map_err(DapiClientError::Transport);
 
-                let retries = retries_counter.load(std::sync::atomic::Ordering::Acquire);
+                let retries = retries_counter.load(std::sync::atomic::Ordering::Relaxed);
 
                 let execution_result = result
                     .map(|inner| {
@@ -294,7 +294,7 @@ impl DapiRequestExecutor for DapiClient {
             .retry(retry_settings)
             .notify(|error, duration| {
                 let retries_counter = Arc::clone(&retries_counter_arc);
-                retries_counter.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                retries_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                 tracing::warn!(
                     ?error,
