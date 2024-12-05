@@ -52,7 +52,7 @@ impl BroadcastStateTransition for StateTransition {
         };
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-        retry(retry_settings, factory)
+        retry(sdk.address_list(), retry_settings, factory)
             .await
             .into_inner()
             .map(|_| ())
@@ -122,7 +122,7 @@ impl BroadcastStateTransition for StateTransition {
                 .wrap_to_execution_result(&response)
         };
 
-        let future = retry(retry_settings, factory);
+        let future = retry(sdk.address_list(), retry_settings, factory);
         // run the future with or without timeout, depending on the settings
         let wait_timeout = settings.and_then(|s| s.wait_timeout);
         match wait_timeout {

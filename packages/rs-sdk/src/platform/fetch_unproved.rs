@@ -55,7 +55,6 @@ where
     /// - `settings`: Request settings for the connection to Platform.
     ///
     /// ## Returns
-    /// Returns:
     /// * `Ok(Some(Self))` when object is found.
     /// * `Ok(None)` when object is not found.
     /// * [`Err(Error)`](Error) when an error occurs.
@@ -107,7 +106,9 @@ where
         };
 
         let settings = sdk.dapi_client_settings.override_by(settings);
-        retry(settings, closure).await.into_inner()
+        retry(sdk.address_list(), settings, closure)
+            .await
+            .into_inner()
     }
 }
 

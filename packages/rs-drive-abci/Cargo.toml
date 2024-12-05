@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -58,8 +58,8 @@ file-rotate = { version = "0.7.3" }
 reopen = { version = "1.0.3" }
 delegate = { version = "0.13" }
 regex = { version = "1.8.1" }
-metrics = { version = "0.23" }
-metrics-exporter-prometheus = { version = "0.15", default-features = false, features = [
+metrics = { version = "0.24" }
+metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
   "http-listener",
 ] }
 url = { version = "2.3.1" }

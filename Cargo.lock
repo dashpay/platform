@@ -498,9 +498,9 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.5.4"
+version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d82033247fd8e890df8f740e407ad4d038debb9eb1f40533fffb32e7d17dc6f7"
+checksum = "b8ee0c1824c4dea5b5f81736aff91bae041d2c07ee1192bec91054e10e3e601e"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -739,7 +739,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "toml",
 ]
@@ -1130,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1146,7 +1146,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "dapi-grpc",
  "heck 0.5.0",
@@ -1191,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1302,7 +1302,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1444,7 +1444,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1504,7 +1504,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1787,12 +1787,12 @@ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "errno"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "534c5cf6194dfab3db3242765c03bbe257cf92f22b38f6bc0c58d59108a820ba"
+checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1857,7 +1857,7 @@ checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.14.5"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
@@ -2485,9 +2485,9 @@ dependencies = [
 
 [[package]]
 name = "http-range-header"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08a397c49fec283e3d6211adbe480be95aae5f304cfb923e9970e08956d5168a"
+checksum = "9171a2ea8a68358193d15dd5d70c1c10a2afc3e7e4c5bc92bc9f025cebd7359c"
 
 [[package]]
 name = "http-serde"
@@ -2785,7 +2785,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -2952,7 +2952,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2995,9 +2995,9 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "0.23.0"
+version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "884adb57038347dfbaf2d5065887b6cf4312330dc8e94bc30a1a839bd79d3261"
+checksum = "7a7deb012b3b2767169ff203fadb4c6b0b82b947512e5eb9e0b78c2e186ad9e3"
 dependencies = [
  "ahash 0.8.11",
  "portable-atomic",
@@ -3005,9 +3005,9 @@ dependencies = [
 
 [[package]]
 name = "metrics-exporter-prometheus"
-version = "0.15.3"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4f0c8427b39666bf970460908b213ec09b3b350f20c0c2eabcbba51704a08e6"
+checksum = "85b6f8152da6d7892ff1b7a1c0fa3f435e92b5918ad67035c3bb432111d9a29b"
 dependencies = [
  "base64 0.22.1",
  "http-body-util",
@@ -3025,15 +3025,14 @@ dependencies = [
 
 [[package]]
 name = "metrics-util"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4259040465c955f9f2f1a4a8a16dc46726169bca0f88e8fb2dbeced487c3e828"
+checksum = "15b482df36c13dd1869d73d14d28cd4855fbd6cfc32294bee109908a9f4a4ed7"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
- "hashbrown 0.14.5",
+ "hashbrown 0.15.2",
  "metrics",
- "num_cpus",
  "quanta",
  "sketches-ddsketch",
 ]
@@ -3571,7 +3570,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3579,7 +3578,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3589,7 +3588,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3610,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "quote",
  "syn 2.0.75",
@@ -3618,7 +3617,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3629,7 +3628,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4124,7 +4123,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "backon",
  "chrono",
@@ -4623,7 +4622,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4633,9 +4632,9 @@ dependencies = [
 
 [[package]]
 name = "sketches-ddsketch"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85636c14b73d81f541e525f585c0a2109e6744e1565b5c1668e31c70c10ed65c"
+checksum = "c1e9a774a6c28142ac54bb25d25562e6bcf957493a184f15ad4eebccb23e410a"
 
 [[package]]
 name = "slab"
@@ -4654,9 +4653,9 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "socket2"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce305eb0b4296696835b71df73eb912e0f1ffd2556a501fcede6e0c50349191c"
+checksum = "c970269d99b64e60ec3bd6ad27270092a5394c4e309314b18ae3fe575695fbe8"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
@@ -4708,7 +4707,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "bincode",
  "dpp",
@@ -5341,9 +5340,9 @@ source = "git+https://github.com/QuantumExplorer/tower?branch=fix/indexMap2OnV04
 
 [[package]]
 name = "tracing"
-version = "0.1.40"
+version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3523ab5a71916ccf420eebdf5521fcef02141234bbc0b8a49f2fdc4544364ef"
+checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
 dependencies = [
  "log",
  "pin-project-lite",
@@ -5353,9 +5352,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.27"
+version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
+checksum = "395ae124c09f9e6918a2310af6038fba074bcf474ac352496d5910dd59a2226d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5364,9 +5363,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.32"
+version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
+checksum = "e672c95779cf947c5311f83787af4fa8fffd12fb27e4993211a84bdfd9610f9c"
 dependencies = [
  "once_cell",
  "valuable",
@@ -5491,18 +5490,21 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "2.10.1"
+version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b74fc6b57825be3373f7054754755f03ac3a8f5d70015ccad699ba2029956f4a"
+checksum = "b30e6f97efe1fa43535ee241ee76967d3ff6ff3953ebb430d8d55c5393029e7b"
 dependencies = [
  "base64 0.22.1",
  "flate2",
+ "litemap",
  "log",
  "once_cell",
  "rustls",
  "rustls-pki-types",
  "url",
  "webpki-roots",
+ "yoke",
+ "zerofrom",
 ]
 
 [[package]]
@@ -5605,7 +5607,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -5696,7 +5698,7 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5998,7 +6000,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.6.0-dev.2"
+version = "1.6.2"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",

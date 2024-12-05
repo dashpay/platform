@@ -114,7 +114,7 @@ jobs:
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
 
       - name: Publish NPM packages
-        run: yarn workspaces foreach --all --no-private --parallel npm publish --access public --tag ${{ steps.tag.outputs.result }}
+        run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
 
       - name: Ignore only already cached artifacts
         run: |
