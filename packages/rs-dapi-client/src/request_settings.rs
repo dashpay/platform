@@ -86,8 +86,10 @@ pub struct AppliedRequestSettings {
 }
 impl AppliedRequestSettings {
     /// Use provided CA certificate for verifying the server's certificate.
-    pub fn with_ca_certificate(mut self, ca_cert: Certificate) -> Self {
-        self.ca_certificate = Some(ca_cert);
+    ///
+    /// If set to None, the system's default CA certificates will be used.
+    pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
+        self.ca_certificate = ca_cert;
         self
     }
 }
