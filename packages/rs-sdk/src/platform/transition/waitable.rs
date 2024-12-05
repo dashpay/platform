@@ -10,6 +10,7 @@ use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionLike;
+use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
 
 /// Waitable trait provides a wait to wait for a response of a state transition after it has been broadcast and
@@ -115,5 +116,16 @@ impl Waitable for Identity {
             }
             Err(e) => Err(e),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Waitable for Vote {
+    async fn wait_for_response(
+        sdk: &Sdk,
+        state_transition: StateTransition,
+        settings: Option<PutSettings>,
+    ) -> Result<Self, Error> {
+        state_transition.wait_for_response(sdk, settings).await
     }
 }
