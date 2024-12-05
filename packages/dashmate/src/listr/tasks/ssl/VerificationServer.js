@@ -3,8 +3,14 @@ import path from 'path';
 import dots from 'dot';
 import os from 'os';
 import { TEMPLATES_DIR } from '../../../constants.js';
+import wait from '../../../util/wait.js';
 
 export default class VerificationServer {
+  /**
+   * @param {string} verification url
+   */
+  #validationUrl;
+
   /**
    *
    * @param {Docker} docker
@@ -34,6 +40,8 @@ export default class VerificationServer {
     if (this.config) {
       throw new Error('Server is already setup');
     }
+
+    this.#validationUrl = validationUrl;
 
     this.config = config;
 
@@ -158,6 +166,31 @@ export default class VerificationServer {
     }
 
     this.container = null;
+  }
+
+  async waitForServerIsResponding() {
+    const MAX_WAIT_TIME = 10000; // Maximum wait time in milliseconds
+    const INTERVAL = 500; // Interval to check in milliseconds
+    const FETCH_TIMEOUT = 2000; // Timeout for each fetch in ms
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < MAX_WAIT_TIME) {
+      try {
+        const response = await fetch(
+          this.#validationUrl,
+          { signal: AbortSignal.timeout(FETCH_TIMEOUT) },
+        );
+        if (response.ok) {
+          return true;
+        }
+      } catch (e) {
+        // Ignore errors and continue retrying
+      }
+
+      await wait(INTERVAL);
+    }
+
+    return false;
   }
 
   /**
