@@ -196,16 +196,12 @@ impl DapiRequestExecutor for DapiClient {
         TransportError: Mockable,
     {
         // Join settings of different sources to get final version of the settings for this execution:
-        let mut applied_settings = self
+        let applied_settings = self
             .settings
             .override_by(R::SETTINGS_OVERRIDES)
             .override_by(settings)
-            .finalize();
-
-        // Setup CA certificate
-        if let Some(ca_certificate) = &self.ca_certificate {
-            applied_settings = applied_settings.with_ca_certificate(ca_certificate.clone());
-        }
+            .finalize()
+            .with_ca_certificate(self.ca_certificate.clone());
 
         // Setup retry policy:
         let retry_settings = ConstantBuilder::default()
