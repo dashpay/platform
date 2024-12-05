@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json",
+  "type": "object",
+  "$defs": {
+    "localization": {
+      "type": "string",
+      "pattern": "^[\\p{L}\\p{N}]*$",
+      "minLength": 1,
+      "maxLength": 64,
+      "$comment": "Allow only alphanumeric characters"
+    }
+  },
+  "properties": {
+    "shouldCapitalize": {
+      "type": "boolean",
+      "description": "TODO"
+    },
+    "localizations": {
+      "type": "object",
+      "description": "TODO",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "singular": {
+            "$ref": "#/$defs/localization"
+          },
+          "plural": {
+            "$ref": "#/$defs/localization"
+          }
+        },
+        "required": ["singular", "plural"],
+        "additionalProperties": false
+      },
+      "maxProperties": 255,
+      "minProperties": 1
+    },
+    "maintainer": {
+      "type": "array",
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "byteArray": true,
+      "minItems": 32,
+      "maxItems": 32,
+      "description": "TODO"
+    },
+    "initialSupply": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "TODO"
+    },
+    "decimals": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "TODO"
+    },
+    "maxSupply": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "TODO"
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "maintainer": {
+          "type": "object",
+          "properties": {
+            "canMint": {
+              "type": "boolean"
+            },
+            "canBurn": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": ["canBurn", "canMint"]
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "TODO"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1024,
+      "description": "Token description"
+    },
+    "metadata": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 255,
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 1024,
+      },
+      "minProperties": 1,
+      "maxProperties": 255,
+      "description": "Token arbitrary metadata",
+    }
+  },
+  "required": [
+    "initialSupply",
+    "decimals"
+  ]
+}
