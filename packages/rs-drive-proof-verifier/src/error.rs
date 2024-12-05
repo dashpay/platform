@@ -1,5 +1,4 @@
 use dpp::ProtocolError;
-use drive::grovedb::operations::proof::GroveDBProof;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]

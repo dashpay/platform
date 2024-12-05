@@ -4,9 +4,12 @@ use chrono::Utc;
 use dapi_grpc::tonic::codegen::http;
 use dapi_grpc::tonic::transport::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::mem;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
@@ -14,12 +17,7 @@ const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 /// DAPI address.
 #[derive(Debug, Clone, Eq)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub struct Address {
-    ban_count: usize,
-    banned_until: Option<chrono::DateTime<Utc>>,
-    #[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))]
-    uri: Uri,
-}
+pub struct Address(#[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))] Uri);
 
 impl FromStr for Address {
     type Err = AddressListError;
@@ -33,35 +31,46 @@ impl FromStr for Address {
 
 impl PartialEq<Self> for Address {
     fn eq(&self, other: &Self) -> bool {
-        self.uri == other.uri
+        self.0 == other.0
     }
 }
 
 impl PartialEq<Uri> for Address {
     fn eq(&self, other: &Uri) -> bool {
-        self.uri == *other
+        self.0 == *other
     }
 }
 
 impl Hash for Address {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.uri.hash(state);
+        self.0.hash(state);
     }
 }
 
 impl From<Uri> for Address {
     fn from(uri: Uri) -> Self {
-        Address {
-            ban_count: 0,
-            banned_until: None,
-            uri,
-        }
+        Address(uri)
     }
 }
 
 impl Address {
+    /// Get [Uri] of a node.
+    pub fn uri(&self) -> &Uri {
+        &self.0
+    }
+}
+
+/// Address status
+/// Contains information about the number of bans and the time until the next ban is lifted.
+#[derive(Debug, Default, Clone)]
+pub struct AddressStatus {
+    ban_count: usize,
+    banned_until: Option<chrono::DateTime<Utc>>,
+}
+
+impl AddressStatus {
     /// Ban the [Address] so it won't be available through [AddressList::get_live_address] for some time.
-    fn ban(&mut self, base_ban_period: &Duration) {
+    pub fn ban(&mut self, base_ban_period: &Duration) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period = Duration::from_secs_f64(base_ban_period.as_secs_f64() * coefficient);
 
@@ -75,14 +84,9 @@ impl Address {
     }
 
     /// Clears ban record.
-    fn unban(&mut self) {
+    pub fn unban(&mut self) {
         self.ban_count = 0;
         self.banned_until = None;
-    }
-
-    /// Get [Uri] of a node.
-    pub fn uri(&self) -> &Uri {
-        &self.uri
     }
 }
 
@@ -90,9 +94,6 @@ impl Address {
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddressListError {
-    /// Specified address is not present in the list
-    #[error("address {0} not found in the list")]
-    AddressNotFound(#[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))] Uri),
     /// A valid uri is required to create an Address
     #[error("unable parse address: {0}")]
     #[cfg_attr(feature = "mocks", serde(skip))]
@@ -103,7 +104,7 @@ pub enum AddressListError {
 /// for [DapiRequest](crate::DapiRequest) execution.
 #[derive(Debug, Clone)]
 pub struct AddressList {
-    addresses: HashSet<Address>,
+    addresses: Arc<RwLock<HashMap<Address, AddressStatus>>>,
     base_ban_period: Duration,
 }
 
@@ -115,7 +116,7 @@ impl Default for AddressList {
 
 impl std::fmt::Display for Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.uri.fmt(f)
+        self.0.fmt(f)
     }
 }
 
@@ -128,43 +129,70 @@ impl AddressList {
     /// Creates an empty [AddressList] with adjustable base ban time.
     pub fn with_settings(base_ban_period: Duration) -> Self {
         AddressList {
-            addresses: HashSet::new(),
+            addresses: Arc::new(RwLock::new(HashMap::new())),
             base_ban_period,
         }
     }
 
     /// Bans address
-    pub(crate) fn ban_address(&mut self, address: &Address) -> Result<(), AddressListError> {
-        if !self.addresses.remove(address) {
-            return Err(AddressListError::AddressNotFound(address.uri.clone()));
+    /// Returns false if the address is not in the list.
+    pub fn ban(&self, address: &Address) -> bool {
+        let mut guard = self.addresses.write().unwrap();
+
+        let Some(status) = guard.get_mut(address) else {
+            return false;
         };
 
-        let mut banned_address = address.clone();
-        banned_address.ban(&self.base_ban_period);
+        status.ban(&self.base_ban_period);
 
-        self.addresses.insert(banned_address);
-
-        Ok(())
+        true
     }
 
     /// Clears address' ban record
-    pub(crate) fn unban_address(&mut self, address: &Address) -> Result<(), AddressListError> {
-        if !self.addresses.remove(address) {
-            return Err(AddressListError::AddressNotFound(address.uri.clone()));
+    /// Returns false if the address is not in the list.
+    pub fn unban(&self, address: &Address) -> bool {
+        let mut guard = self.addresses.write().unwrap();
+
+        let Some(status) = guard.get_mut(address) else {
+            return false;
         };
 
-        let mut unbanned_address = address.clone();
-        unbanned_address.unban();
+        status.unban();
 
-        self.addresses.insert(unbanned_address);
+        true
+    }
 
-        Ok(())
+    /// Check if the address is banned.
+    pub fn is_banned(&self, address: &Address) -> bool {
+        let guard = self.addresses.read().unwrap();
+
+        guard
+            .get(address)
+            .map(|status| status.is_banned())
+            .unwrap_or(false)
     }
 
     /// Adds a node [Address] to [AddressList]
     /// Returns false if the address is already in the list.
     pub fn add(&mut self, address: Address) -> bool {
-        self.addresses.insert(address)
+        let mut guard = self.addresses.write().unwrap();
+
+        match guard.entry(address) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(e) => {
+                e.insert(AddressStatus::default());
+
+                true
+            }
+        }
+    }
+
+    /// Remove address from the list
+    /// Returns [AddressStatus] if the address was in the list.
+    pub fn remove(&mut self, address: &Address) -> Option<AddressStatus> {
+        let mut guard = self.addresses.write().unwrap();
+
+        guard.remove(address)
     }
 
     // TODO: this is the most simple way to add an address
@@ -173,38 +201,32 @@ impl AddressList {
     /// Add a node [Address] to [AddressList] by [Uri].
     /// Returns false if the address is already in the list.
     pub fn add_uri(&mut self, uri: Uri) -> bool {
-        self.addresses.insert(uri.into())
+        self.add(Address::from(uri))
     }
 
     /// Randomly select a not banned address.
-    pub fn get_live_address(&self) -> Option<&Address> {
+    pub fn get_live_address(&self) -> Option<Address> {
+        let guard = self.addresses.read().unwrap();
+
         let mut rng = SmallRng::from_entropy();
 
-        self.unbanned().into_iter().choose(&mut rng)
-    }
-
-    /// Get all addresses that are not banned.
-    fn unbanned(&self) -> Vec<&Address> {
         let now = chrono::Utc::now();
 
-        self.addresses
+        guard
             .iter()
-            .filter(|addr| {
-                addr.banned_until
+            .filter(|(_, status)| {
+                status
+                    .banned_until
                     .map(|banned_until| banned_until < now)
                     .unwrap_or(true)
             })
-            .collect()
-    }
-
-    /// Get number of available, not banned addresses.
-    pub fn available(&self) -> usize {
-        self.unbanned().len()
+            .choose(&mut rng)
+            .map(|(addr, _)| addr.clone())
     }
 
     /// Get number of all addresses, both banned and not banned.
     pub fn len(&self) -> usize {
-        self.addresses.len()
+        self.addresses.read().unwrap().len()
     }
 
     /// Check if the list is empty.
@@ -212,7 +234,20 @@ impl AddressList {
     /// Returns false if there is at least one address in the list.
     /// Banned addresses are also counted.
     pub fn is_empty(&self) -> bool {
-        self.addresses.is_empty()
+        self.addresses.read().unwrap().is_empty()
+    }
+}
+
+impl IntoIterator for AddressList {
+    type Item = (Address, AddressStatus);
+    type IntoIter = std::collections::hash_map::IntoIter<Address, AddressStatus>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let mut guard = self.addresses.write().unwrap();
+
+        let addresses_map = mem::take(&mut *guard);
+
+        addresses_map.into_iter()
     }
 }
 
@@ -236,14 +271,5 @@ impl FromIterator<Uri> for AddressList {
         }
 
         address_list
-    }
-}
-
-impl IntoIterator for AddressList {
-    type Item = Address;
-    type IntoIter = std::collections::hash_set::IntoIter<Address>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.addresses.into_iter()
     }
 }

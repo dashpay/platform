@@ -195,7 +195,7 @@ where
             .dapi_client_settings
             .override_by(settings.unwrap_or_default());
 
-        retry(settings, fut).await.into_inner()
+        retry(sdk.address_list(), settings, fut).await.into_inner()
     }
 
     /// Fetch single object from Platform.
