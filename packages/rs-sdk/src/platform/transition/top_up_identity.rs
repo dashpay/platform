@@ -1,5 +1,6 @@
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
+use super::waitable::Waitable;
 use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::{Identity, PartialIdentity};
@@ -8,7 +9,7 @@ use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTran
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 #[async_trait::async_trait]
-pub trait TopUpIdentity {
+pub trait TopUpIdentity: Waitable {
     async fn top_up_identity(
         &self,
         sdk: &Sdk,

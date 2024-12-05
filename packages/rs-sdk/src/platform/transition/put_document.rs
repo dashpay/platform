@@ -13,7 +13,7 @@ use dpp::state_transition::StateTransition;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
-pub trait PutDocument<S: Signer> {
+pub trait PutDocument<S: Signer>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     async fn put_to_platform(
@@ -99,6 +99,6 @@ impl<S: Signer> PutDocument<S> for Document {
             )
             .await?;
 
-        <Self as Waitable>::wait_for_response(sdk, state_transition, settings).await
+        Self::wait_for_response(sdk, state_transition, settings).await
     }
 }

@@ -15,7 +15,7 @@ use dpp::state_transition::StateTransition;
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
-pub trait PurchaseDocument<S: Signer> {
+pub trait PurchaseDocument<S: Signer>: Waitable {
     /// Tries to purchase a document on platform
     /// Setting settings to `None` sets default connection behavior
     async fn purchase_document(
@@ -107,6 +107,6 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             )
             .await?;
 
-        <Self as Waitable>::wait_for_response(sdk, state_transition, settings).await
+        Self::wait_for_response(sdk, state_transition, settings).await
     }
 }

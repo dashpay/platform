@@ -9,8 +9,10 @@ use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 
+use super::waitable::Waitable;
+
 #[async_trait::async_trait]
-pub trait TransferToIdentity {
+pub trait TransferToIdentity: Waitable {
     /// Function to transfer credits from an identity to another identity. Returns the final
     /// identity balance.
     ///
