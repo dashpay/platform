@@ -962,7 +962,11 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
-        let dapi_client_settings = self.settings.unwrap_or(DEFAULT_REQUEST_SETTINGS);
+        let dapi_client_settings = match self.settings {
+            Some(settings) => DEFAULT_REQUEST_SETTINGS.override_by(settings),
+            None => DEFAULT_REQUEST_SETTINGS,
+        };
+
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
