@@ -62,8 +62,8 @@ impl TransferToIdentity for Identity {
         let result = state_transition.broadcast_and_wait(sdk, settings).await?;
 
         match result {
-            StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
-                identity.balance.ok_or(Error::DapiClientError(
+            StateTransitionProofResult::VerifiedBalanceTransfer(sender, _recipient) => {
+                sender.balance.ok_or(Error::DapiClientError(
                     "expected an identity balance after transfer".to_string(),
                 ))
             }
