@@ -8,6 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.8" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.13" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 base64 = { version = "0.22.1" }

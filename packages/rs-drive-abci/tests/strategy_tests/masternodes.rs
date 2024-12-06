@@ -2,7 +2,7 @@ use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
-use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
+use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -209,13 +209,15 @@ pub fn generate_test_masternodes(
     }
 
     for i in 0..masternode_count {
-        let private_key_operator =
-            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        )
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
+        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
         let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
@@ -345,13 +347,15 @@ pub fn generate_test_masternodes(
     }
 
     for i in 0..hpmn_count {
-        let private_key_operator =
-            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        )
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
+        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Evo,
             pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),

@@ -249,8 +249,8 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                                 quorum_index: None, // Assuming it's not provided here
                                 core_height: vs.core_height,
                                 members,
-                                threshold_public_key: BlsPublicKey::from_bytes(
-                                    &vs.threshold_public_key,
+                                threshold_public_key: BlsPublicKey::try_from(
+                                    vs.threshold_public_key.as_slice(),
                                 )
                                 .map_err(|_| Error::ProtocolError {
                                     error: "Invalid BlsPublicKey format".to_string(),

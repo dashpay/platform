@@ -272,7 +272,7 @@ where
         // Rebroadcast expired withdrawals if they exist
         self.rebroadcast_expired_withdrawal_documents(
             &block_info,
-            &last_committed_platform_state,
+            last_committed_platform_state,
             transaction,
             platform_version,
         )?;

@@ -6,6 +6,7 @@ use crate::abci::AbciError;
 use crate::platform_types::cleaned_abci_messages::{cleaned_block_id, cleaned_commit_info};
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures;
+use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use tenderdash_abci::proto;
 use tenderdash_abci::proto::abci::CommitInfo;
@@ -81,23 +82,26 @@ impl CommitV0 {
     pub(super) fn verify_signature(
         &self,
         signature: &[u8; 96],
-        public_key: &bls_signatures::PublicKey,
+        public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
     ) -> SimpleValidationResult<AbciError> {
         if signature == &[0; 96] {
             return ValidationResult::new_with_error(AbciError::BadRequest(
                 "commit signature not initialized".to_string(),
             ));
         }
+
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let signature = match bls_signatures::Signature::from_bytes(signature).map_err(|e| {
-            AbciError::BlsErrorOfTenderdashThresholdMechanism(
-                e,
+        let g2_element = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
+            .into_option()
+            .ok_or(AbciError::BlsErrorOfTenderdashThresholdMechanism(
+                BlsError::InvalidSignature,
                 "verification of a commit signature".to_string(),
-            )
-        }) {
+            )) {
             Ok(signature) => signature,
             Err(e) => return ValidationResult::new_with_error(e),
         };
+
+        let signature = Signature::Basic(g2_element);
 
         //todo: maybe cache this to lower the chance of a hashing based attack (forcing the
         // same calculation each time)
@@ -120,11 +124,11 @@ impl CommitV0 {
             Err(e) => return ValidationResult::new_with_error(e),
         };
 
-        match public_key.verify(&signature, &hash) {
-            true => ValidationResult::default(),
-            false => ValidationResult::new_with_error(AbciError::BadCommitSignature(format!(
+        match signature.verify(public_key, &hash) {
+            Ok(_) => ValidationResult::default(),
+            Err(_) => ValidationResult::new_with_error(AbciError::BadCommitSignature(format!(
                 "commit signature {} is wrong",
-                hex::encode(signature.to_bytes().as_slice())
+                signature
             ))),
         }
     }
@@ -184,7 +188,7 @@ mod test {
         };
         let pubkey = hex::decode("8d63d603fe858be4d7c14a8f308936bd3447c1f361148ad508a04df92f48cd3b2f2b374ef5d1ee8a75f5aeda2f6f3418").unwrap();
 
-        let pubkey = PublicKey::from_bytes(pubkey.as_slice()).unwrap();
+        let pubkey = PublicKey::try_from(pubkey.as_slice()).unwrap();
         let signature = hex::decode("b95efd51c69a0baf09b130871e735b49cb1b9a0d566bc7ba8fd0fa149dbd28539ab3df435e87ed2a83c94ea714bc8e120504b1cba9363b32c3d58499ed85ecf14539e8e99329fa7952420e4ad9da80b3b28388d62be00770988e4aee705da830").unwrap();
 
         let commit = CommitV0::new_from_cleaned(
