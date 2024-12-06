@@ -2,7 +2,6 @@ use crate::bls_signatures::{
     Bls12381G2Impl, Pairing, PublicKey, SecretKey, Signature, SignatureSchemes,
 };
 use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
-use std::array::TryFromSliceError;
 
 #[derive(Default)]
 pub struct NativeBlsModule;
