@@ -16,12 +16,12 @@ pub enum DashCoreError {
     /// Error from Dash Core.
     #[error("Dash Core RPC error: {0}")]
     Rpc(#[from] dashcore_rpc::Error),
-    /// Invalid format of the hash.
-    #[error("Invalid data format: {0}")]
+    /// Quorum is invalid.
+    #[error("Invalid quorum: {0}")]
     InvalidQuorum(String),
 
-    /// Fork not activated yet
-    #[error("Fork not activated yet: {0}")]
+    /// Fork activation error - most likely the fork is not activated yet.
+    #[error("Fork activation: {0}")]
     ActivationForkError(String),
 }
 
