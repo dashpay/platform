@@ -69,13 +69,13 @@ impl Sdk {
     ) -> Result<AssetLockProof, Error> {
         let transaction_id = transaction.txid();
 
-        // let _span = tracing::debug_span!(
-        //     "wait_for_asset_lock_proof_for_transaction",
-        //     transaction_id = transaction_id.to_string(),
-        // )
-        // .entered();
-        //
-        // tracing::debug!("waiting for messages from stream");
+        let _span = tracing::debug_span!(
+            "wait_for_asset_lock_proof_for_transaction",
+            transaction_id = transaction_id.to_string(),
+        )
+        .entered();
+
+        tracing::debug!("waiting for messages from stream");
 
         // Define an inner async block to handle the stream processing.
         let stream_processing = async {
@@ -98,10 +98,10 @@ impl Sdk {
                             instant_send_lock_messages,
                         ),
                     ) => {
-                        // tracing::debug!(
-                        //     "received {} instant lock message(s)",
-                        //     instant_send_lock_messages.messages.len()
-                        // );
+                        tracing::trace!(
+                            "received {} instant lock message(s)",
+                            instant_send_lock_messages.messages.len()
+                        );
 
                         for instant_lock_bytes in instant_send_lock_messages.messages {
                             let instant_lock =
@@ -120,29 +120,28 @@ impl Sdk {
                                         output_index: 0,
                                     });
 
-                                // tracing::debug!(
-                                //     ?asset_lock_proof,
-                                //     "instant lock is matching to the broadcasted transaction, returning instant asset lock proof"
-                                // );
+                                tracing::trace!(
+                                    ?asset_lock_proof,
+                                    "instant lock is matching to the broadcasted transaction, returning instant asset lock proof"
+                                );
 
                                 return Ok(asset_lock_proof);
+                            } else {
+                                tracing::debug!(
+                                    "instant lock is not matching, waiting for the next message"
+                                );
                             }
-                            // else {
-                            //     tracing::debug!(
-                            //         "instant lock is not matching, waiting for the next message"
-                            //     );
-                            // }
                         }
                     }
                     Some(transactions_with_proofs_response::Responses::RawMerkleBlock(
                         raw_merkle_block,
                     )) => {
-                        // tracing::debug!("received merkle block");
+                        tracing::trace!("received merkle block");
 
                         let merkle_block =
                             MerkleBlock::consensus_decode(&mut raw_merkle_block.as_slice())
                                 .map_err(|e| {
-                                    // tracing::error!("can't decode merkle block: {}", e);
+                                    tracing::error!("can't decode merkle block: {}", e);
 
                                     Error::CoreError(e.into())
                                 })?;
@@ -154,16 +153,16 @@ impl Sdk {
 
                         // Continue receiving messages until we find the transaction
                         if !matches.contains(&transaction_id) {
-                            // tracing::debug!(
-                            //     "merkle block doesn't contain the transaction, waiting for the next message"
-                            // );
+                            tracing::debug!(
+                                "merkle block doesn't contain the transaction, waiting for the next message"
+                            );
 
                             continue;
                         }
 
-                        // tracing::debug!(
-                        //     "merkle block contains the transaction, obtaining core chain locked height"
-                        // );
+                        tracing::trace!(
+                            "merkle block contains the transaction, obtaining core chain locked height"
+                        );
 
                         // TODO: This a temporary implementation until we have headers stream running in background
                         //  so we can always get actual height and chain locks
@@ -191,15 +190,15 @@ impl Sdk {
                                 break;
                             }
 
-                            // tracing::trace!("the transaction is on height {} but not chainlocked. try again in 1 sec", height);
+                            tracing::trace!("the transaction is on height {} but not chainlocked. try again in 1 sec", height);
 
                             sleep(Duration::from_secs(1)).await;
                         }
 
-                        // tracing::debug!(
-                        //     "the transaction is chainlocked on height {}, waiting platform for reaching the same core height",
-                        //     core_chain_locked_height
-                        // );
+                        tracing::trace!(
+                            "the transaction is chainlocked on height {}, waiting platform for reaching the same core height",
+                            core_chain_locked_height
+                        );
 
                         // Wait until platform chain is on the block's chain locked height
                         loop {
@@ -210,11 +209,11 @@ impl Sdk {
                                 break;
                             }
 
-                            // tracing::trace!(
-                            //     "platform chain locked core height {} but we need {}. try again in 1 sec",
-                            //     metadata.core_chain_locked_height,
-                            //     core_chain_locked_height,
-                            // );
+                            tracing::trace!(
+                                "platform chain locked core height {} but we need {}. try again in 1 sec",
+                                metadata.core_chain_locked_height,
+                                core_chain_locked_height,
+                            );
 
                             sleep(Duration::from_secs(1)).await;
                         }
@@ -227,20 +226,20 @@ impl Sdk {
                             },
                         });
 
-                        // tracing::debug!(
-                        //         ?asset_lock_proof,
-                        //         "merkle block contains the broadcasted transaction, returning chain asset lock proof"
-                        //     );
+                        tracing::trace!(
+                                ?asset_lock_proof,
+                                "merkle block contains the broadcasted transaction, returning chain asset lock proof"
+                            );
 
                         return Ok(asset_lock_proof);
                     }
                     Some(transactions_with_proofs_response::Responses::RawTransactions(_)) => {
-                        // tracing::trace!("received transaction(s), ignoring")
+                        tracing::trace!("received transaction(s), ignoring")
                     }
                     None => {
-                        //     tracing::trace!(
-                        //     "received empty response as a workaround for the bug in tonic, ignoring"
-                        // )
+                        tracing::trace!(
+                            "received empty response as a workaround for the bug in tonic, ignoring"
+                        )
                     }
                 }
             }
