@@ -13,6 +13,7 @@ pub mod transfer_document;
 mod txid;
 pub mod update_price_of_document;
 pub mod vote;
+pub mod waitable;
 pub mod withdraw_from_identity;
 
 pub use txid::TxId;

@@ -5,13 +5,14 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+
+use super::waitable::Waitable;
 
 #[async_trait::async_trait]
-pub trait TransferToIdentity {
+pub trait TransferToIdentity: Waitable {
     /// Function to transfer credits from an identity to another identity. Returns the final
     /// identity balance.
     ///
@@ -59,7 +60,7 @@ impl TransferToIdentity for Identity {
             None,
         )?;
 
-        let result = state_transition.broadcast_and_wait(sdk, settings).await?;
+        let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
 
         match result {
             StateTransitionProofResult::VerifiedBalanceTransfer(sender, _recipient) => {
