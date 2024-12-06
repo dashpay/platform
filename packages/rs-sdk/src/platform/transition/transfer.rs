@@ -6,7 +6,7 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 
