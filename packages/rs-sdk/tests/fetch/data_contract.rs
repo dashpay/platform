@@ -8,6 +8,8 @@ use drive_proof_verifier::types::DataContractHistory;
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_read_not_found() {
+    super::common::setup_logs();
+
     pub const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse identity id");
 

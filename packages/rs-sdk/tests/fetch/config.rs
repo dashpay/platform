@@ -49,6 +49,10 @@ pub struct Config {
     #[serde(default)]
     pub platform_ssl: bool,
 
+    /// When platform_ssl is true, use the PEM-encoded CA certificate from provided absolute path to verify the server certificate.
+    #[serde(default)]
+    pub platform_ca_cert_path: Option<PathBuf>,
+
     /// Directory where all generated test vectors will be saved.
     ///
     /// See [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) for more details.
@@ -181,13 +185,17 @@ impl Config {
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let mut builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
                 &self.core_password,
             );
-
+            if let Some(cert_file) = &self.platform_ca_cert_path {
+                builder = builder
+                    .with_ca_certificate_file(cert_file)
+                    .expect("load CA cert");
+            }
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
                 // When we use namespaces, clean up the namespaced dump dir before starting
