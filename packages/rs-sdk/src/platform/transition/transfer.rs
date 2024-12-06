@@ -60,7 +60,7 @@ impl TransferToIdentity for Identity {
             None,
         )?;
 
-        let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
+        let result = state_transition.broadcast_and_wait(sdk, settings).await?;
 
         match result {
             StateTransitionProofResult::VerifiedBalanceTransfer(sender, _recipient) => {
