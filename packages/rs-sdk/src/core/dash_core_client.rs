@@ -13,6 +13,7 @@ use dashcore_rpc::{
 use dpp::dashcore::ProTxHash;
 use dpp::prelude::CoreBlockHeight;
 use drive_proof_verifier::error::ContextProviderError;
+use std::time::Duration;
 use std::{fmt::Debug, sync::Mutex};
 use zeroize::Zeroizing;
 
@@ -25,6 +26,69 @@ pub struct LowLevelDashCoreClient {
     core_user: String,
     core_password: Zeroizing<String>,
     core_port: u16,
+}
+
+/// Client still warming up
+pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
+/// Dash is not connected
+pub const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
+/// Still downloading initial blocks
+pub const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
+
+macro_rules! retry {
+    ($action:expr) => {{
+        /// Maximum number of retry attempts
+        const MAX_RETRIES: u32 = 4;
+        /// // Multiplier for Fibonacci sequence
+        const FIB_MULTIPLIER: u64 = 1;
+
+        const BASE_TIME_MS: u64 = 40;
+
+        fn fibonacci(n: u32) -> u64 {
+            match n {
+                0 => 0,
+                1 => 1,
+                _ => fibonacci(n - 1) + fibonacci(n - 2),
+            }
+        }
+
+        let mut final_result = None;
+        for i in 0..MAX_RETRIES {
+            match $action {
+                Ok(result) => {
+                    final_result = Some(Ok(result));
+                    break;
+                }
+                Err(e) => {
+                    match e {
+                        dashcore_rpc::Error::JsonRpc(
+                            // Retry on transport connection error
+                            dashcore_rpc::jsonrpc::error::Error::Transport(_)
+                            | dashcore_rpc::jsonrpc::error::Error::Rpc(
+                                // Retry on Core RPC "not ready" errors
+                                dashcore_rpc::jsonrpc::error::RpcError {
+                                    code:
+                                        CORE_RPC_ERROR_IN_WARMUP
+                                        | CORE_RPC_CLIENT_NOT_CONNECTED
+                                        | CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD,
+                                    ..
+                                },
+                            ),
+                        ) => {
+                            if i == MAX_RETRIES - 1 {
+                                final_result =
+                                    Some(Err(ContextProviderError::Generic(e.to_string())));
+                            }
+                            let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
+                            std::thread::sleep(Duration::from_millis(delay * BASE_TIME_MS));
+                        }
+                        _ => return Err(ContextProviderError::Generic(e.to_string())),
+                    };
+                }
+            }
+        }
+        final_result.expect("expected a final result")
+    }};
 }
 
 impl Clone for LowLevelDashCoreClient {
@@ -98,28 +162,23 @@ impl LowLevelDashCoreClient {
     pub fn list_unspent(
         &self,
         minimum_sum_satoshi: Option<u64>,
-    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, Error> {
+    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, ContextProviderError> {
         let options = json::ListUnspentQueryOptions {
             minimum_sum_amount: minimum_sum_satoshi.map(Amount::from_sat),
             ..Default::default()
         };
 
-        self.core
-            .lock()
-            .expect("Core lock poisoned")
-            .list_unspent(None, None, None, None, Some(options))
-            .map_err(Error::CoreClientError)
+        let core = self.core.lock().expect("Core lock poisoned");
+
+        retry!(core.list_unspent(None, None, None, None, Some(options.clone())))
     }
 
     /// Return address to which change of transaction can be sent.
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
-    pub fn get_balance(&self) -> Result<Amount, Error> {
-        self.core
-            .lock()
-            .expect("Core lock poisoned")
-            .get_balance(None, None)
-            .map_err(Error::CoreClientError)
+    pub fn get_balance(&self) -> Result<Amount, ContextProviderError> {
+        let core = self.core.lock().expect("Core lock poisoned");
+        retry!(core.get_balance(None, None))
     }
 
     /// Retrieve quorum public key from core.
@@ -132,15 +191,19 @@ impl LowLevelDashCoreClient {
             .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()))?;
 
         let core = self.core.lock().expect("Core lock poisoned");
-        let quorum_info = core
-            .get_quorum_info(json::QuorumType::from(quorum_type), &quorum_hash, None)
-            .map_err(|e: dashcore_rpc::Error| ContextProviderError::Generic(e.to_string()))?;
+
+        // Retrieve the quorum info
+        let quorum_info: json::QuorumInfoResult =
+            retry!(core.get_quorum_info(json::QuorumType::from(quorum_type), &quorum_hash, None))?;
+
+        // Extract the quorum public key and attempt to convert it
         let key = quorum_info.quorum_public_key;
-        let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_e| {
+        let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_| {
             ContextProviderError::InvalidQuorum(
                 "quorum public key is not 48 bytes long".to_string(),
             )
         })?;
+
         Ok(pubkey)
     }
 
@@ -148,13 +211,11 @@ impl LowLevelDashCoreClient {
     pub fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         let core = self.core.lock().expect("Core lock poisoned");
 
-        let fork_info = core
-            .get_blockchain_info()
-            .map(|blockchain_info| blockchain_info.softforks.get("mn_rr").cloned())
-            .map_err(|e: dashcore_rpc::Error| ContextProviderError::Generic(e.to_string()))?
-            .ok_or(ContextProviderError::ActivationForkError(
-                "no fork info for mn_rr".to_string(),
-            ))?;
+        let blockchain_info = retry!(core.get_blockchain_info())?;
+
+        let fork_info = blockchain_info.softforks.get("mn_rr").ok_or(
+            ContextProviderError::ActivationForkError("no fork info for mn_rr".to_string()),
+        )?;
 
         fork_info
             .height
@@ -171,15 +232,14 @@ impl LowLevelDashCoreClient {
         &self,
         height: Option<u32>,
         protx_type: Option<ProTxListType>,
-    ) -> Result<Vec<ProTxHash>, Error> {
+    ) -> Result<Vec<ProTxHash>, ContextProviderError> {
         let core = self.core.lock().expect("Core lock poisoned");
 
-        let pro_tx_hashes =
-            core.get_protx_list(protx_type, Some(false), height)
-                .map(|x| match x {
-                    ProTxList::Hex(hex) => hex,
-                    ProTxList::Info(info) => info.into_iter().map(|v| v.pro_tx_hash).collect(),
-                })?;
+        let pro_tx_list = retry!(core.get_protx_list(protx_type.clone(), Some(false), height))?;
+        let pro_tx_hashes = match pro_tx_list {
+            ProTxList::Hex(hex) => hex,
+            ProTxList::Info(info) => info.into_iter().map(|v| v.pro_tx_hash).collect(),
+        };
 
         Ok(pro_tx_hashes)
     }
