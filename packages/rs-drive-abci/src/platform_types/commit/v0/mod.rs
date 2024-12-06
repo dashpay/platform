@@ -91,7 +91,7 @@ impl CommitV0 {
         }
 
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let g2_element = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature)
+        let g2_element = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
             .into_option()
             .ok_or(AbciError::BlsErrorOfTenderdashThresholdMechanism(
                 BlsError::InvalidSignature,
@@ -124,7 +124,7 @@ impl CommitV0 {
             Err(e) => return ValidationResult::new_with_error(e),
         };
 
-        match signature.verify(&public_key, &hash) {
+        match signature.verify(public_key, &hash) {
             Ok(_) => ValidationResult::default(),
             Err(_) => ValidationResult::new_with_error(AbciError::BadCommitSignature(format!(
                 "commit signature {} is wrong",

@@ -1,3 +1,4 @@
+use std::array::TryFromSliceError;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
@@ -252,6 +253,15 @@ pub enum ProtocolError {
     #[cfg(feature = "bls-signatures")]
     #[error(transparent)]
     BlsError(#[from] dashcore::blsful::BlsError),
+
+    #[error("Private key wrong size: expected 32, got {got}")]
+    PrivateKeySizeError { got: u32 },
+
+    #[error("Private key invalid error: {0}")]
+    InvalidBLSPrivateKeyError(String),
+
+    #[error("Signature wrong size: expected 96, got {got}")]
+    BlsSignatureSizeError { got: u32 },
 }
 
 impl From<&str> for ProtocolError {

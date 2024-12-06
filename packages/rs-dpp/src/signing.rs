@@ -55,7 +55,7 @@ impl PlatformMessageSignable for &[u8] {
                             );
                         }
                     };
-                let signature_bytes: [u8; 96] = match signature.to_vec().try_into() {
+                let signature_bytes: [u8; 96] = match signature.try_into() {
                     Ok(bytes) => bytes,
                     Err(_) => {
                         return SimpleConsensusValidationResult::new_with_error(
@@ -67,8 +67,18 @@ impl PlatformMessageSignable for &[u8] {
                         )
                     }
                 };
-                let g2 = <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature_bytes)
-                    .expect("G2 projective");
+                let g2 = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
+                    &signature_bytes,
+                )
+                .into_option()
+                {
+                    Some(g2) => g2,
+                    None => {
+                        return SimpleConsensusValidationResult::new_with_error(
+                            SignatureError::BasicBLSError(BasicBLSError::new("bls signature does not conform to proper bls signature serialization".to_string())).into(),
+                        );
+                    }
+                };
                 let signature = Signature::<Bls12381G2Impl>::Basic(g2);
 
                 if signature.verify(&public_key, signable_data).is_err() {

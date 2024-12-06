@@ -5,14 +5,6 @@ on:
         description: The package name to run tests for
         type: string
         required: true
-      test-runner:
-        description: Runner for tests. Must be JSON valid string.
-        type: string
-        default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
-      lint-runner:
-        description: Runner for linting. Must be JSON valid string.
-        type: string
-        default: '"ubuntu-24.04"'
       check-each-feature:
         description: If true, try to build each individual feature for this crate
         type: boolean
@@ -21,7 +13,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ${{ fromJSON(inputs.lint-runner) }}
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
@@ -30,17 +22,19 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           components: clippy
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
@@ -49,10 +43,6 @@ jobs:
         with:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -71,14 +61,10 @@ jobs:
           components: rustfmt
           cache: false
 
-      #  This step doesn't need librocksdb, so we don't install it
+      # We don't use cache for this step, nothing to cache here
+      # This step doesn't need librocksdb, so we don't install it
 
       - name: Check formatting
-        env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
         run: cargo fmt --check --package=${{ inputs.package }}
 
   unused_deps:
@@ -92,16 +78,17 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
       - name: Setup Rust
         uses: ./.github/actions/rust
 
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
@@ -114,10 +101,6 @@ jobs:
       - name: Find unused dependencies
         uses: lklimek/cargo-machete@feat/workdir
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -127,6 +110,7 @@ jobs:
 
   detect_structure_changes:
     name: Detect immutable structure changes
+    timeout-minutes: 10
     runs-on: ubuntu-24.04
     # FIXME: as we use `gh pr view` below, this check can only
     # run on pull requests. We should find a way to run it
@@ -188,21 +172,23 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ${{ fromJSON(inputs.test-runner) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
       - name: Setup Rust
         uses: ./.github/actions/rust
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
@@ -210,32 +196,32 @@ jobs:
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
   check_each_feature:
     name: Check each feature
-    runs-on: ${{ fromJSON(inputs.test-runner) }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: ${{ inputs.check-each-feature }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
       - name: Setup Rust
         uses: ./.github/actions/rust
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
@@ -248,10 +234,6 @@ jobs:
 
       - name: Check each feature in ${{ inputs.package }}
         env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -259,6 +241,7 @@ jobs:
         run: |
           echo Verify all features disabled
           set -ex
+
           features="${{ steps.crate_info.outputs.features }}"
           fails=""
           RUSTFLAGS="-D warnings"

@@ -1,4 +1,4 @@
-use dpp::bls_signatures::{Bls12381G2Impl, Signature};
+use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
 use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
@@ -20,20 +20,20 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
     platform_state: &PlatformState,
 ) -> Result<bool, Error> {
     // First verify that the signature conforms to a signature
-    let signature =
-        match Signature::<Bls12381G2Impl>::try_from(instant_lock.signature.as_bytes().as_slice()) {
-            Ok(signature) => signature,
-            Err(e) => {
-                tracing::trace!(
-                    instant_lock = ?InstantLockDebug(instant_lock),
-                    "Invalid instant Lock {} signature format: {}",
-                    instant_lock.txid,
-                    e,
-                );
 
-                return Ok(false);
-            }
-        };
+    let signature = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
+        instant_lock.signature.as_bytes(),
+    )
+    .into_option()
+    {
+        Some(signature) => Signature::Basic(signature),
+        None => {
+            tracing::trace!(
+                instant_lock = ?InstantLockDebug(instant_lock),                "Invalid instant Lock {} signature format",                instant_lock.txid,            );
+
+            return Ok(false);
+        }
+    };
 
     let signing_height = platform_state.last_committed_core_height();
     let verification_height = signing_height.saturating_sub(SIGN_OFFSET);

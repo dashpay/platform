@@ -1,4 +1,4 @@
-use dpp::bls_signatures::{Bls12381G2Impl, Signature};
+use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
@@ -38,11 +38,28 @@ where
 
         // First verify that the signature conforms to a signature
 
-        let Ok(signature) =
-            Signature::<Bls12381G2Impl>::try_from(chain_lock.signature.as_bytes().as_slice())
-        else {
-            return Ok(Some(false));
+        let decoded_sig = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
+            chain_lock.signature.as_bytes(),
+        )
+        .into_option()
+        {
+            Some(signature) => signature,
+            None => {
+                tracing::error!(
+                    ?chain_lock,
+                    "chain lock signature was not deserializable: h:{} r:{}",
+                    platform_state.last_committed_block_height() + 1,
+                    round
+                );
+                return Err(Error::BLSError(
+                    dpp::bls_signatures::BlsError::DeserializationError(
+                        "chain lock signature was not deserializable".to_string(),
+                    ),
+                ));
+            }
         };
+
+        let signature = Signature::Basic(decoded_sig);
 
         // we attempt to verify the chain lock locally
         let chain_lock_height = chain_lock.block_height;
@@ -219,6 +236,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
+    use dpp::bls_signatures::{Bls12381G2Impl, Pairing};
     use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
     use dpp::dashcore::QuorumSigningRequestId;
 
@@ -287,5 +305,31 @@ mod tests {
             hex::encode(message_digest.as_slice()),
             "5ec53e83b8ff390b970e28db21da5b8e45fbe3b69d9f11a2c39062769b1f5e47"
         );
+    }
+
+    #[test]
+    // Verify that the signature can be deserialized
+    fn verify_signature() {
+        let signatures =vec![
+            // local devnet
+            [
+            139, 91, 189, 131, 240, 161, 167, 171, 205, 251, 134, 2, 160, 27, 100, 46, 55, 162, 23,
+            224, 18, 130, 100, 147, 255, 29, 128, 110, 111, 138, 195, 219, 243, 137, 110, 60, 243,
+            176, 180, 242, 58, 223, 235, 59, 172, 168, 235, 146, 6, 243, 139, 112, 175, 99, 82, 69,
+            144, 38, 15, 72, 250, 94, 82, 198, 52, 35, 126, 131, 37, 140, 25, 178, 33, 187, 71,
+            167, 87, 81, 15, 210, 220, 201, 44, 245, 222, 66, 252, 70, 227, 109, 43, 60, 102, 187,
+            144, 108,
+        ],
+        // mainnet
+        hex::decode("9609d7dea0812c0a6b72d6f20f988d269d3076324c5e51ff6042ce0506370a738bfce420f8174a4e0e34ded7e5792ac217a169b71c7dc3eefde5abba9feaf7d3c7c29fb36ade2e41bc5dfada13d7546c6061ef7e03e894e813f72dd20af8bcbb").unwrap().try_into().unwrap(),
+        ];
+
+        for signature in signatures {
+            assert!(
+                <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature)
+                    .into_option()
+                    .is_some(),
+            );
+        }
     }
 }

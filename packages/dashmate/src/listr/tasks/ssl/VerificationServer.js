@@ -3,8 +3,14 @@ import path from 'path';
 import dots from 'dot';
 import os from 'os';
 import { TEMPLATES_DIR } from '../../../constants.js';
+import wait from '../../../util/wait.js';
 
 export default class VerificationServer {
+  /**
+   * @param {string} verification url
+   */
+  #validationUrl;
+
   /**
    *
    * @param {Docker} docker
@@ -34,6 +40,8 @@ export default class VerificationServer {
     if (this.config) {
       throw new Error('Server is already setup');
     }
+
+    this.#validationUrl = validationUrl;
 
     this.config = config;
 
@@ -97,29 +105,36 @@ export default class VerificationServer {
 
     await this.dockerPull(image);
 
-    try {
-      this.container = await this.docker.createContainer(opts);
-    } catch (e) {
-      if (e.statusCode === 409) {
+    let retries = 0;
+    const MAX_RETRIES = 3;
+    while (!this.container && retries <= MAX_RETRIES) {
+      try {
+        this.container = await this.docker.createContainer(opts);
+      } catch (e) {
+        // Throw any other error except container name conflict
+        if (e.statusCode !== 409) {
+          throw e;
+        }
+
+        // Container name is already in use
+
         // Remove container
         const danglingContainer = await this.docker.getContainer(name);
-
         await danglingContainer.remove({ force: true });
 
         try {
           await danglingContainer.wait();
         } catch (waitError) {
-          // Skip error if container is already removed
-          if (e.statusCode !== 404) {
-            throw e;
+          // Throw any other error except container not found
+          if (waitError.statusCode !== 404) {
+            throw waitError;
           }
-        }
 
-        // Try to create a container one more type
-        this.container = await this.docker.createContainer(opts);
+          // Skip error if container is already removed
+        }
       }
 
-      throw e;
+      retries++;
     }
 
     this.startedContainers.addContainer(opts.name);
@@ -151,6 +166,31 @@ export default class VerificationServer {
     }
 
     this.container = null;
+  }
+
+  async waitForServerIsResponding() {
+    const MAX_WAIT_TIME = 10000; // Maximum wait time in milliseconds
+    const INTERVAL = 500; // Interval to check in milliseconds
+    const FETCH_TIMEOUT = 2000; // Timeout for each fetch in ms
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < MAX_WAIT_TIME) {
+      try {
+        const response = await fetch(
+          this.#validationUrl,
+          { signal: AbortSignal.timeout(FETCH_TIMEOUT) },
+        );
+        if (response.ok) {
+          return true;
+        }
+      } catch (e) {
+        // Ignore errors and continue retrying
+      }
+
+      await wait(INTERVAL);
+    }
+
+    return false;
   }
 
   /**

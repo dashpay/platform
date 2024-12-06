@@ -51,7 +51,7 @@ impl From<ValidatorSetV0> for dpp::core_types::validator_set::v0::ValidatorSetV0
                 .map(|(pro_tx_hash, validator)| (pro_tx_hash, validator.into()))
                 .collect(),
             threshold_public_key: PublicKey::try_from(threshold_public_key.to_bytes().as_slice())
-                .unwrap(),
+                .expect("this should not be possible to error as the threshold_public_key was already verified on disk"),
         }
     }
 }
@@ -91,7 +91,7 @@ impl From<ValidatorV0> for dpp::core_types::validator::v0::ValidatorV0 {
         } = value;
         Self {
             pro_tx_hash,
-            public_key: public_key.map(|pk| PublicKey::try_from(pk.to_bytes().as_slice()).unwrap()),
+            public_key: public_key.map(|pk| PublicKey::try_from(pk.to_bytes().as_slice()).expect("this should not be possible to error as the public_key was already verified on disk")),
             node_ip,
             node_id,
             core_port,

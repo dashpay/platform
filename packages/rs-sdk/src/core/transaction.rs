@@ -57,7 +57,7 @@ impl Sdk {
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
             .into_inner()
-            .map_err(|e| Error::DapiClientError(e.to_string()))
+            .map_err(|e| e.into())
     }
 
     /// Waits for a response for the asset lock proof

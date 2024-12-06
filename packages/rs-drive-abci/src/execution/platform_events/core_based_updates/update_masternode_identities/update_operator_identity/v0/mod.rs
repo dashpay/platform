@@ -438,9 +438,9 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().unwrap(),
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
         )
-        .unwrap();
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
         let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
 
         let operator_key: IdentityPublicKey = IdentityPublicKeyV0 {
@@ -957,9 +957,9 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().unwrap(),
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
         )
-        .unwrap();
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
         let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
 
         // Create an old masternode state
@@ -1049,9 +1049,9 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().unwrap(),
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
         )
-        .unwrap();
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
         let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
 
         // Create an old masternode state with original public key operator

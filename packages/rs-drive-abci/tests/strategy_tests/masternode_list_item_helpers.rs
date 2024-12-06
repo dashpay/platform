@@ -38,9 +38,9 @@ impl UpdateMasternodeListItem for MasternodeListItem {
                         .to_bytes()
                         .to_vec();
                     let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-                        &private_key_operator_bytes.try_into().unwrap(),
+                        &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
                     )
-                    .unwrap();
+                    .expect("expected the conversion between bls signatures library and blsful to happen without failing");
                     let pub_key_operator =
                         private_key_operator.public_key().0.to_compressed().to_vec();
                     self.state.pub_key_operator = pub_key_operator;
@@ -92,9 +92,9 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().unwrap(),
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
         )
-        .unwrap();
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
         let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,

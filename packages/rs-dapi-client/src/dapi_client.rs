@@ -3,14 +3,15 @@
 use backon::{ConstantBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::Instrument;
 
 use crate::address_list::AddressListError;
 use crate::connection_pool::ConnectionPool;
+use crate::request_settings::AppliedRequestSettings;
 use crate::transport::TransportError;
 use crate::{
     transport::{TransportClient, TransportRequest},
@@ -72,7 +73,7 @@ impl Mockable for DapiClientError {
 /// Access point to DAPI.
 #[derive(Debug, Clone)]
 pub struct DapiClient {
-    address_list: Arc<RwLock<AddressList>>,
+    address_list: AddressList,
     settings: RequestSettings,
     pool: ConnectionPool,
     #[cfg(feature = "dump")]
@@ -86,7 +87,7 @@ impl DapiClient {
         let address_count = 3 * address_list.len();
 
         Self {
-            address_list: Arc::new(RwLock::new(address_list)),
+            address_list,
             settings,
             pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]
@@ -95,9 +96,72 @@ impl DapiClient {
     }
 
     /// Return the [DapiClient] address list.
-    pub fn address_list(&self) -> &Arc<RwLock<AddressList>> {
+    pub fn address_list(&self) -> &AddressList {
         &self.address_list
     }
+}
+
+/// Ban address in case of retryable error or unban it
+/// if it was banned, and the request was successful.
+pub fn update_address_ban_status<R, E>(
+    address_list: &AddressList,
+    result: &ExecutionResult<R, E>,
+    applied_settings: &AppliedRequestSettings,
+) where
+    E: CanRetry + Display + Debug,
+{
+    match &result {
+        Ok(response) => {
+            // Unban the address if it was banned and node responded successfully this time
+            if address_list.is_banned(&response.address) {
+                if address_list.unban(&response.address) {
+                    tracing::debug!(address = ?response.address, "unban successfully responded address {}", response.address);
+                } else {
+                    // The address might be already removed from the list
+                    // by background process (i.e., SML update), and it's fine.
+                    tracing::debug!(
+                        address = ?response.address,
+                        "unable to unban address {} because it's not in the list anymore",
+                        response.address
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            if error.can_retry() {
+                if let Some(address) = error.address.as_ref() {
+                    if applied_settings.ban_failed_address {
+                        if address_list.ban(address) {
+                            tracing::warn!(
+                                ?address,
+                                ?error,
+                                "ban address {address} due to error: {error}"
+                            );
+                        } else {
+                            // The address might be already removed from the list
+                            // by background process (i.e., SML update), and it's fine.
+                            tracing::debug!(
+                                ?address,
+                                ?error,
+                                "unable to ban address {address} because it's not in the list anymore"
+                            );
+                        }
+                    } else {
+                        tracing::debug!(
+                            ?error,
+                            ?address,
+                            "we should ban the address {address} due to the error but banning is disabled"
+                        );
+                    }
+                } else {
+                    tracing::debug!(
+                        ?error,
+                        "we should ban an address due to the error but address is absent"
+                    );
+                }
+            }
+        }
+    };
 }
 
 #[async_trait]
@@ -140,17 +204,10 @@ impl DapiRequestExecutor for DapiClient {
             let retries_counter = Arc::clone(retries_counter_arc_ref);
 
             // Try to get an address to initialize transport on:
-            let address_list = self
+            let address_result = self
                 .address_list
-                .read()
-                .expect("can't get address list for read");
-
-            let address_result = address_list
                 .get_live_address()
-                .cloned()
                 .ok_or(DapiClientError::NoAvailableAddresses);
-
-            drop(address_list);
 
             let _span = tracing::trace_span!(
                 "execute request",
@@ -177,7 +234,7 @@ impl DapiRequestExecutor for DapiClient {
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
                 let address = address_result.map_err(|inner| ExecutionError {
                     inner,
-                    retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
+                    retries: retries_counter.load(std::sync::atomic::Ordering::Relaxed),
                     address: None,
                 })?;
 
@@ -190,72 +247,44 @@ impl DapiRequestExecutor for DapiClient {
                 )
                 .map_err(|error| ExecutionError {
                     inner: DapiClientError::Transport(error),
-                    retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
+                    retries: retries_counter.load(std::sync::atomic::Ordering::Relaxed),
                     address: Some(address.clone()),
                 })?;
 
-                let response = transport_request
+                let result = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
                     .await
                     .map_err(DapiClientError::Transport);
 
-                match &response {
-                    Ok(_) => {
-                        // Unban the address if it was banned and node responded successfully this time
-                        if address.is_banned() {
-                            let mut address_list = self
-                                .address_list
-                                .write()
-                                .expect("can't get address list for write");
+                let retries = retries_counter.load(std::sync::atomic::Ordering::Relaxed);
 
-                            address_list.unban_address(&address).map_err(|error| {
-                                ExecutionError {
-                                    inner: DapiClientError::AddressList(error),
-                                    retries: retries_counter
-                                        .load(std::sync::atomic::Ordering::Acquire),
-                                    address: Some(address.clone()),
-                                }
-                            })?;
+                let execution_result = result
+                    .map(|inner| {
+                        tracing::trace!(response = ?inner, "received {} response", response_name);
+
+                        ExecutionResponse {
+                            inner,
+                            retries,
+                            address: address.clone(),
                         }
+                    })
+                    .map_err(|inner| {
+                        tracing::debug!(error = ?inner, "received error: {inner}");
 
-                        tracing::trace!(?response, "received {} response", response_name);
-                    }
-                    Err(error) => {
-                        if error.can_retry() {
-                            if applied_settings.ban_failed_address {
-                                let mut address_list = self
-                                    .address_list
-                                    .write()
-                                    .expect("can't get address list for write");
-
-                                address_list.ban_address(&address).map_err(|error| {
-                                    ExecutionError {
-                                        inner: DapiClientError::AddressList(error),
-                                        retries: retries_counter
-                                            .load(std::sync::atomic::Ordering::Acquire),
-                                        address: Some(address.clone()),
-                                    }
-                                })?;
-                            }
-                        } else {
-                            tracing::trace!(?error, "received error");
+                        ExecutionError {
+                            inner,
+                            retries,
+                            address: Some(address.clone()),
                         }
-                    }
-                };
+                    });
 
-                let retries = retries_counter.load(std::sync::atomic::Ordering::Acquire);
+                update_address_ban_status::<R::Response, DapiClientError>(
+                    &self.address_list,
+                    &execution_result,
+                    &applied_settings,
+                );
 
-                response
-                    .map(|inner| ExecutionResponse {
-                        inner,
-                        retries,
-                        address: address.clone(),
-                    })
-                    .map_err(|inner| ExecutionError {
-                        inner,
-                        retries,
-                        address: Some(address),
-                    })
+                execution_result
             }
         };
 
@@ -265,7 +294,7 @@ impl DapiRequestExecutor for DapiClient {
             .retry(retry_settings)
             .notify(|error, duration| {
                 let retries_counter = Arc::clone(&retries_counter_arc);
-                retries_counter.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                retries_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                 tracing::warn!(
                     ?error,

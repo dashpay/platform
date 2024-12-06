@@ -120,10 +120,11 @@ impl Decode for ValidatorSetV0 {
         let bytes = <[u8; 48]>::decode(decoder)?;
         public_key_bytes.copy_from_slice(&bytes);
         let threshold_public_key =
-            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|_| {
-                bincode::error::DecodeError::OtherString(
-                    "Failed to decode BlsPublicKey".to_string(),
-                )
+            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|e| {
+                bincode::error::DecodeError::OtherString(format!(
+                    "Failed to decode BlsPublicKey: {}",
+                    e
+                ))
             })?;
 
         Ok(ValidatorSetV0 {
@@ -167,10 +168,11 @@ impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
         let bytes = <[u8; 48]>::decode(decoder)?;
         public_key_bytes.copy_from_slice(&bytes);
         let threshold_public_key =
-            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|_| {
-                bincode::error::DecodeError::OtherString(
-                    "Failed to decode BlsPublicKey in borrow decode".to_string(),
-                )
+            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|e| {
+                bincode::error::DecodeError::OtherString(format!(
+                    "Failed to decode BlsPublicKey in borrow decode: {}",
+                    e
+                ))
             })?;
 
         Ok(ValidatorSetV0 {

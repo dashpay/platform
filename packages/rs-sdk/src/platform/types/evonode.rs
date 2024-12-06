@@ -25,8 +25,8 @@ use std::fmt::Debug;
 /// use futures::executor::block_on;
 ///
 /// let sdk = Sdk::new_mock();
-/// let uri: http::Uri = "http://127.0.0.1:1".parse().unwrap();
-/// let node = EvoNode::new(uri.into());
+/// let address = "http://127.0.0.1:1".parse().expect("valid address");
+/// let node = EvoNode::new(address);
 /// let status = block_on(EvoNodeStatus::fetch_unproved(&sdk, node)).unwrap();
 /// ```
 
