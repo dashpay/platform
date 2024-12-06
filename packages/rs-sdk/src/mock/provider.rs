@@ -215,7 +215,7 @@ impl ContextProvider for GrpcContextProvider {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        self.core.get_platform_activation_height()
+        Ok(self.core.get_platform_activation_height()?)
     }
 }
 

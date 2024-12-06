@@ -12,10 +12,11 @@ use dashcore_rpc::{
 };
 use dpp::dashcore::ProTxHash;
 use dpp::prelude::CoreBlockHeight;
-use drive_proof_verifier::error::ContextProviderError;
 use std::time::Duration;
 use std::{fmt::Debug, sync::Mutex};
 use zeroize::Zeroizing;
+
+use super::DashCoreError;
 
 /// Core RPC client that can be used to retrieve quorum keys from core.
 ///
@@ -27,13 +28,6 @@ pub struct LowLevelDashCoreClient {
     core_password: Zeroizing<String>,
     core_port: u16,
 }
-
-/// Client still warming up
-pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
-/// Dash is not connected
-pub const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
-/// Still downloading initial blocks
-pub const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
 
 macro_rules! retry {
     ($action:expr) => {{
@@ -60,30 +54,18 @@ macro_rules! retry {
                     break;
                 }
                 Err(e) => {
-                    match e {
-                        dashcore_rpc::Error::JsonRpc(
-                            // Retry on transport connection error
-                            dashcore_rpc::jsonrpc::error::Error::Transport(_)
-                            | dashcore_rpc::jsonrpc::error::Error::Rpc(
-                                // Retry on Core RPC "not ready" errors
-                                dashcore_rpc::jsonrpc::error::RpcError {
-                                    code:
-                                        CORE_RPC_ERROR_IN_WARMUP
-                                        | CORE_RPC_CLIENT_NOT_CONNECTED
-                                        | CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD,
-                                    ..
-                                },
-                            ),
-                        ) => {
-                            if i == MAX_RETRIES - 1 {
-                                final_result =
-                                    Some(Err(ContextProviderError::Generic(e.to_string())));
-                            }
-                            let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
-                            std::thread::sleep(Duration::from_millis(delay * BASE_TIME_MS));
+                    use rs_dapi_client::CanRetry;
+
+                    let err: DashCoreError = e.into();
+                    if err.can_retry() {
+                        if i == MAX_RETRIES - 1 {
+                            final_result = Some(Err(err));
                         }
-                        _ => return Err(ContextProviderError::Generic(e.to_string())),
-                    };
+                        let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
+                        std::thread::sleep(Duration::from_millis(delay * BASE_TIME_MS));
+                    } else {
+                        return Err(err);
+                    }
                 }
             }
         }
@@ -133,8 +115,7 @@ impl LowLevelDashCoreClient {
         let core = Client::new(
             &addr,
             Auth::UserPass(core_user.to_string(), core_password.to_string()),
-        )
-        .map_err(Error::CoreClientError)?;
+        )?;
 
         Ok(Self {
             core: Mutex::new(core),
@@ -162,7 +143,7 @@ impl LowLevelDashCoreClient {
     pub fn list_unspent(
         &self,
         minimum_sum_satoshi: Option<u64>,
-    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, ContextProviderError> {
+    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, DashCoreError> {
         let options = json::ListUnspentQueryOptions {
             minimum_sum_amount: minimum_sum_satoshi.map(Amount::from_sat),
             ..Default::default()
@@ -176,7 +157,7 @@ impl LowLevelDashCoreClient {
     /// Return address to which change of transaction can be sent.
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
-    pub fn get_balance(&self) -> Result<Amount, ContextProviderError> {
+    pub fn get_balance(&self) -> Result<Amount, DashCoreError> {
         let core = self.core.lock().expect("Core lock poisoned");
         retry!(core.get_balance(None, None))
     }
@@ -186,9 +167,9 @@ impl LowLevelDashCoreClient {
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
-    ) -> Result<[u8; 48], ContextProviderError> {
+    ) -> Result<[u8; 48], DashCoreError> {
         let quorum_hash = QuorumHash::from_slice(&quorum_hash)
-            .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()))?;
+            .map_err(|e| DashCoreError::InvalidQuorum(format!("invalid quorum hash: {}", e)))?;
 
         let core = self.core.lock().expect("Core lock poisoned");
 
@@ -199,29 +180,29 @@ impl LowLevelDashCoreClient {
         // Extract the quorum public key and attempt to convert it
         let key = quorum_info.quorum_public_key;
         let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_| {
-            ContextProviderError::InvalidQuorum(
-                "quorum public key is not 48 bytes long".to_string(),
-            )
+            DashCoreError::InvalidQuorum("quorum public key is not 48 bytes long".to_string())
         })?;
 
         Ok(pubkey)
     }
 
     /// Retrieve platform activation height from core.
-    pub fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+    pub fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, DashCoreError> {
         let core = self.core.lock().expect("Core lock poisoned");
 
         let blockchain_info = retry!(core.get_blockchain_info())?;
 
-        let fork_info = blockchain_info.softforks.get("mn_rr").ok_or(
-            ContextProviderError::ActivationForkError("no fork info for mn_rr".to_string()),
-        )?;
+        let fork_info =
+            blockchain_info
+                .softforks
+                .get("mn_rr")
+                .ok_or(DashCoreError::ActivationForkError(
+                    "no fork info for mn_rr".to_string(),
+                ))?;
 
-        fork_info
-            .height
-            .ok_or(ContextProviderError::ActivationForkError(
-                "unknown fork height".to_string(),
-            ))
+        fork_info.height.ok_or(DashCoreError::ActivationForkError(
+            "unknown fork height".to_string(),
+        ))
     }
 
     /// Require list of validators from Core.
@@ -232,7 +213,7 @@ impl LowLevelDashCoreClient {
         &self,
         height: Option<u32>,
         protx_type: Option<ProTxListType>,
-    ) -> Result<Vec<ProTxHash>, ContextProviderError> {
+    ) -> Result<Vec<ProTxHash>, DashCoreError> {
         let core = self.core.lock().expect("Core lock poisoned");
 
         let pro_tx_list = retry!(core.get_protx_list(protx_type.clone(), Some(false), height))?;
