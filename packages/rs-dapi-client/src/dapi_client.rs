@@ -218,7 +218,7 @@ impl DapiRequestExecutor for DapiClient {
         let retries_counter_arc_ref = &retries_counter_arc;
 
         // We need reference so that the closure is FnMut
-        let applied_settings = &applied_settings;
+        let applied_settings_ref = &applied_settings;
 
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
@@ -234,7 +234,7 @@ impl DapiRequestExecutor for DapiClient {
             let _span = tracing::trace_span!(
                 "execute request",
                 address = ?address_result,
-                settings = ?applied_settings,
+                settings = ?applied_settings_ref,
                 method = request.method_name(),
             )
             .entered();
@@ -264,7 +264,7 @@ impl DapiRequestExecutor for DapiClient {
 
                 let mut transport_client = R::Client::with_uri_and_settings(
                     address.uri().clone(),
-                    applied_settings,
+                    applied_settings_ref,
                     &pool,
                 )
                 .map_err(|error| ExecutionError {
@@ -274,7 +274,7 @@ impl DapiRequestExecutor for DapiClient {
                 })?;
 
                 let result = transport_request
-                    .execute_transport(&mut transport_client, applied_settings)
+                    .execute_transport(&mut transport_client, applied_settings_ref)
                     .await
                     .map_err(DapiClientError::Transport);
 
@@ -303,7 +303,7 @@ impl DapiRequestExecutor for DapiClient {
                 update_address_ban_status::<R::Response, DapiClientError>(
                     &self.address_list,
                     &execution_result,
-                    applied_settings,
+                    applied_settings_ref,
                 );
 
                 execution_result
