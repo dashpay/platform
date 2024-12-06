@@ -1,5 +1,6 @@
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
