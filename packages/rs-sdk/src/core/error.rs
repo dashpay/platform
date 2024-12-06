@@ -16,6 +16,7 @@ pub enum DashCoreError {
     /// Error from Dash Core.
     #[error("Dash Core RPC error: {0}")]
     Rpc(#[from] dashcore_rpc::Error),
+
     /// Quorum is invalid.
     #[error("Invalid quorum: {0}")]
     InvalidQuorum(String),
