@@ -9,6 +9,7 @@ use drive_structure_version::DriveStructureVersion;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
+use crate::version::drive_versions::drive_identity_method_versions::DriveTokenMethodVersions;
 
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
@@ -45,6 +46,7 @@ pub struct DriveMethodVersions {
     pub asset_lock: DriveAssetLockMethodVersions,
     pub verify: DriveVerifyMethodVersions,
     pub identity: DriveIdentityMethodVersions,
+    pub token: DriveTokenMethodVersions,
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,

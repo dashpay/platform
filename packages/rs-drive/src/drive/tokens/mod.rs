@@ -1,6 +1,7 @@
 use crate::drive::RootTree;
 
 mod balance;
+pub mod initialization;
 
 /// The path for the balances tree
 #[cfg(any(feature = "server", feature = "verify"))]

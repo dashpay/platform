@@ -3,7 +3,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::Docu
 use thiserror::Error;
 
 use super::*;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transition_action_type::TransitionActionTypeGetter;
 
 #[wasm_bindgen]
 #[derive(Error, Debug)]

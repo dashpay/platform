@@ -15,7 +15,7 @@ impl DocumentDeleteTransitionActionV0 {
     ) -> Result<Self, ProtocolError> {
         let DocumentDeleteTransitionV0 { base, .. } = value;
         Ok(DocumentDeleteTransitionActionV0 {
-            base: DocumentBaseTransitionAction::from_base_transition_with_contract_lookup(
+            base: DocumentBaseTransitionAction::try_from_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
             )?,
@@ -29,7 +29,7 @@ impl DocumentDeleteTransitionActionV0 {
     ) -> Result<Self, ProtocolError> {
         let DocumentDeleteTransitionV0 { base, .. } = value;
         Ok(DocumentDeleteTransitionActionV0 {
-            base: DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
+            base: DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
             )?,

@@ -371,7 +371,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             DocumentTransition::Create(document_create_transition) => {
                 let result = ConsensusValidationResult::<DocumentTransitionAction>::new();
 
-                let (document_create_action, fee_result) = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
+                let (document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
                     drive, transaction,
                     document_create_transition, block_info, |_identifier| {
                         Ok(data_contract_fetch_info.clone())
@@ -474,7 +474,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 }
             }
             DocumentTransition::Delete(document_delete_transition) => {
-                let action = DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition, |_identifier| {
+                let action = DocumentDeleteTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 })?;
                 Ok(DocumentTransitionAction::DeleteAction(action).into())

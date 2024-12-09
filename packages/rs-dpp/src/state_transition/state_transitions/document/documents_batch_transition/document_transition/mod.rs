@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::{Identifier, IdentityNonce};
 use document_base_transition::DocumentBaseTransition;
 
-pub mod action_type;
+pub mod document_transition_action_type;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
@@ -20,6 +20,7 @@ pub mod token_base_transition;
 pub mod token_burn_transition;
 pub mod token_issuance_transition;
 pub mod token_transfer_transition;
+pub mod token_transition_action_type;
 
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -34,45 +35,15 @@ use platform_value::Value;
 use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-
+use crate::state_transition::documents_batch_transition::{TokenBurnTransition, TokenIssuanceTransition, TokenTransferTransition};
+use crate::state_transition::documents_batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::documents_batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::documents_batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 
 pub const PROPERTY_ACTION: &str = "$action";
-
-pub trait DocumentTransitionV0Methods {
-    fn base(&self) -> &DocumentBaseTransition;
-    /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
-    /// the `path` supports dot-syntax: i.e: property.internal_property
-    fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
-    ///  get the id
-    fn get_id(&self) -> Identifier;
-    /// get the document type
-    fn document_type_name(&self) -> &String;
-    /// get the data contract id
-    fn data_contract_id(&self) -> Identifier;
-    /// get the data of the transition if exits
-    fn data(&self) -> Option<&BTreeMap<String, Value>>;
-    /// get the revision of transition if exits
-    fn revision(&self) -> Option<Revision>;
-
-    /// get the identity contract nonce
-    fn identity_contract_nonce(&self) -> IdentityNonce;
-    #[cfg(test)]
-    /// Inserts the dynamic property into the document
-    fn insert_dynamic_property(&mut self, property_name: String, value: Value);
-    /// set data contract's ID
-    fn set_data_contract_id(&mut self, id: Identifier);
-    fn base_mut(&mut self) -> &mut DocumentBaseTransition;
-    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
-
-    // sets revision of the transition
-    fn set_revision(&mut self, revision: Revision);
-
-    // sets identity contract nonce
-    fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
-}
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(
@@ -138,6 +109,39 @@ impl DocumentTransition {
             None
         }
     }
+}
+
+pub trait DocumentTransitionV0Methods {
+    fn base(&self) -> &DocumentBaseTransition;
+    /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
+    /// the `path` supports dot-syntax: i.e: property.internal_property
+    fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
+    ///  get the id
+    fn get_id(&self) -> Identifier;
+    /// get the document type
+    fn document_type_name(&self) -> &String;
+    /// get the data contract id
+    fn data_contract_id(&self) -> Identifier;
+    /// get the data of the transition if exits
+    fn data(&self) -> Option<&BTreeMap<String, Value>>;
+    /// get the revision of transition if exits
+    fn revision(&self) -> Option<Revision>;
+
+    /// get the identity contract nonce
+    fn identity_contract_nonce(&self) -> IdentityNonce;
+    #[cfg(test)]
+    /// Inserts the dynamic property into the document
+    fn insert_dynamic_property(&mut self, property_name: String, value: Value);
+    /// set data contract's ID
+    fn set_data_contract_id(&mut self, id: Identifier);
+    fn base_mut(&mut self) -> &mut DocumentBaseTransition;
+    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
+
+    // sets revision of the transition
+    fn set_revision(&mut self, revision: Revision);
+
+    // sets identity contract nonce
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
 }
 
 impl DocumentTransitionV0Methods for DocumentTransition {
@@ -276,3 +280,108 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 }
+
+
+
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
+)]
+pub enum TokenTransition {
+    #[display("TokenBurnTransition({})", "_0")]
+    Burn(TokenBurnTransition),
+
+    #[display("TokenIssuanceTransition({})", "_0")]
+    Issuance(TokenIssuanceTransition),
+
+    #[display("TokenTransferTransition({})", "_0")]
+    Transfer(TokenTransferTransition),
+}
+
+impl TokenTransition {
+    pub fn as_transition_burn(&self) -> Option<&TokenBurnTransition> {
+        if let Self::Burn(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+    pub fn as_transition_issuance(&self) -> Option<&TokenIssuanceTransition> {
+        if let Self::Issuance(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_transition_transfer(&self) -> Option<&TokenTransferTransition> {
+        if let Self::Transfer(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+}
+
+pub trait TokenTransitionV0Methods {
+    fn base(&self) -> &TokenBaseTransition;
+    fn base_mut(&mut self) -> &mut TokenBaseTransition;
+    /// get the data contract id
+    fn data_contract_id(&self) -> Identifier;
+    /// set data contract's ID
+    fn set_data_contract_id(&mut self, id: Identifier);
+
+    /// get the identity contract nonce
+    fn identity_contract_nonce(&self) -> IdentityNonce;
+    /// sets identity contract nonce
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
+}
+
+impl TokenTransitionV0Methods for TokenTransition {
+    fn base(&self) -> &TokenBaseTransition {
+        match self {
+            TokenTransition::Burn(t) => t.base(),
+            TokenTransition::Issuance(t) => t.base(),
+            TokenTransition::Transfer(t) => t.base(),
+        }
+    }
+
+    fn base_mut(&mut self) -> &mut TokenBaseTransition {
+        match self {
+            TokenTransition::Burn(t) => t.base_mut(),
+            TokenTransition::Issuance(t) => t.base_mut(),
+            TokenTransition::Transfer(t) => t.base_mut(),
+        }
+    }
+
+    fn data_contract_id(&self) -> Identifier {
+        self.base().data_contract_id()
+    }
+
+    fn set_data_contract_id(&mut self, id: Identifier) {
+        self.base_mut().set_data_contract_id(id);
+    }
+
+    fn identity_contract_nonce(&self) -> IdentityNonce {
+        self.base().identity_contract_nonce()
+    }
+
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
+        self.base_mut().set_identity_contract_nonce(nonce);
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
+)]
+pub enum BatchedTransition {
+    #[display("DocumentTransition({})", "_0")]
+    Document(DocumentTransition),
+    #[display("TokenTransition({})", "_0")]
+    Token(TokenTransition),
+}
+
+

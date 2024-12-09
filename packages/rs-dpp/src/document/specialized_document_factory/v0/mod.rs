@@ -25,7 +25,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
     document_transition::{
-        action_type::DocumentTransitionActionType, DocumentCreateTransition,
+        document_transition_action_type::DocumentTransitionActionType, DocumentCreateTransition,
         DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,
     },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,

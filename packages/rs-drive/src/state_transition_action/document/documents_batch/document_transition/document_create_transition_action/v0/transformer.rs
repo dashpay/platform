@@ -34,7 +34,7 @@ impl DocumentCreateTransitionActionV0 {
             prefunded_voting_balance,
             ..
         } = value;
-        let base = DocumentBaseTransitionAction::from_base_transition_with_contract_lookup(
+        let base = DocumentBaseTransitionAction::try_from_base_transition_with_contract_lookup(
             base,
             get_data_contract,
         )?;
@@ -130,7 +130,7 @@ impl DocumentCreateTransitionActionV0 {
             ..
         } = value;
         let base =
-            DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
+            DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
             )?;

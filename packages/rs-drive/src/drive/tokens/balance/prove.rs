@@ -9,8 +9,8 @@ impl Drive {
     /// Proves an Identity's token balance from the backing store
     pub fn prove_identity_token_balance(
         &self,
-        identity_id: [u8; 32],
         token_id: [u8; 32],
+        identity_id: [u8; 32],
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -21,8 +21,8 @@ impl Drive {
     /// Proves multiple Identity token balances from the backing store
     pub fn prove_many_identity_token_balances(
         &self,
-        identity_ids: &[[u8; 32]],
         token_id: [u8; 32],
+        identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -33,13 +33,14 @@ impl Drive {
     /// Proves multiple Identity balances from the backing store by range
     pub fn prove_many_identity_token_balances_by_range(
         &self,
+        token_id: [u8; 32],
         start_at: Option<([u8; 32], bool)>,
         ascending: bool,
         limit: u16,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query = Self::balances_for_range_query(start_at, ascending, limit);
+        let balance_query = Self::token_balances_for_range_query(token_id, start_at, ascending, limit);
         self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 }
@@ -51,13 +52,13 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
 
-    mod prove_identity_balance {
+    mod prove_identity_token_balance {
         use super::*;
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::version::PlatformVersion;
 
         #[test]
-        fn should_prove_a_single_identity_balance() {
+        fn should_prove_a_single_identity_token_balance() {
             let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
@@ -77,10 +78,10 @@ mod tests {
                 )
                 .expect("expected to add an identity");
             let proof = drive
-                .prove_identity_balance(identity.id().to_buffer(), None, &platform_version.drive)
+                .prove_identity_token_balance(identity.id().to_buffer(), None, &platform_version.drive)
                 .expect("should not error when proving an identity");
 
-            let (_, proved_identity_balance) = Drive::verify_identity_balance_for_identity_id(
+            let (_, proved_identity_balance) = Drive::verify_identity_token_balance_for_identity_id(
                 proof.as_slice(),
                 identity_id,
                 false,
@@ -92,15 +93,17 @@ mod tests {
         }
     }
 
-    mod prove_many_identity_balances {
+    mod prove_many_identity_token_balances {
         use super::*;
         use dpp::fee::Credits;
         use dpp::identity::accessors::IdentityGettersV0;
         use platform_version::version::PlatformVersion;
         use std::collections::BTreeMap;
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
 
         #[test]
-        fn should_prove_multiple_identity_balances() {
+        fn should_prove_multiple_identity_single_token_balances() {
             let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
             let identities: BTreeMap<[u8; 32], Identity> =
@@ -109,6 +112,12 @@ mod tests {
                     .into_iter()
                     .map(|identity| (identity.id().to_buffer(), identity))
                     .collect();
+            
+            let mut rng = StdRng::seed_from_u64(293);
+            
+            let token_id: [u8;32] = rng.gen();
+            
+            drive.add_new_token(token_id);
 
             for identity in identities.values() {
                 drive
@@ -128,7 +137,7 @@ mod tests {
                 .map(|(id, identity)| (id, Some(identity.balance())))
                 .collect::<BTreeMap<[u8; 32], Option<Credits>>>();
             let proof = drive
-                .prove_many_identity_balances(
+                .prove_many_identity_token_balances(
                     identity_ids.as_slice(),
                     None,
                     &platform_version.drive,

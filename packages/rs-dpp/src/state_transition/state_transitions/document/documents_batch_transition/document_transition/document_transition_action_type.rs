@@ -1,4 +1,4 @@
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::documents_batch_transition::document_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentTransition};
 use crate::ProtocolError;
 
 // @append-only
