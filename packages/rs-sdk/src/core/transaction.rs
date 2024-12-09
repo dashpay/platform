@@ -98,7 +98,7 @@ impl Sdk {
                             instant_send_lock_messages,
                         ),
                     ) => {
-                        tracing::debug!(
+                        tracing::trace!(
                             "received {} instant lock message(s)",
                             instant_send_lock_messages.messages.len()
                         );
@@ -120,7 +120,7 @@ impl Sdk {
                                         output_index: 0,
                                     });
 
-                                tracing::debug!(
+                                tracing::trace!(
                                     ?asset_lock_proof,
                                     "instant lock is matching to the broadcasted transaction, returning instant asset lock proof"
                                 );
@@ -136,7 +136,7 @@ impl Sdk {
                     Some(transactions_with_proofs_response::Responses::RawMerkleBlock(
                         raw_merkle_block,
                     )) => {
-                        tracing::debug!("received merkle block");
+                        tracing::trace!("received merkle block");
 
                         let merkle_block =
                             MerkleBlock::consensus_decode(&mut raw_merkle_block.as_slice())
@@ -160,7 +160,7 @@ impl Sdk {
                             continue;
                         }
 
-                        tracing::debug!(
+                        tracing::trace!(
                             "merkle block contains the transaction, obtaining core chain locked height"
                         );
 
@@ -195,7 +195,7 @@ impl Sdk {
                             sleep(Duration::from_secs(1)).await;
                         }
 
-                        tracing::debug!(
+                        tracing::trace!(
                             "the transaction is chainlocked on height {}, waiting platform for reaching the same core height",
                             core_chain_locked_height
                         );
@@ -226,7 +226,7 @@ impl Sdk {
                             },
                         });
 
-                        tracing::debug!(
+                        tracing::trace!(
                                 ?asset_lock_proof,
                                 "merkle block contains the broadcasted transaction, returning chain asset lock proof"
                             );
@@ -236,9 +236,11 @@ impl Sdk {
                     Some(transactions_with_proofs_response::Responses::RawTransactions(_)) => {
                         tracing::trace!("received transaction(s), ignoring")
                     }
-                    None => tracing::trace!(
-                        "received empty response as a workaround for the bug in tonic, ignoring"
-                    ),
+                    None => {
+                        tracing::trace!(
+                            "received empty response as a workaround for the bug in tonic, ignoring"
+                        )
+                    }
                 }
             }
         };

@@ -10,7 +10,7 @@ use dpp::{
 };
 use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 use zeroize::Zeroizing;
 
 /// Existing document ID
