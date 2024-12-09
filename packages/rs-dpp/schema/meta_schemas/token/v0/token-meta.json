@@ -88,15 +88,15 @@
       "type": "object",
       "propertyNames": {
         "type": "string",
-        "maxLength": 255,
+        "maxLength": 255
       },
       "additionalProperties": {
         "type": "string",
-        "maxLength": 1024,
+        "maxLength": 1024
       },
       "minProperties": 1,
       "maxProperties": 255,
-      "description": "Token arbitrary metadata",
+      "description": "Token arbitrary metadata"
     }
   },
   "required": [
