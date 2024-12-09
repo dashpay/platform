@@ -244,7 +244,6 @@ where
 mod test {
     use super::*;
     use derive_more::Display;
-    use http::Uri;
     use rs_dapi_client::ExecutionError;
     use std::{
         future::Future,

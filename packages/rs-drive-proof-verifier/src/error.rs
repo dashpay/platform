@@ -119,6 +119,10 @@ pub enum ContextProviderError {
     /// Async error, eg. when tokio runtime fails
     #[error("async error: {0}")]
     AsyncError(String),
+
+    /// Dash Core error
+    #[error("Dash Core error: {0}")]
+    DashCoreError(String),
 }
 
 impl From<drive::error::Error> for Error {
