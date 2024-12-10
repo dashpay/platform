@@ -14293,7 +14293,7 @@ const RAW_RUNTIME_STATE =
           ["log-symbols", "npm:4.1.0"],\
           ["minimatch", "npm:5.0.1"],\
           ["ms", "npm:2.1.3"],\
-          ["nanoid", "npm:3.3.3"],\
+          ["nanoid", "npm:3.3.8"],\
           ["serialize-javascript", "npm:6.0.0"],\
           ["strip-json-comments", "npm:3.1.1"],\
           ["supports-color", "npm:8.1.1"],\
@@ -14323,7 +14323,7 @@ const RAW_RUNTIME_STATE =
           ["log-symbols", "npm:4.1.0"],\
           ["minimatch", "npm:4.2.1"],\
           ["ms", "npm:2.1.3"],\
-          ["nanoid", "npm:3.3.1"],\
+          ["nanoid", "npm:3.3.8"],\
           ["serialize-javascript", "npm:6.0.0"],\
           ["strip-json-comments", "npm:3.1.1"],\
           ["supports-color", "npm:8.1.1"],\
@@ -14484,17 +14484,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["nanoid", [\
-      ["npm:3.3.1", {\
-        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.1-bdd760bee0-306f2cb9e4.zip/node_modules/nanoid/",\
+      ["npm:3.3.8", {\
+        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.8-d22226208b-2d1766606c.zip/node_modules/nanoid/",\
         "packageDependencies": [\
-          ["nanoid", "npm:3.3.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:3.3.3", {\
-        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.3-25d865be84-c703ed58a2.zip/node_modules/nanoid/",\
-        "packageDependencies": [\
-          ["nanoid", "npm:3.3.3"]\
+          ["nanoid", "npm:3.3.8"]\
         ],\
         "linkType": "HARD"\
       }]\
