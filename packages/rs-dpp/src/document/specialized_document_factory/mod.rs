@@ -14,7 +14,8 @@ use crate::document::Document;
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
-    document_transition::document_transition_action_type::DocumentTransitionActionType, DocumentsBatchTransition,
+    document_transition::document_transition_action_type::DocumentTransitionActionType,
+    DocumentsBatchTransition,
 };
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::SpecializedDocumentFactoryV0;

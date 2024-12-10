@@ -1,5 +1,5 @@
-use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_transition::TokenTransition;
+use crate::ProtocolError;
 
 // @append-only
 #[derive(Eq, PartialEq, Debug, Copy, Clone, Hash)]

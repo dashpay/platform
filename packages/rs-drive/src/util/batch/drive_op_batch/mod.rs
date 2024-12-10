@@ -5,6 +5,7 @@ mod finalize_task;
 mod identity;
 mod prefunded_specialized_balance;
 mod system;
+mod token;
 mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
@@ -22,6 +23,7 @@ pub use document::UpdateOperationInfo;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use system::SystemOperationType;
+pub use token::TokenOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -69,6 +71,8 @@ pub enum DriveOperation<'a> {
     DataContractOperation(DataContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
+    /// A token operation
+    TokenOperation(TokenOperationType<'a>),
     /// Withdrawal operation
     WithdrawalOperation(WithdrawalOperationType),
     /// An identity operation
@@ -152,6 +156,14 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 .into_iter()
                 .map(GroveOperation)
                 .collect()),
+            DriveOperation::TokenOperation(token_operation_type) => token_operation_type
+                .into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
         }
     }
 }

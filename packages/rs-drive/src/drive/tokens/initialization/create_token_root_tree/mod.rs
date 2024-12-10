@@ -13,12 +13,11 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-
 impl Drive {
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
     pub fn create_token_root_tree(
         &self,
-        token_id: [u8;32],
+        token_id: [u8; 32],
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -49,7 +48,7 @@ impl Drive {
     /// Adds identity creation operations to drive operations
     pub fn create_token_root_tree_add_to_operations(
         &self,
-        token_id: [u8;32],
+        token_id: [u8; 32],
         apply: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
@@ -82,7 +81,7 @@ impl Drive {
     /// The operations needed to create an identity
     pub fn create_token_root_tree_operations(
         &self,
-        token_id: [u8;32],
+        token_id: [u8; 32],
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

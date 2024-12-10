@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::{Identifier, IdentityNonce};
 use document_base_transition::DocumentBaseTransition;
 
-pub mod document_transition_action_type;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
 pub mod document_purchase_transition;
 pub mod document_replace_transition;
 pub mod document_transfer_transition;
+pub mod document_transition_action_type;
 pub mod document_update_price_transition;
 pub mod token_base_transition;
 pub mod token_burn_transition;
@@ -281,8 +281,6 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     }
 }
 
-
-
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
@@ -383,5 +381,3 @@ pub enum BatchedTransition {
     #[display("TokenTransition({})", "_0")]
     Token(TokenTransition),
 }
-
-

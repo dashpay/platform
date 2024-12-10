@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::drive::contract::DataContractFetchInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::util::hash::hash_double;
 
 /// transformer module for token issuance transition action
 pub mod transformer;
@@ -30,8 +31,13 @@ pub trait TokenIssuanceTransitionActionAccessorsV0 {
     /// Returns the issuance amount
     fn issuance_amount(&self) -> u64;
 
+    /// Returns the token position in the contract
+    fn token_position(&self) -> u16 {
+        self.base().token_position()
+    }
+
     /// Returns the token ID
-    fn token_id(&self) -> u16 {
+    fn token_id(&self) -> Identifier {
         self.base().token_id()
     }
 

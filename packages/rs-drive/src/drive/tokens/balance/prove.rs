@@ -40,7 +40,8 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query = Self::token_balances_for_range_query(token_id, start_at, ascending, limit);
+        let balance_query =
+            Self::token_balances_for_range_query(token_id, start_at, ascending, limit);
         self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 }
@@ -78,16 +79,21 @@ mod tests {
                 )
                 .expect("expected to add an identity");
             let proof = drive
-                .prove_identity_token_balance(identity.id().to_buffer(), None, &platform_version.drive)
+                .prove_identity_token_balance(
+                    identity.id().to_buffer(),
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should not error when proving an identity");
 
-            let (_, proved_identity_balance) = Drive::verify_identity_token_balance_for_identity_id(
-                proof.as_slice(),
-                identity_id,
-                false,
-                platform_version,
-            )
-            .expect("expect that this be verified");
+            let (_, proved_identity_balance) =
+                Drive::verify_identity_token_balance_for_identity_id(
+                    proof.as_slice(),
+                    identity_id,
+                    false,
+                    platform_version,
+                )
+                .expect("expect that this be verified");
 
             assert_eq!(proved_identity_balance, Some(identity.balance()));
         }
@@ -98,9 +104,9 @@ mod tests {
         use dpp::fee::Credits;
         use dpp::identity::accessors::IdentityGettersV0;
         use platform_version::version::PlatformVersion;
-        use std::collections::BTreeMap;
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_multiple_identity_single_token_balances() {
@@ -112,11 +118,11 @@ mod tests {
                     .into_iter()
                     .map(|identity| (identity.id().to_buffer(), identity))
                     .collect();
-            
+
             let mut rng = StdRng::seed_from_u64(293);
-            
-            let token_id: [u8;32] = rng.gen();
-            
+
+            let token_id: [u8; 32] = rng.gen();
+
             drive.add_new_token(token_id);
 
             for identity in identities.values() {

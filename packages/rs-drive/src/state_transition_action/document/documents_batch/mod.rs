@@ -1,4 +1,4 @@
-use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::{BatchTransitionAction, DocumentTransitionAction};
 use crate::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -52,7 +52,7 @@ impl DocumentsBatchTransitionAction {
     }
 
     /// transitions owned
-    pub fn transitions_owned(self) -> Vec<DocumentTransitionAction> {
+    pub fn transitions_owned(self) -> Vec<BatchTransitionAction> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.transitions,
         }

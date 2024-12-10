@@ -30,8 +30,13 @@ pub trait TokenBurnTransitionActionAccessorsV0 {
     /// Returns the burn amount
     fn burn_amount(&self) -> u64;
 
+    /// Returns the token position in the contract
+    fn token_position(&self) -> u16 {
+        self.base().token_position()
+    }
+
     /// Returns the token ID
-    fn token_id(&self) -> u16 {
+    fn token_id(&self) -> Identifier {
         self.base().token_id()
     }
 

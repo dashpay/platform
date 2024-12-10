@@ -28,9 +28,9 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
         }
     }
 
-    fn token_id(&self) -> u16 {
+    fn token_position(&self) -> u16 {
         match self {
-            TokenBaseTransitionAction::V0(v0) => v0.token_id,
+            TokenBaseTransitionAction::V0(v0) => v0.token_position,
         }
     }
 

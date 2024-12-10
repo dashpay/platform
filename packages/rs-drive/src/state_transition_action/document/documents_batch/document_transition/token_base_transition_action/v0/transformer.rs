@@ -17,14 +17,14 @@ impl TokenBaseTransitionActionV0 {
     ) -> Result<Self, ProtocolError> {
         let TokenBaseTransitionV0 {
             id,
-            token_id, 
+            token_id,
             data_contract_id,
             identity_contract_nonce,
         } = value;
         Ok(TokenBaseTransitionActionV0 {
             id,
             identity_contract_nonce,
-            token_id,
+            token_position: token_id,
             data_contract: get_data_contract(data_contract_id)?,
         })
     }
@@ -43,7 +43,7 @@ impl TokenBaseTransitionActionV0 {
         Ok(TokenBaseTransitionActionV0 {
             id: *id,
             identity_contract_nonce: *identity_contract_nonce,
-            token_id: *token_id,
+            token_position: *token_id,
             data_contract: get_data_contract(*data_contract_id)?,
         })
     }

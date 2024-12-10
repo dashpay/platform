@@ -1,18 +1,16 @@
-use crate::drive::{
-    Drive
-};
+use crate::drive::tokens::token_balances_root_path;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
 use platform_version::version::PlatformVersion;
-use crate::drive::tokens::token_balances_root_path;
-use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use std::collections::HashMap;
 
 impl Drive {
     /// Creates a new token root subtree at `TokenBalances` keyed by `token_id`.
@@ -92,7 +90,9 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -111,10 +111,7 @@ impl Drive {
 
         // Insert an empty tree for this token if it doesn't exist
         let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((
-                token_balances_root_path(),
-                token_id.to_vec(),
-            )),
+            PathFixedSizeKey((token_balances_root_path(), token_id.to_vec())),
             true,
             None, // No storage flags
             apply_type,

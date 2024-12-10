@@ -1,8 +1,10 @@
-use std::sync::Arc;
+use crate::drive::contract::DataContractFetchInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
-use crate::drive::contract::DataContractFetchInfo;
+use dpp::util::hash::{hash_double, hash_single};
+use platform_version::version::PlatformVersion;
+use std::sync::Arc;
 
 /// transformer
 pub mod transformer;
@@ -14,8 +16,8 @@ pub struct TokenBaseTransitionActionV0 {
     pub id: Identifier,
     /// The identity contract nonce, used to prevent replay attacks
     pub identity_contract_nonce: IdentityNonce,
-    /// The token ID within the data contract
-    pub token_id: u16,
+    /// The token position within the data contract
+    pub token_position: u16,
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
 }
@@ -25,8 +27,17 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
     /// Returns the token transition ID
     fn id(&self) -> Identifier;
 
-    /// The token ID within the data contract
-    fn token_id(&self) -> u16;
+    /// The token position within the data contract
+    fn token_position(&self) -> u16;
+
+    /// The token id
+    fn token_id(&self) -> Identifier {
+        // Prepare the data for hashing
+        let mut bytes = b"token".to_vec();
+        bytes.extend_from_slice(self.data_contract_id().as_bytes());
+        bytes.extend_from_slice(&self.token_position().to_be_bytes());
+        hash_double(bytes).into()
+    }
 
     /// Returns the data contract ID
     fn data_contract_id(&self) -> Identifier;
@@ -46,8 +57,8 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
         self.id
     }
 
-    fn token_id(&self) -> u16 {
-        self.token_id
+    fn token_position(&self) -> u16 {
+        self.token_position
     }
 
     fn data_contract_id(&self) -> Identifier {

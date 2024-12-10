@@ -19,6 +19,9 @@ pub type Duffs = u64;
 
 pub type Credits = u64;
 
+/// Token Amount type
+pub type TokenAmount = u64;
+
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
 

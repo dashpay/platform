@@ -1,8 +1,5 @@
-use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
-use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::multi_identity_events::ActionTaker;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Identifier;

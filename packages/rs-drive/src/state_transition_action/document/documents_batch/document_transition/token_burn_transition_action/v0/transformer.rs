@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use dpp::identifier::Identifier;
-use dpp::ProtocolError;
 use dpp::state_transition::documents_batch_transition::token_burn_transition::v0::TokenBurnTransitionV0;
+use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionV0};
@@ -23,12 +23,12 @@ impl TokenBurnTransitionActionV0 {
         value: TokenBurnTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let TokenBurnTransitionV0 {
-            base,
-            burn_amount,
-        } = value;
+        let TokenBurnTransitionV0 { base, burn_amount } = value;
 
-        let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(base, get_data_contract)?;
+        let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
+            base,
+            get_data_contract,
+        )?;
 
         Ok(TokenBurnTransitionActionV0 {
             base: base_action,
@@ -50,12 +50,13 @@ impl TokenBurnTransitionActionV0 {
         value: &TokenBurnTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let TokenBurnTransitionV0 {
-            base,
-            burn_amount,
-        } = value;
-        
-        let base_action = TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(base, get_data_contract)?;
+        let TokenBurnTransitionV0 { base, burn_amount } = value;
+
+        let base_action =
+            TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
+                base,
+                get_data_contract,
+            )?;
 
         Ok(TokenBurnTransitionActionV0 {
             base: base_action,

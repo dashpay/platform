@@ -5,7 +5,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TradeMode {
     None = 0,
     DirectPurchase = 1,

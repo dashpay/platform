@@ -18,7 +18,7 @@ pub struct TokenTransferTransitionActionV0 {
     /// The amount to transfer
     pub amount: u64,
     /// The recipient owner ID
-    pub recipient_owner_id: Identifier,
+    pub recipient_id: Identifier,
 }
 
 /// Accessors for `TokenTransferTransitionActionV0`
@@ -30,11 +30,11 @@ pub trait TokenTransferTransitionActionAccessorsV0 {
     fn amount(&self) -> u64;
 
     /// Returns the recipient owner ID
-    fn recipient_owner_id(&self) -> Identifier;
+    fn recipient_id(&self) -> Identifier;
 
     /// Returns the token ID from the base action
     fn token_id(&self) -> u16 {
-        self.base().token_id()
+        self.base().token_position()
     }
 
     /// Returns the data contract ID from the base action
@@ -72,7 +72,7 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionActionV
         self.amount
     }
 
-    fn recipient_owner_id(&self) -> Identifier {
-        self.recipient_owner_id
+    fn recipient_id(&self) -> Identifier {
+        self.recipient_id
     }
 }
