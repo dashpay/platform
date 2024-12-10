@@ -9,7 +9,7 @@ use crate::{
     Error, Sdk,
 };
 
-/// Epoch type used in the SDK.
+/// Epoch information
 pub type Epoch = ExtendedEpochInfo;
 
 #[async_trait]

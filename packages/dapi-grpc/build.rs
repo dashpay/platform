@@ -47,11 +47,21 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 30] = [
+    //
+    // Please place in alphabetical order to make maintenance easier.
+    const VERSIONED_REQUESTS: [&str; 31] = [
+        "GetContestedResourcesRequest",
+        "GetContestedResourceVoteStateRequest",
+        "GetContestedResourceVotersForIdentityRequest",
+        "GetContestedResourceIdentityVotesRequest",
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
+        "GetEpochsInfoRequest",
+        "GetEvonodesProposedEpochBlocksByIdsRequest",
+        "GetEvonodesProposedEpochBlocksByRangeRequest",
+        "GetIdentitiesContractKeysRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
         "GetIdentitiesBalancesRequest",
@@ -62,59 +72,54 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityByPublicKeyHashRequest",
         "GetIdentityKeysRequest",
         "GetIdentityRequest",
+        "GetPathElementsRequest",
+        "GetPrefundedSpecializedBalanceRequest",
         "GetProofsRequest",
-        "WaitForStateTransitionResultRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
-        "GetPathElementsRequest",
-        "GetIdentitiesContractKeysRequest",
-        "GetPrefundedSpecializedBalanceRequest",
-        "GetContestedResourcesRequest",
-        "GetContestedResourceVoteStateRequest",
-        "GetContestedResourceVotersForIdentityRequest",
-        "GetContestedResourceIdentityVotesRequest",
-        "GetVotePollsByEndDateRequest",
-        "GetTotalCreditsInPlatformRequest",
-        "GetEvonodesProposedEpochBlocksByIdsRequest",
-        "GetEvonodesProposedEpochBlocksByRangeRequest",
         "GetStatusRequest",
+        "GetTotalCreditsInPlatformRequest",
+        "GetVotePollsByEndDateRequest",
+        "WaitForStateTransitionResultRequest",
     ];
 
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
     //
-    //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
+    //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests.
+    //
+    // Please place in alphabetical order to make maintenance easier.
     const VERSIONED_RESPONSES: [&str; 29] = [
+        "GetContestedResourcesResponse",
+        "GetContestedResourceVoteStateResponse",
+        "GetContestedResourceVotersForIdentityResponse",
+        "GetContestedResourceIdentityVotesResponse",
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentsResponse",
+        "GetEpochsInfoResponse",
+        "GetEvonodesProposedEpochBlocksResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
         "GetIdentitiesBalancesResponse",
         "GetIdentityBalanceAndRevisionResponse",
         "GetIdentityBalanceResponse",
-        "GetIdentityNonceResponse",
+        "GetIdentitiesContractKeysResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityNonceResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
+        "GetPathElementsResponse",
+        "GetPrefundedSpecializedBalanceResponse",
         "GetProofsResponse",
-        "WaitForStateTransitionResultResponse",
-        "GetEpochsInfoResponse",
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
-        "GetPathElementsResponse",
-        "GetIdentitiesContractKeysResponse",
-        "GetPrefundedSpecializedBalanceResponse",
-        "GetContestedResourcesResponse",
-        "GetContestedResourceVoteStateResponse",
-        "GetContestedResourceVotersForIdentityResponse",
-        "GetContestedResourceIdentityVotesResponse",
-        "GetVotePollsByEndDateResponse",
         "GetTotalCreditsInPlatformResponse",
-        "GetEvonodesProposedEpochBlocksResponse",
+        "GetVotePollsByEndDateResponse",
+        "WaitForStateTransitionResultResponse",
     ];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
