@@ -10,7 +10,7 @@ use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
-use rs_dapi_client::DapiRequest;
+use rs_dapi_client::{DapiRequest, IntoInner};
 
 use super::{common::setup_logs, config::Config};
 
@@ -26,7 +26,8 @@ async fn current_platform_state(sdk: &dash_sdk::Sdk) -> (u32, Vec<u8>) {
     let resp: GetEpochsInfoResponse = req
         .execute(sdk, Default::default())
         .await
-        .expect("get epoch info");
+        .expect("get epoch info")
+        .into_inner();
     let core_height = resp.metadata().expect("metadata").core_chain_locked_height;
     let quorum_hash = resp.proof().expect("proof").quorum_hash.clone();
     (core_height, quorum_hash)
