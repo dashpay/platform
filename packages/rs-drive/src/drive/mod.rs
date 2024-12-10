@@ -50,6 +50,7 @@ pub mod votes;
 
 #[cfg(feature = "server")]
 mod shared;
+mod tokens;
 
 #[cfg(feature = "server")]
 use crate::cache::DriveCache;

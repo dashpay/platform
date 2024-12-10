@@ -5,6 +5,7 @@ use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
+use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v1::DRIVE_VERIFY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::{
@@ -61,6 +62,7 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V1,
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V1,
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V1,
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 0,

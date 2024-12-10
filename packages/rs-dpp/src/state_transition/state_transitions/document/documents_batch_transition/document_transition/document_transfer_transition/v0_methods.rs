@@ -1,10 +1,11 @@
 use platform_value::Identifier;
 use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransferTransition;
 
-impl DocumentTransferTransitionV0Methods for DocumentTransferTransition {
+impl DocumentBaseTransitionAccessors for DocumentTransferTransition {
     fn base(&self) -> &DocumentBaseTransition {
         match self {
             DocumentTransferTransition::V0(v0) => &v0.base,
@@ -22,7 +23,9 @@ impl DocumentTransferTransitionV0Methods for DocumentTransferTransition {
             DocumentTransferTransition::V0(v0) => v0.base = base,
         }
     }
+}
 
+impl DocumentTransferTransitionV0Methods for DocumentTransferTransition {
     fn revision(&self) -> Revision {
         match self {
             DocumentTransferTransition::V0(v0) => v0.revision,

@@ -32,6 +32,7 @@ mod methods;
 pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
+mod associated_token;
 pub mod config;
 pub mod storage_requirements;
 

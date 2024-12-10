@@ -1,3 +1,4 @@
+use crate::version::drive_versions::drive_token_method_versions::DriveTokenMethodVersions;
 use crate::version::FeatureVersion;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
@@ -17,6 +18,7 @@ pub mod drive_grove_method_versions;
 pub mod drive_identity_method_versions;
 pub mod drive_state_transition_method_versions;
 pub mod drive_structure_version;
+pub mod drive_token_method_versions;
 pub mod drive_verify_method_versions;
 pub mod drive_vote_method_versions;
 pub mod v1;
@@ -45,6 +47,7 @@ pub struct DriveMethodVersions {
     pub asset_lock: DriveAssetLockMethodVersions,
     pub verify: DriveVerifyMethodVersions,
     pub identity: DriveIdentityMethodVersions,
+    pub token: DriveTokenMethodVersions,
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,

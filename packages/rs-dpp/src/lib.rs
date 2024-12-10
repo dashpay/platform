@@ -41,6 +41,7 @@ pub mod block;
 /// Core subsidy
 pub mod core_subsidy;
 pub mod fee;
+pub mod multi_identity_events;
 pub mod nft;
 pub mod prefunded_specialized_balance;
 pub mod serialization;
@@ -51,10 +52,14 @@ pub mod serialization;
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+
+mod tokens;
+
 pub mod voting;
 
 #[cfg(feature = "core-types")]
 pub mod core_types;
+
 pub mod withdrawal;
 
 pub use async_trait;

@@ -8,7 +8,7 @@ mod document_create_transition;
 
 use dpp::platform_value::Value;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transition_action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::{
     state_transition::documents_batch_transition::document_transition::DocumentTransition,

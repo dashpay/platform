@@ -27,7 +27,7 @@ mod tests {
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
-    use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+    use crate::state_transition::documents_batch_transition::document_transition::document_transition_action_type::DocumentTransitionActionType;
     use crate::state_transition::documents_batch_transition::{
         DocumentsBatchTransition, DocumentsBatchTransitionV0,
     };

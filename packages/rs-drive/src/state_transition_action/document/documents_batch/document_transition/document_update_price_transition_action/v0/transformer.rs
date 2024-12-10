@@ -20,7 +20,7 @@ impl DocumentUpdatePriceTransitionActionV0 {
     ) -> Result<Self, ProtocolError> {
         let DocumentUpdatePriceTransitionV0 { base, price, .. } = document_update_price_transition;
         let base =
-            DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
+            DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
             )?;

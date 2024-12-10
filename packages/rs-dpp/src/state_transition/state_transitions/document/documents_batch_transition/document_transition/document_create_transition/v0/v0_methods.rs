@@ -5,21 +5,9 @@ use platform_value::Value;
 
 use crate::fee::Credits;
 use std::collections::BTreeMap;
+use crate::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 
-pub trait DocumentCreateTransitionV0Methods {
-    /// Returns a reference to the `base` field of the `DocumentCreateTransitionV0`.
-    fn base(&self) -> &DocumentBaseTransition;
-
-    /// Returns a mut reference to the `base` field of the `DocumentCreateTransitionV0`.
-    fn base_mut(&mut self) -> &mut DocumentBaseTransition;
-
-    /// Sets the value of the `base` field in the `DocumentCreateTransitionV0`.
-    ///
-    /// # Arguments
-    ///
-    /// * `base` - A value of type `DocumentBaseTransition` to set.
-    fn set_base(&mut self, base: DocumentBaseTransition);
-
+pub trait DocumentCreateTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `entropy` field of the `DocumentCreateTransitionV0`.
     fn entropy(&self) -> [u8; 32];
 
@@ -48,7 +36,7 @@ pub trait DocumentCreateTransitionV0Methods {
     fn clear_prefunded_voting_balance(&mut self);
 }
 
-impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
+impl DocumentBaseTransitionAccessors for DocumentCreateTransitionV0 {
     fn base(&self) -> &DocumentBaseTransition {
         &self.base
     }
@@ -60,7 +48,9 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
     fn set_base(&mut self, base: DocumentBaseTransition) {
         self.base = base;
     }
+}
 
+impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
     fn entropy(&self) -> [u8; 32] {
         self.entropy
     }
