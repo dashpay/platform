@@ -40,11 +40,11 @@ impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction 
                     },
                 )];
 
-                ops.push(TokenOperation(TokenOperationType::TokenIssuance {
+                ops.push(TokenOperation(TokenOperationType::TokenMint {
                     contract_info: DataContractFetchInfo(contract_fetch_info),
                     token_position: self.token_position(),
                     token_id: self.token_id(),
-                    issuance_amount: self.issuance_amount(),
+                    mint_amount: self.issuance_amount(),
                 }));
 
                 Ok(ops)

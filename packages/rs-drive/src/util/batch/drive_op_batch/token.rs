@@ -15,36 +15,30 @@ use std::collections::HashMap;
 /// Operations on Documents
 #[derive(Clone, Debug)]
 pub enum TokenOperationType<'a> {
-    /// Adds a document to a contract matching the desired info.
+    /// Burns token from the account issuing the .
     TokenBurn {
-        /// Data Contract info to potentially be resolved if needed
-        contract_info: DataContractInfo<'a>,
-        /// Token position in the contract, is 0 if there is only one token
-        token_position: u16,
         /// The token id
         token_id: Identifier,
+        /// The identity to burn from
+        identity_balance_holder_id: Identifier,
         /// The amount to burn
         burn_amount: TokenAmount,
     },
     /// Adds a document to a contract matching the desired info.
-    TokenIssuance {
-        /// Data Contract info to potentially be resolved if needed
-        contract_info: DataContractInfo<'a>,
-        /// Token position in the contract, is 0 if there is only one token
-        token_position: u16,
+    TokenMint {
         /// The token id
         token_id: Identifier,
+        /// The identity to burn from
+        identity_balance_holder_id: Identifier,
         /// The amount to issue
-        issuance_amount: TokenAmount,
+        mint_amount: TokenAmount,
     },
     /// Adds a document to a contract matching the desired info.
     TokenTransfer {
-        /// Data Contract info to potentially be resolved if needed
-        contract_info: DataContractInfo<'a>,
-        /// Token position in the contract, is 0 if there is only one token
-        token_position: u16,
         /// The token id
         token_id: Identifier,
+        /// The token id
+        sender_id: Identifier,
         /// The recipient of the transfer
         recipient_id: Identifier,
         /// The amount to transfer
@@ -52,7 +46,7 @@ pub enum TokenOperationType<'a> {
     },
 }
 
-impl DriveLowLevelOperationConverter for TokenOperationType {
+impl DriveLowLevelOperationConverter for TokenOperationType<'_> {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
@@ -65,24 +59,63 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             TokenOperationType::TokenBurn {
-                contract_info,
-                token_position,
                 token_id,
+                identity_balance_holder_id,
                 burn_amount,
-            } => {}
-            TokenOperationType::TokenIssuance {
-                contract_info,
-                token_position,
+            } => {
+                let token_id_bytes: [u8; 32] = token_id.to_buffer();
+                let identity_id_bytes: [u8; 32] = identity_balance_holder_id.to_buffer();
+                let batch_operations = drive.token_burn_operations(
+                    token_id_bytes,
+                    identity_id_bytes,
+                    burn_amount,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenMint {
                 token_id,
-                issuance_amount,
-            } => {}
+                identity_balance_holder_id,
+                mint_amount,
+            } => {
+                let token_id_bytes: [u8; 32] = token_id.to_buffer();
+                let identity_id_bytes: [u8; 32] = identity_balance_holder_id.to_buffer();
+                let batch_operations = drive.token_mint_operations(
+                    token_id_bytes,
+                    identity_id_bytes,
+                    mint_amount,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
             TokenOperationType::TokenTransfer {
-                contract_info,
-                token_position,
                 token_id,
+                sender_id,
                 recipient_id,
                 amount,
-            } => {}
+            } => {
+                let token_id_bytes: [u8; 32] = token_id.to_buffer();
+                let sender_id_bytes: [u8; 32] = sender_id.to_buffer();
+                let recipient_id_bytes: [u8; 32] = recipient_id.to_buffer();
+
+                let batch_operations = drive.token_transfer_operations(
+                    token_id_bytes,
+                    sender_id_bytes,
+                    recipient_id_bytes,
+                    amount,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
         }
     }
 }

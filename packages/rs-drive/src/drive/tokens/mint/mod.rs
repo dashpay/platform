@@ -11,97 +11,87 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Transfers tokens from one identity to another without changing total supply.
-    pub fn token_transfer(
+    /// Mints (issues) new tokens by increasing the total supply and adding them to an identity's balance.
+    pub fn token_mint(
         &self,
         token_id: [u8; 32],
-        from_identity_id: [u8; 32],
-        to_identity_id: [u8; 32],
-        amount: u64,
+        identity_id: [u8; 32],
+        issuance_amount: u64,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version.drive.methods.token.update.transfer {
-            0 => self.token_transfer_v0(
+        match platform_version.drive.methods.token.update.mint {
+            0 => self.token_mint_v0(
                 token_id,
-                from_identity_id,
-                to_identity_id,
-                amount,
+                identity_id,
+                issuance_amount,
                 block_info,
                 apply,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "token_transfer".to_string(),
+                method: "token_mint".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// Adds operations to transfer tokens without calculating fees.
-    pub fn token_transfer_add_to_operations(
+    /// Adds the operations to mint tokens without calculating fees and optionally applying.
+    pub fn token_mint_add_to_operations(
         &self,
         token_id: [u8; 32],
-        from_identity_id: [u8; 32],
-        to_identity_id: [u8; 32],
-        amount: u64,
+        identity_id: [u8; 32],
+        issuance_amount: u64,
         apply: bool,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive.methods.token.update.transfer {
-            0 => self.token_transfer_add_to_operations_v0(
+        match platform_version.drive.methods.token.update.mint {
+            0 => self.token_mint_add_to_operations_v0(
                 token_id,
-                from_identity_id,
-                to_identity_id,
-                amount,
+                identity_id,
+                issuance_amount,
                 apply,
-                previous_batch_operations,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "token_transfer_add_to_operations".to_string(),
+                method: "token_mint_add_to_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// Gathers the operations needed to transfer tokens.
-    pub fn token_transfer_operations(
+    /// Gathers the operations needed to mint tokens.
+    pub fn token_mint_operations(
         &self,
         token_id: [u8; 32],
-        from_identity_id: [u8; 32],
-        to_identity_id: [u8; 32],
-        amount: u64,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        identity_id: [u8; 32],
+        issuance_amount: u64,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version.drive.methods.token.update.transfer {
-            0 => self.token_transfer_operations_v0(
+        match platform_version.drive.methods.token.update.mint {
+            0 => self.token_mint_operations_v0(
                 token_id,
-                from_identity_id,
-                to_identity_id,
-                amount,
-                previous_batch_operations,
+                identity_id,
+                issuance_amount,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "token_transfer_operations".to_string(),
+                method: "token_mint_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
