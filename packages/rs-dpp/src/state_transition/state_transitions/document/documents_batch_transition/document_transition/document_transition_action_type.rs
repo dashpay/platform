@@ -1,6 +1,4 @@
-use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentPurchaseTransition, DocumentTransferTransition, DocumentTransition,
-};
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::ProtocolError;
 
 // @append-only
@@ -41,6 +39,8 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "replace" => Ok(DocumentTransitionActionType::Replace),
             "delete" => Ok(DocumentTransitionActionType::Delete),
             "transfer" => Ok(DocumentTransitionActionType::Transfer),
+            "updatePrice" | "update_price" => Ok(DocumentTransitionActionType::UpdatePrice),
+            "purchase" => Ok(DocumentTransitionActionType::Purchase),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
             ))),

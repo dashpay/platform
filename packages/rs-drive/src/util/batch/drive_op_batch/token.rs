@@ -1,6 +1,16 @@
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::batch::IdentityOperationType;
 use crate::util::object_size_info::DataContractInfo;
 use dpp::balances::credits::TokenAmount;
+use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use platform_version::version::PlatformVersion;
+use std::collections::HashMap;
 
 /// Operations on Documents
 #[derive(Clone, Debug)]
@@ -40,4 +50,39 @@ pub enum TokenOperationType<'a> {
         /// The amount to transfer
         amount: TokenAmount,
     },
+}
+
+impl DriveLowLevelOperationConverter for TokenOperationType {
+    fn into_low_level_drive_operations(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match self {
+            TokenOperationType::TokenBurn {
+                contract_info,
+                token_position,
+                token_id,
+                burn_amount,
+            } => {}
+            TokenOperationType::TokenIssuance {
+                contract_info,
+                token_position,
+                token_id,
+                issuance_amount,
+            } => {}
+            TokenOperationType::TokenTransfer {
+                contract_info,
+                token_position,
+                token_id,
+                recipient_id,
+                amount,
+            } => {}
+        }
+    }
 }

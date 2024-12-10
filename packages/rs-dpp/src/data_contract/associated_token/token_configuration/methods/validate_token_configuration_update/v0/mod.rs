@@ -13,8 +13,8 @@ impl TokenConfiguration {
         action_taker: ActionTaker,
     ) -> SimpleConsensusValidationResult {
         let TokenConfigurationV0 {
-            max_supply,
-            max_supply_can_be_increased,
+            base_supply: max_supply,
+            manual_minting_rules: manual_supply_increase_rules,
             main_control_group,
             main_control_group_can_be_modified,
             balance_can_be_increased,
@@ -22,10 +22,10 @@ impl TokenConfiguration {
         } = self.as_cow_v0();
 
         let TokenConfigurationV0 {
-            max_supply: new_max_supply,
-            max_supply_can_be_increased: new_max_supply_can_be_increased,
-            main_control_group: new_main_control_group,
-            main_control_group_can_be_modified: new_main_control_group_can_be_modified,
+            base_supply: new_max_supply,
+            manual_minting_rules: manual_supply_increase_rules,
+            main_control_group,
+            main_control_group_can_be_modified,
             balance_can_be_increased: new_balance_can_be_increased,
             balance_can_be_destroyed: new_balance_can_be_destroyed,
         } = new_config.as_cow_v0();
