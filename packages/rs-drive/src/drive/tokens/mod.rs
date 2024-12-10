@@ -1,10 +1,10 @@
 use crate::drive::RootTree;
 
-mod balance;
-mod burn;
-pub mod initialization;
-mod issuance;
-mod transfer;
+pub mod balance;
+pub mod burn;
+pub mod mint;
+pub mod system;
+pub mod transfer;
 
 /// The path for the balances tree
 #[cfg(any(feature = "server", feature = "verify"))]

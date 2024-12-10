@@ -27,7 +27,7 @@ impl Drive {
             .drive
             .methods
             .token
-            .insert
+            .update
             .create_token_root_tree
         {
             0 => self.create_token_root_tree_v0(
@@ -59,7 +59,7 @@ impl Drive {
             .drive
             .methods
             .token
-            .insert
+            .update
             .create_token_root_tree
         {
             0 => self.create_token_root_tree_add_to_operations_v0(
@@ -93,7 +93,7 @@ impl Drive {
             .drive
             .methods
             .token
-            .insert
+            .update
             .create_token_root_tree
         {
             0 => self.create_token_root_tree_operations_v0(

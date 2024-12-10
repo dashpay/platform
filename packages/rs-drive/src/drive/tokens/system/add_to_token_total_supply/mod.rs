@@ -7,27 +7,30 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
-use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Transfers tokens from one identity to another without changing total supply.
-    pub fn token_transfer(
+    /// Adds to the token's total supply
+    pub fn add_to_token_total_supply(
         &self,
         token_id: [u8; 32],
-        from_identity_id: [u8; 32],
-        to_identity_id: [u8; 32],
         amount: u64,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version.drive.methods.token.update.transfer {
-            0 => self.token_transfer_v0(
+        match platform_version
+            .drive
+            .methods
+            .token
+            .update
+            .add_to_token_total_supply
+        {
+            0 => self.add_to_token_total_supply_v0(
                 token_id,
-                from_identity_id,
-                to_identity_id,
                 amount,
                 block_info,
                 apply,
@@ -35,73 +38,73 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "token_transfer".to_string(),
+                method: "add_to_token_total_supply".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// Adds operations to transfer tokens without calculating fees.
-    pub fn token_transfer_add_to_operations(
+    /// Adds the operations of adding to the token total supply
+    pub fn add_to_token_total_supply_add_to_operations(
         &self,
         token_id: [u8; 32],
-        from_identity_id: [u8; 32],
-        to_identity_id: [u8; 32],
         amount: u64,
         apply: bool,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive.methods.token.update.transfer {
-            0 => self.token_transfer_add_to_operations_v0(
+        match platform_version
+            .drive
+            .methods
+            .token
+            .update
+            .add_to_token_total_supply
+        {
+            0 => self.add_to_token_total_supply_add_to_operations_v0(
                 token_id,
-                from_identity_id,
-                to_identity_id,
                 amount,
                 apply,
-                previous_batch_operations,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "token_transfer_add_to_operations".to_string(),
+                method: "add_to_token_total_supply_add_to_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// Gathers the operations needed to transfer tokens.
-    pub fn token_transfer_operations(
+    /// The operations needed to add to the token total supply
+    pub fn add_to_token_total_supply_operations(
         &self,
         token_id: [u8; 32],
-        from_identity_id: [u8; 32],
-        to_identity_id: [u8; 32],
         amount: u64,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version.drive.methods.token.update.transfer {
-            0 => self.token_transfer_operations_v0(
+        match platform_version
+            .drive
+            .methods
+            .token
+            .update
+            .add_to_token_total_supply
+        {
+            0 => self.add_to_token_total_supply_operations_v0(
                 token_id,
-                from_identity_id,
-                to_identity_id,
                 amount,
-                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "token_transfer_operations".to_string(),
+                method: "add_to_token_total_supply_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

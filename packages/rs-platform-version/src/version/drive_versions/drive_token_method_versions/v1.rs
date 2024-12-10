@@ -1,12 +1,12 @@
 use crate::version::drive_versions::drive_token_method_versions::{
-    DriveTokenFetchMethodVersions, DriveTokenInsertMethodVersions, DriveTokenMethodVersions,
-    DriveTokenProveMethodVersions,
+    DriveTokenFetchMethodVersions, DriveTokenMethodVersions, DriveTokenProveMethodVersions,
+    DriveTokenUpdateMethodVersions,
 };
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
     fetch: DriveTokenFetchMethodVersions {},
     prove: DriveTokenProveMethodVersions {},
-    insert: DriveTokenInsertMethodVersions {
+    update: DriveTokenUpdateMethodVersions {
         create_token_root_tree: 0,
     },
 };
