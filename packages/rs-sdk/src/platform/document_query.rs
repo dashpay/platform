@@ -19,12 +19,12 @@ use dpp::{
     document::Document,
     platform_value::{platform_value, Value},
     prelude::{DataContract, Identifier},
-    ProtocolError,
+    InvalidVectorSizeError, ProtocolError,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
 use super::fetch::Fetch;
@@ -37,7 +37,7 @@ use super::fetch::Fetch;
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
 /// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
-#[derive(Debug, Clone, dapi_grpc_macros::Mockable)]
+#[derive(Debug, Clone, PartialEq, dapi_grpc_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
     /// Data contract ID
@@ -148,7 +148,7 @@ impl TransportRequest for DocumentQuery {
         self,
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>> {
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
         let request: GetDocumentsRequest = self
             .try_into()
             .expect("DocumentQuery should always be valid");
@@ -326,6 +326,26 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
         } else {
             None
         };
+
+        let (start_at, start_at_included) = match request.start.as_ref() {
+            None => (None, false),
+            Some(Start::StartAt(at)) => (
+                Some(at.clone().try_into().map_err(|_| {
+                    ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(32, at.len()))
+                })?),
+                true,
+            ),
+            Some(Start::StartAfter(after)) => (
+                Some(after.clone().try_into().map_err(|_| {
+                    ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
+                        32,
+                        after.len(),
+                    ))
+                })?),
+                true,
+            ),
+        };
+
         let query = Self {
             contract: &request.data_contract,
             document_type,
@@ -338,8 +358,8 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
                 .into_iter()
                 .map(|v| (v.field.clone(), v))
                 .collect(),
-            start_at: None,
-            start_at_included: false,
+            start_at,
+            start_at_included,
             block_time_ms: None,
         };
 

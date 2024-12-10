@@ -129,7 +129,9 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
                         // We need to make sure that if there is a contest, it is in its first week
                         // The week might be more or less, as it's a versioned parameter
                         let time_ms_since_start = block_info.time_ms.checked_sub(start_block.time_ms).ok_or(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("it makes no sense that the start block time {} is before our current block time {}", start_block.time_ms, block_info.time_ms)))))?;
-                        let join_time_allowed = platform_version.dpp.validation.voting.allow_other_contenders_time_ms;
+
+                        let join_time_allowed = platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms;
+
                         if time_ms_since_start > join_time_allowed {
                             return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(
                                 DocumentContestNotJoinableError::new(

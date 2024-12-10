@@ -66,7 +66,7 @@ else
   CERT_FLAG=""
   ST_EXECUTION_INTERVAL=15000
 fi
-SKIP_SYNC_BEFORE_HEIGHT=$(curl -s $INSIGHT_URL | jq '.height - 200')
+SKIP_SYNC_BEFORE_HEIGHT=4800 # $(curl -s $INSIGHT_URL | jq '.height - 200')
 
 # check variables are not empty
 if [ -z "$FAUCET_ADDRESS" ] || \

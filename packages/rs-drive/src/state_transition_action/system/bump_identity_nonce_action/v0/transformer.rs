@@ -6,8 +6,10 @@ use crate::state_transition_action::system::bump_identity_nonce_action::BumpIden
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use dpp::state_transition::StateTransitionLike;
 
 impl BumpIdentityNonceActionV0 {
     /// from identity update
@@ -199,34 +201,22 @@ impl BumpIdentityNonceActionV0 {
     }
 
     /// from identity credit withdrawal
-    pub fn from_identity_credit_withdrawal(value: IdentityCreditWithdrawalTransitionV0) -> Self {
-        let IdentityCreditWithdrawalTransitionV0 {
-            identity_id,
-            nonce,
-            user_fee_increase,
-            ..
-        } = value;
+    pub fn from_identity_credit_withdrawal(value: IdentityCreditWithdrawalTransition) -> Self {
         BumpIdentityNonceActionV0 {
-            identity_id,
-            identity_nonce: nonce,
-            user_fee_increase,
+            identity_id: value.identity_id(),
+            identity_nonce: value.nonce(),
+            user_fee_increase: value.user_fee_increase(),
         }
     }
 
     /// from borrowed identity credit withdrawal
     pub fn from_borrowed_identity_credit_withdrawal(
-        value: &IdentityCreditWithdrawalTransitionV0,
+        value: &IdentityCreditWithdrawalTransition,
     ) -> Self {
-        let IdentityCreditWithdrawalTransitionV0 {
-            identity_id,
-            nonce,
-            user_fee_increase,
-            ..
-        } = value;
         BumpIdentityNonceActionV0 {
-            identity_id: *identity_id,
-            identity_nonce: *nonce,
-            user_fee_increase: *user_fee_increase,
+            identity_id: value.identity_id(),
+            identity_nonce: value.nonce(),
+            user_fee_increase: value.user_fee_increase(),
         }
     }
 

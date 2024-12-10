@@ -5,7 +5,7 @@ use crate::logging::{LogConfigs, LogFormat, LogLevel};
 use lazy_static::__Deref;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tracing_subscriber::fmt;
@@ -305,9 +305,9 @@ impl Logger {
     fn layer(&self) -> Result<impl Layer<Registry>, Error> {
         let ansi = self
             .color
-            .unwrap_or(match self.destination.lock().unwrap().deref() {
-                LogDestinationWriter::StdOut => atty::is(atty::Stream::Stdout),
-                LogDestinationWriter::StdErr => atty::is(atty::Stream::Stderr),
+            .unwrap_or_else(|| match self.destination.lock().unwrap().deref() {
+                LogDestinationWriter::StdOut => std::io::stdout().is_terminal(),
+                LogDestinationWriter::StdErr => std::io::stderr().is_terminal(),
                 _ => false,
             });
 

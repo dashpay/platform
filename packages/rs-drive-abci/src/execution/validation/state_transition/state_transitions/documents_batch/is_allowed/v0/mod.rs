@@ -7,7 +7,11 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::ConsensusValidationResult;
 
-pub const TARGET_EPOCH_INDEX: EpochIndex = 3;
+// TARGET_EPOCH_INDEX was introduced without versioning.
+// All Evonodes that have not upgraded to version 1.3 by Epoch 3 will chain stall.
+//
+// This value was previously 3 before version 1.3
+pub const TARGET_EPOCH_INDEX: EpochIndex = 4;
 
 #[inline(always)]
 pub fn validate_is_allowed_v0<C>(

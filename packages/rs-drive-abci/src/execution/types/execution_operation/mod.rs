@@ -67,6 +67,7 @@ pub enum ValidationOperation {
     Protocol(ProtocolValidationOperation),
     RetrieveIdentity(RetrieveIdentityInfo),
     RetrievePrefundedSpecializedBalance,
+    PerformNetworkThresholdSigning,
     SingleSha256(HashBlockCount),
     DoubleSha256(HashBlockCount),
     ValidateKeyStructure(KeyCount), // This is extremely cheap
@@ -206,6 +207,19 @@ impl ValidationOperation {
                     fee_result.processing_fee = fee_result
                         .processing_fee
                         .checked_add(dpp_validation_operation.processing_cost(platform_version))
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::PerformNetworkThresholdSigning => {
+                    let operation_cost = platform_version
+                        .fee_version
+                        .processing
+                        .perform_network_threshold_signing;
+
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(operation_cost)
                         .ok_or(ExecutionError::Overflow(
                             "execution processing fee overflow error",
                         ))?;

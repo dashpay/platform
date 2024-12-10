@@ -47,14 +47,24 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 27] = [
+    //
+    // Please place in alphabetical order to make maintenance easier.
+    const VERSIONED_REQUESTS: [&str; 31] = [
+        "GetContestedResourcesRequest",
+        "GetContestedResourceVoteStateRequest",
+        "GetContestedResourceVotersForIdentityRequest",
+        "GetContestedResourceIdentityVotesRequest",
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
         "GetEpochsInfoRequest",
+        "GetEvonodesProposedEpochBlocksByIdsRequest",
+        "GetEvonodesProposedEpochBlocksByRangeRequest",
+        "GetIdentitiesContractKeysRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
+        "GetIdentitiesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
         "GetIdentityBalanceAndRevisionRequest",
@@ -62,50 +72,54 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityByPublicKeyHashRequest",
         "GetIdentityKeysRequest",
         "GetIdentityRequest",
+        "GetPathElementsRequest",
+        "GetPrefundedSpecializedBalanceRequest",
         "GetProofsRequest",
-        "WaitForStateTransitionResultRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
-        "GetPathElementsRequest",
-        "GetIdentitiesContractKeysRequest",
-        "GetPrefundedSpecializedBalanceRequest",
-        "GetContestedResourcesRequest",
-        "GetContestedResourceVoteStateRequest",
-        "GetContestedResourceVotersForIdentityRequest",
-        "GetContestedResourceIdentityVotesRequest",
-        "GetVotePollsByEndDateRequest",
+        "GetStatusRequest",
         "GetTotalCreditsInPlatformRequest",
+        "GetVotePollsByEndDateRequest",
+        "WaitForStateTransitionResultRequest",
     ];
 
-    //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 27] = [
+    // The following responses are excluded as they don't support proofs:
+    // - "GetConsensusParamsResponse"
+    // - "GetStatusResponse"
+    //
+    //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests.
+    //
+    // Please place in alphabetical order to make maintenance easier.
+    const VERSIONED_RESPONSES: [&str; 29] = [
+        "GetContestedResourcesResponse",
+        "GetContestedResourceVoteStateResponse",
+        "GetContestedResourceVotersForIdentityResponse",
+        "GetContestedResourceIdentityVotesResponse",
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentsResponse",
         "GetEpochsInfoResponse",
+        "GetEvonodesProposedEpochBlocksResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
+        "GetIdentitiesBalancesResponse",
         "GetIdentityBalanceAndRevisionResponse",
         "GetIdentityBalanceResponse",
-        "GetIdentityNonceResponse",
+        "GetIdentitiesContractKeysResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityNonceResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
+        "GetPathElementsResponse",
+        "GetPrefundedSpecializedBalanceResponse",
         "GetProofsResponse",
-        "WaitForStateTransitionResultResponse",
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
-        "GetPathElementsResponse",
-        "GetIdentitiesContractKeysResponse",
-        "GetPrefundedSpecializedBalanceResponse",
-        "GetContestedResourcesResponse",
-        "GetContestedResourceVoteStateResponse",
-        "GetContestedResourceVotersForIdentityResponse",
-        "GetContestedResourceIdentityVotesResponse",
-        "GetVotePollsByEndDateResponse",
         "GetTotalCreditsInPlatformResponse",
+        "GetVotePollsByEndDateResponse",
+        "WaitForStateTransitionResultResponse",
     ];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
@@ -208,6 +222,7 @@ impl MappingConfig {
     ///
     /// * `protobuf_file` - Path to the protobuf file to use as input.
     /// * `out_dir` - Output directory where subdirectories for generated files will be created.
+    ///
     /// Depending on the features, either `client`, `server` or `client_server` subdirectory
     /// will be created inside `out_dir`.
     fn new(protobuf_file: PathBuf, out_dir: PathBuf) -> Self {
@@ -279,7 +294,7 @@ impl MappingConfig {
         create_dir_all(&self.out_dir)?;
 
         self.builder
-            .compile(&[self.protobuf_file], &self.proto_includes)
+            .compile_protos(&[self.protobuf_file], &self.proto_includes)
     }
 }
 

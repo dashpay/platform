@@ -1,15 +1,17 @@
 //! Definitions of errors
+use dapi_grpc::tonic::Code;
+use dpp::consensus::ConsensusError;
+use dpp::serialization::PlatformDeserializable;
+use dpp::version::PlatformVersionError;
+use dpp::ProtocolError;
+pub use drive_proof_verifier::error::ContextProviderError;
+use rs_dapi_client::transport::TransportError;
+use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 
-use dapi_grpc::mock::Mockable;
-use dpp::version::PlatformVersionError;
-use dpp::ProtocolError;
-use rs_dapi_client::{CanRetry, DapiClientError};
-
-pub use drive_proof_verifier::error::ContextProviderError;
-
 /// Error type for the SDK
+// TODO: Propagate server address and retry information so that the user can retrieve it
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// SDK is not configured properly
@@ -75,6 +77,10 @@ pub enum Error {
     /// SDK operation timeout reached error
     #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
     TimeoutReached(Duration, String),
+
+    /// Returned when an attempt is made to create an object that already exists in the system
+    #[error("Object already exists: {0}")]
+    AlreadyExists(String),
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
@@ -87,11 +93,39 @@ pub enum Error {
     /// Operation cancelled - cancel token was triggered, timeout, etc.
     #[error("Operation cancelled: {0}")]
     Cancelled(String),
+
+    /// Remote node is stale; try another server
+    #[error(transparent)]
+    StaleNode(#[from] StaleNodeError),
 }
 
-impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
-    fn from(value: DapiClientError<T>) -> Self {
-        Self::DapiClientError(format!("{:?}", value))
+// TODO: Decompose DapiClientError to more specific errors like connection, node error instead of DAPI client error
+impl From<DapiClientError> for Error {
+    fn from(value: DapiClientError) -> Self {
+        if let DapiClientError::Transport(TransportError::Grpc(status)) = &value {
+            // If we have some consensus error metadata, we deserialize it and return as ConsensusError
+            if let Some(consensus_error_value) = status
+                .metadata()
+                .get_bin("dash-serialized-consensus-error-bin")
+            {
+                return ConsensusError::deserialize_from_bytes(
+                    consensus_error_value.as_encoded_bytes(),
+                )
+                .map(|consensus_error| {
+                    Self::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)))
+                })
+                .unwrap_or_else(|e| {
+                    tracing::debug!("Failed to deserialize consensus error: {}", e);
+                    Self::Protocol(e)
+                });
+            }
+            // Otherwise we parse the error code and act accordingly
+            if status.code() == Code::AlreadyExists {
+                return Self::AlreadyExists(status.message().to_string());
+            }
+        }
+
+        Self::DapiClientError(value.to_string())
     }
 }
 
@@ -100,13 +134,52 @@ impl From<PlatformVersionError> for Error {
         Self::Protocol(value.into())
     }
 }
+
+impl<T> From<ExecutionError<T>> for Error
+where
+    ExecutionError<T>: ToString,
+{
+    fn from(value: ExecutionError<T>) -> Self {
+        // TODO: Improve error handling
+        Self::DapiClientError(value.to_string())
+    }
+}
+
 impl CanRetry for Error {
-    /// Returns true if the operation can be retried, false means it's unspecified
-    /// False means
     fn can_retry(&self) -> bool {
         matches!(
             self,
-            Error::CoreLockedHeightNotYetAvailable(_, _) | Error::QuorumNotFound { .. }
+            Error::StaleNode(..)
+                | Error::TimeoutReached(_, _)
+                | Error::CoreLockedHeightNotYetAvailable(_, _)
+                | Error::QuorumNotFound { .. }
         )
     }
+}
+
+/// Server returned stale metadata
+#[derive(Debug, thiserror::Error)]
+pub enum StaleNodeError {
+    /// Server returned metadata with outdated height
+    #[error("received height is outdated: expected {expected_height}, received {received_height}, tolerance {tolerance_blocks}; try another server")]
+    Height {
+        /// Expected height - last block height seen by the Sdk
+        expected_height: u64,
+        /// Block height received from the server
+        received_height: u64,
+        /// Tolerance - how many blocks can be behind the expected height
+        tolerance_blocks: u64,
+    },
+    /// Server returned metadata with time outside of the tolerance
+    #[error(
+        "received invalid time: expected {expected_timestamp_ms}ms, received {received_timestamp_ms} ms, tolerance {tolerance_ms} ms; try another server"
+    )]
+    Time {
+        /// Expected time in milliseconds - is local time when the message was received
+        expected_timestamp_ms: u64,
+        /// Time received from the server in the message, in milliseconds
+        received_timestamp_ms: u64,
+        /// Tolerance in milliseconds
+        tolerance_ms: u64,
+    },
 }

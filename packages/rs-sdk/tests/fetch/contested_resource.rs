@@ -19,7 +19,6 @@ use drive::query::{
     vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
 };
 use drive_proof_verifier::types::ContestedResource;
-use std::panic::catch_unwind;
 
 /// Test that we can fetch contested resources
 ///
@@ -105,7 +104,7 @@ async fn contested_resources_start_at_value() {
         for inclusive in [true, false] {
             // when I set start_at_value to some value,
             for (i, start) in all.0.iter().enumerate() {
-                let ContestedResource::Value(start_value) = start.clone();
+                let ContestedResource(start_value) = start.clone();
 
                 let query = VotePollsByDocumentTypeQuery {
                     start_at_value: Some((start_value, inclusive)),
@@ -217,7 +216,7 @@ async fn contested_resources_limit_PLAN_656() {
                 );
             }
 
-            let ContestedResource::Value(last) =
+            let ContestedResource(last) =
                 rss.0.into_iter().last().expect("last contested resource");
             start_at_value = Some((last, false));
 
@@ -231,14 +230,14 @@ async fn contested_resources_limit_PLAN_656() {
 /// ## Preconditions
 ///
 /// None
-#[test_case::test_case(|_q| {}, Ok("ContestedResources([Value(Text(".into()); "unmodified base query is Ok")]
+#[test_case::test_case(|_q| {}, Ok("ContestedResources([ContestedResource(Text(".into()); "unmodified base query is Ok")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok("".into()); "index value empty string is Ok")]
-#[test_case::test_case(|q| q.document_type_name = "some random non-existing name".to_string(), Err(r#"code: InvalidArgument, message: "document type some random non-existing name not found"#); "non existing document type returns InvalidArgument")]
-#[test_case::test_case(|q| q.index_name = "nx index".to_string(), Err(r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
-#[test_case::test_case(|q| q.index_name = "dashIdentityId".to_string(), Err(r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
+#[test_case::test_case(|q| q.document_type_name = "some random non-existing name".to_string(), Err(r#"status: InvalidArgument, message: "document type some random non-existing name not found"#); "non existing document type returns InvalidArgument")]
+#[test_case::test_case(|q| q.index_name = "nx index".to_string(), Err(r#"status: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
+#[test_case::test_case(|q| q.index_name = "dashIdentityId".to_string(), Err(r#"status: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
 // Disabled due to bug PLAN-653
-// #[test_case::test_case(|q| q.start_at_value = Some((Value::Array(vec![]), true)), Err(r#"code: InvalidArgument"#); "start_at_value wrong index type returns InvalidArgument PLAN-653")]
-#[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([Value(Text("dash"))])"#.into()); "start_index_values empty vec returns top-level keys")]
+// #[test_case::test_case(|q| q.start_at_value = Some((Value::Array(vec![]), true)), Err(r#"status: InvalidArgument"#); "start_at_value wrong index type returns InvalidArgument PLAN-653")]
+#[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "start_index_values empty vec returns top-level keys")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok(r#"ContestedResources([])"#.into()); "start_index_values empty string returns zero results")]
 #[test_case::test_case(|q| {
     q.start_index_values = vec![
@@ -249,7 +248,7 @@ async fn contested_resources_limit_PLAN_656() {
 #[test_case::test_case(|q| {
     q.start_index_values = vec![];
     q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string())];
-}, Ok(r#"ContestedResources([Value(Text("dash"))])"#.into()); "end_index_values one value with empty start_index_values returns 'dash'")]
+}, Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "end_index_values one value with empty start_index_values returns 'dash'")]
 #[test_case::test_case(|q| {
     q.start_index_values = vec![];
     q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string()), Value::Text("non existing".to_string())];
@@ -277,8 +276,8 @@ async fn contested_resources_limit_PLAN_656() {
     q.end_index_values = vec![Value::Text("zzz non existing".to_string())]
 }, Ok("ContestedResources([])".into()); "Non-existing end_index_values returns error")]
 #[test_case::test_case(|q| q.end_index_values = vec![Value::Array(vec![0.into(), 1.into()])], Err("incorrect index values error: too many end index values were provided"); "wrong type of end_index_values should return InvalidArgument")]
-#[test_case::test_case(|q| q.limit = Some(0), Err(r#"code: InvalidArgument"#); "limit 0 returns InvalidArgument")]
-#[test_case::test_case(|q| q.limit = Some(std::u16::MAX), Err(r#"code: InvalidArgument"#); "limit std::u16::MAX returns InvalidArgument")]
+#[test_case::test_case(|q| q.limit = Some(0), Err(r#"status: InvalidArgument"#); "limit 0 returns InvalidArgument")]
+#[test_case::test_case(|q| q.limit = Some(u16::MAX), Err(r#"status: InvalidArgument"#); "limit u16::MAX returns InvalidArgument")]
 // Disabled due to bug PLAN-656
 // #[test_case::test_case(|q| {
 //     q.start_index_values = vec![Value::Text("dash".to_string())];
@@ -304,33 +303,35 @@ async fn contested_resources_fields(
 
     tracing::debug!(?expect, "Running test case");
     // handle panics to not stop other test cases from running
-    let unwinded = catch_unwind(|| {
-        {
-            pollster::block_on(async {
-                let mut query = base_query(&cfg);
-                query_mut_fn(&mut query);
+    let join_handle = tokio::task::spawn(async move {
+        let mut query = base_query(&cfg);
+        query_mut_fn(&mut query);
 
-                let (test_case_id, sdk) =
-                    setup_sdk_for_test_case(cfg, query.clone(), "contested_resources_fields").await;
-                tracing::debug!(test_case_id, ?query, "Executing query");
+        let (test_case_id, sdk) =
+            setup_sdk_for_test_case(cfg, query.clone(), "contested_resources_fields").await;
+        tracing::debug!(test_case_id, ?query, "Executing query");
 
-                ContestedResource::fetch_many(&sdk, query).await
-            })
-        }
-    });
-    let result = match unwinded {
+        ContestedResource::fetch_many(&sdk, query).await
+    })
+    .await;
+    let result = match join_handle {
         Ok(r) => r,
         Err(e) => {
-            let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = e.downcast_ref::<String>() {
-                s.to_string()
-            } else {
-                format!("unknown panic type: {:?}", std::any::type_name_of_val(&e))
-            };
+            if e.is_panic() {
+                let e = e.into_panic();
+                let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.to_string()
+                } else {
+                    format!("unknown panic type: {:?}", std::any::type_name_of_val(&e))
+                };
 
-            tracing::error!("PANIC: {}", msg);
-            Err(Error::Generic(msg))
+                tracing::error!("PANIC: {}", msg);
+                Err(Error::Generic(msg))
+            } else {
+                Err(Error::Generic(format!("JoinError: {:?}", e)))
+            }
         }
     };
 

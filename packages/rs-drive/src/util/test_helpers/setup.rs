@@ -46,13 +46,15 @@ pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
 
 #[cfg(feature = "full")]
 /// Sets up Drive using a temporary directory and the default initial state structure.
-pub fn setup_drive_with_initial_state_structure() -> Drive {
+pub fn setup_drive_with_initial_state_structure(
+    specific_platform_version: Option<&PlatformVersion>,
+) -> Drive {
     let drive = setup_drive(Some(DriveConfig {
         batching_consistency_verification: true,
         ..Default::default()
     }));
 
-    let platform_version = PlatformVersion::latest();
+    let platform_version = specific_platform_version.unwrap_or(PlatformVersion::latest());
     drive
         .create_initial_state_structure(None, platform_version)
         .expect("should create root tree successfully");

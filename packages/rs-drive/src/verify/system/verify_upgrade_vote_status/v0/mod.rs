@@ -32,7 +32,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     #[inline(always)]
-    pub(crate) fn verify_upgrade_vote_status_v0(
+    pub(super) fn verify_upgrade_vote_status_v0(
         proof: &[u8],
         start_protx_hash: Option<[u8; 32]>,
         count: u16,

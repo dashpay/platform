@@ -1,0 +1,42 @@
+---
+# Login to AWS ECR
+name: "aws_ecr_login"
+description: "Login to AWS ECR to store Docker containers"
+inputs:
+  aws_account_id:
+    description: AWS account ID (AWS_ACCOUNT_ID)
+    required: true
+  aws_access_key_id:
+    description: Access key ID (AWS_ACCESS_KEY_ID)
+    required: true
+  aws_secret_access_key:
+    description: Secret access key (AWS_SECRET_ACCESS_KEY)
+    required: true
+  aws_region:
+    description: AWS region to use (AWS_REGION)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials and bucket region
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws_access_key_id }}
+        aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Login to ECR
+      run: |
+        aws ecr get-login-password \
+          --region ${{ inputs.aws_region }} | docker login --username AWS --password-stdin ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region  }}.amazonaws.com
+      shell: bash
+
+    # Unset AWS credentials to avoid conflicts, as we prefer credentials from ~/.aws/credentials to authenticate
+    - name: Unset AWS credentials to avoid conflicts
+      shell: bash
+      run: |
+        echo AWS_DEFAULT_REGION='' >> $GITHUB_ENV
+        echo AWS_REGION='' >> $GITHUB_ENV
+        echo AWS_ACCESS_KEY_ID='' >> $GITHUB_ENV
+        echo AWS_SECRET_ACCESS_KEY='' >> $GITHUB_ENV

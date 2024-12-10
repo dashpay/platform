@@ -8,7 +8,7 @@ const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 // TODO: temporary disabled due to flakiness. These tests aren't important for now, since we are
 //  going to release v1.0.0 with withdrawals disabled.
-describe.skip('Withdrawals', function withdrawalsTest() {
+describe('Withdrawals', function withdrawalsTest() {
   this.bail(true);
 
   let client;
@@ -38,7 +38,7 @@ describe.skip('Withdrawals', function withdrawalsTest() {
   });
 
   describe('Any Identity', () => {
-    const INITIAL_BALANCE = 1000000;
+    const INITIAL_BALANCE = 2000000;
 
     before(async () => {
       identity = await client.platform.identities.register(INITIAL_BALANCE);
@@ -57,7 +57,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       );
 
       // Re-fetch identity to obtain latest core chain lock height
@@ -125,7 +127,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       const { height: withdrawalHeight } = await client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       );
 
       let withdrawalBroadcasted = false;
@@ -173,11 +177,13 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await expect(client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       )).to.be.rejectedWith(`Withdrawal amount "${amountToWithdraw}" is bigger that identity balance "${identityBalanceBefore}"`);
     });
 
-    it('should not allow to create withdrawal with wrong security key type', async () => {
+    it('should not allow to create withdrawal with authentication key purpose', async () => {
       const account = await client.getWalletAccount();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
@@ -186,11 +192,11 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await expect(client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
         {
+          toAddress: withdrawTo.address,
           signingKeyIndex: 1,
         },
-      )).to.be.rejectedWith('Error conversion not implemented: Invalid public key security level HIGH. The state transition requires one of CRITICAL');
+      )).to.be.rejectedWith('Error conversion not implemented: Invalid identity key purpose AUTHENTICATION. This state transition requires TRANSFER | OWNER');
     });
 
     // TODO: Figure out how to overcome client-side validation and implement
@@ -227,7 +233,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await client.platform.identities.withdrawCredits(
         identity,
         BigInt(1000000),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       );
 
       await waitForSTPropagated();

@@ -44,7 +44,7 @@ impl Drive {
     /// - The identity ID does not correspond to a valid balance.
     /// - The proved key value is not for the correct path or key in balances.
     /// - More than one balance is found.
-    pub(crate) fn verify_masternode_vote_v0(
+    pub(super) fn verify_masternode_vote_v0(
         proof: &[u8],
         masternode_pro_tx_hash: [u8; 32],
         vote: &Vote,

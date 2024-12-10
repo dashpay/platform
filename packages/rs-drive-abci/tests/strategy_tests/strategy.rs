@@ -14,7 +14,8 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
+    AmountRange, DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp,
+    OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -40,9 +41,10 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::Strategy;
-use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture};
+use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture_with_dynamic_range};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::dashcore::hashes::Hash;
@@ -402,8 +404,18 @@ impl NetworkStrategy {
                 );
                 state_transitions.append(&mut new_transitions);
             }
+            // Extend the state transitions with the strategy's hard coded start identities
+            // Filtering out the ones that have no create transition
             if !self.strategy.start_identities.hard_coded.is_empty() {
-                state_transitions.extend(self.strategy.start_identities.hard_coded.clone());
+                state_transitions.extend(
+                    self.strategy.start_identities.hard_coded.iter().filter_map(
+                        |(identity, transition)| {
+                            transition.as_ref().map(|create_transition| {
+                                (identity.clone(), create_transition.clone())
+                            })
+                        },
+                    ),
+                );
             }
         }
         let frequency = &self.strategy.identity_inserts.frequency;
@@ -1118,7 +1130,7 @@ impl NetworkStrategy {
                             operations.push(document_batch_transition);
                         }
                     }
-                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                    OperationType::IdentityTopUp(amount) if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
                         let random_identities: Vec<&Identity> = indices
@@ -1130,6 +1142,7 @@ impl NetworkStrategy {
                             operations.push(self.create_identity_top_up_transition(
                                 rng,
                                 random_identity,
+                                amount,
                                 instant_lock_quorums,
                                 &platform.config,
                                 platform_version,
@@ -1177,7 +1190,7 @@ impl NetworkStrategy {
                             }
                         }
                     }
-                    OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
+                    OperationType::IdentityWithdrawal(amount) if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
                         for index in indices {
@@ -1185,6 +1198,7 @@ impl NetworkStrategy {
                             let state_transition =
                                 strategy_tests::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    amount.clone(),
                                     identity_nonce_counter,
                                     signer,
                                     rng,
@@ -1192,7 +1206,7 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                    OperationType::IdentityTransfer(_) if current_identities.len() > 1 => {
                         let identities_clone = current_identities.clone();
 
                         // Sender is the first in the list, which should be loaded_identity
@@ -1491,6 +1505,7 @@ impl NetworkStrategy {
     ) -> Vec<(Identity, StateTransition)> {
         let key_count = self.strategy.identity_inserts.start_keys as KeyID;
         let extra_keys = &self.strategy.identity_inserts.extra_keys;
+        let balance_range = &self.strategy.identity_inserts.start_balance_range;
 
         let (mut identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<
             Vec<_>,
@@ -1524,6 +1539,7 @@ impl NetworkStrategy {
         if self.sign_instant_locks {
             let identities_with_proofs = create_signed_instant_asset_lock_proofs_for_identities(
                 identities,
+                balance_range,
                 rng,
                 instant_lock_quorums,
                 platform_config,
@@ -1536,7 +1552,13 @@ impl NetworkStrategy {
                 platform_version,
             )
         } else {
-            create_state_transitions_for_identities(identities, signer, rng, platform_version)
+            create_state_transitions_for_identities(
+                identities,
+                balance_range,
+                signer,
+                rng,
+                platform_version,
+            )
         }
     }
 
@@ -1545,6 +1567,7 @@ impl NetworkStrategy {
         &self,
         rng: &mut StdRng,
         identity: &Identity,
+        amount_range: &AmountRange,
         instant_lock_quorums: &Quorums<SigningQuorum>,
         platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
@@ -1554,8 +1577,11 @@ impl NetworkStrategy {
             .unwrap();
         let sk: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
-        let mut asset_lock_proof =
-            instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+        let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+            PrivateKey::new(secret_key, Network::Dash),
+            amount_range,
+            rng,
+        );
 
         // Sign transaction and update signature in instant lock proof
         if self.sign_instant_locks {
@@ -1636,6 +1662,7 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
+    pub signer: SimpleSigner,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {
@@ -1667,6 +1694,7 @@ pub struct ChainExecutionParameters {
 
 fn create_signed_instant_asset_lock_proofs_for_identities(
     identities: Vec<Identity>,
+    balance_range: &RangeInclusive<Credits>,
     rng: &mut StdRng,
     instant_lock_quorums: &Quorums<SigningQuorum>,
     platform_config: &PlatformConfig,
@@ -1691,7 +1719,11 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
             let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
             let private_key = PrivateKey::new(secret_key, Network::Dash);
 
-            let mut asset_lock_proof = instant_asset_lock_proof_fixture(private_key);
+            let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+                private_key,
+                balance_range,
+                rng,
+            );
 
             // Sign transaction and update instant lock
             let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =

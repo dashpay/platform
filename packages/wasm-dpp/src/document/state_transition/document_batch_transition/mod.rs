@@ -1,4 +1,4 @@
-use dpp::identity::KeyID;
+use dpp::identity::{KeyID, Purpose};
 
 use dpp::{
     prelude::Identifier,
@@ -346,12 +346,22 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
-    pub fn get_security_level_requirement(&self) -> js_sys::Array {
+    pub fn get_security_level_requirement(&self, purpose: u8) -> Result<js_sys::Array, JsValue> {
+        // Convert the integer to a Purpose enum
+        let purpose_enum = match Purpose::try_from(purpose) {
+            Ok(purpose) => purpose,
+            Err(_) => {
+                return Err(JsValue::from_str(
+                    "Invalid purpose value, expected a number between 0 and 5.",
+                ))
+            }
+        };
+
         let array = js_sys::Array::new();
-        for security_level in self.0.security_level_requirement() {
+        for security_level in self.0.security_level_requirement(purpose_enum) {
             array.push(&JsValue::from(security_level as u32));
         }
-        array
+        Ok(array)
     }
 
     // AbstractStateTransition methods

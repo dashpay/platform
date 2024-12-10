@@ -315,7 +315,7 @@ mod tests {
 
         #[test]
         fn test_increment_block_count_to_1_if_proposers_tree_is_not_committed() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -358,7 +358,7 @@ mod tests {
 
         #[test]
         fn test_existing_block_count_is_incremented() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -445,7 +445,7 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -476,10 +476,11 @@ mod tests {
 
     mod add_init_current_operations {
         use super::*;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -543,7 +544,12 @@ mod tests {
                 .expect_err("should not get processing fee");
 
             let proposers = drive
-                .get_epoch_proposers(&epoch, Some(1), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(1), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             assert_eq!(proposers, vec!());
@@ -555,7 +561,7 @@ mod tests {
 
         #[test]
         fn test_values_are_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -627,7 +633,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -662,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_update_start_time() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -688,7 +694,7 @@ mod tests {
 
     #[test]
     fn test_update_epoch_start_block_height() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -712,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_update_epoch_start_block_core_height() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -739,7 +745,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -761,7 +767,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -795,7 +801,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -817,7 +823,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -851,7 +857,7 @@ mod tests {
 
         #[test]
         fn test_values_has_been_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -895,10 +901,11 @@ mod tests {
 
     mod delete_proposers {
         use super::*;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_being_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(0).unwrap();
@@ -928,7 +935,12 @@ mod tests {
                 .expect("should apply batch");
 
             let mut stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(20), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             let mut awaited_result = pro_tx_hashes
@@ -961,7 +973,12 @@ mod tests {
                 .expect("should apply batch");
 
             let stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(20), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             let mut stored_hexes: Vec<String> = stored_proposers

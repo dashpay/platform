@@ -60,6 +60,10 @@ const {
             GetIdentityKeysResponse: PBJSGetIdentityKeysResponse,
             GetTotalCreditsInPlatformRequest: PBJSGetTotalCreditsInPlatformRequest,
             GetTotalCreditsInPlatformResponse: PBJSGetTotalCreditsInPlatformResponse,
+            GetStatusRequest: PBJSGetStatusRequest,
+            GetStatusResponse: PBJSGetStatusResponse,
+            GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
+            GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
           },
         },
       },
@@ -85,6 +89,8 @@ const {
   GetIdentityNonceResponse: ProtocGetIdentityNonceResponse,
   GetIdentityKeysResponse: ProtocGetIdentityKeysResponse,
   GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse,
+  GetStatusResponse: ProtocGetStatusResponse,
+  GetIdentityBalanceResponse: ProtocGetIdentityBalanceResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -177,6 +183,14 @@ class PlatformPromiseClient {
 
     this.client.getTotalCreditsInPlatform = promisify(
       this.client.getTotalCreditsInPlatform.bind(this.client),
+    );
+
+    this.client.getStatus = promisify(
+      this.client.getStatus.bind(this.client),
+    );
+
+    this.client.getIdentityBalance = promisify(
+      this.client.getIdentityBalance.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -718,6 +732,64 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetTotalCreditsInPlatformRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getStatus(
+    getStatusRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getStatus(
+      getStatusRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetStatusResponse,
+              PBJSGetStatusResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetStatusRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getIdentityBalance(
+    getIdentityBalanceRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityBalance(
+      getIdentityBalanceRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityBalanceResponse,
+              PBJSGetIdentityBalanceResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityBalanceRequest,
             ),
           ),
         ],

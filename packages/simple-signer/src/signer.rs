@@ -106,4 +106,11 @@ impl Signer for SimpleSigner {
             )),
         }
     }
+
+    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
+        self.private_keys
+            .get(identity_public_key)
+            .or_else(|| self.private_keys_in_creation.get(identity_public_key))
+            .is_some()
+    }
 }
