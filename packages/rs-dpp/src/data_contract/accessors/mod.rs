@@ -11,35 +11,41 @@ use crate::data_contract::errors::DataContractError;
 use std::collections::BTreeMap;
 
 pub mod v0;
+pub mod v1;
 
 impl DataContractV0Getters for DataContract {
     fn id(&self) -> Identifier {
         match self {
             DataContract::V0(v0) => v0.id(),
+            DataContract::V1(v1) => v1.id(),
         }
     }
 
     fn id_ref(&self) -> &Identifier {
         match self {
             DataContract::V0(v0) => v0.id_ref(),
+            DataContract::V1(v1) => v1.id_ref(),
         }
     }
 
     fn version(&self) -> u32 {
         match self {
             DataContract::V0(v0) => v0.version(),
+            DataContract::V1(v1) => v1.version(),
         }
     }
 
     fn owner_id(&self) -> Identifier {
         match self {
             DataContract::V0(v0) => v0.owner_id(),
+            DataContract::V1(v1) => v1.owner_id(),
         }
     }
 
     fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_cloned_for_name(name),
+            DataContract::V1(v1) => v1.document_type_cloned_for_name(name),
         }
     }
 
@@ -49,72 +55,84 @@ impl DataContractV0Getters for DataContract {
     ) -> Result<&DocumentType, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_borrowed_for_name(name),
+            DataContract::V1(v1) => v1.document_type_borrowed_for_name(name),
         }
     }
 
     fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
+            DataContract::V1(v1) => v1.document_type_for_name(name),
         }
     }
 
     fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
         match self {
             DataContract::V0(v0) => v0.document_type_optional_for_name(name),
+            DataContract::V1(v1) => v1.document_type_optional_for_name(name),
         }
     }
 
     fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_type_cloned_optional_for_name(name),
+            DataContract::V1(v1) => v1.document_type_cloned_optional_for_name(name),
         }
     }
 
     fn has_document_type_for_name(&self, name: &str) -> bool {
         match self {
             DataContract::V0(v0) => v0.has_document_type_for_name(name),
+            DataContract::V1(v1) => v1.has_document_type_for_name(name),
         }
     }
 
     fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types_with_contested_indexes(),
+            DataContract::V1(v1) => v1.document_types_with_contested_indexes(),
         }
     }
 
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types(),
+            DataContract::V1(v1) => v1.document_types(),
         }
     }
 
     fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types_mut(),
+            DataContract::V1(v1) => v1.document_types_mut(),
         }
     }
 
     fn metadata(&self) -> Option<&Metadata> {
         match self {
             DataContract::V0(v0) => v0.metadata(),
+            DataContract::V1(v1) => v1.metadata(),
         }
     }
 
     fn metadata_mut(&mut self) -> Option<&mut Metadata> {
         match self {
             DataContract::V0(v0) => v0.metadata_mut(),
+            DataContract::V1(v1) => v1.metadata_mut(),
         }
     }
 
     fn config(&self) -> &DataContractConfig {
         match self {
             DataContract::V0(v0) => v0.config(),
+            DataContract::V1(v1) => v1.config(),
         }
     }
 
     fn config_mut(&mut self) -> &mut DataContractConfig {
         match self {
             DataContract::V0(v0) => v0.config_mut(),
+            DataContract::V1(v1) => v1.config_mut(),
         }
     }
 }
@@ -123,36 +141,42 @@ impl DataContractV0Setters for DataContract {
     fn set_id(&mut self, id: Identifier) {
         match self {
             DataContract::V0(v0) => v0.set_id(id),
+            DataContract::V1(v1) => v1.set_id(id),
         }
     }
 
     fn set_version(&mut self, version: u32) {
         match self {
             DataContract::V0(v0) => v0.set_version(version),
+            DataContract::V1(v1) => v1.set_version(version),
         }
     }
 
     fn increment_version(&mut self) {
         match self {
             DataContract::V0(v0) => v0.increment_version(),
+            DataContract::V1(v1) => v1.increment_version(),
         }
     }
 
     fn set_owner_id(&mut self, owner_id: Identifier) {
         match self {
             DataContract::V0(v0) => v0.set_owner_id(owner_id),
+            DataContract::V1(v1) => v1.set_owner_id(owner_id),
         }
     }
 
     fn set_metadata(&mut self, metadata: Option<Metadata>) {
         match self {
             DataContract::V0(v0) => v0.set_metadata(metadata),
+            DataContract::V1(v1) => v1.set_metadata(metadata),
         }
     }
 
     fn set_config(&mut self, config: DataContractConfig) {
         match self {
             DataContract::V0(v0) => v0.set_config(config),
+            DataContract::V1(v1) => v1.set_config(config),
         }
     }
 }

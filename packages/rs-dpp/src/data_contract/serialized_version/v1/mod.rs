@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
-pub struct DataContractInSerializationFormatV0 {
+pub struct DataContractInSerializationFormatV1 {
     /// A unique identifier for the data contract.
     pub id: Identifier,
 

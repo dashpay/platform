@@ -2,35 +2,35 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, DataContractV1};
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 
+use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
 use crate::validation::operations::ProtocolValidationOperation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-impl Serialize for DataContractV0 {
+impl Serialize for DataContractV1 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let data_contract: DataContract = self.clone().into();
-        let serialization_format = DataContractInSerializationFormatV0::from(data_contract);
+        let serialization_format = DataContractInSerializationFormatV1::from(data_contract);
         serialization_format.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for DataContractV0 {
+impl<'de> Deserialize<'de> for DataContractV1 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let serialization_format = DataContractInSerializationFormatV0::deserialize(deserializer)?;
+        let serialization_format = DataContractInSerializationFormat::deserialize(deserializer)?;
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
-        DataContractV0::try_from_platform_versioned_v0(
+        DataContractV1::try_from_platform_versioned_v0(
             serialization_format,
             true,
             &mut vec![],
@@ -40,7 +40,7 @@ impl<'de> Deserialize<'de> for DataContractV0 {
     }
 }
 
-impl DataContractV0 {
+impl DataContractV1 {
     pub(in crate::data_contract) fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
         full_validation: bool,
@@ -55,7 +55,7 @@ impl DataContractV0 {
                     .contract_structure_version
                 {
                     0 => {
-                        let data_contract = DataContractV0::try_from_platform_versioned_v0(
+                        let data_contract = DataContractV1::try_from_platform_versioned_v0(
                             serialization_format_v0,
                             full_validation,
                             validation_operations,
@@ -65,7 +65,7 @@ impl DataContractV0 {
                         Ok(data_contract)
                     }
                     version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "DataContractV0::from_serialization_format".to_string(),
+                        method: "DataContractV1::from_serialization_format".to_string(),
                         known_versions: vec![0],
                         received: version,
                     }),
@@ -101,7 +101,7 @@ impl DataContractV0 {
             platform_version,
         )?;
 
-        let data_contract = DataContractV0 {
+        let data_contract = DataContractV1 {
             id,
             version,
             owner_id,
@@ -141,7 +141,7 @@ impl DataContractV0 {
             platform_version,
         )?;
 
-        let data_contract = DataContractV0 {
+        let data_contract = DataContractV1 {
             id,
             version,
             owner_id,
@@ -171,7 +171,8 @@ mod tests {
     #[test]
     #[cfg(feature = "random-identities")]
     fn data_contract_ser_de() {
-        let platform_version = PlatformVersion::first();
+        // V1 of the contract is first present in protocol version 7
+        let platform_version = PlatformVersion::get(7).expect("expected protocol version 7");
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let contract =

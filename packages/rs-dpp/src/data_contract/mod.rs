@@ -18,6 +18,7 @@ pub mod created_data_contract;
 pub mod document_type;
 
 mod v0;
+mod v1;
 
 #[cfg(feature = "factories")]
 pub mod factory;
@@ -32,11 +33,13 @@ mod methods;
 pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
-mod associated_token;
+pub mod associated_token;
 pub mod config;
+mod group;
 pub mod storage_requirements;
 
 pub use v0::*;
+pub use v1::*;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
@@ -54,6 +57,7 @@ pub use serde_json::Value as JsonValue;
 type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;
+pub type TokenName = String;
 type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
@@ -86,6 +90,7 @@ pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
 pub enum DataContract {
     V0(DataContractV0),
+    V1(DataContractV1),
 }
 
 impl PlatformSerializableWithPlatformVersion for DataContract {
@@ -215,18 +220,42 @@ impl DataContract {
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
+            _ => None,
         }
     }
 
     pub fn as_v0_mut(&mut self) -> Option<&mut DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
+            _ => None,
         }
     }
 
     pub fn into_v0(self) -> Option<DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
+            _ => None,
+        }
+    }
+
+    pub fn as_v1(&self) -> Option<&DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    pub fn as_v1_mut(&mut self) -> Option<&mut DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    pub fn into_v1(self) -> Option<DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
         }
     }
 
