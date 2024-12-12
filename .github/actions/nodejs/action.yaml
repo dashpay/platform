@@ -17,11 +17,9 @@ runs:
       shell: bash
       run: npm config set audit false
 
-    - name: Cache NPM build artifacts (S3 bucket cache)
-      uses: strophy/actions-cache@opendal-update
+    - name: Cache NPM build artifacts
+      uses: actions/cache@v4
       with:
-        bucket: multi-runner-cache-x1xibo9c
-        root: actions-cache
         path: |
           .yarn/unplugged
         key: ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/${{ hashFiles('yarn.lock') }}

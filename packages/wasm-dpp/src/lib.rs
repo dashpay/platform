@@ -19,6 +19,7 @@ mod identifier;
 mod identity;
 mod metadata;
 // mod state_repository;
+/// State transitions
 pub mod state_transition;
 // mod version;
 
