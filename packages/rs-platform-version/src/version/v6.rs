@@ -28,19 +28,6 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_6: ProtocolVersion = 6;
 
-/// This version contains some fixes for withdrawals.
-
-// // We changed `pool_withdrawals_into_transactions_queue` to v1 in order to add pool
-// // withdrawals on any validator quorums. v0 allowed us to pool only on the first two
-// // quorums as workaround for Core v21 bug.
-// methods: DRIVE_ABCI_METHOD_VERSIONS_V5,
-
-/*// We changed `daily_withdrawal_limit` to v1 to increase daily withdrawal limit
-// to 2000 Dash.
-methods: DPP_METHOD_VERSIONS_V2,
-*/
-
-
 /// This version adds a fix for nonce validation.
 pub const PLATFORM_V6: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_6,
