@@ -22,17 +22,17 @@ const { PrivateKey } = DashCoreLib;
  * @return {configureCoreTask}
  */
 export default function configureCoreTaskFactory(
-    writeConfigTemplates,
-    startCore,
-    generateBlocks,
-    waitForCoreSync,
-    activateCoreSpork,
-    generateToAddressTask,
-    registerMasternodeTask,
-    generateBlsKeys,
-    enableCoreQuorumsTask,
-    waitForMasternodesSync,
-    configFile,
+  writeConfigTemplates,
+  startCore,
+  generateBlocks,
+  waitForCoreSync,
+  activateCoreSpork,
+  generateToAddressTask,
+  registerMasternodeTask,
+  generateBlsKeys,
+  enableCoreQuorumsTask,
+  waitForMasternodesSync,
+  configFile,
 ) {
   const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
 
@@ -50,29 +50,29 @@ export default function configureCoreTaskFactory(
           const sporkAddress = sporkPrivKey.toAddress(network).toString();
 
           const seedNodes = configGroup.filter((config) => config.getName() === 'local_seed')
-              .map((config) => ({
-                host: config.get('externalIp'),
-                port: config.get('core.p2p.port'),
-              }));
+            .map((config) => ({
+              host: config.get('externalIp'),
+              port: config.get('core.p2p.port'),
+            }));
 
           configGroup.forEach((config) => {
             // Set seeds
             if (config.getName() !== 'local_seed') {
               config.set(
-                  'core.p2p.seeds',
-                  seedNodes,
+                'core.p2p.seeds',
+                seedNodes,
               );
             }
 
             // Set sporks key
             config.set(
-                'core.spork.address',
-                sporkAddress,
+              'core.spork.address',
+              sporkAddress,
             );
 
             config.set(
-                'core.spork.privateKey',
-                sporkPrivKey.toWIF(),
+              'core.spork.privateKey',
+              sporkPrivKey.toWIF(),
             );
 
             // Write configs
@@ -86,8 +86,8 @@ export default function configureCoreTaskFactory(
                 const config = configGroup.find((c) => c.getName() === 'local_seed');
 
                 ctx.coreService = await startCore(
-                    config,
-                    { wallet: true, addressIndex: true },
+                  config,
+                  { wallet: true, addressIndex: true },
                 );
               },
             },
@@ -102,13 +102,13 @@ export default function configureCoreTaskFactory(
                 const descriptors = false;
 
                 await ctx.coreService.getRpcClient().createWallet(
-                    'main',
-                    disablePrivateKeys,
-                    createBlankWallet,
-                    walletPassphrase,
-                    avoidReuse,
-                    descriptors,
-                    loadOnStartup,
+                  'main',
+                  disablePrivateKeys,
+                  createBlankWallet,
+                  walletPassphrase,
+                  avoidReuse,
+                  descriptors,
+                  loadOnStartup,
                 );
               },
             },
@@ -117,8 +117,8 @@ export default function configureCoreTaskFactory(
               task: () => {
                 const amount = HPMN_COLLATERAL_AMOUNT * configGroup.length;
                 return generateToAddressTask(
-                    configGroup.find((c) => c.getName() === 'local_seed'),
-                    amount,
+                  configGroup.find((c) => c.getName() === 'local_seed'),
+                  amount,
                 );
               },
             },
@@ -139,15 +139,15 @@ export default function configureCoreTaskFactory(
                   } = await ctx.coreService.getRpcClient().getBlockCount());
 
                   await generateBlocks(
-                      ctx.coreService,
-                      blocksToGenerateInOneStep,
-                      NETWORK_LOCAL,
-                      // eslint-disable-next-line no-loop-func
-                      (blocks) => {
-                        blocksGenerated += blocks;
+                    ctx.coreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
 
-                        observer.next(`${blocksGenerated} blocks generated`);
-                      },
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
                   );
                 } while (dip3ActivationHeight > currentBlockHeight);
 
@@ -202,13 +202,13 @@ export default function configureCoreTaskFactory(
               title: 'Starting nodes',
               task: async () => {
                 ctx.coreServices = await Promise.all(
-                    configGroup.map((config) => startCore(config)),
+                  configGroup.map((config) => startCore(config)),
                 );
 
                 ctx.rpcClients = ctx.coreServices.map((coreService) => coreService.getRpcClient());
 
                 ctx.seedCoreService = ctx.coreServices.find((coreService) => (
-                    coreService.getConfig().getName() === 'local_seed'
+                  coreService.getConfig().getName() === 'local_seed'
                 ));
 
                 ctx.seedRpcClient = ctx.seedCoreService.getRpcClient();
@@ -218,7 +218,7 @@ export default function configureCoreTaskFactory(
                   ctx.mockTime += time;
 
                   await Promise.all(
-                      ctx.rpcClients.map((rpcClient) => rpcClient.setMockTime(ctx.mockTime)),
+                    ctx.rpcClients.map((rpcClient) => rpcClient.setMockTime(ctx.mockTime)),
                   );
                 };
               },
@@ -227,8 +227,8 @@ export default function configureCoreTaskFactory(
               title: 'Force masternodes to sync',
               task: async () => {
                 await Promise.all(ctx.coreServices.map((coreService) => (
-                    // TODO: Rename function "wait -> force"
-                    waitForMasternodesSync(coreService.getRpcClient())
+                  // TODO: Rename function "wait -> force"
+                  waitForMasternodesSync(coreService.getRpcClient())
                 )));
               },
             },
@@ -245,17 +245,17 @@ export default function configureCoreTaskFactory(
                 await ctx.bumpMockTime();
 
                 await generateBlocks(
-                    ctx.seedCoreService,
-                    1,
-                    NETWORK_LOCAL,
+                  ctx.seedCoreService,
+                  1,
+                  NETWORK_LOCAL,
                 );
               },
             },
             {
               title: 'Wait for nodes to have the same height',
               task: () => waitForNodesToHaveTheSameHeight(
-                  ctx.rpcClients,
-                  WAIT_FOR_NODES_TIMEOUT,
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
               ),
             },
             {
@@ -270,16 +270,16 @@ export default function configureCoreTaskFactory(
                 ];
 
                 await Promise.all(
-                    sporks.map(async (spork) => (
-                        activateCoreSpork(ctx.seedCoreService.getRpcClient(), spork))),
+                  sporks.map(async (spork) => (
+                    activateCoreSpork(ctx.seedCoreService.getRpcClient(), spork))),
                 );
               },
             },
             {
               title: 'Wait for nodes to have the same height',
               task: () => waitForNodesToHaveTheSameHeight(
-                  ctx.rpcClients,
-                  WAIT_FOR_NODES_TIMEOUT,
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
               ),
             },
             {
@@ -288,8 +288,8 @@ export default function configureCoreTaskFactory(
                 const { result: masternodesStatus } = await ctx.seedRpcClient.masternodelist('status');
 
                 const hasNotEnabled = Boolean(
-                    Object.values(masternodesStatus)
-                        .find((status) => status !== 'ENABLED'),
+                  Object.values(masternodesStatus)
+                    .find((status) => status !== 'ENABLED'),
                 );
 
                 if (hasNotEnabled) {
@@ -304,8 +304,8 @@ export default function configureCoreTaskFactory(
             {
               title: 'Wait for nodes to have the same height',
               task: () => waitForNodesToHaveTheSameHeight(
-                  ctx.rpcClients,
-                  WAIT_FOR_NODES_TIMEOUT,
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
               ),
             },
             {
@@ -325,15 +325,15 @@ export default function configureCoreTaskFactory(
                   } = await ctx.coreService.getRpcClient().getBlockCount());
 
                   await generateBlocks(
-                      ctx.coreService,
-                      blocksToGenerateInOneStep,
-                      NETWORK_LOCAL,
-                      // eslint-disable-next-line no-loop-func
-                      (blocks) => {
-                        blocksGenerated += blocks;
+                    ctx.coreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
 
-                        observer.next(`${blocksGenerated} blocks generated`);
-                      },
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
                   );
                 } while (dip3ActivationHeight > currentBlockHeight);
 
@@ -345,14 +345,14 @@ export default function configureCoreTaskFactory(
             {
               title: 'Wait for nodes to have the same height',
               task: () => waitForNodesToHaveTheSameHeight(
-                  ctx.rpcClients,
-                  WAIT_FOR_NODES_TIMEOUT,
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
               ),
             },
             {
               title: 'Stopping nodes',
               task: async () => (Promise.all(
-                  ctx.coreServices.map((coreService) => coreService.stop()),
+                ctx.coreServices.map((coreService) => coreService.stop()),
               )),
             },
           ]);
