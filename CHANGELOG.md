@@ -1,3 +1,43 @@
+### [1.6.3](https://github.com/dashpay/platform/compare/v1.6.2...v1.6.3) (2024-12-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** create channel error due to empty address (#2317)
+* **sdk:** unify state transition processing (#2338)
+* **sdk:** ban addresses failed in sdk (#2351)
+
+### Features
+
+* **sdk:** ban addresses failed in sdk ([#2351](https://github.com/dashpay/platform/issues/2351))
+
+
+### Bug Fixes
+
+* **drive:** security vulnerability in hashbrown ([#2375](https://github.com/dashpay/platform/issues/2375))
+* **sdk:** create channel error due to empty address ([#2317](https://github.com/dashpay/platform/issues/2317))
+
+
+### Build System
+
+* explicitly require tonic v1.12.3 ([#2357](https://github.com/dashpay/platform/issues/2357))
+
+
+### Continuous Integration
+
+* remove manage runs workflow ([#2325](https://github.com/dashpay/platform/issues/2325))
+* replace actions/upload-artifact@v3 with actions/upload-artifact@v4 ([#2359](https://github.com/dashpay/platform/issues/2359))
+
+
+### Miscellaneous Chores
+
+* make protocol version 7 ([#2376](https://github.com/dashpay/platform/issues/2376))
+
+
+### Code Refactoring
+
+* **sdk:** unify state transition processing ([#2338](https://github.com/dashpay/platform/issues/2338))
+
 ### [1.6.2](https://github.com/dashpay/platform/compare/v1.6.1...v1.6.2) (2024-12-03)
 
 
