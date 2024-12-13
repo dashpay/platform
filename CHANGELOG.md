@@ -1,11 +1,14 @@
-### [1.6.3](https://github.com/dashpay/platform/compare/v1.6.2...v1.6.3) (2024-12-13)
+### [1.7.0](https://github.com/dashpay/platform/compare/v1.6.2...v1.7.0) (2024-12-13)
 
 
 ### ⚠ BREAKING CHANGES
 
-* **sdk:** create channel error due to empty address (#2317)
-* **sdk:** unify state transition processing (#2338)
-* **sdk:** ban addresses failed in sdk (#2351)
+* **sdk:** `AddressList.available` removed
+* **sdk:** you need to use `Waitable` to call `wait_for_response()`
+* **sdk:** changed multiple args of functions in state transition broadcast logic
+* **sdk:** `From<Uri> for Address` replaced with `TryFrom<Uri> for Address`
+* **sdk:** `From<&str> for AddressList` replaced with `FromStr for AddressList`
+* **sdk:** `FromIterator<Uri> for AddressList` replaced with `FromIterator<Address> for AddressList`
 
 ### Features
 
