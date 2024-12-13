@@ -9,6 +9,9 @@
 * **sdk:** `From<Uri> for Address` replaced with `TryFrom<Uri> for Address`
 * **sdk:** `From<&str> for AddressList` replaced with `FromStr for AddressList`
 * **sdk:** `FromIterator<Uri> for AddressList` replaced with `FromIterator<Address> for AddressList`
+* **sdk:** `LowLevelDashCoreClient` now returns `DashCoreError` instead of `ContextProviderError`.
+* **sdk:** Added `ContextProviderError::DashCoreError` variant
+* **sdk:** `dash_sdk::Error::CoreClientError` now uses `DashCoreError` instead of `dashcore_rpc::Error`.
 
 ### Features
 
@@ -35,11 +38,15 @@
 ### Miscellaneous Chores
 
 * make protocol version 7 ([#2376](https://github.com/dashpay/platform/issues/2376))
+* **dashmate:** set tenderdash version to 1 ([#2385](https://github.com/dashpay/platform/issues/2385)) 
+* **dashmate:** update Core to version 22 ([#2384](https://github.com/dashpay/platform/issues/2384))
+* address vulnerabilty GHSA-mwcw-c2x4-8c55 ([#2382](https://github.com/dashpay/platform/issues/2382))
 
 
 ### Code Refactoring
 
 * **sdk:** unify state transition processing ([#2338](https://github.com/dashpay/platform/issues/2338))
+* **sdk:** separate dash core client error
 
 ### [1.6.2](https://github.com/dashpay/platform/compare/v1.6.1...v1.6.2) (2024-12-03)
 
