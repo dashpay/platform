@@ -1050,9 +1050,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.7.0': (configFile) => {
         Object.entries(configFile.configs)
-            .forEach(([, options]) => {
-                options.core.docker.image = 'dashpay/dashd:22';
-            });
+          .forEach(([, options]) => {
+            options.core.docker.image = 'dashpay/dashd:22';
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1';
+          });
         return configFile;
       },
     };
