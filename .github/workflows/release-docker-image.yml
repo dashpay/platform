@@ -79,16 +79,16 @@ jobs:
           touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"
           ls -lah ${{ env.DIGEST_DIR_PATH }}
 
-      - name: Make DIGEST_NAME unique
+      - name: Format DIGEST_PLATFORM
         run: |
-          PLATFORM="${{ matrix.platform}}"
+          PLATFORM="${{ matrix.platform }}"
           # replace slash (/) with dash (-)
           echo "DIGEST_PLATFORM=${PLATFORM//\//-}" >> $GITHUB_ENV
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.DIGEST_NAME }}-${{ DIGEST_PLATFORM }}
+          name: ${{ env.DIGEST_NAME }}-${{ env.DIGEST_PLATFORM }}
           path: ${{ env.DIGEST_DIR_PATH }}/*
           if-no-files-found: error
           retention-days: 1
