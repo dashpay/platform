@@ -126,14 +126,14 @@ if [[ "$TARGETARCH" == "amd64" ]] ; then
     if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
         echo "export CFLAGS=-march=x86-64-v3" >> /root/env
         echo "export CXXFLAGS=-march=x86-64-v3" >> /root/env
-        echo "PORTABLE=x86-64-v3" >> /root/env
+        echo "export PORTABLE=x86-64-v3" >> /root/env
     else
         echo "export CFLAGS=-march=x86-64" >> /root/env
         echo "export CXXFLAGS=-march=x86-64" >> /root/env
-        echo "PORTABLE=x86-64" >> /root/env
+        echo "export PORTABLE=x86-64" >> /root/env
     fi
 else
-    echo "PORTABLE=1" >> /root/env
+    echo "export PORTABLE=1" >> /root/env
 fi
 EOS
 
