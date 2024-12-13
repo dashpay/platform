@@ -668,7 +668,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "toml",
 ]
@@ -1047,7 +1047,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1063,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "dapi-grpc",
  "heck",
@@ -1108,7 +1108,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1215,7 +1215,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1357,7 +1357,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1367,7 +1367,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1512,7 +1512,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1734,7 +1734,7 @@ checksum = "486f806e73c5707928240ddc295403b1b93c96a02038563881c4a2fd84b81ac4"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -2886,7 +2886,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3456,7 +3456,7 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 
 [[package]]
 name = "platform-serialization"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3474,7 +3474,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3495,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "quote",
  "syn 2.0.89",
@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3514,7 +3514,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3977,7 +3977,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "backon",
  "chrono",
@@ -4444,7 +4444,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4516,7 +4516,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "strategy-tests"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "bincode",
  "dpp",
@@ -5364,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -5455,7 +5455,7 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5757,7 +5757,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.6.2"
+version = "1.7.0"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",
