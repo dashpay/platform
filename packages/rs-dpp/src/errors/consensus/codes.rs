@@ -98,6 +98,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::RegexError(_)) => 10247,
             Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10248,
             Self::ContestedUniqueIndexWithUniqueIndexError(_) => 10249,
+            Self::DataContractTokenConfigurationUpdateError { .. } => 10250,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,

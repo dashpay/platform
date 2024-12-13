@@ -3,6 +3,7 @@ use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt;
 
 mod methods;
 mod v0;
@@ -18,6 +19,14 @@ impl TokenConfiguration {
     pub fn as_cow_v0(&self) -> Cow<TokenConfigurationV0> {
         match self {
             TokenConfiguration::V0(v0) => Cow::Borrowed(v0),
+        }
+    }
+}
+
+impl fmt::Display for TokenConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenConfiguration::V0(v0) => write!(f, "{}", v0),
         }
     }
 }

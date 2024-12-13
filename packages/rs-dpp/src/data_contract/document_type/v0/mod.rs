@@ -13,7 +13,6 @@ use crate::data_contract::document_type::restricted_creation::CreationRestrictio
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
-use crate::tokens::allowed_currency::AllowedCurrency;
 use platform_value::{Identifier, Value};
 
 mod accessors;
@@ -56,8 +55,6 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_transferable: Transferable,
     /// How are these documents traded?
     pub(in crate::data_contract) trade_mode: TradeMode,
-    /// How are these documents traded?
-    pub(in crate::data_contract) allowed_trade_currencies: Vec<AllowedCurrency>,
     /// Is document creation restricted?
     pub(in crate::data_contract) creation_restriction_mode: CreationRestrictionMode,
     /// The data contract id

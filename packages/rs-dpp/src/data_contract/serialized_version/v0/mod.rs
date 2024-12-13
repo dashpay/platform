@@ -3,6 +3,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use platform_value::{Identifier, Value};
@@ -45,6 +46,29 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                     document_types,
                     ..
                 } = v0;
+
+                DataContractInSerializationFormatV0 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    document_schemas: document_types
+                        .into_iter()
+                        .map(|(key, document_type)| (key, document_type.schema_owned()))
+                        .collect(),
+                    schema_defs,
+                }
+            }
+            DataContract::V1(v1) => {
+                let DataContractV1 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    schema_defs,
+                    document_types,
+                    ..
+                } = v1;
 
                 DataContractInSerializationFormatV0 {
                     id,

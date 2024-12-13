@@ -2,7 +2,6 @@ use crate::consensus::basic::data_contract::UnknownTradeModeError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use platform_value::Identifier;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 #[derive(Debug, PartialEq, Clone, Copy)]

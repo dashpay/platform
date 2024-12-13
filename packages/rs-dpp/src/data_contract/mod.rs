@@ -17,8 +17,8 @@ mod generate_data_contract;
 pub mod created_data_contract;
 pub mod document_type;
 
-mod v0;
-mod v1;
+pub mod v0;
+pub mod v1;
 
 #[cfg(feature = "factories")]
 pub mod factory;
@@ -34,12 +34,10 @@ pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
 pub mod associated_token;
+mod change_control_rules;
 pub mod config;
 mod group;
 pub mod storage_requirements;
-
-pub use v0::*;
-pub use v1::*;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
@@ -50,6 +48,8 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
+use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;

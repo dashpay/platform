@@ -1,5 +1,4 @@
 use platform_value::Identifier;
-use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::documents_batch_transition::TokenTransferTransition;

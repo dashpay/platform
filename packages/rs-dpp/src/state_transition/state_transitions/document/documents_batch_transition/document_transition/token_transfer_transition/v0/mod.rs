@@ -1,6 +1,5 @@
 pub mod v0_methods;
 
-use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 

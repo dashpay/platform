@@ -1,3 +1,4 @@
+use crate::data_contract::group::GroupRequiredPower;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
@@ -10,7 +11,7 @@ pub trait GroupV0Getters {
     fn members_mut(&mut self) -> &mut BTreeMap<Identifier, u32>;
 
     /// Returns the required power of the group
-    fn required_power(&self) -> u8;
+    fn required_power(&self) -> GroupRequiredPower;
 }
 
 /// Setters for GroupV0
@@ -25,5 +26,5 @@ pub trait GroupV0Setters {
     fn remove_member(&mut self, member_id: &Identifier) -> bool;
 
     /// Sets the required power of the group
-    fn set_required_power(&mut self, required_power: u8);
+    fn set_required_power(&mut self, required_power: GroupRequiredPower);
 }

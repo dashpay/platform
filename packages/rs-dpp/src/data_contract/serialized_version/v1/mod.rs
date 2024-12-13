@@ -2,8 +2,11 @@ use crate::data_contract::config::v0::DataContractConfigV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::group::{Group, GroupName};
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::{DataContract, DefinitionName, DocumentName};
+use crate::data_contract::v1::DataContractV1;
+use crate::data_contract::{DataContract, DefinitionName, DocumentName, TokenName};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
@@ -30,9 +33,15 @@ pub struct DataContractInSerializationFormatV1 {
 
     /// Document JSON Schemas per type
     pub document_schemas: BTreeMap<DocumentName, Value>,
+
+    /// Groups that allow for specific multiparty actions on the contract
+    pub groups: BTreeMap<GroupName, Group>,
+
+    /// The tokens on the contract.
+    pub tokens: BTreeMap<TokenName, TokenConfiguration>,
 }
 
-impl From<DataContract> for DataContractInSerializationFormatV0 {
+impl From<DataContract> for DataContractInSerializationFormatV1 {
     fn from(value: DataContract) -> Self {
         match value {
             DataContract::V0(v0) => {
@@ -46,16 +55,45 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                     ..
                 } = v0;
 
-                DataContractInSerializationFormatV0 {
+                DataContractInSerializationFormatV1 {
                     id,
                     config,
                     version,
                     owner_id,
+                    schema_defs,
                     document_schemas: document_types
                         .into_iter()
                         .map(|(key, document_type)| (key, document_type.schema_owned()))
                         .collect(),
+                    groups: Default::default(),
+                    tokens: Default::default(),
+                }
+            }
+            DataContract::V1(v1) => {
+                let DataContractV1 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
                     schema_defs,
+                    document_types,
+                    groups,
+                    tokens,
+                    ..
+                } = v1;
+
+                DataContractInSerializationFormatV1 {
+                    id,
+                    config,
+                    version,
+                    owner_id,
+                    schema_defs,
+                    document_schemas: document_types
+                        .into_iter()
+                        .map(|(key, document_type)| (key, document_type.schema_owned()))
+                        .collect(),
+                    groups,
+                    tokens,
                 }
             }
         }

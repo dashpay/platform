@@ -30,7 +30,7 @@ impl<'de> Deserialize<'de> for DataContractV1 {
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
-        DataContractV1::try_from_platform_versioned_v0(
+        DataContractV1::try_from_platform_versioned(
             serialization_format,
             true,
             &mut vec![],
@@ -49,27 +49,24 @@ impl DataContractV1 {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractInSerializationFormat::V0(serialization_format_v0) => {
-                match platform_version
-                    .dpp
-                    .contract_versions
-                    .contract_structure_version
-                {
-                    0 => {
-                        let data_contract = DataContractV1::try_from_platform_versioned_v0(
-                            serialization_format_v0,
-                            full_validation,
-                            validation_operations,
-                            platform_version,
-                        )?;
+                let data_contract = DataContractV1::try_from_platform_versioned_v0(
+                    serialization_format_v0,
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?;
 
-                        Ok(data_contract)
-                    }
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "DataContractV1::from_serialization_format".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
+                Ok(data_contract)
+            }
+            DataContractInSerializationFormat::V1(serialization_format_v1) => {
+                let data_contract = DataContractV1::try_from_platform_versioned_v1(
+                    serialization_format_v1,
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?;
+
+                Ok(data_contract)
             }
         }
     }
@@ -109,6 +106,8 @@ impl DataContractV1 {
             metadata: None,
             config,
             schema_defs,
+            groups: Default::default(),
+            tokens: Default::default(),
         };
 
         Ok(data_contract)
@@ -120,13 +119,15 @@ impl DataContractV1 {
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let DataContractInSerializationFormatV0 {
+        let DataContractInSerializationFormatV1 {
             id,
             config,
             version,
             owner_id,
             document_schemas,
             schema_defs,
+            groups,
+            tokens,
         } = data_contract_data;
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
@@ -149,6 +150,8 @@ impl DataContractV1 {
             metadata: None,
             config,
             schema_defs,
+            groups,
+            tokens,
         };
 
         Ok(data_contract)

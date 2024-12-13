@@ -1,9 +1,11 @@
-use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::v1::DataContractV1;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -66,7 +68,7 @@ impl DataContractInSerializationFormat {
     pub fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
-            DataContractInSerializationFormat::V1(v1) => &v1.schema_defs.as_ref(),
+            DataContractInSerializationFormat::V1(v1) => v1.schema_defs.as_ref(),
         }
     }
 
@@ -129,6 +131,68 @@ impl TryFromPlatformVersioned<&DataContractV0> for DataContractInSerializationFo
             1 => {
                 let v1_format: DataContractInSerializationFormatV1 =
                     DataContract::V0(value.to_owned()).into();
+                Ok(v1_format.into())
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContract::serialize_to_default_current_version".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+}
+
+impl TryFromPlatformVersioned<DataContractV1> for DataContractInSerializationFormat {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: DataContractV1,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_serialization_version
+            .default_current_version
+        {
+            0 => {
+                let v0_format: DataContractInSerializationFormatV0 = DataContract::V1(value).into();
+                Ok(v0_format.into())
+            }
+            1 => {
+                let v1_format: DataContractInSerializationFormatV1 = DataContract::V1(value).into();
+                Ok(v1_format.into())
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContract::serialize_to_default_current_version".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+}
+
+impl TryFromPlatformVersioned<&DataContractV1> for DataContractInSerializationFormat {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: &DataContractV1,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_serialization_version
+            .default_current_version
+        {
+            0 => {
+                let v0_format: DataContractInSerializationFormatV0 =
+                    DataContract::V1(value.to_owned()).into();
+                Ok(v0_format.into())
+            }
+            1 => {
+                let v1_format: DataContractInSerializationFormatV1 =
+                    DataContract::V1(value.to_owned()).into();
                 Ok(v1_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -212,98 +276,20 @@ impl DataContract {
             .contract_versions
             .contract_structure_version
         {
-            0 => match value {
-                DataContractInSerializationFormat::V0(serialization_format_v0) => {
-                    match platform_version
-                        .dpp
-                        .contract_versions
-                        .contract_structure_version
-                    {
-                        0 => {
-                            let data_contract = DataContractV0::try_from_platform_versioned_v0(
-                                serialization_format_v0,
-                                full_validation,
-                                validation_operations,
-                                platform_version,
-                            )?;
-                            Ok(data_contract.into())
-                        }
-                        version => Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DataContract::try_from_platform_versioned".to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }),
-                    }
-                }
-                DataContractInSerializationFormat::V1(serialization_format_v1) => {
-                    match platform_version
-                        .dpp
-                        .contract_versions
-                        .contract_structure_version
-                    {
-                        0 => {
-                            let data_contract = DataContractV0::try_from_platform_versioned_v1(
-                                serialization_format_v1,
-                                full_validation,
-                                validation_operations,
-                                platform_version,
-                            )?;
-                            Ok(data_contract.into())
-                        }
-                        version => Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DataContract::try_from_platform_versioned".to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }),
-                    }
-                }
-            },
-            1 => match value {
-                DataContractInSerializationFormat::V0(serialization_format_v0) => {
-                    match platform_version
-                        .dpp
-                        .contract_versions
-                        .contract_structure_version
-                    {
-                        0 => {
-                            let data_contract = DataContractV0::try_from_platform_versioned_v0(
-                                serialization_format_v0,
-                                full_validation,
-                                validation_operations,
-                                platform_version,
-                            )?;
-                            Ok(data_contract.into())
-                        }
-                        version => Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DataContract::from_serialization_format".to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }),
-                    }
-                }
-                DataContractInSerializationFormat::V1(serialization_format_v1) => {
-                    match platform_version
-                        .dpp
-                        .contract_versions
-                        .contract_structure_version
-                    {
-                        0 => {
-                            let data_contract = DataContractV0::try_from_platform_versioned_v1(
-                                serialization_format_v1,
-                                full_validation,
-                                validation_operations,
-                                platform_version,
-                            )?;
-                            Ok(data_contract.into())
-                        }
-                        version => Err(ProtocolError::UnknownVersionMismatch {
-                            method: "DataContract::from_serialization_format".to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }),
-                    }
-                }
-            },
+            0 => DataContractV0::try_from_platform_versioned(
+                value,
+                full_validation,
+                validation_operations,
+                platform_version,
+            )
+            .map(|contract| contract.into()),
+            1 => DataContractV1::try_from_platform_versioned(
+                value,
+                full_validation,
+                validation_operations,
+                platform_version,
+            )
+            .map(|contract| contract.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::try_from_platform_versioned".to_string(),
                 known_versions: vec![0, 1],
