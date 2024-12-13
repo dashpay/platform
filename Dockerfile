@@ -333,7 +333,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 elfx86exts@0.6.2 \
+    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
@@ -481,11 +481,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     # Remove /platform to reduce layer size
     rm -rf /platform
 
-# See what CPU capabilities are required
-RUN  --mount=type=secret,id=AWS \
-    set -ex; \
-    source /root/env && \
-    elfx86exts /artifacts/drive-abci
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
