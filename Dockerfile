@@ -130,7 +130,7 @@ if [[ "$TARGETARCH" == "amd64" ]] ; then
     else
         echo "export CFLAGS=-march=x86-64" >> /root/env
         echo "export CXXFLAGS=-march=x86-64" >> /root/env
-        echo "PORTABLE=1" >> /root/env
+        echo "PORTABLE=x86-64" >> /root/env
     fi
 else
     echo "PORTABLE=1" >> /root/env
