@@ -31,21 +31,21 @@ impl DocumentsBatchTransitionAction {
     }
 
     /// transitions
-    pub fn transitions(&self) -> &Vec<DocumentTransitionAction> {
+    pub fn transitions(&self) -> &Vec<BatchTransitionAction> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => &v0.transitions,
         }
     }
 
     /// transitions
-    pub fn transitions_mut(&mut self) -> &mut Vec<DocumentTransitionAction> {
+    pub fn transitions_mut(&mut self) -> &mut Vec<BatchTransitionAction> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => &mut v0.transitions,
         }
     }
 
     /// transitions
-    pub fn transitions_take(&mut self) -> Vec<DocumentTransitionAction> {
+    pub fn transitions_take(&mut self) -> Vec<BatchTransitionAction> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => std::mem::take(&mut v0.transitions),
         }
@@ -59,7 +59,7 @@ impl DocumentsBatchTransitionAction {
     }
 
     /// set transitions
-    pub fn set_transitions(&mut self, transitions: Vec<DocumentTransitionAction>) {
+    pub fn set_transitions(&mut self, transitions: Vec<BatchTransitionAction>) {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.transitions = transitions,
         }
@@ -136,28 +136,30 @@ impl DocumentsBatchTransitionAction {
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions().iter() {
-            let document_type_name = transition
-                .base()
-                .ok_or(ProtocolError::CorruptedCodeExecution(
-                    "expecting action to have a base".to_string(),
-                ))?
-                .document_type_name();
-            let data_contract_info = transition
-                .base()
-                .ok_or(ProtocolError::CorruptedCodeExecution(
-                    "expecting action to have a base".to_string(),
-                ))?
-                .data_contract_fetch_info();
+            if let BatchTransitionAction::DocumentAction(document_transition) = transition {
+                let document_type_name = document_transition
+                    .base()
+                    .ok_or(ProtocolError::CorruptedCodeExecution(
+                        "expecting action to have a base".to_string(),
+                    ))?
+                    .document_type_name();
+                let data_contract_info = document_transition
+                    .base()
+                    .ok_or(ProtocolError::CorruptedCodeExecution(
+                        "expecting action to have a base".to_string(),
+                    ))?
+                    .data_contract_fetch_info();
 
-            let document_type = data_contract_info
-                .contract
-                .document_type_for_name(document_type_name)?;
+                let document_type = data_contract_info
+                    .contract
+                    .document_type_for_name(document_type_name)?;
 
-            let document_security_level = document_type.security_level_requirement();
+                let document_security_level = document_type.security_level_requirement();
 
-            // lower enum enum representation means higher in security
-            if document_security_level < highest_security_level {
-                highest_security_level = document_security_level
+                // lower enum enum representation means higher in security
+                if document_security_level < highest_security_level {
+                    highest_security_level = document_security_level
+                }
             }
         }
         Ok(if highest_security_level == SecurityLevel::MASTER {

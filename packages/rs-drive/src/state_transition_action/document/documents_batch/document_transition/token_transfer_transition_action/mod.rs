@@ -24,6 +24,9 @@ pub trait TokenTransferTransitionActionAccessors {
     /// Returns a reference to the base token transition action
     fn base(&self) -> &TokenBaseTransitionAction;
 
+    /// Returns a reference to the base token transition action
+    fn base_owned(self) -> TokenBaseTransitionAction;
+
     /// Returns the amount of tokens to transfer
     fn amount(&self) -> u64;
 
@@ -70,6 +73,11 @@ impl TokenTransferTransitionActionAccessors for TokenTransferTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.base(),
+        }
+    }
+    fn base_owned(self) -> TokenBaseTransitionAction {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.base_owned(),
         }
     }
 

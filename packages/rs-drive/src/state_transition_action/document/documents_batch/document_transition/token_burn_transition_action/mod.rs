@@ -27,6 +27,9 @@ pub trait TokenBurnTransitionActionAccessorsV0 {
     /// Returns a reference to the base token transition action
     fn base(&self) -> &TokenBaseTransitionAction;
 
+    /// Returns the base token transition action
+    fn base_owned(self) -> TokenBaseTransitionAction;
+
     /// Returns the burn amount
     fn burn_amount(&self) -> u64;
 
@@ -70,6 +73,12 @@ impl TokenBurnTransitionActionAccessorsV0 for TokenBurnTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
             TokenBurnTransitionAction::V0(v0) => &v0.base,
+        }
+    }
+
+    fn base_owned(self) -> TokenBaseTransitionAction {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.base,
         }
     }
 

@@ -21,11 +21,9 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::documents_batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentFromCreateTransition;
-use dpp::state_transition::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::DocumentFromReplaceTransition;
-use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;

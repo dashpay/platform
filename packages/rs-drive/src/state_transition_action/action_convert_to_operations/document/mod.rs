@@ -4,6 +4,7 @@ use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 
+mod batch_transition;
 mod document_create_transition;
 mod document_delete_transition;
 mod document_purchase_transition;

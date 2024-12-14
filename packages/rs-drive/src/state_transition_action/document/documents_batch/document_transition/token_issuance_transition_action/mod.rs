@@ -23,50 +23,6 @@ pub enum TokenIssuanceTransitionAction {
     V0(TokenIssuanceTransitionActionV0),
 }
 
-/// Accessors trait for TokenIssuanceTransitionAction for version 0 fields
-pub trait TokenIssuanceTransitionActionAccessorsV0 {
-    /// Returns a reference to the base token transition action
-    fn base(&self) -> &TokenBaseTransitionAction;
-
-    /// Returns the issuance amount
-    fn issuance_amount(&self) -> u64;
-
-    /// Returns the token position in the contract
-    fn token_position(&self) -> u16 {
-        self.base().token_position()
-    }
-
-    /// Returns the token ID
-    fn token_id(&self) -> Identifier {
-        self.base().token_id()
-    }
-
-    /// Returns the data contract ID
-    fn data_contract_id(&self) -> Identifier {
-        self.base().data_contract_id()
-    }
-
-    /// Returns a reference to the data contract fetch info
-    fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo> {
-        self.base().data_contract_fetch_info_ref()
-    }
-
-    /// Returns the data contract fetch info
-    fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
-        self.base().data_contract_fetch_info()
-    }
-
-    /// Returns the identity contract nonce
-    fn identity_contract_nonce(&self) -> IdentityNonce {
-        self.base().identity_contract_nonce()
-    }
-
-    /// Returns the ID of the token issuance transition
-    fn id(&self) -> Identifier {
-        self.base().id()
-    }
-}
-
 impl TokenIssuanceTransitionActionAccessorsV0 for TokenIssuanceTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
@@ -74,9 +30,33 @@ impl TokenIssuanceTransitionActionAccessorsV0 for TokenIssuanceTransitionAction 
         }
     }
 
+    fn base_owned(self) -> TokenBaseTransitionAction {
+        match self {
+            TokenIssuanceTransitionAction::V0(v0) => v0.base,
+        }
+    }
+
     fn issuance_amount(&self) -> u64 {
         match self {
             TokenIssuanceTransitionAction::V0(v0) => v0.issuance_amount,
+        }
+    }
+
+    fn set_issuance_amount(&mut self, amount: u64) {
+        match self {
+            TokenIssuanceTransitionAction::V0(v0) => v0.issuance_amount = amount,
+        }
+    }
+
+    fn identity_balance_holder_id(&self) -> Identifier {
+        match self {
+            TokenIssuanceTransitionAction::V0(v0) => v0.identity_balance_holder_id,
+        }
+    }
+
+    fn set_identity_balance_holder_id(&mut self, id: Identifier) {
+        match self {
+            TokenIssuanceTransitionAction::V0(v0) => v0.identity_balance_holder_id = id,
         }
     }
 }

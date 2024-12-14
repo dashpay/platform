@@ -1,5 +1,5 @@
 mod transformer;
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessors};
+use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 
 /// Token burn transition action v0
 #[derive(Debug, Clone)]

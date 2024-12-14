@@ -37,7 +37,7 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenIssuanceTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
-use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction, TokenTransferTransitionActionAccessors, TokenTransferTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction, TokenTransferTransitionActionAccessors};
 
 /// version
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;

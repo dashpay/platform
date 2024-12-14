@@ -44,6 +44,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction 
                     contract_info: DataContractFetchInfo(contract_fetch_info),
                     token_position: self.token_position(),
                     token_id: self.token_id(),
+                    identity_balance_holder_id: Default::default(),
                     mint_amount: self.issuance_amount(),
                 }));
 

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 /// Operations on Documents
 #[derive(Clone, Debug)]
-pub enum TokenOperationType<'a> {
+pub enum TokenOperationType {
     /// Burns token from the account issuing the .
     TokenBurn {
         /// The token id
@@ -46,7 +46,7 @@ pub enum TokenOperationType<'a> {
     },
 }
 
-impl DriveLowLevelOperationConverter for TokenOperationType<'_> {
+impl DriveLowLevelOperationConverter for TokenOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,

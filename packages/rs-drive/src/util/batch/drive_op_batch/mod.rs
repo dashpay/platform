@@ -72,7 +72,7 @@ pub enum DriveOperation<'a> {
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
     /// A token operation
-    TokenOperation(TokenOperationType<'a>),
+    TokenOperation(TokenOperationType),
     /// Withdrawal operation
     WithdrawalOperation(WithdrawalOperationType),
     /// An identity operation
