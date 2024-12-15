@@ -38,9 +38,6 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
     "data_contract_id"
 )]
 pub struct TokenBaseTransitionV0 {
-    /// The document ID
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
-    pub id: Identifier,
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
         serde(rename = "$identity-contract-nonce")
@@ -49,9 +46,9 @@ pub struct TokenBaseTransitionV0 {
     /// ID of the token within the contract
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(rename = "$tokenId")
+        serde(rename = "$tokenContractPosition")
     )]
-    pub token_id: u16,
+    pub token_contract_position: u16,
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
@@ -73,7 +70,7 @@ impl TokenBaseTransitionV0 {
                     .map_err(ProtocolError::ValueError)?,
             ),
             identity_contract_nonce,
-            token_id: map
+            token_contract_position: map
                 .remove_integer(property_names::TOKEN_ID)
                 .map_err(ProtocolError::ValueError)?,
             data_contract_id: Identifier::new(

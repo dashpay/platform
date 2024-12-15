@@ -9,11 +9,10 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use crate::util::batch::drive_op_batch::TokenOperationType;
 use crate::util::batch::DriveOperation::{IdentityOperation, TokenOperation};
-use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 
 impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
-        mut self,
+        self,
         _epoch: &Epoch,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -28,8 +27,6 @@ impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction 
             0 => {
                 let data_contract_id = self.base().data_contract_id();
 
-                let contract_fetch_info = self.base().data_contract_fetch_info();
-
                 let identity_contract_nonce = self.base().identity_contract_nonce();
 
                 let mut ops = vec![IdentityOperation(
@@ -41,10 +38,8 @@ impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction 
                 )];
 
                 ops.push(TokenOperation(TokenOperationType::TokenMint {
-                    contract_info: DataContractFetchInfo(contract_fetch_info),
-                    token_position: self.token_position(),
                     token_id: self.token_id(),
-                    identity_balance_holder_id: Default::default(),
+                    identity_balance_holder_id: owner_id,
                     mint_amount: self.issuance_amount(),
                 }));
 

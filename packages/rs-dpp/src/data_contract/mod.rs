@@ -3,10 +3,12 @@ use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
+use std::collections::BTreeMap;
 
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
+use once_cell::sync::Lazy;
 
 pub mod errors;
 pub mod extra;
@@ -48,6 +50,8 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::group::{Group, GroupName};
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
@@ -58,9 +62,15 @@ type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;
 pub type TokenName = String;
+pub type TokenContractPosition = u16;
 type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
+
+// Define static empty BTreeMaps
+static EMPTY_GROUPS: Lazy<BTreeMap<GroupName, Group>> = Lazy::new(|| BTreeMap::new());
+static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
+    Lazy::new(|| BTreeMap::new());
 
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.

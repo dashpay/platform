@@ -41,9 +41,8 @@ impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
                 )];
 
                 ops.push(TokenOperation(TokenOperationType::TokenBurn {
-                    contract_info: DataContractFetchInfo(contract_fetch_info),
-                    token_position: self.token_position(),
                     token_id: self.token_id(),
+                    identity_balance_holder_id: owner_id,
                     burn_amount: self.burn_amount(),
                 }));
 

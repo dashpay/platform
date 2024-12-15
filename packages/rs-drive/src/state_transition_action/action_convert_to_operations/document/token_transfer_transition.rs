@@ -28,8 +28,6 @@ impl DriveHighLevelDocumentOperationConverter for TokenTransferTransitionAction 
             0 => {
                 let data_contract_id = self.base().data_contract_id();
 
-                let contract_fetch_info = self.base().data_contract_fetch_info();
-
                 let identity_contract_nonce = self.base().identity_contract_nonce();
 
                 let mut ops = vec![IdentityOperation(
@@ -41,9 +39,8 @@ impl DriveHighLevelDocumentOperationConverter for TokenTransferTransitionAction 
                 )];
 
                 ops.push(TokenOperation(TokenOperationType::TokenTransfer {
-                    contract_info: DataContractFetchInfo(contract_fetch_info),
-                    token_position: self.token_position(),
                     token_id: self.token_id(),
+                    sender_id: owner_id,
                     recipient_id: self.recipient_id(),
                     amount: self.amount(),
                 }));

@@ -2,8 +2,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
-use crate::util::batch::IdentityOperationType;
-use crate::util::object_size_info::DataContractInfo;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
@@ -87,7 +85,6 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     token_id_bytes,
                     identity_id_bytes,
                     mint_amount,
-                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

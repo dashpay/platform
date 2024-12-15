@@ -4,17 +4,11 @@ use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `TokenBaseTransitionV0`
 pub trait TokenBaseTransitionV0Methods {
-    /// Returns the document ID.
-    fn id(&self) -> Identifier;
-
-    /// Sets the document ID.
-    fn set_id(&mut self, id: Identifier);
-
     /// Returns the document type name.
-    fn token_id(&self) -> u16;
+    fn token_contract_position(&self) -> u16;
 
     /// Sets the token id.
-    fn set_token_id(&mut self, token_id: u16);
+    fn set_token_contract_position(&mut self, token_id: u16);
 
     /// Returns the data contract ID.
     fn data_contract_id(&self) -> Identifier;
@@ -27,20 +21,12 @@ pub trait TokenBaseTransitionV0Methods {
 }
 
 impl TokenBaseTransitionV0Methods for TokenBaseTransitionV0 {
-    fn id(&self) -> Identifier {
-        self.id
+    fn token_contract_position(&self) -> u16 {
+        self.token_contract_position
     }
 
-    fn set_id(&mut self, id: Identifier) {
-        self.id = id;
-    }
-
-    fn token_id(&self) -> u16 {
-        self.token_id
-    }
-
-    fn set_token_id(&mut self, token_id: u16) {
-        self.token_id = token_id;
+    fn set_token_contract_position(&mut self, token_contract_position: u16) {
+        self.token_contract_position = token_contract_position;
     }
 
     fn data_contract_id(&self) -> Identifier {

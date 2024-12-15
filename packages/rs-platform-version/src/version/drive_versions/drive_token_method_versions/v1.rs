@@ -13,5 +13,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         transfer: 0,
         add_to_token_total_supply: 0,
         remove_from_token_total_supply: 0,
+        remove_from_identity_token_balance: 0,
+        add_to_previous_token_balance: 0,
     },
 };

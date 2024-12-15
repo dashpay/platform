@@ -6,7 +6,6 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
 
 use grovedb::batch::KeyInfoPath;

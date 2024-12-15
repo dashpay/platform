@@ -1,4 +1,4 @@
-use crate::state_transition_action::document::documents_batch::document_transition::{BatchTransitionAction, DocumentTransitionAction};
+use crate::state_transition_action::document::documents_batch::document_transition::BatchTransitionAction;
 use crate::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;

@@ -4,27 +4,15 @@ use crate::state_transition::documents_batch_transition::token_base_transition::
 use platform_value::Identifier;
 
 impl TokenBaseTransitionV0Methods for TokenBaseTransition {
-    fn id(&self) -> Identifier {
+    fn token_contract_position(&self) -> u16 {
         match self {
-            TokenBaseTransition::V0(v0) => v0.id(),
+            TokenBaseTransition::V0(v0) => v0.token_contract_position(),
         }
     }
 
-    fn set_id(&mut self, id: Identifier) {
+    fn set_token_contract_position(&mut self, token_id: u16) {
         match self {
-            TokenBaseTransition::V0(v0) => v0.set_id(id),
-        }
-    }
-
-    fn token_id(&self) -> u16 {
-        match self {
-            TokenBaseTransition::V0(v0) => v0.token_id(),
-        }
-    }
-
-    fn set_token_id(&mut self, token_id: u16) {
-        match self {
-            TokenBaseTransition::V0(v0) => v0.set_token_id(token_id),
+            TokenBaseTransition::V0(v0) => v0.set_token_contract_position(token_id),
         }
     }
 

@@ -1,8 +1,5 @@
 use derive_more::From;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
-
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::prelude::IdentityNonce;
 use std::sync::Arc;
 
@@ -22,12 +19,6 @@ pub enum TokenBaseTransitionAction {
 }
 
 impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
-    fn id(&self) -> Identifier {
-        match self {
-            TokenBaseTransitionAction::V0(v0) => v0.id,
-        }
-    }
-
     fn token_position(&self) -> u16 {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.token_position,

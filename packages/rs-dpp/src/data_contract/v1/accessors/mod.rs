@@ -4,7 +4,7 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
 use crate::data_contract::v1::DataContractV1;
-use crate::data_contract::{DocumentName, TokenName};
+use crate::data_contract::{DocumentName, TokenContractPosition};
 use crate::metadata::Metadata;
 
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
@@ -147,16 +147,16 @@ impl DataContractV1Getters for DataContractV1 {
         &self.groups
     }
 
-    fn groups_mut(&mut self) -> &mut BTreeMap<GroupName, Group> {
-        &mut self.groups
+    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupName, Group>> {
+        Some(&mut self.groups)
     }
 
-    fn tokens(&self) -> &BTreeMap<TokenName, TokenConfiguration> {
+    fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
         &self.tokens
     }
 
-    fn tokens_mut(&mut self) -> &mut BTreeMap<TokenName, TokenConfiguration> {
-        &mut self.tokens
+    fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>> {
+        Some(&mut self.tokens)
     }
 }
 
@@ -165,7 +165,7 @@ impl DataContractV1Setters for DataContractV1 {
         self.groups = groups;
     }
 
-    fn set_tokens(&mut self, tokens: BTreeMap<TokenName, TokenConfiguration>) {
+    fn set_tokens(&mut self, tokens: BTreeMap<TokenContractPosition, TokenConfiguration>) {
         self.tokens = tokens;
     }
 
@@ -173,7 +173,7 @@ impl DataContractV1Setters for DataContractV1 {
         self.groups.insert(name, group);
     }
 
-    fn add_token(&mut self, name: TokenName, token: TokenConfiguration) {
+    fn add_token(&mut self, name: TokenContractPosition, token: TokenConfiguration) {
         self.tokens.insert(name, token);
     }
 }

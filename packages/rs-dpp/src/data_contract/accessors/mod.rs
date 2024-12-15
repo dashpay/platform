@@ -1,13 +1,16 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use crate::data_contract::DocumentName;
+use crate::data_contract::{DocumentName, TokenContractPosition, EMPTY_GROUPS, EMPTY_TOKENS};
 use crate::metadata::Metadata;
 use crate::prelude::DataContract;
 
 use platform_value::Identifier;
 
+use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::group::{Group, GroupName};
 use std::collections::BTreeMap;
 
 pub mod v0;
@@ -177,6 +180,85 @@ impl DataContractV0Setters for DataContract {
         match self {
             DataContract::V0(v0) => v0.set_config(config),
             DataContract::V1(v1) => v1.set_config(config),
+        }
+    }
+}
+
+/// Implementing DataContractV1Getters for DataContract
+impl DataContractV1Getters for DataContract {
+    /// Returns a reference to the groups map.
+    fn groups(&self) -> &BTreeMap<GroupName, Group> {
+        match self {
+            DataContract::V0(_) => &EMPTY_GROUPS,
+            DataContract::V1(v1) => &v1.groups,
+        }
+    }
+
+    /// Returns a mutable reference to the groups map.
+    /// Returns `None` for V0 since it doesn't have groups.
+    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupName, Group>> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => Some(&mut v1.groups),
+        }
+    }
+
+    /// Returns a reference to the tokens map.
+    fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
+        match self {
+            DataContract::V0(_) => &EMPTY_TOKENS,
+            DataContract::V1(v1) => &v1.tokens,
+        }
+    }
+
+    /// Returns a mutable reference to the tokens map.
+    /// Returns `None` for V0 since it doesn't have tokens.
+    fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => Some(&mut v1.tokens),
+        }
+    }
+}
+
+impl DataContractV1Setters for DataContract {
+    /// Sets the groups map for the data contract.
+    fn set_groups(&mut self, groups: BTreeMap<GroupName, Group>) {
+        match self {
+            DataContract::V0(_) => {}
+            DataContract::V1(v1) => {
+                v1.groups = groups;
+            }
+        }
+    }
+
+    /// Sets the tokens map for the data contract.
+    fn set_tokens(&mut self, tokens: BTreeMap<TokenContractPosition, TokenConfiguration>) {
+        match self {
+            DataContract::V0(_) => {}
+            DataContract::V1(v1) => {
+                v1.tokens = tokens;
+            }
+        }
+    }
+
+    /// Adds or updates a single group in the groups map.
+    fn add_group(&mut self, name: GroupName, group: Group) {
+        match self {
+            DataContract::V0(_) => {}
+            DataContract::V1(v1) => {
+                v1.groups.insert(name, group);
+            }
+        }
+    }
+
+    /// Adds or updates a single token configuration in the tokens map.
+    fn add_token(&mut self, id: TokenContractPosition, token: TokenConfiguration) {
+        match self {
+            DataContract::V0(_) => {}
+            DataContract::V1(v1) => {
+                v1.tokens.insert(id, token);
+            }
         }
     }
 }

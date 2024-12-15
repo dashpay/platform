@@ -62,11 +62,6 @@ pub trait TokenBurnTransitionActionAccessorsV0 {
     fn identity_contract_nonce(&self) -> IdentityNonce {
         self.base().identity_contract_nonce()
     }
-
-    /// Returns the ID of the token burn transition
-    fn id(&self) -> Identifier {
-        self.base().id()
-    }
 }
 
 impl TokenBurnTransitionActionAccessorsV0 for TokenBurnTransitionAction {

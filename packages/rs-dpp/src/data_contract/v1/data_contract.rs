@@ -7,7 +7,7 @@ use crate::data_contract::associated_token::token_configuration::TokenConfigurat
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::group::{Group, GroupName};
-use crate::data_contract::{DefinitionName, DocumentName, TokenName};
+use crate::data_contract::{DefinitionName, DocumentName, TokenContractPosition};
 use crate::metadata::Metadata;
 
 /// `DataContractV1` represents a data contract in a decentralized platform.
@@ -69,5 +69,5 @@ pub struct DataContractV1 {
     pub groups: BTreeMap<GroupName, Group>,
 
     /// The tokens on the contract.
-    pub tokens: BTreeMap<TokenName, TokenConfiguration>,
+    pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,
 }

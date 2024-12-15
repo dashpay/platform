@@ -103,7 +103,8 @@ impl Drive {
 
         // Fetch current balance
         let current_balance = self
-            .fetch_identity_balance_operations(
+            .fetch_identity_token_balance_operations(
+                token_id,
                 identity_id,
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
@@ -123,7 +124,8 @@ impl Drive {
         let new_balance = current_balance - burn_amount;
 
         // Update identity balance
-        drive_operations.push(self.update_identity_balance_operation_v0(identity_id, new_balance)?);
+        drive_operations
+            .push(self.update_identity_token_balance_operation_v0(identity_id, new_balance)?);
 
         // Update total supply for the token (subtract burn_amount)
         let current_supply = self

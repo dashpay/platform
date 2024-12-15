@@ -31,7 +31,9 @@ impl DocumentsBatchTransitionActionV0 {
             .transitions
             .iter()
             .filter_map(|transition| match transition {
-                DocumentTransitionAction::PurchaseAction(purchase) => Some(purchase.price()),
+                BatchTransitionAction::DocumentAction(
+                    DocumentTransitionAction::PurchaseAction(purchase),
+                ) => Some(purchase.price()),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {
@@ -55,12 +57,12 @@ impl DocumentsBatchTransitionActionV0 {
             .transitions
             .iter()
             .filter_map(|transition| match transition {
-                DocumentTransitionAction::CreateAction(document_create_transition_action) => {
-                    document_create_transition_action
-                        .prefunded_voting_balance()
-                        .iter()
-                        .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val))
-                }
+                BatchTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+                    document_create_transition_action,
+                )) => document_create_transition_action
+                    .prefunded_voting_balance()
+                    .iter()
+                    .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val)),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {

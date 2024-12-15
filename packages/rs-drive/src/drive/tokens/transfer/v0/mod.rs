@@ -99,17 +99,7 @@ impl Drive {
 
         // Estimation
         if let Some(esti) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(esti, &platform_version.drive)?;
-            Self::add_estimation_costs_for_negative_credit(
-                from_identity_id,
-                esti,
-                &platform_version.drive,
-            )?;
-            Self::add_estimation_costs_for_negative_credit(
-                to_identity_id,
-                esti,
-                &platform_version.drive,
-            )?;
+            Self::add_estimation_costs_for_token_balances(esti, &platform_version.drive)?;
         }
 
         // Fetch sender balance
@@ -132,8 +122,9 @@ impl Drive {
         }
 
         let new_from_balance = from_balance - amount;
-        drive_operations
-            .push(self.update_identity_balance_operation_v0(from_identity_id, new_from_balance)?);
+        drive_operations.push(
+            self.update_identity_token_balance_operation_v0(from_identity_id, new_from_balance)?,
+        );
 
         // Fetch recipient balance
         let to_balance = self
@@ -153,7 +144,7 @@ impl Drive {
                     "overflow on recipient balance".to_string(),
                 )))?;
         drive_operations
-            .push(self.update_identity_balance_operation_v0(to_identity_id, new_to_balance)?);
+            .push(self.update_identity_token_balance_operation_v0(to_identity_id, new_to_balance)?);
 
         // Total supply remains the same.
         Ok(drive_operations)

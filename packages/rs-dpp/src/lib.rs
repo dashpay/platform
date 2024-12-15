@@ -53,7 +53,7 @@ pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
 
-mod tokens;
+pub mod tokens;
 
 pub mod voting;
 

@@ -62,11 +62,6 @@ pub trait TokenTransferTransitionActionAccessors {
     fn identity_contract_nonce(&self) -> IdentityNonce {
         self.base().identity_contract_nonce()
     }
-
-    /// Returns the ID of the token transfer transition
-    fn id(&self) -> Identifier {
-        self.base().id()
-    }
 }
 
 impl TokenTransferTransitionActionAccessors for TokenTransferTransitionAction {

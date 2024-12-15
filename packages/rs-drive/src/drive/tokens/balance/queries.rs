@@ -1,4 +1,3 @@
-use crate::drive::balances::balance_path_vec;
 use crate::drive::tokens::token_balances_path_vec;
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};

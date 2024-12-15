@@ -1,3 +1,5 @@
+mod accessors;
+
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::group::RequiredSigners;

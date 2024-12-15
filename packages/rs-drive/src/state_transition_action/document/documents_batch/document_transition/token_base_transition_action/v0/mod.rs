@@ -2,8 +2,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
-use dpp::util::hash::{hash_double, hash_single};
-use platform_version::version::PlatformVersion;
+use dpp::util::hash::hash_double;
 use std::sync::Arc;
 
 /// transformer
@@ -12,8 +11,6 @@ pub mod transformer;
 /// Token base transition action v0
 #[derive(Debug, Clone)]
 pub struct TokenBaseTransitionActionV0 {
-    /// The token transition ID
-    pub id: Identifier,
     /// The identity contract nonce, used to prevent replay attacks
     pub identity_contract_nonce: IdentityNonce,
     /// The token position within the data contract
@@ -24,9 +21,6 @@ pub struct TokenBaseTransitionActionV0 {
 
 /// Token base transition action accessors v0
 pub trait TokenBaseTransitionActionAccessorsV0 {
-    /// Returns the token transition ID
-    fn id(&self) -> Identifier;
-
     /// The token position within the data contract
     fn token_position(&self) -> u16;
 
@@ -53,10 +47,6 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
 }
 
 impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
-    fn id(&self) -> Identifier {
-        self.id
-    }
-
     fn token_position(&self) -> u16 {
         self.token_position
     }

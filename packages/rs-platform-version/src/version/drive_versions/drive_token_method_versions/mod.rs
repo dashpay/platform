@@ -25,4 +25,6 @@ pub struct DriveTokenUpdateMethodVersions {
     pub transfer: FeatureVersion,
     pub add_to_token_total_supply: FeatureVersion,
     pub remove_from_token_total_supply: FeatureVersion,
+    pub remove_from_identity_token_balance: FeatureVersion,
+    pub add_to_previous_token_balance: FeatureVersion,
 }

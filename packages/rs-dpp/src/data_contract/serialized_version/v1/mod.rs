@@ -6,7 +6,7 @@ use crate::data_contract::associated_token::token_configuration::TokenConfigurat
 use crate::data_contract::group::{Group, GroupName};
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
-use crate::data_contract::{DataContract, DefinitionName, DocumentName, TokenName};
+use crate::data_contract::{DataContract, DefinitionName, DocumentName, TokenContractPosition};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ pub struct DataContractInSerializationFormatV1 {
     pub groups: BTreeMap<GroupName, Group>,
 
     /// The tokens on the contract.
-    pub tokens: BTreeMap<TokenName, TokenConfiguration>,
+    pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,
 }
 
 impl From<DataContract> for DataContractInSerializationFormatV1 {
