@@ -1,9 +1,8 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::serialized_version::v0::{
-    property_names, DataContractInSerializationFormatV0,
-};
+use crate::data_contract::serialized_version::property_names;
+use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use crate::data_contract::v0::DataContractV0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};

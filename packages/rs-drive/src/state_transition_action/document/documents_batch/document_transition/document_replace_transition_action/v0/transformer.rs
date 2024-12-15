@@ -31,7 +31,7 @@ impl DocumentReplaceTransitionActionV0 {
             ..
         } = document_replace_transition;
         let base =
-            DocumentBaseTransitionAction::from_borrowed_base_transition_with_contract_lookup(
+            DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
             )?;

@@ -9,10 +9,11 @@ use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
@@ -181,6 +182,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
+
+    #[error(transparent)]
+    DataContractTokenConfigurationUpdateError(DataContractTokenConfigurationUpdateError),
 
     #[error(transparent)]
     DataContractUniqueIndicesChangedError(DataContractUniqueIndicesChangedError),

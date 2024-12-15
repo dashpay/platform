@@ -2,7 +2,7 @@ mod v0;
 pub use v0::*;
 
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, DataContractV1};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use serde_json::Value as JsonValue;
@@ -24,9 +24,12 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
             0 => Ok(
                 DataContractV0::from_json(json_value, full_validation, platform_version)?.into(),
             ),
+            1 => Ok(
+                DataContractV1::from_json(json_value, full_validation, platform_version)?.into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::from_json_object".to_string(),
-                known_versions: vec![0],
+                method: "DataContract::from_json".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -35,6 +38,7 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
     fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_json(platform_version),
+            DataContract::V1(v1) => v1.to_json(platform_version),
         }
     }
 
@@ -44,6 +48,7 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
     ) -> Result<JsonValue, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_validating_json(platform_version),
+            DataContract::V1(v1) => v1.to_validating_json(platform_version),
         }
     }
 }

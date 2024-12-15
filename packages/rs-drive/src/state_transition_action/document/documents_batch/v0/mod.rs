@@ -1,5 +1,5 @@
 use dpp::fee::Credits;
-use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::{BatchTransitionAction, DocumentTransitionAction};
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
@@ -12,7 +12,7 @@ pub struct DocumentsBatchTransitionActionV0 {
     /// The owner making the transitions
     pub owner_id: Identifier,
     /// The inner transitions
-    pub transitions: Vec<DocumentTransitionAction>,
+    pub transitions: Vec<BatchTransitionAction>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }
@@ -31,7 +31,9 @@ impl DocumentsBatchTransitionActionV0 {
             .transitions
             .iter()
             .filter_map(|transition| match transition {
-                DocumentTransitionAction::PurchaseAction(purchase) => Some(purchase.price()),
+                BatchTransitionAction::DocumentAction(
+                    DocumentTransitionAction::PurchaseAction(purchase),
+                ) => Some(purchase.price()),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {
@@ -55,12 +57,12 @@ impl DocumentsBatchTransitionActionV0 {
             .transitions
             .iter()
             .filter_map(|transition| match transition {
-                DocumentTransitionAction::CreateAction(document_create_transition_action) => {
-                    document_create_transition_action
-                        .prefunded_voting_balance()
-                        .iter()
-                        .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val))
-                }
+                BatchTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+                    document_create_transition_action,
+                )) => document_create_transition_action
+                    .prefunded_voting_balance()
+                    .iter()
+                    .try_fold(0u64, |acc, &(_, val)| acc.checked_add(val)),
                 _ => None,
             })
             .fold((None, false), |(acc, _), price| match acc {

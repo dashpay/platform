@@ -8,7 +8,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 
 impl DocumentBaseTransitionAction {
     /// from base transition with contract lookup
-    pub fn from_base_transition_with_contract_lookup(
+    pub fn try_from_base_transition_with_contract_lookup(
         value: DocumentBaseTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -24,7 +24,7 @@ impl DocumentBaseTransitionAction {
     }
 
     /// from borrowed base transition with contract lookup
-    pub fn from_borrowed_base_transition_with_contract_lookup(
+    pub fn try_from_borrowed_base_transition_with_contract_lookup(
         value: &DocumentBaseTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {

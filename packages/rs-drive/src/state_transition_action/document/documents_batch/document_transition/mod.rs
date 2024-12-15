@@ -1,4 +1,3 @@
-mod action_type;
 /// document_base_transition_action
 pub mod document_base_transition_action;
 /// document_create_transition_action
@@ -11,13 +10,21 @@ pub mod document_purchase_transition_action;
 pub mod document_replace_transition_action;
 /// document_transfer_transition_action
 pub mod document_transfer_transition_action;
+mod document_transition_action_type;
 /// document_update_price_transition_action
 pub mod document_update_price_transition_action;
+/// token_base_transition_action
+pub mod token_base_transition_action;
+/// token_burn_transition_action
+pub mod token_burn_transition_action;
+/// token_issuance_transition_action
+pub mod token_issuance_transition_action;
+/// token_transfer_transition_action
+pub mod token_transfer_transition_action;
 
-pub use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+pub use dpp::state_transition::documents_batch_transition::document_transition::document_transition_action_type::DocumentTransitionActionType;
 
 use derive_more::From;
-
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -27,6 +34,10 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
+use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenIssuanceTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction, TokenTransferTransitionActionAccessors};
 
 /// version
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
@@ -76,4 +87,44 @@ impl DocumentTransitionAction {
             DocumentTransitionAction::BumpIdentityDataContractNonce(_) => None,
         }
     }
+}
+
+/// token action
+#[derive(Debug, Clone, From)]
+pub enum TokenTransitionAction {
+    /// burn
+    BurnAction(TokenBurnTransitionAction),
+    /// issuance
+    IssuanceAction(TokenIssuanceTransitionAction),
+    /// transfer
+    TransferAction(TokenTransferTransitionAction),
+}
+
+impl TokenTransitionAction {
+    /// Returns a reference to the base token transition action if available
+    pub fn base(&self) -> Option<&TokenBaseTransitionAction> {
+        match self {
+            TokenTransitionAction::BurnAction(action) => Some(action.base()),
+            TokenTransitionAction::IssuanceAction(action) => Some(action.base()),
+            TokenTransitionAction::TransferAction(action) => Some(action.base()),
+        }
+    }
+
+    /// Consumes self and returns the base token transition action if available
+    pub fn base_owned(self) -> Option<TokenBaseTransitionAction> {
+        match self {
+            TokenTransitionAction::BurnAction(action) => Some(action.base_owned()),
+            TokenTransitionAction::IssuanceAction(action) => Some(action.base_owned()),
+            TokenTransitionAction::TransferAction(action) => Some(action.base_owned()),
+        }
+    }
+}
+
+/// token action
+#[derive(Debug, Clone, From)]
+pub enum BatchTransitionAction {
+    /// document
+    DocumentAction(DocumentTransitionAction),
+    /// token
+    TokenAction(TokenTransitionAction),
 }

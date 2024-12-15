@@ -386,7 +386,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
 #[cfg(test)]
 mod test {
-    use crate::data_contract::data_contract::DataContractV0;
+    use crate::data_contract::v0::DataContractV0;
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::{platform_value, BinaryData, Bytes32, Identifier};

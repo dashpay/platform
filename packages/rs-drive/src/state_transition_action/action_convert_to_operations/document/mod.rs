@@ -4,6 +4,7 @@ use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 
+mod batch_transition;
 mod document_create_transition;
 mod document_delete_transition;
 mod document_purchase_transition;
@@ -12,6 +13,10 @@ mod document_transfer_transition;
 mod document_transition;
 mod document_update_price_transition;
 mod documents_batch_transition;
+mod token_burn_transition;
+mod token_issuance_transition;
+mod token_transfer_transition;
+mod token_transition;
 
 /// A converter that will get High Level Drive Operations from State transitions
 pub trait DriveHighLevelDocumentOperationConverter {

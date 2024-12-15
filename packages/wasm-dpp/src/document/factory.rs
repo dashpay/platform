@@ -14,7 +14,7 @@ use dpp::document::Document;
 use dpp::prelude::ExtendedDocument;
 
 use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transition_action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
 

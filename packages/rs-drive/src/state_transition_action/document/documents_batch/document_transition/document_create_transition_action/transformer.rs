@@ -14,7 +14,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 
 impl DocumentCreateTransitionAction {
     /// from_document_create_transition_with_contract_lookup
-    pub fn from_document_create_transition_with_contract_lookup(
+    pub fn try_from_document_create_transition_with_contract_lookup(
         drive: &Drive,
         transaction: TransactionArg,
         value: DocumentCreateTransition,
@@ -31,7 +31,7 @@ impl DocumentCreateTransitionAction {
     }
 
     /// from_document_borrowed_create_transition_with_contract_lookup
-    pub fn from_document_borrowed_create_transition_with_contract_lookup(
+    pub fn try_from_document_borrowed_create_transition_with_contract_lookup(
         drive: &Drive,
         transaction: TransactionArg,
         value: &DocumentCreateTransition,

@@ -9,10 +9,10 @@ use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
-#[cfg(feature = "data-contract-value-conversion")]
-use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+#[cfg(feature = "data-contract-value-conversion")]
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 #[cfg(feature = "state-transitions")]

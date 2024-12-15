@@ -32,12 +32,14 @@ impl DataContractValueConversionMethodsV0 for DataContract {
     fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_value(platform_version),
+            DataContract::V1(v1) => v1.to_value(platform_version),
         }
     }
 
     fn into_value(self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.into_value(platform_version),
+            DataContract::V1(v1) => v1.into_value(platform_version),
         }
     }
 }
