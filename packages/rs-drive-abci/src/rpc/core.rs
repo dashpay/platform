@@ -152,11 +152,6 @@ pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
 /// Invalid, missing or duplicate parameter
 pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
 
-/// Asset Unlock consensus error "bad-assetunlock-not-active-quorum"
-pub const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
-/// Asset Unlock consensus error "bad-assetunlock-not-active-quorum"
-pub const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
-
 macro_rules! retry {
     ($action:expr) => {{
         /// Maximum number of retry attempts
