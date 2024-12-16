@@ -1,3 +1,53 @@
+### [1.7.0](https://github.com/dashpay/platform/compare/v1.6.2...v1.7.0) (2024-12-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** `AddressList.available` removed
+* **sdk:** you need to use `Waitable` to call `wait_for_response()`
+* **sdk:** changed multiple args of functions in state transition broadcast logic
+* **sdk:** `From<Uri> for Address` replaced with `TryFrom<Uri> for Address`
+* **sdk:** `From<&str> for AddressList` replaced with `FromStr for AddressList`
+* **sdk:** `FromIterator<Uri> for AddressList` replaced with `FromIterator<Address> for AddressList`
+* **sdk:** `LowLevelDashCoreClient` now returns `DashCoreError` instead of `ContextProviderError`.
+* **sdk:** Added `ContextProviderError::DashCoreError` variant
+* **sdk:** `dash_sdk::Error::CoreClientError` now uses `DashCoreError` instead of `dashcore_rpc::Error`.
+
+### Features
+
+* **sdk:** ban addresses failed in sdk ([#2351](https://github.com/dashpay/platform/issues/2351))
+
+
+### Bug Fixes
+
+* **drive:** security vulnerability in hashbrown ([#2375](https://github.com/dashpay/platform/issues/2375))
+* **sdk:** create channel error due to empty address ([#2317](https://github.com/dashpay/platform/issues/2317))
+
+
+### Build System
+
+* explicitly require tonic v1.12.3 ([#2357](https://github.com/dashpay/platform/issues/2357))
+
+
+### Continuous Integration
+
+* remove manage runs workflow ([#2325](https://github.com/dashpay/platform/issues/2325))
+* replace actions/upload-artifact@v3 with actions/upload-artifact@v4 ([#2359](https://github.com/dashpay/platform/issues/2359))
+
+
+### Miscellaneous Chores
+
+* make protocol version 7 ([#2376](https://github.com/dashpay/platform/issues/2376))
+* **dashmate:** set tenderdash version to 1 ([#2385](https://github.com/dashpay/platform/issues/2385)) 
+* **dashmate:** update Core to version 22 ([#2384](https://github.com/dashpay/platform/issues/2384))
+* address vulnerabilty GHSA-mwcw-c2x4-8c55 ([#2382](https://github.com/dashpay/platform/issues/2382))
+
+
+### Code Refactoring
+
+* **sdk:** unify state transition processing ([#2338](https://github.com/dashpay/platform/issues/2338))
+* **sdk:** separate dash core client error
+
 ### [1.6.2](https://github.com/dashpay/platform/compare/v1.6.1...v1.6.2) (2024-12-03)
 
 
