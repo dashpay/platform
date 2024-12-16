@@ -1,14 +1,20 @@
-#[cfg(feature = "message-signature-verification")]
-use crate::consensus::signature::{
-    BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
-};
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
-use crate::validation::SimpleConsensusValidationResult;
+use crate::{
+    consensus::signature::{
+        BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
+    },
+    validation::SimpleConsensusValidationResult,
+};
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, ProtocolError};
-use dashcore::{bls_signatures, signer};
+use dashcore::signer;
+#[cfg(feature = "bls-signatures")]
+use {
+    crate::bls_signatures::{Bls12381G2Impl, Pairing},
+    dashcore::{blsful as bls_signatures, blsful::Signature},
+};
 
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]
@@ -38,25 +44,44 @@ impl PlatformMessageSignable for &[u8] {
                 }
             }
             KeyType::BLS12_381 => {
-                let public_key = match bls_signatures::PublicKey::from_bytes(public_key_data) {
-                    Ok(public_key) => public_key,
-                    Err(e) => {
-                        // dbg!(format!("bls public_key could not be recovered"));
+                let public_key =
+                    match bls_signatures::PublicKey::<Bls12381G2Impl>::try_from(public_key_data) {
+                        Ok(public_key) => public_key,
+                        Err(e) => {
+                            // dbg!(format!("bls public_key could not be recovered"));
+                            return SimpleConsensusValidationResult::new_with_error(
+                                SignatureError::BasicBLSError(BasicBLSError::new(e.to_string()))
+                                    .into(),
+                            );
+                        }
+                    };
+                let signature_bytes: [u8; 96] = match signature.try_into() {
+                    Ok(bytes) => bytes,
+                    Err(_) => {
                         return SimpleConsensusValidationResult::new_with_error(
-                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
+                            SignatureError::BasicBLSError(BasicBLSError::new(format!(
+                                "Signature was {} bytes, expected 96 bytes",
+                                signature.len()
+                            )))
+                            .into(),
+                        )
+                    }
+                };
+                let g2 = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
+                    &signature_bytes,
+                )
+                .into_option()
+                {
+                    Some(g2) => g2,
+                    None => {
+                        return SimpleConsensusValidationResult::new_with_error(
+                            SignatureError::BasicBLSError(BasicBLSError::new("bls signature does not conform to proper bls signature serialization".to_string())).into(),
                         );
                     }
                 };
-                let signature = match bls_signatures::Signature::from_bytes(signature) {
-                    Ok(public_key) => public_key,
-                    Err(e) => {
-                        // dbg!(format!("bls signature could not be recovered"));
-                        return SimpleConsensusValidationResult::new_with_error(
-                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
-                        );
-                    }
-                };
-                if !public_key.verify(&signature, signable_data) {
+                let signature = Signature::<Bls12381G2Impl>::Basic(g2);
+
+                if signature.verify(&public_key, signable_data).is_err() {
                     SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicBLSError(BasicBLSError::new(
                             "bls signature was incorrect".to_string(),

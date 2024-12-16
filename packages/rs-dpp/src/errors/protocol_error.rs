@@ -247,6 +247,20 @@ pub enum ProtocolError {
     /// Invalid CBOR error
     #[error("invalid cbor error: {0}")]
     InvalidCBOR(String),
+
+    /// BLS signature error
+    #[cfg(feature = "bls-signatures")]
+    #[error(transparent)]
+    BlsError(#[from] dashcore::blsful::BlsError),
+
+    #[error("Private key wrong size: expected 32, got {got}")]
+    PrivateKeySizeError { got: u32 },
+
+    #[error("Private key invalid error: {0}")]
+    InvalidBLSPrivateKeyError(String),
+
+    #[error("Signature wrong size: expected 96, got {got}")]
+    BlsSignatureSizeError { got: u32 },
 }
 
 impl From<&str> for ProtocolError {
