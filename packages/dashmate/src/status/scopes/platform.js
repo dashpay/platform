@@ -1,4 +1,3 @@
-import prettyMs from 'pretty-ms';
 import { PortStateEnum } from '../enums/portState.js';
 import DockerComposeError from '../../docker/errors/DockerComposeError.js';
 import providers from '../providers.js';
@@ -6,6 +5,7 @@ import { DockerStatusEnum } from '../enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import determineStatus from '../determineStatus.js';
 import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
+import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
 /**
  * @returns {getPlatformScopeFactory}
@@ -218,7 +218,8 @@ export default function getPlatformScopeFactory(
       // Throw an error if it's not a Drive issue
       if (!(e instanceof DockerComposeError
         && e.dockerComposeExecutionResult
-        && e.dockerComposeExecutionResult.exitCode !== 0)) {
+        && e.dockerComposeExecutionResult.exitCode !== 0)
+          && !(e instanceof ServiceIsNotRunningError)) {
         throw e;
       }
     }
@@ -312,11 +313,7 @@ export default function getPlatformScopeFactory(
       if (mnRRSoftFork.active) {
         scope.platformActivation = `Activated (at height ${mnRRSoftFork.height})`;
       } else {
-        const startTime = mnRRSoftFork.bip9.start_time;
-
-        const diff = (new Date().getTime() - startTime) / 1000;
-
-        scope.platformActivation = `Waiting for activation (approximately in ${prettyMs(diff, { compact: true })})`;
+        scope.platformActivation = `Waiting for activation on height ${mnRRSoftFork.height}`;
       }
 
       const [tenderdash, drive] = await Promise.all([

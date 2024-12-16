@@ -1,3 +1,151 @@
+### [1.7.0](https://github.com/dashpay/platform/compare/v1.6.2...v1.7.0) (2024-12-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** `AddressList.available` removed
+* **sdk:** you need to use `Waitable` to call `wait_for_response()`
+* **sdk:** changed multiple args of functions in state transition broadcast logic
+* **sdk:** `From<Uri> for Address` replaced with `TryFrom<Uri> for Address`
+* **sdk:** `From<&str> for AddressList` replaced with `FromStr for AddressList`
+* **sdk:** `FromIterator<Uri> for AddressList` replaced with `FromIterator<Address> for AddressList`
+* **sdk:** `LowLevelDashCoreClient` now returns `DashCoreError` instead of `ContextProviderError`.
+* **sdk:** Added `ContextProviderError::DashCoreError` variant
+* **sdk:** `dash_sdk::Error::CoreClientError` now uses `DashCoreError` instead of `dashcore_rpc::Error`.
+
+### Features
+
+* **sdk:** ban addresses failed in sdk ([#2351](https://github.com/dashpay/platform/issues/2351))
+
+
+### Bug Fixes
+
+* **drive:** security vulnerability in hashbrown ([#2375](https://github.com/dashpay/platform/issues/2375))
+* **sdk:** create channel error due to empty address ([#2317](https://github.com/dashpay/platform/issues/2317))
+
+
+### Build System
+
+* explicitly require tonic v1.12.3 ([#2357](https://github.com/dashpay/platform/issues/2357))
+
+
+### Continuous Integration
+
+* remove manage runs workflow ([#2325](https://github.com/dashpay/platform/issues/2325))
+* replace actions/upload-artifact@v3 with actions/upload-artifact@v4 ([#2359](https://github.com/dashpay/platform/issues/2359))
+
+
+### Miscellaneous Chores
+
+* make protocol version 7 ([#2376](https://github.com/dashpay/platform/issues/2376))
+* **dashmate:** set tenderdash version to 1 ([#2385](https://github.com/dashpay/platform/issues/2385)) 
+* **dashmate:** update Core to version 22 ([#2384](https://github.com/dashpay/platform/issues/2384))
+* address vulnerabilty GHSA-mwcw-c2x4-8c55 ([#2382](https://github.com/dashpay/platform/issues/2382))
+
+
+### Code Refactoring
+
+* **sdk:** unify state transition processing ([#2338](https://github.com/dashpay/platform/issues/2338))
+* **sdk:** separate dash core client error
+
+### [1.6.2](https://github.com/dashpay/platform/compare/v1.6.1...v1.6.2) (2024-12-03)
+
+
+### Bug Fixes
+
+* **dashmate:** status command fails if drive is not running ([#2364](https://github.com/dashpay/platform/issues/2364))
+* **dashmate:** zero ssl verification passes without being verified ([#2365](https://github.com/dashpay/platform/issues/2365))
+
+
+### Miscellaneous Chores
+
+* ignore leveldb deprecation warnings ([#2366](https://github.com/dashpay/platform/issues/2366))
+
+
+### Build System
+
+* enable drive image for Ivy Bridge CPU ([#2363](https://github.com/dashpay/platform/issues/2363))
+
+### [1.6.1](https://github.com/dashpay/platform/compare/v1.6.0...v1.6.1) (2024-11-29)
+
+## [1.6.0-dev.2](https://github.com/dashpay/platform/compare/v1.6.0-dev.1...v1.6.0-dev.2) (2024-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** retry broadcast operations (#2337)
+
+
+### Features
+
+* **sdk:** retry broadcast operations ([#2337](https://github.com/dashpay/platform/issues/2337))
+
+
+### Reverted
+
+* **dashmate:** update Core to version 22
+
+
+### Continuous Integration
+
+* change s3 cache provider to optimize costs ([#2344](https://github.com/dashpay/platform/issues/2344))
+
+## [1.6.0-dev.1](https://github.com/dashpay/platform/compare/v1.5.1...v1.6.0-dev.1) (2024-11-25)
+
+
+### Features
+
+* integrate wallet contract ([#2345](https://github.com/dashpay/platform/issues/2345))
+* **sdk:** fetch many and return metadata and proof to client ([#2331](https://github.com/dashpay/platform/issues/2331))
+* **sdk:** including grovedb proof bytes when error in proof verification ([#2332](https://github.com/dashpay/platform/issues/2332))
+
+
+### Bug Fixes
+
+* **dashmate:** container name is already in use ([#2341](https://github.com/dashpay/platform/issues/2341))
+* **dashmate:** failing doctor with drive metrics enabled ([#2348](https://github.com/dashpay/platform/issues/2348))
+* **dashmate:** various ZeroSSL cert verification errors ([#2339](https://github.com/dashpay/platform/issues/2339))
+* document query start after ([#2347](https://github.com/dashpay/platform/issues/2347))
+* **drive:** nonce already present in past internal error ([#2343](https://github.com/dashpay/platform/issues/2343))
+
+
+### Build System
+
+* adjust docker build context ([#2336](https://github.com/dashpay/platform/issues/2336))
+* use cargo binstall to speed up builds ([#2321](https://github.com/dashpay/platform/issues/2321))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to version 22
+* **sdk:** expose proof verifier errors ([#2333](https://github.com/dashpay/platform/issues/2333))
+* **sdk:** vote poll queries encoding ([#2334](https://github.com/dashpay/platform/issues/2334))
+
+
+### Continuous Integration
+
+* improve caching ([#2329](https://github.com/dashpay/platform/issues/2329))
+* prebuilt librocksdb in docker image ([#2318](https://github.com/dashpay/platform/issues/2318))
+* run devcontainers workflow only on push to master ([#2295](https://github.com/dashpay/platform/issues/2295))
+* switch release workflow to github runners ([#2346](https://github.com/dashpay/platform/issues/2346))
+* switch test workflow to github runners ([#2319](https://github.com/dashpay/platform/issues/2319))
+* use prebuilt librocksdb in github actions ([#2316](https://github.com/dashpay/platform/issues/2316))
+
+
+### Tests
+
+* hardcoded identity transfers in strategy tests ([#2322](https://github.com/dashpay/platform/issues/2322))
+
+
+### [1.5.1](https://github.com/dashpay/platform/compare/v1.5.0...v1.5.1) (2024-11-04)
+
+### Bug Fixes
+
+* **drive:** apply batch is not using transaction in `remove_all_votes_given_by_identities` ([#2309](https://github.com/dashpay/platform/issues/2309))
+* **drive:** uncommitted state if db transaction fails ([#2305](https://github.com/dashpay/platform/issues/2305))
+
+
+
 ## [1.5.0](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0) (2024-11-01)
 
 ### ⚠ BREAKING CHANGES

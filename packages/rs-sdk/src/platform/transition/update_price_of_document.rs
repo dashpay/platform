@@ -1,28 +1,21 @@
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use std::sync::Arc;
-
 use crate::{Error, Sdk};
 
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
+use super::broadcast::BroadcastStateTransition;
+use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for updating the price of a document on Platform
-pub trait UpdatePriceOfDocument<S: Signer> {
+pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
     /// Updates the price of a document on platform
     /// Setting settings to `None` sets default connection behavior
     async fn update_price_of_document(
@@ -35,14 +28,6 @@ pub trait UpdatePriceOfDocument<S: Signer> {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
-    /// Waits for the response of a state transition after it has been broadcast
-    async fn wait_for_response(
-        &self,
-        sdk: &Sdk,
-        state_transition: StateTransition,
-        data_contract: Arc<DataContract>,
-    ) -> Result<Document, Error>;
-
     /// Updates the price of a document on platform and waits for the response
     async fn update_price_of_document_and_wait_for_response(
         &self,
@@ -50,8 +35,8 @@ pub trait UpdatePriceOfDocument<S: Signer> {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
-        data_contract: Arc<DataContract>,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
 }
 
@@ -92,58 +77,9 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
                 None,
             )?;
 
-        let request = transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
-
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-
+        transition.broadcast(sdk, Some(settings)).await?;
         Ok(transition)
-    }
-
-    async fn wait_for_response(
-        &self,
-        sdk: &Sdk,
-        state_transition: StateTransition,
-        data_contract: Arc<DataContract>,
-    ) -> Result<Document, Error> {
-        let request = state_transition.wait_for_state_transition_result_request()?;
-        // TODO: Implement retry logic
-        let response = request
-            .execute(sdk, RequestSettings::default())
-            .await
-            .into_inner()?;
-
-        let block_info = block_info_from_metadata(response.metadata()?)?;
-
-        let proof = response.proof_owned()?;
-
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &|_| Ok(Some(data_contract.clone())),
-            sdk.version(),
-        )?;
-
-        match result {
-            StateTransitionProofResult::VerifiedDocuments(mut documents) => {
-                let document = documents
-                    .remove(self.id_ref())
-                    .ok_or(Error::InvalidProvedResponse(
-                        "did not prove the sent document".to_string(),
-                    ))?
-                    .ok_or(Error::InvalidProvedResponse(
-                        "expected there to actually be a document".to_string(),
-                    ))?;
-                Ok(document)
-            }
-            _ => Err(Error::DapiClientError("proved a non document".to_string())),
-        }
     }
 
     async fn update_price_of_document_and_wait_for_response(
@@ -152,21 +88,13 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
-        data_contract: Arc<DataContract>,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
         let state_transition = self
             .update_price_of_document(price, sdk, document_type, identity_public_key, signer, None)
             .await?;
 
-        let document = <Self as UpdatePriceOfDocument<S>>::wait_for_response(
-            self,
-            sdk,
-            state_transition,
-            data_contract,
-        )
-        .await?;
-
-        Ok(document)
+        Self::wait_for_response(sdk, state_transition, settings).await
     }
 }

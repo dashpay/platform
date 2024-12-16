@@ -131,6 +131,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 document_update_price_transition_state_validation: 0,
             },
         },
+        has_nonce_validation: 0,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

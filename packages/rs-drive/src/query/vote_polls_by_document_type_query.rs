@@ -13,6 +13,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::query::Query;
 use crate::util::object_size_info::DataContractResolvedInfo;
+use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -32,7 +33,7 @@ use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct VotePollsByDocumentTypeQuery {
     /// The contract information associated with the document.
     pub contract_id: Identifier,

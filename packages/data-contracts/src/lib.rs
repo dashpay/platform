@@ -9,6 +9,7 @@ pub use feature_flags_contract;
 pub use masternode_reward_shares_contract;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+pub use wallet_utils_contract;
 pub use withdrawals_contract;
 
 #[repr(u8)]
@@ -19,6 +20,7 @@ pub enum SystemDataContract {
     FeatureFlags = 2,
     DPNS = 3,
     Dashpay = 4,
+    WalletUtils = 5,
 }
 
 pub struct DataContractSource {
@@ -37,6 +39,7 @@ impl SystemDataContract {
             SystemDataContract::FeatureFlags => feature_flags_contract::ID_BYTES,
             SystemDataContract::DPNS => dpns_contract::ID_BYTES,
             SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
+            SystemDataContract::WalletUtils => wallet_utils_contract::ID_BYTES,
         };
         Identifier::new(bytes)
     }
@@ -81,6 +84,13 @@ impl SystemDataContract {
                 version: platform_version.system_data_contracts.dashpay as u32,
                 definitions: dashpay_contract::load_definitions(platform_version)?,
                 document_schemas: dashpay_contract::load_documents_schemas(platform_version)?,
+            },
+            SystemDataContract::WalletUtils => DataContractSource {
+                id_bytes: wallet_utils_contract::ID_BYTES,
+                owner_id_bytes: wallet_utils_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.wallet as u32,
+                definitions: wallet_utils_contract::load_definitions(platform_version)?,
+                document_schemas: wallet_utils_contract::load_documents_schemas(platform_version)?,
             },
         };
 

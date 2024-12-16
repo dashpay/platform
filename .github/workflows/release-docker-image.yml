@@ -33,13 +33,13 @@ jobs:
   build-image:
     name: Build ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 180
     strategy:
       matrix:
         include:
-          - runner: ["self-hosted", "linux", "x64", "ubuntu-platform"]
+          - runner: ubuntu-24.04
             platform: linux/amd64
-          - runner: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+          - runner: ubuntu-24.04
             platform: linux/arm64
     steps:
       - name: Check out repo
@@ -47,12 +47,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        if: ${{ matrix.platform == 'linux/arm64' }}
 
       - name: Build and push by digest
         uses: ./.github/actions/docker
@@ -66,9 +63,13 @@ jobs:
           cargo_profile: ${{ inputs.cargo_profile }}
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          region: ${{ secrets.AWS_REGION }}
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          cache_region: ${{ vars.CACHE_REGION }}
+          cache_bucket: ${{ vars.CACHE_S3_BUCKET }}
+          cache_endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          cache_access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+          # On release, we generate a new "base" image, so we need to save cache to name manifest, like '.../drive'
+          cache_to_name: ${{ github.event_name == 'release' && 'true' || 'false' }}
 
       - name: Export digest
         run: |
@@ -78,10 +79,16 @@ jobs:
           touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"
           ls -lah ${{ env.DIGEST_DIR_PATH }}
 
+      - name: Format DIGEST_PLATFORM
+        run: |
+          PLATFORM="${{ matrix.platform }}"
+          # replace slash (/) with dash (-)
+          echo "DIGEST_PLATFORM=${PLATFORM//\//-}" >> $GITHUB_ENV
+
       - name: Upload digest
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.DIGEST_NAME }}
+          name: ${{ env.DIGEST_NAME }}-${{ env.DIGEST_PLATFORM }}
           path: ${{ env.DIGEST_DIR_PATH }}/*
           if-no-files-found: error
           retention-days: 1
@@ -92,10 +99,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ env.DIGEST_NAME }}
+          pattern: ${{ env.DIGEST_NAME }}*
           path: ${{ env.DIGEST_DIR_PATH }}
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -134,6 +142,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
