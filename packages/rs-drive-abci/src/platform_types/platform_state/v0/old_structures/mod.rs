@@ -4,15 +4,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(super) enum ValidatorSet {
+pub enum OldStructureValidatorSet {
     /// Version 0
-    V0(ValidatorSetV0),
+    V0(OldStructureValidatorSetV0),
 }
 
-impl From<ValidatorSet> for dpp::core_types::validator_set::ValidatorSet {
-    fn from(value: ValidatorSet) -> Self {
+impl From<OldStructureValidatorSet> for dpp::core_types::validator_set::ValidatorSet {
+    fn from(value: OldStructureValidatorSet) -> Self {
         match value {
-            ValidatorSet::V0(v0) => dpp::core_types::validator_set::ValidatorSet::V0(v0.into()),
+            OldStructureValidatorSet::V0(v0) => {
+                dpp::core_types::validator_set::ValidatorSet::V0(v0.into())
+            }
         }
     }
 }
@@ -20,7 +22,7 @@ impl From<ValidatorSet> for dpp::core_types::validator_set::ValidatorSet {
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(super) struct ValidatorSetV0 {
+pub(super) struct OldStructureValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
     /// Rotation quorum index is available only for DIP24 quorums
@@ -33,9 +35,9 @@ pub(super) struct ValidatorSetV0 {
     pub threshold_public_key: bls_signatures::PublicKey,
 }
 
-impl From<ValidatorSetV0> for dpp::core_types::validator_set::v0::ValidatorSetV0 {
-    fn from(value: ValidatorSetV0) -> Self {
-        let ValidatorSetV0 {
+impl From<OldStructureValidatorSetV0> for dpp::core_types::validator_set::v0::ValidatorSetV0 {
+    fn from(value: OldStructureValidatorSetV0) -> Self {
+        let OldStructureValidatorSetV0 {
             quorum_hash,
             quorum_index,
             core_height,

@@ -145,7 +145,7 @@ pub(super) struct PlatformStateForSavingV0 {
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
     #[bincode(with_serde)]
-    pub validator_sets: Vec<(Bytes32, old_structures::ValidatorSet)>,
+    pub validator_sets: Vec<(Bytes32, old_structures::OldStructureValidatorSet)>,
 
     /// The quorums used for validating chain locks
     pub chain_lock_validating_quorums: SignatureVerificationQuorumSetForSaving,

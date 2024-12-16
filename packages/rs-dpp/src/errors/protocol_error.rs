@@ -1,4 +1,3 @@
-use std::array::TryFromSliceError;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
