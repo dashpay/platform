@@ -6,7 +6,6 @@
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
 use super::LimitQuery;
-use crate::platform::types::identity::NonUniquePublicKeyHash;
 use crate::{
     error::Error,
     mock::MockResponse,
@@ -38,9 +37,10 @@ use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
-    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
-    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
-    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+    Identities, IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote,
+    MasternodeProtocolVotes, ProposerBlockCountById, ProposerBlockCountByRange,
+    ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVotesByIdentity,
+    VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{
@@ -94,8 +94,7 @@ where
             Self::Request,
             Request = Self::Request,
             Response = <<Self as FetchMany<K, O>>::Request as TransportRequest>::Response,
-        > + Send
-        + Default,
+        > + Send,
 {
     /// Type of request used to fetch multiple objects from Platform.
     ///
@@ -232,21 +231,30 @@ where
                 "fetched objects from platform"
             );
 
-            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
-                request.clone(),
-                response,
-            )
-            .await
-            .map_err(|e| ExecutionError {
-                inner: e,
-                address: Some(address.clone()),
-                retries,
-            })
-            .map(|(o, metadata, proof)| ExecutionResponse {
-                inner: (o.unwrap_or_default(), metadata, proof),
-                retries,
-                address: address.clone(),
-            })
+            let (maybe_object, metadata, proof) = sdk
+                .parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
+                    request.clone(),
+                    response,
+                )
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: Some(address.clone()),
+                    retries,
+                })?;
+            if let Some(object) = maybe_object {
+                Ok(ExecutionResponse {
+                    inner: (object, metadata, proof),
+                    retries,
+                    address: address.clone(),
+                })
+            } else {
+                Err(ExecutionError {
+                    inner: Error::Proof(drive_proof_verifier::Error::NotFound),
+                    address: Some(address.clone()),
+                    retries,
+                })
+            }
         };
 
         let settings = sdk
@@ -537,7 +545,7 @@ impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::Id
 /// ## Supported query types
 ///
 /// * [NonUniquePublicKeyHash]
-impl FetchMany<Identifier, Identity> for NonUniquePublicKeyHash {
+impl FetchMany<Identifier, Identities> for Identity {
     type Request = GetIdentitiesForNonUniquePublicKeyHashRequest;
 }
 

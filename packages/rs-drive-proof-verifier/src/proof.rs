@@ -10,7 +10,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
-    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identities_for_non_unique_public_key_hash_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
@@ -23,6 +23,7 @@ use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::platform_value::{self};
@@ -2014,6 +2015,57 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     };
 
     Ok(i)
+}
+
+impl FromProof<platform::GetIdentitiesForNonUniquePublicKeyHashRequest> for Identities {
+    type Request = platform::GetIdentitiesForNonUniquePublicKeyHashRequest;
+    type Response = platform::GetIdentitiesForNonUniquePublicKeyHashResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let public_key_hash = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identities_for_non_unique_public_key_hash_request::Version::V0(v0) => v0
+                .public_key_hash
+                .try_into()
+                .map_err(|_| Error::RequestError {
+                    error: "Invalid public key hash size".to_string(),
+                })?,
+        };
+        let limit = None;
+        let (root_hash, identities) =
+            Drive::verify_full_identities_for_non_unique_public_key_hash::<Vec<_>>(
+                &proof.grovedb_proof,
+                public_key_hash,
+                limit,
+                platform_version,
+            )
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    height: mtd.height,
+                    time_ms: mtd.time_ms,
+                    error: e.to_string(),
+                },
+                _ => e.into(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        let result = identities.into_iter().map(|i| (i.id(), Some(i))).collect();
+        Ok((Some(result), mtd.clone(), proof.clone()))
+    }
 }
 
 /// Determine number of non-None elements

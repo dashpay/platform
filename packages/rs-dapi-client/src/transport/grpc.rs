@@ -500,3 +500,11 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_status
 );
+
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesForNonUniquePublicKeyHashRequest,
+    platform_proto::GetIdentitiesForNonUniquePublicKeyHashResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_for_non_unique_public_key_hash
+);

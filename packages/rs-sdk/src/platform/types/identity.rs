@@ -23,7 +23,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest,
     GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
 };
-use dpp::prelude::Identity;
+use dpp::prelude::{Identifier, Identity};
 use rs_dapi_client::transport::TransportError;
 
 // Create enum [IdentityRequest] and [IdentityResponse] that will wrap all possible
@@ -36,7 +36,7 @@ delegate_enum! {
     (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse)
 }
 
-impl Query<IdentityRequest> for dpp::prelude::Identifier {
+impl Query<IdentityRequest> for Identifier {
     fn query(self, prove: bool) -> Result<IdentityRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
