@@ -11,7 +11,6 @@ import {
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
 /**
- * @param {HomeDir} homeDir
  * @returns {getBaseConfig}
  */
 export default function getBaseConfigFactory() {
@@ -54,7 +53,7 @@ export default function getBaseConfigFactory() {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:21',
+          image: 'dashpay/dashd:22',
           commandArgs: [],
         },
         p2p: {
@@ -311,7 +310,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:fix-wrong-proposer-at-round',
+              image: 'dashpay/tenderdash:1',
             },
             p2p: {
               host: '0.0.0.0',
@@ -397,9 +396,6 @@ export default function getBaseConfigFactory() {
                 },
                 validator: {
                   pub_key_types: ['bls12381'],
-                },
-                version: {
-                  app_version: '1',
                 },
                 timeout: {
                   propose: '50000000000',

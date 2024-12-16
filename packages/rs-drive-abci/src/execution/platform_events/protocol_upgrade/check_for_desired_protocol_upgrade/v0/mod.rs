@@ -20,7 +20,14 @@ impl<C> Platform<C> {
         {
             // This is a solution for the emergency update to version 3
             // We clean this up immediately though as we transition to check_for_desired_protocol_upgrade_v1
-            51
+            u64::min(
+                51,
+                platform_version
+                    .drive_abci
+                    .methods
+                    .protocol_upgrade
+                    .protocol_version_upgrade_percentage_needed,
+            )
         } else {
             platform_version
                 .drive_abci

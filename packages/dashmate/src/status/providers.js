@@ -1,6 +1,7 @@
-import { PortStateEnum } from './enums/portState.js';
+import https from 'https';
 
 const MAX_REQUEST_TIMEOUT = 5000;
+const MAX_RESPONSE_SIZE = 1 * 1024 * 1024; // 1 MB
 
 const request = async (url) => {
   try {
@@ -27,12 +28,6 @@ const requestJSON = async (url) => {
   }
 
   return response;
-};
-
-const requestText = async (url) => {
-  const response = await request(url);
-
-  return response.text();
 };
 
 const insightURLs = {
@@ -67,16 +62,88 @@ export default {
     },
   },
   mnowatch: {
-    checkPortStatus: async (port) => {
-      try {
-        return requestText(`https://mnowatch.org/${port}/`);
-      } catch (e) {
-        if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.warn(e);
-        }
-        return PortStateEnum.ERROR;
-      }
+    /**
+     * Check the status of a port and optionally validate an IP address.
+     *
+     * @param {number} port - The port number to check.
+     * @param {string} [ip] - Optional. The IP address to validate.
+     * @returns {Promise<string>} A promise that resolves to the port status.
+     */
+    checkPortStatus: async (port, ip = undefined) => {
+      // We use http request instead fetch function to force
+      // using IPv4 otherwise mnwatch could try to connect to IPv6 node address
+      // and fail (Core listens for IPv4 only)
+      // https://github.com/dashpay/platform/issues/2100
+
+      const options = {
+        hostname: 'mnowatch.org',
+        port: 443,
+        path: ip ? `/${port}/?validateIp=${ip}` : `/${port}/`,
+        method: 'GET',
+        family: 4, // Force IPv4
+      };
+
+      return new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+          let data = '';
+
+          // Check if the status code is 200
+          if (res.statusCode !== 200) {
+            if (process.env.DEBUG) {
+              // eslint-disable-next-line no-console
+              console.warn(`Port check request failed with status code ${res.statusCode}`);
+            }
+
+            const error = new Error(`Invalid status code ${res.statusCode}`);
+
+            res.destroy(error);
+
+            // Do not handle request further
+            return;
+          }
+
+          // Optionally set the encoding to receive strings directly
+          res.setEncoding('utf8');
+
+          // Collect data chunks
+          res.on('data', (chunk) => {
+            data += chunk;
+
+            if (data.length > MAX_RESPONSE_SIZE) {
+              if (process.env.DEBUG) {
+                // eslint-disable-next-line no-console
+                console.warn('Port check response size exceeded');
+              }
+
+              const error = new Error('Response size exceeded');
+
+              req.destroy(error);
+            }
+          });
+
+          // Handle the end of the response
+          res.on('end', () => {
+            resolve(data);
+          });
+        });
+
+        req.setTimeout(MAX_REQUEST_TIMEOUT, () => {
+          const error = new Error('Port check timed out');
+
+          req.destroy(error);
+        });
+
+        req.on('error', (e) => {
+          if (process.env.DEBUG) {
+            // eslint-disable-next-line no-console
+            console.warn(`Port check request failed: ${e}`);
+          }
+
+          reject(e);
+        });
+
+        req.end();
+      });
     },
   },
 };

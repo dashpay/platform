@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn test_check_if_empty() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let drive_version = DriveVersion::default();
         let transaction = drive.grove.start_transaction();
 

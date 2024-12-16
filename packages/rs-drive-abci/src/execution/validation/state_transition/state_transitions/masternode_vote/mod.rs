@@ -5777,7 +5777,6 @@ mod tests {
             use crate::execution::validation::state_transition::tests::{
                 create_dpns_contract_name_contest,
                 create_dpns_identity_name_contest_skip_creating_identities,
-                setup_identity_without_adding_it,
             };
             use assert_matches::assert_matches;
             use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
@@ -9949,7 +9948,7 @@ mod tests {
                 // The alpha document should not exist at all
 
                 {
-                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                    let (contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
                         &platform,
                         &platform_state,
                         &dpns_contract,
@@ -10730,7 +10729,7 @@ mod tests {
                 // The alpha document should not exist at all
 
                 {
-                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                    let (contenders, _abstaining, _locking, finished_vote_info) = get_vote_states(
                         &platform,
                         &platform_state,
                         &dpns_contract,
@@ -11288,6 +11287,7 @@ mod tests {
 
                 platform
                     .remove_votes_for_removed_masternodes(
+                        &BlockInfo::default(),
                         &platform_state_before_masternode_identity_removals,
                         &block_platform_state,
                         Some(&transaction),

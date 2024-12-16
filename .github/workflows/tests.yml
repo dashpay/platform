@@ -22,13 +22,13 @@ jobs:
   changes:
     name: Determine changed packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
       rs-packages: ${{ steps.filter-rs.outputs.changes }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -83,20 +83,24 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
-      # FIXME: Clippy fails on github hosted runners, most likely due to RAM usage. Using self-hosted runners for now.
-      lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
-      # Run drive tests on self-hosted 4x
-      test-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
 
   rs-crates-security:
     name: Rust crates security audit
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Audit crates
         uses: rustsec/audit-check@v1
@@ -122,7 +126,7 @@ jobs:
   js-deps-versions:
     name: JS dependency versions check
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -141,7 +145,7 @@ jobs:
   js-npm-security:
     name: JS NPM security audit
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -163,6 +167,7 @@ jobs:
     secrets: inherit
     needs:
       - changes
+      - build-js
       - build-images
     strategy:
       fail-fast: false

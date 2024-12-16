@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_insert_identity_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 

@@ -25,13 +25,12 @@ debugexclude={{= category}}
 {{? it.core.log.filePath === null }}
 nodebuglogfile=1
 {{??}}
-debuglogfile=/var/log/dash/debug.log }}
+debuglogfile=/var/log/dash/debug.log
 {{?}}
 
 # JSON RPC
 server=1
 rpcwallet=main
-deprecatedrpc=hpmn
 rpcworkqueue=64
 rpcthreads=16
 rpcwhitelistdefault=0
@@ -93,6 +92,7 @@ fallbackfee=0.00001
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
+testactivationheight=mn_rr@1000 
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
@@ -108,7 +108,7 @@ devnet={{=it.core.devnet.name}}
 powtargetspacing={{=it.core.devnet.powTargetSpacing}}
 minimumdifficultyblocks={{=it.core.devnet.minimumDifficultyBlocks}}
 highsubsidyblocks=500
-highsubsidyfactor=10
+highsubsidyfactor=100
 llmqchainlocks={{=it.core.devnet.llmq.chainLocks}}
 llmqinstantsenddip0024={{=it.core.devnet.llmq.instantSend}}
 llmqplatform={{=it.core.devnet.llmq.platform}}

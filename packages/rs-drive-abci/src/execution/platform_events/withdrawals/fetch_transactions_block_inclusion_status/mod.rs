@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::json::AssetUnlockStatus;
 use dpp::version::PlatformVersion;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use std::collections::BTreeMap;
 
 mod v0;

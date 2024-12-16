@@ -6,7 +6,7 @@ module.exports = function getIdentityCreditWithdrawalTransitionFixture() {
   const privateKey = new PrivateKey('cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY');
   const address = privateKey.toAddress();
 
-  const stateTransition = new IdentityCreditWithdrawalTransition(1);
+  const stateTransition = new IdentityCreditWithdrawalTransition(3);
   stateTransition.setIdentityId(generateRandomIdentifier());
   // eslint-disable-next-line
   stateTransition.setAmount(BigInt(1000));

@@ -15,8 +15,8 @@ describe('BlockchainListener', () => {
     ({ sinon } = this);
     wsClientMock = new EventEmitter();
     wsClientMock.subscribe = sinon.stub();
+
     blockchainListener = new BlockchainListener(wsClientMock);
-    blockchainListener.start();
 
     sinon.spy(blockchainListener, 'on');
     sinon.spy(blockchainListener, 'off');
@@ -84,19 +84,23 @@ describe('BlockchainListener', () => {
   });
 
   describe('#start', () => {
-    it('should subscribe to transaction events from WS client', () => {
-      // TODO: We don't use it for now
-      // expect(wsClientMock.subscribe).to.be.calledTwice();
-      expect(wsClientMock.subscribe).to.be.calledOnce();
+    it('should subscribe to transaction events from WS client if it is connected', () => {
+      wsClientMock.isConnected = true;
+
+      blockchainListener.start();
+
+      expect(wsClientMock.subscribe).to.be.calledTwice();
       expect(wsClientMock.subscribe.firstCall).to.be.calledWithExactly(
         BlockchainListener.TX_QUERY,
       );
-      // expect(wsClientMock.subscribe.secondCall).to.be.calledWithExactly(
-      //   BlockchainListener.NEW_BLOCK_QUERY,
-      // );
+      expect(wsClientMock.subscribe.secondCall).to.be.calledWithExactly(
+        BlockchainListener.NEW_BLOCK_QUERY,
+      );
     });
 
-    it.skip('should emit block when new block is arrived', (done) => {
+    it('should emit block when new block is arrived', (done) => {
+      blockchainListener.start();
+
       blockchainListener.on(BlockchainListener.EVENTS.NEW_BLOCK, (message) => {
         expect(message).to.be.deep.equal(blockMessageMock);
 
@@ -107,6 +111,8 @@ describe('BlockchainListener', () => {
     });
 
     it('should emit transaction when transaction is arrived', (done) => {
+      blockchainListener.start();
+
       const topic = BlockchainListener.getTransactionEventName(transactionHash);
 
       blockchainListener.on(topic, (message) => {

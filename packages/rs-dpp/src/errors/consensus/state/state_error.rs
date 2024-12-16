@@ -33,10 +33,13 @@ use crate::consensus::state::document::document_contest_currently_locked_error::
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
+use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+use crate::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
+use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
@@ -80,6 +83,9 @@ pub enum StateError {
     DocumentContestIdentityAlreadyContestantError(DocumentContestIdentityAlreadyContestantError),
 
     #[error(transparent)]
+    DocumentContestNotPaidForError(DocumentContestNotPaidForError),
+
+    #[error(transparent)]
     DocumentContestDocumentWithSameIdAlreadyPresentError(
         DocumentContestDocumentWithSameIdAlreadyPresentError,
     ),
@@ -121,6 +127,12 @@ pub enum StateError {
 
     #[error(transparent)]
     MissingIdentityPublicKeyIdsError(MissingIdentityPublicKeyIdsError),
+
+    #[error(transparent)]
+    MissingTransferKeyError(MissingTransferKeyError),
+
+    #[error(transparent)]
+    NoTransferKeyForCoreWithdrawalAvailableError(NoTransferKeyForCoreWithdrawalAvailableError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeyIdError(InvalidIdentityPublicKeyIdError),

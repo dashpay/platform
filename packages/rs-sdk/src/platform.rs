@@ -11,6 +11,7 @@ mod document_query;
 mod fetch;
 pub mod fetch_current_no_parameters;
 mod fetch_many;
+mod fetch_unproved;
 mod identities_contract_keys_query;
 mod query;
 pub mod transition;
@@ -31,5 +32,6 @@ pub use {
     document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
+    fetch_unproved::FetchUnproved,
     query::{LimitQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT},
 };

@@ -5,6 +5,7 @@ const {
       AlreadyExistsGrpcError,
       UnavailableGrpcError,
       ResourceExhaustedGrpcError,
+      InternalGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -36,6 +37,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
   let log;
   let code;
   let createGrpcErrorFromDriveResponseMock;
+  let requestTenderRpcMock;
 
   before(async () => {
     await loadWasmDpp();
@@ -82,11 +84,14 @@ describe('broadcastStateTransitionHandlerFactory', () => {
       request: this.sinon.stub().resolves(response),
     };
 
+    requestTenderRpcMock = this.sinon.stub();
+
     createGrpcErrorFromDriveResponseMock = this.sinon.stub();
 
     broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
       rpcClientMock,
       createGrpcErrorFromDriveResponseMock,
+      requestTenderRpcMock,
     );
   });
 
@@ -182,12 +187,37 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     }
   });
 
-  it('should throw AlreadyExistsGrpcError if transaction was broadcasted twice', async () => {
+  it('should throw AlreadyExistsGrpcError if transaction in mempool', async () => {
     response.error = {
       code: -32603,
       message: 'Internal error',
       data: 'tx already exists in cache',
     };
+
+    requestTenderRpcMock.withArgs('unconfirmed_txs').resolves({
+      txs: [stateTransitionFixture.toBuffer().toString('base64')],
+    });
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw AlreadyExistsGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(AlreadyExistsGrpcError);
+      expect(e.getMessage()).to.equal('state transition already in mempool');
+    }
+  });
+
+  it('should throw AlreadyExistsGrpcError if transaction in chain', async () => {
+    response.error = {
+      code: -32603,
+      message: 'Internal error',
+      data: 'tx already exists in cache',
+    };
+
+    requestTenderRpcMock.withArgs('tx').resolves({
+      tx_result: { },
+    });
 
     try {
       await broadcastStateTransitionHandler(call);
@@ -196,6 +226,52 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(AlreadyExistsGrpcError);
       expect(e.getMessage()).to.equal('state transition already in chain');
+    }
+  });
+
+  it('should throw consensus result for invalid transition in cache', async () => {
+    response.error = {
+      code: -32603,
+      message: 'Internal error',
+      data: 'tx already exists in cache',
+    };
+
+    requestTenderRpcMock.withArgs('check_tx').resolves({
+      code: 1,
+      info: 'some info',
+    });
+
+    const error = new Error('some error');
+
+    createGrpcErrorFromDriveResponseMock.resolves(error);
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw consensus error');
+    } catch (e) {
+      expect(e).to.equal(error);
+    }
+  });
+
+  it('should throw internal error for transition in cache that passing check tx', async () => {
+    response.error = {
+      code: -32603,
+      message: 'Internal error',
+      data: 'tx already exists in cache',
+    };
+
+    requestTenderRpcMock.withArgs('check_tx').resolves({
+      code: 0,
+    });
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw InternalError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InternalGrpcError);
+      expect(e.getMessage()).to.equal('Internal error');
     }
   });
 

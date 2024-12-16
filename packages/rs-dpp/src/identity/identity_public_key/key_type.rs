@@ -1,4 +1,3 @@
-#[cfg(feature = "random-public-keys")]
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, Encode};
@@ -8,16 +7,14 @@ use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 #[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::rand::SeedableRng;
-#[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::Secp256k1;
-#[cfg(feature = "random-public-keys")]
-use dashcore::Network;
+use dashcore::{bls_signatures, ed25519_dalek, Network};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::{InvalidVectorSizeError, ProtocolError};
 #[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
 #[cfg(feature = "random-public-keys")]
@@ -96,6 +93,17 @@ impl KeyType {
             KeyType::BLS12_381 => true,
             KeyType::ECDSA_HASH160 => false,
             KeyType::BIP13_SCRIPT_HASH => false,
+            KeyType::EDDSA_25519_HASH160 => false,
+        }
+    }
+
+    /// Can this key type be understood as an address on the Core chain?
+    pub fn is_core_address_key_type(&self) -> bool {
+        match self {
+            KeyType::ECDSA_SECP256K1 => false,
+            KeyType::BLS12_381 => false,
+            KeyType::ECDSA_HASH160 => true,
+            KeyType::BIP13_SCRIPT_HASH => true,
             KeyType::EDDSA_25519_HASH160 => false,
         }
     }
@@ -193,6 +201,73 @@ impl KeyType {
         }
     }
 
+    /// Gets the public key data for a private key depending on the key type
+    pub fn public_key_data_from_private_key_data(
+        &self,
+        private_key_bytes: &[u8],
+        network: Network,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match self {
+            KeyType::ECDSA_SECP256K1 => {
+                let secp = Secp256k1::new();
+                let secret_key = dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                let private_key = dashcore::PrivateKey::new(secret_key, network);
+
+                Ok(private_key.public_key(&secp).to_bytes())
+            }
+            KeyType::BLS12_381 => {
+                #[cfg(feature = "bls-signatures")]
+                {
+                    let private_key =
+                        bls_signatures::PrivateKey::from_bytes(private_key_bytes, false)
+                            .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                    let public_key_bytes = private_key
+                        .g1_element()
+                        .expect("expected to get a public key from a bls private key")
+                        .to_bytes()
+                        .to_vec();
+                    Ok(public_key_bytes)
+                }
+                #[cfg(not(feature = "bls-signatures"))]
+                return Err(ProtocolError::NotSupported(
+                    "Converting a private key to a bls public key is not supported without the bls-signatures feature".to_string(),
+                ));
+            }
+            KeyType::ECDSA_HASH160 => {
+                let secp = Secp256k1::new();
+                let secret_key = dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                let private_key = dashcore::PrivateKey::new(secret_key, network);
+
+                Ok(ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec())
+            }
+            KeyType::EDDSA_25519_HASH160 => {
+                #[cfg(feature = "ed25519-dalek")]
+                {
+                    let key_pair = ed25519_dalek::SigningKey::from_bytes(
+                        &private_key_bytes.try_into().map_err(|_| {
+                            ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
+                                32,
+                                private_key_bytes.len(),
+                            ))
+                        })?,
+                    );
+                    Ok(ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).to_vec())
+                }
+                #[cfg(not(feature = "ed25519-dalek"))]
+                return Err(ProtocolError::NotSupported(
+                    "Converting a private key to a eddsa hash 160 is not supported without the ed25519-dalek feature".to_string(),
+                ));
+            }
+            KeyType::BIP13_SCRIPT_HASH => {
+                return Err(ProtocolError::NotSupported(
+                    "Converting a private key to a script hash is not supported".to_string(),
+                ));
+            }
+        }
+    }
+
     #[cfg(feature = "random-public-keys")]
     /// Gets the default size of the public key
     pub fn random_public_and_private_key_data_v0(&self, rng: &mut StdRng) -> (Vec<u8>, Vec<u8>) {
@@ -230,7 +305,7 @@ impl KeyType {
             KeyType::EDDSA_25519_HASH160 => {
                 let key_pair = ed25519_dalek::SigningKey::generate(rng);
                 (
-                    key_pair.verifying_key().to_bytes().to_vec(),
+                    ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).to_vec(),
                     key_pair.to_bytes().to_vec(),
                 )
             }

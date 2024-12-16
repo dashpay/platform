@@ -268,4 +268,14 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
             }
         }
     }
+    fn contested_vote_poll_for_document_properties(
+        &self,
+        document_properties: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0
+                .contested_vote_poll_for_document_properties(document_properties, platform_version),
+        }
+    }
 }

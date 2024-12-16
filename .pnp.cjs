@@ -70,6 +70,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/wallet-lib"\
     },\
     {\
+      "name": "@dashevo/wallet-utils-contract",\
+      "reference": "workspace:packages/wallet-utils-contract"\
+    },\
+    {\
       "name": "@dashevo/wasm-dpp",\
       "reference": "workspace:packages/wasm-dpp"\
     },\
@@ -94,6 +98,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
     ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
+    ["@dashevo/wallet-utils-contract", ["workspace:packages/wallet-utils-contract"]],\
     ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
     ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
     ["dash", ["workspace:packages/js-dash-sdk"]],\
@@ -2551,7 +2556,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/bench-suite/",\
         "packageDependencies": [\
           ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2589,7 +2594,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -2634,7 +2639,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.23.3"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["assert-browserify", "npm:2.0.0"],\
@@ -2726,7 +2731,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
           ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
           ["@dashevo/dash-util", "npm:2.0.3"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["chai", "npm:4.3.10"],\
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
@@ -2753,10 +2758,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashcore-lib", [\
-      ["npm:0.21.3", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.21.3-8c8abba924-28e2731ac6.zip/node_modules/@dashevo/dashcore-lib/",\
+      ["npm:0.22.0", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.22.0-9a6dd273b9-ac9e268f6e.zip/node_modules/@dashevo/dashcore-lib/",\
         "packageDependencies": [\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/x11-hash-js", "npm:1.0.2"],\
           ["@types/node", "npm:12.20.37"],\
@@ -2939,7 +2944,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -3034,7 +3039,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
@@ -3086,6 +3091,24 @@ const RAW_RUNTIME_STATE =
         "linkType": "SOFT"\
       }]\
     ]],\
+    ["@dashevo/wallet-utils-contract", [\
+      ["workspace:packages/wallet-utils-contract", {\
+        "packageLocation": "./packages/wallet-utils-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/wallet-utils-contract", "workspace:packages/wallet-utils-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["eslint", "npm:8.53.0"],\
+          ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
+          ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
+          ["mocha", "npm:10.2.0"],\
+          ["sinon", "npm:17.0.1"],\
+          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
     ["@dashevo/wasm-dpp", [\
       ["workspace:packages/wasm-dpp", {\
         "packageLocation": "./packages/wasm-dpp/",\
@@ -3096,7 +3119,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.23.3"],\
           ["@babel/preset-env", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@types/bs58", "npm:4.0.1"],\
           ["@types/node", "npm:14.17.34"],\
@@ -5633,7 +5656,7 @@ const RAW_RUNTIME_STATE =
           ["chalk", "npm:3.0.0"],\
           ["ci-info", "npm:3.8.0"],\
           ["clipanion", "virtual:ba24742e5bfaec41d1d0434e6865c2744ffb69a716f18fa84bd7d44084043647838926c96a391f66b9946857565b9825479e97ad07079ef40683084ce389d203#npm:3.2.0"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["diff", "npm:5.1.0"],\
           ["globby", "npm:11.1.0"],\
           ["got", "npm:11.8.6"],\
@@ -5742,7 +5765,7 @@ const RAW_RUNTIME_STATE =
           ["@yarnpkg/parsers", "npm:3.0.0-rc.42"],\
           ["chalk", "npm:3.0.0"],\
           ["clipanion", "virtual:ba24742e5bfaec41d1d0434e6865c2744ffb69a716f18fa84bd7d44084043647838926c96a391f66b9946857565b9825479e97ad07079ef40683084ce389d203#npm:3.2.0"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["fast-glob", "npm:3.2.12"],\
           ["micromatch", "npm:4.0.7"],\
           ["tslib", "npm:2.6.2"]\
@@ -8269,10 +8292,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["cookie", [\
-      ["npm:0.4.1", {\
-        "packageLocation": "./.yarn/cache/cookie-npm-0.4.1-cc5e2ebb42-0f2defd60a.zip/node_modules/cookie/",\
+      ["npm:0.7.1", {\
+        "packageLocation": "./.yarn/cache/cookie-npm-0.7.1-f01524ff99-aec6a6aa07.zip/node_modules/cookie/",\
         "packageDependencies": [\
-          ["cookie", "npm:0.4.1"]\
+          ["cookie", "npm:0.7.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -8389,28 +8412,16 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/cross-env-npm-7.0.3-96d81820f4-e99911f0d3.zip/node_modules/cross-env/",\
         "packageDependencies": [\
           ["cross-env", "npm:7.0.3"],\
-          ["cross-spawn", "npm:7.0.3"]\
+          ["cross-spawn", "npm:7.0.5"]\
         ],\
         "linkType": "HARD"\
       }]\
     ]],\
     ["cross-spawn", [\
-      ["npm:6.0.5", {\
-        "packageLocation": "./.yarn/cache/cross-spawn-npm-6.0.5-2deab6c280-f07e643b48.zip/node_modules/cross-spawn/",\
+      ["npm:7.0.5", {\
+        "packageLocation": "./.yarn/cache/cross-spawn-npm-7.0.5-cf92562a27-c95062469d.zip/node_modules/cross-spawn/",\
         "packageDependencies": [\
-          ["cross-spawn", "npm:6.0.5"],\
-          ["nice-try", "npm:1.0.5"],\
-          ["path-key", "npm:2.0.1"],\
-          ["semver", "npm:7.5.3"],\
-          ["shebang-command", "npm:1.2.0"],\
-          ["which", "npm:1.3.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:7.0.3", {\
-        "packageLocation": "./.yarn/cache/cross-spawn-npm-7.0.3-e4ff3e65b3-e1a13869d2.zip/node_modules/cross-spawn/",\
-        "packageDependencies": [\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["path-key", "npm:3.1.1"],\
           ["shebang-command", "npm:2.0.0"],\
           ["which", "npm:2.0.2"]\
@@ -8473,7 +8484,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -8552,7 +8563,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/eslint-parser", "virtual:6c6296bde00603e266f7d80babe1e01aa0c19f626934f58fe08f890a291bb1a38fcee25bf30c24857d5cfba290f01209decc48384318fd6815c5a514cb48be25#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
@@ -9365,7 +9376,7 @@ const RAW_RUNTIME_STATE =
           ["@types/node", "npm:18.16.1"],\
           ["accepts", "npm:1.3.7"],\
           ["base64id", "npm:2.0.0"],\
-          ["cookie", "npm:0.4.1"],\
+          ["cookie", "npm:0.7.1"],\
           ["cors", "npm:2.8.5"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
           ["engine.io-parser", "npm:5.0.4"],\
@@ -9692,7 +9703,7 @@ const RAW_RUNTIME_STATE =
           ["@ungap/structured-clone", "npm:1.2.0"],\
           ["ajv", "npm:6.12.6"],\
           ["chalk", "npm:4.1.2"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
           ["doctrine", "npm:3.0.0"],\
           ["escape-string-regexp", "npm:4.0.0"],\
@@ -10226,7 +10237,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/execa-npm-5.1.1-191347acf5-8ada91f2d7.zip/node_modules/execa/",\
         "packageDependencies": [\
           ["execa", "npm:5.1.1"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["get-stream", "npm:6.0.1"],\
           ["human-signals", "npm:2.1.0"],\
           ["is-stream", "npm:2.0.1"],\
@@ -10637,7 +10648,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/foreground-child-npm-2.0.0-80c976b61e-f36574ad8e.zip/node_modules/foreground-child/",\
         "packageDependencies": [\
           ["foreground-child", "npm:2.0.0"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["signal-exit", "npm:3.0.7"]\
         ],\
         "linkType": "HARD"\
@@ -10646,7 +10657,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/foreground-child-npm-3.1.1-77e78ed774-087edd4485.zip/node_modules/foreground-child/",\
         "packageDependencies": [\
           ["foreground-child", "npm:3.1.1"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["signal-exit", "npm:4.1.0"]\
         ],\
         "linkType": "HARD"\
@@ -12425,7 +12436,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["istanbul-lib-processinfo", "npm:2.0.3"],\
           ["archy", "npm:1.0.0"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["istanbul-lib-coverage", "npm:3.2.2"],\
           ["p-map", "npm:3.0.0"],\
           ["rimraf", "npm:3.0.2"],\
@@ -14282,7 +14293,7 @@ const RAW_RUNTIME_STATE =
           ["log-symbols", "npm:4.1.0"],\
           ["minimatch", "npm:5.0.1"],\
           ["ms", "npm:2.1.3"],\
-          ["nanoid", "npm:3.3.3"],\
+          ["nanoid", "npm:3.3.8"],\
           ["serialize-javascript", "npm:6.0.0"],\
           ["strip-json-comments", "npm:3.1.1"],\
           ["supports-color", "npm:8.1.1"],\
@@ -14312,7 +14323,7 @@ const RAW_RUNTIME_STATE =
           ["log-symbols", "npm:4.1.0"],\
           ["minimatch", "npm:4.2.1"],\
           ["ms", "npm:2.1.3"],\
-          ["nanoid", "npm:3.3.1"],\
+          ["nanoid", "npm:3.3.8"],\
           ["serialize-javascript", "npm:6.0.0"],\
           ["strip-json-comments", "npm:3.1.1"],\
           ["supports-color", "npm:8.1.1"],\
@@ -14473,17 +14484,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["nanoid", [\
-      ["npm:3.3.1", {\
-        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.1-bdd760bee0-306f2cb9e4.zip/node_modules/nanoid/",\
+      ["npm:3.3.8", {\
+        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.8-d22226208b-2d1766606c.zip/node_modules/nanoid/",\
         "packageDependencies": [\
-          ["nanoid", "npm:3.3.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:3.3.3", {\
-        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.3-25d865be84-c703ed58a2.zip/node_modules/nanoid/",\
-        "packageDependencies": [\
-          ["nanoid", "npm:3.3.3"]\
+          ["nanoid", "npm:3.3.8"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -14545,15 +14549,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/net-npm-1.0.2-1d5514df5b-d97e215d92.zip/node_modules/net/",\
         "packageDependencies": [\
           ["net", "npm:1.0.2"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["nice-try", [\
-      ["npm:1.0.5", {\
-        "packageLocation": "./.yarn/cache/nice-try-npm-1.0.5-963856b16f-0b4af3b5bb.zip/node_modules/nice-try/",\
-        "packageDependencies": [\
-          ["nice-try", "npm:1.0.5"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -15675,7 +15670,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["password-prompt", "npm:1.1.2"],\
           ["ansi-escapes", "npm:3.2.0"],\
-          ["cross-spawn", "npm:6.0.5"]\
+          ["cross-spawn", "npm:7.0.5"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -15684,7 +15679,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["password-prompt", "npm:1.1.3"],\
           ["ansi-escapes", "npm:4.3.2"],\
-          ["cross-spawn", "npm:7.0.3"]\
+          ["cross-spawn", "npm:7.0.5"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -15742,13 +15737,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["path-key", [\
-      ["npm:2.0.1", {\
-        "packageLocation": "./.yarn/cache/path-key-npm-2.0.1-b1a971833d-6e654864e3.zip/node_modules/path-key/",\
-        "packageDependencies": [\
-          ["path-key", "npm:2.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:3.1.1", {\
         "packageLocation": "./.yarn/cache/path-key-npm-3.1.1-0e66ea8321-55cd7a9dd4.zip/node_modules/path-key/",\
         "packageDependencies": [\
@@ -17205,14 +17193,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["shebang-command", [\
-      ["npm:1.2.0", {\
-        "packageLocation": "./.yarn/cache/shebang-command-npm-1.2.0-8990ba5d1d-9eed175030.zip/node_modules/shebang-command/",\
-        "packageDependencies": [\
-          ["shebang-command", "npm:1.2.0"],\
-          ["shebang-regex", "npm:1.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:2.0.0", {\
         "packageLocation": "./.yarn/cache/shebang-command-npm-2.0.0-eb2b01921d-6b52fe8727.zip/node_modules/shebang-command/",\
         "packageDependencies": [\
@@ -17223,13 +17203,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["shebang-regex", [\
-      ["npm:1.0.0", {\
-        "packageLocation": "./.yarn/cache/shebang-regex-npm-1.0.0-c3612b74e9-404c5a752c.zip/node_modules/shebang-regex/",\
-        "packageDependencies": [\
-          ["shebang-regex", "npm:1.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:3.0.0", {\
         "packageLocation": "./.yarn/cache/shebang-regex-npm-3.0.0-899a0cd65e-1a2bcae50d.zip/node_modules/shebang-regex/",\
         "packageDependencies": [\
@@ -19248,7 +19221,7 @@ const RAW_RUNTIME_STATE =
           ["ultra-runner", "npm:3.10.5"],\
           ["ansi-split", "npm:1.0.1"],\
           ["chalk", "npm:4.1.2"],\
-          ["cross-spawn", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.5"],\
           ["fast-glob", "npm:3.2.12"],\
           ["globrex", "npm:0.1.2"],\
           ["ignore", "npm:5.2.0"],\

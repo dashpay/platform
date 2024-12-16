@@ -28,7 +28,7 @@ class DAPIClient extends EventEmitter {
     super();
 
     this.options = {
-      network: 'testnet',
+      network: 'mainnet',
       timeout: 10000,
       retries: 5,
       blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
@@ -108,7 +108,7 @@ DAPIClient.EVENTS = EVENTS;
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddresses]
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [seeds]
  * @property {Array<RawDAPIAddress|DAPIAddress|string>} [dapiAddressesWhiteList]
- * @property {string|Network} [network=testnet]
+ * @property {string|Network} [network=mainnet]
  * @property {number} [timeout=2000]
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]

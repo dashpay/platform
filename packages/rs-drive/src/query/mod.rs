@@ -54,7 +54,7 @@ use dpp::document;
 use dpp::prelude::Identifier;
 #[cfg(feature = "server")]
 use {
-    crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
+    crate::{drive::Drive, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
 // Crate-local unconditional imports
@@ -141,6 +141,26 @@ pub mod drive_contested_document_query;
 /// A query to get the block counts of proposers in an epoch
 pub mod proposer_block_count_query;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Represents a starting point for a query based on a specific document.
+///
+/// This struct encapsulates all the necessary details to define the starting
+/// conditions for a query, including the document to start from, its type,
+/// associated index property, and whether the document itself should be included
+/// in the query results.
+#[derive(Debug, Clone)]
+pub struct StartAtDocument<'a> {
+    /// The document that serves as the starting point for the query.
+    pub document: Document,
+
+    /// The type of the document, providing metadata about its schema and structure.
+    pub document_type: DocumentTypeRef<'a>,
+
+    /// Indicates whether the starting document itself should be included in the query results.
+    /// - `true`: The document is included in the results.
+    /// - `false`: The document is excluded, and the query starts from the next matching document.
+    pub included: bool,
+}
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -898,7 +918,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let (starts_at_document, start_at_path_query) = match &self.start_at {
             None => Ok((None, None)),
             Some(starts_at) => {
-                // First if we have a startAt or or startsAfter we must get the element
+                // First if we have a startAt or startsAfter we must get the element
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
@@ -970,7 +990,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 vec![&start_at_path_query, &main_path_query],
                 &platform_version.drive.grove_version,
             )
-            .map_err(GroveDB)?;
+            .map_err(Error::GroveDB)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
             Ok(merged)
         } else {
@@ -1252,13 +1272,16 @@ impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
-        starts_at_document: &Option<(Document, DocumentTypeRef, &IndexProperty, bool)>,
+        starts_at_document: Option<&StartAtDocument>,
         left_to_right: bool,
     ) -> Query {
         // We only need items after the start at document
         let mut inner_query = Query::new_with_direction(left_to_right);
 
-        if let Some((document, _, _, included)) = starts_at_document {
+        if let Some(StartAtDocument {
+            document, included, ..
+        }) = starts_at_document
+        {
             let start_at_key = document.id().to_vec();
             if *included {
                 inner_query.insert_range_from(start_at_key..)
@@ -1275,40 +1298,57 @@ impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
-        start_at_key: Vec<u8>,
+        start_at_key: Option<Vec<u8>>,
         left_to_right: bool,
         included: bool,
     ) -> Query {
         // We only need items after the start at document
         let mut inner_query = Query::new_with_direction(left_to_right);
+
         if left_to_right {
-            if included {
-                inner_query.insert_range_from(start_at_key..);
+            if let Some(start_at_key) = start_at_key {
+                if included {
+                    inner_query.insert_range_from(start_at_key..);
+                } else {
+                    inner_query.insert_range_after(start_at_key..);
+                }
             } else {
-                inner_query.insert_range_after(start_at_key..);
+                inner_query.insert_all();
             }
         } else if included {
-            inner_query.insert_range_to_inclusive(..=start_at_key);
+            if let Some(start_at_key) = start_at_key {
+                inner_query.insert_range_to_inclusive(..=start_at_key);
+            } else {
+                inner_query.insert_key(vec![]);
+            }
         } else {
-            inner_query.insert_range_to(..start_at_key);
+            if let Some(start_at_key) = start_at_key {
+                inner_query.insert_range_to(..start_at_key);
+            } else {
+                //todo: really not sure if this is correct
+                // Should investigate more
+                inner_query.insert_key(vec![]);
+            }
         }
+
         inner_query
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document if given.
-    // We are passing in starts_at_document 4 parameters
-    // The document
-    // The document type (borrowed)
-    // The index property (borrowed)
-    // if the element itself should be included. ie StartAt vs StartAfter
     fn inner_query_from_starts_at(
-        starts_at_document: &Option<(Document, DocumentTypeRef, &IndexProperty, bool)>,
+        starts_at_document: Option<&StartAtDocument>,
+        indexed_property: &IndexProperty,
         left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Query, Error> {
         let mut inner_query = Query::new_with_direction(left_to_right);
-        if let Some((document, document_type, indexed_property, included)) = starts_at_document {
+        if let Some(StartAtDocument {
+            document,
+            document_type,
+            included,
+        }) = starts_at_document
+        {
             // We only need items after the start at document
             let start_at_key = document.get_raw_for_document_type(
                 indexed_property.name.as_str(),
@@ -1342,54 +1382,170 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
-    /// Recursively queries as long as there are leftover index properties.
-    fn recursive_insert_on_query(
-        query: Option<&mut Query>,
+    fn recursive_create_query(
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
-        starts_at_document: &Option<(Document, DocumentTypeRef, &IndexProperty, bool)>, //for key level, included
+        starts_at_document: Option<&StartAtDocument>, //for key level, included
+        indexed_property: &IndexProperty,
+        order_by: Option<&IndexMap<String, OrderClause>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Query>, Error> {
+        match left_over_index_properties.split_first() {
+            None => Ok(None),
+            Some((first, left_over)) => {
+                let left_to_right = if let Some(order_by) = order_by {
+                    order_by
+                        .get(first.name.as_str())
+                        .map(|order_clause| order_clause.ascending)
+                        .unwrap_or(first.ascending)
+                } else {
+                    first.ascending
+                };
+
+                let mut inner_query = Self::inner_query_from_starts_at(
+                    starts_at_document,
+                    indexed_property,
+                    left_to_right,
+                    platform_version,
+                )?;
+                DriveDocumentQuery::recursive_insert_on_query(
+                    &mut inner_query,
+                    left_over,
+                    unique,
+                    starts_at_document,
+                    left_to_right,
+                    order_by,
+                    platform_version,
+                )?;
+                Ok(Some(inner_query))
+            }
+        }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Recursively queries as long as there are leftover index properties.
+    /// The in_start_at_document_sub_path_needing_conditional is interesting.
+    /// It indicates whether the start at document should be applied as a conditional
+    /// For example if we have a tree
+    /// Root
+    /// ├── model
+    /// │   ├── sedan
+    /// │   │   ├── brand_name
+    /// │   │   │   ├── Honda
+    /// │   │   │   │   ├── car_type
+    /// │   │   │   │   │   ├── Accord
+    /// │   │   │   │   │   │   ├── 0
+    /// │   │   │   │   │   │   │   ├── a47d2...
+    /// │   │   │   │   │   │   │   ├── e19c8...
+    /// │   │   │   │   │   │   │   └── f1a7b...
+    /// │   │   │   │   │   └── Civic
+    /// │   │   │   │   │       ├── 0
+    /// │   │   │   │   │       │   ├── b65a7...
+    /// │   │   │   │   │       │   └── c43de...
+    /// │   │   │   ├── Toyota
+    /// │   │   │   │   ├── car_type
+    /// │   │   │   │   │   ├── Camry
+    /// │   │   │   │   │   │   ├── 0
+    /// │   │   │   │   │   │   │   └── 1a9d2...
+    /// │   │   │   │   │   └── Corolla
+    /// │   │   │   │   │       ├── 0
+    /// │   │   │   │   │       │   ├── 3f7b4...
+    /// │   │   │   │   │       │   ├── 4e8fa...
+    /// │   │   │   │   │       │   └── 9b1c6...
+    /// │   ├── suv
+    /// │   │   ├── brand_name
+    /// │   │   │   ├── Ford*
+    /// │   │   │   │   ├── car_type*
+    /// │   │   │   │   │   ├── Escape*
+    /// │   │   │   │   │   │   ├── 0
+    /// │   │   │   │   │   │   │   ├── 102bc...
+    /// │   │   │   │   │   │   │   ├── 29f8e... <- Set After this document
+    /// │   │   │   │   │   │   │   └── 6b1a3...
+    /// │   │   │   │   │   └── Explorer
+    /// │   │   │   │   │       ├── 0
+    /// │   │   │   │   │       │   ├── b2a9d...
+    /// │   │   │   │   │       │   └── f4d5c...
+    /// │   │   │   ├── Nissan
+    /// │   │   │   │   ├── car_type
+    /// │   │   │   │   │   ├── Rogue
+    /// │   │   │   │   │   │   ├── 0
+    /// │   │   │   │   │   │   │   ├── 5a9c3...
+    /// │   │   │   │   │   │   │   └── 7e4b9...
+    /// │   │   │   │   │   └── Murano
+    /// │   │   │   │   │       ├── 0
+    /// │   │   │   │   │       │   ├── 8f6a2...
+    /// │   │   │   │   │       │   └── 9c7d4...
+    /// │   ├── truck
+    /// │   │   ├── brand_name
+    /// │   │   │   ├── Ford
+    /// │   │   │   │   ├── car_type
+    /// │   │   │   │   │   ├── F-150
+    /// │   │   │   │   │   │   ├── 0
+    /// │   │   │   │   │   │   │   ├── 72a3b...
+    /// │   │   │   │   │   │   │   └── 94c8e...
+    /// │   │   │   │   │   └── Ranger
+    /// │   │   │   │   │       ├── 0
+    /// │   │   │   │   │       │   ├── 3f4b1...
+    /// │   │   │   │   │       │   ├── 6e7d2...
+    /// │   │   │   │   │       │   └── 8a1f5...
+    /// │   │   │   ├── Toyota
+    /// │   │   │   │   ├── car_type
+    /// │   │   │   │   │   ├── Tundra
+    /// │   │   │   │   │   │   ├── 0
+    /// │   │   │   │   │   │   │   ├── 7c9a4...
+    /// │   │   │   │   │   │   │   └── a5d1e...
+    /// │   │   │   │   │   └── Tacoma
+    /// │   │   │   │   │       ├── 0
+    /// │   │   │   │   │       │   ├── 1e7f4...
+    /// │   │   │   │   │       │   └── 6b9d3...
+    ///
+    /// let's say we are asking for suv's after 29f8e
+    /// here the * denotes the area needing a conditional
+    /// We need a conditional subquery on Ford to say only things after Ford (with Ford included)
+    /// We need a conditional subquery on Escape to say only things after Escape (with Escape included)
+    fn recursive_insert_on_query(
+        query: &mut Query,
+        left_over_index_properties: &[&IndexProperty],
+        unique: bool,
+        starts_at_document: Option<&StartAtDocument>, //for key level, included
         default_left_to_right: bool,
         order_by: Option<&IndexMap<String, OrderClause>>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Query>, Error> {
         match left_over_index_properties.split_first() {
             None => {
-                if let Some(query) = query {
-                    match unique {
-                        true => {
-                            query.set_subquery_key(vec![0]);
+                match unique {
+                    true => {
+                        query.set_subquery_key(vec![0]);
 
-                            // In the case things are NULL we allow to have multiple values
-                            let inner_query = Self::inner_query_from_starts_at_for_id(
-                                starts_at_document,
-                                true, //for ids we always go left to right
-                            );
-                            query.add_conditional_subquery(
-                                QueryItem::Key(b"".to_vec()),
-                                Some(vec![vec![0]]),
-                                Some(inner_query),
-                            );
-                        }
-                        false => {
-                            query.set_subquery_key(vec![0]);
-                            // we just get all by document id order ascending
-                            let full_query = Self::inner_query_from_starts_at_for_id(
-                                &None,
-                                default_left_to_right,
-                            );
-                            query.set_subquery(full_query);
+                        // In the case things are NULL we allow to have multiple values
+                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                            starts_at_document,
+                            true, //for ids we always go left to right
+                        );
+                        query.add_conditional_subquery(
+                            QueryItem::Key(b"".to_vec()),
+                            Some(vec![vec![0]]),
+                            Some(inner_query),
+                        );
+                    }
+                    false => {
+                        query.set_subquery_key(vec![0]);
+                        // we just get all by document id order ascending
+                        let full_query =
+                            Self::inner_query_from_starts_at_for_id(None, default_left_to_right);
+                        query.set_subquery(full_query);
 
-                            let inner_query = Self::inner_query_from_starts_at_for_id(
-                                starts_at_document,
-                                default_left_to_right,
-                            );
+                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                            starts_at_document,
+                            default_left_to_right,
+                        );
 
-                            query.add_conditional_subquery(
-                                QueryItem::Key(b"".to_vec()),
-                                Some(vec![vec![0]]),
-                                Some(inner_query),
-                            );
-                        }
+                        query.add_conditional_subquery(
+                            QueryItem::Key(b"".to_vec()),
+                            Some(vec![vec![0]]),
+                            Some(inner_query),
+                        );
                     }
                 }
                 Ok(None)
@@ -1404,79 +1560,223 @@ impl<'a> DriveDocumentQuery<'a> {
                     first.ascending
                 };
 
-                match query {
-                    None => {
-                        let mut inner_query = Self::inner_query_from_starts_at(
-                            starts_at_document,
-                            left_to_right,
+                if let Some(start_at_document_inner) = starts_at_document {
+                    let StartAtDocument {
+                        document,
+                        document_type,
+                        included,
+                    } = start_at_document_inner;
+                    let start_at_key = document
+                        .get_raw_for_document_type(
+                            first.name.as_str(),
+                            *document_type,
+                            None,
                             platform_version,
-                        )?;
-                        DriveDocumentQuery::recursive_insert_on_query(
-                            Some(&mut inner_query),
-                            left_over,
-                            unique,
-                            starts_at_document,
-                            left_to_right,
-                            order_by,
-                            platform_version,
-                        )?;
-                        Ok(Some(inner_query))
+                        )
+                        .ok()
+                        .flatten();
+
+                    // We should always include if we have left_over
+                    let non_conditional_included =
+                        !left_over.is_empty() || *included || start_at_key.is_none();
+
+                    let mut non_conditional_query = Self::inner_query_starts_from_key(
+                        start_at_key.clone(),
+                        left_to_right,
+                        non_conditional_included,
+                    );
+
+                    // We place None here on purpose, this has been well-thought-out
+                    // and should not change. The reason is that the path of the start
+                    // at document is used only on the conditional subquery and not on the
+                    // main query
+                    // for example in the following
+                    // Our query will be with $ownerId == a3f9b81c4d7e6a9f5b1c3e8a2d9c4f7b
+                    // With start after 8f2d5
+                    // We want to get from 2024-11-17T12:45:00Z
+                    // withdrawal
+                    // ├── $ownerId
+                    // │   ├── a3f9b81c4d7e6a9f5b1c3e8a2d9c4f7b
+                    // │   │   ├── $updatedAt
+                    // │   │   │   ├── 2024-11-17T12:45:00Z <- conditional subquery here
+                    // │   │   │   │   ├── status
+                    // │   │   │   │   │   ├── 0
+                    // │   │   │   │   │   │   ├── 7a9f1...
+                    // │   │   │   │   │   │   └── 4b8c3...
+                    // │   │   │   │   │   ├── 1
+                    // │   │   │   │   │   │   ├── 8f2d5... <- start after
+                    // │   │   │   │   │   │   └── 5c1e4...
+                    // │   │   │   │   │   ├── 2
+                    // │   │   │   │   │   │   ├── 2e7a9...
+                    // │   │   │   │   │   │   └── 1c8b3...
+                    // │   │   │   ├── 2024-11-18T11:25:00Z <- we want all statuses here, so normal subquery, with None as start at document
+                    // │   │   │   │   ├── status
+                    // │   │   │   │   │   ├── 0
+                    // │   │   │   │   │   │   └── 1a4f2...
+                    // │   │   │   │   │   ├── 2
+                    // │   │   │   │   │   │   ├── 3e7a9...
+                    // │   │   │   │   │   │   └── 198b4...
+                    // │   ├── b6d7e9c4a5f2b3d8e1a7c9f4b1e8a3f
+                    // │   │   ├── $updatedAt
+                    // │   │   │   ├── 2024-11-17T13:30:00Z
+                    // │   │   │   │   ├── status
+                    // │   │   │   │   │   ├── 0
+                    // │   │   │   │   │   │   ├── 6d7e2...
+                    // │   │   │   │   │   │   └── 9c7f5...
+                    // │   │   │   │   │   ├── 3
+                    // │   │   │   │   │   │   ├── 3a9b7...
+                    // │   │   │   │   │   │   └── 8e5c4...
+                    // │   │   │   │   │   ├── 4
+                    // │   │   │   │   │   │   ├── 1f7a8...
+                    // │   │   │   │   │   │   └── 2c9b3...
+                    // println!("going to call recursive_insert_on_query on non_conditional_query {} with left_over {:?}", non_conditional_query, left_over);
+                    DriveDocumentQuery::recursive_insert_on_query(
+                        &mut non_conditional_query,
+                        left_over,
+                        unique,
+                        None,
+                        left_to_right,
+                        order_by,
+                        platform_version,
+                    )?;
+
+                    DriveDocumentQuery::recursive_conditional_insert_on_query(
+                        &mut non_conditional_query,
+                        start_at_key,
+                        left_over,
+                        unique,
+                        start_at_document_inner,
+                        left_to_right,
+                        order_by,
+                        platform_version,
+                    )?;
+
+                    query.set_subquery(non_conditional_query);
+                } else {
+                    let mut inner_query = Query::new_with_direction(first.ascending);
+                    inner_query.insert_all();
+                    DriveDocumentQuery::recursive_insert_on_query(
+                        &mut inner_query,
+                        left_over,
+                        unique,
+                        starts_at_document,
+                        left_to_right,
+                        order_by,
+                        platform_version,
+                    )?;
+                    query.set_subquery(inner_query);
+                }
+                query.set_subquery_key(first.name.as_bytes().to_vec());
+                Ok(None)
+            }
+        }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn recursive_conditional_insert_on_query(
+        query: &mut Query,
+        conditional_value: Option<Vec<u8>>,
+        left_over_index_properties: &[&IndexProperty],
+        unique: bool,
+        starts_at_document: &StartAtDocument,
+        default_left_to_right: bool,
+        order_by: Option<&IndexMap<String, OrderClause>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match left_over_index_properties.split_first() {
+            None => {
+                match unique {
+                    true => {
+                        // In the case things are NULL we allow to have multiple values
+                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                            Some(starts_at_document),
+                            true, //for ids we always go left to right
+                        );
+                        query.add_conditional_subquery(
+                            QueryItem::Key(b"".to_vec()),
+                            Some(vec![vec![0]]),
+                            Some(inner_query),
+                        );
                     }
-                    Some(query) => {
-                        if let Some((document, document_type, _indexed_property, included)) =
-                            starts_at_document
-                        {
-                            let start_at_key = document
-                                .get_raw_for_document_type(
-                                    first.name.as_str(),
-                                    *document_type,
-                                    None,
-                                    platform_version,
-                                )
-                                .ok()
-                                .flatten()
-                                .unwrap_or_default();
+                    false => {
+                        let inner_query = Self::inner_query_from_starts_at_for_id(
+                            Some(starts_at_document),
+                            default_left_to_right,
+                        );
 
-                            // We should always include if we have left_over
-                            let non_conditional_included = !left_over.is_empty() | *included;
-
-                            let mut non_conditional_query = Self::inner_query_starts_from_key(
-                                start_at_key,
-                                left_to_right,
-                                non_conditional_included,
-                            );
-
-                            DriveDocumentQuery::recursive_insert_on_query(
-                                Some(&mut non_conditional_query),
-                                left_over,
-                                unique,
-                                starts_at_document,
-                                left_to_right,
-                                order_by,
-                                platform_version,
-                            )?;
-
-                            query.set_subquery(non_conditional_query);
-                        } else {
-                            let mut inner_query = Query::new_with_direction(first.ascending);
-                            inner_query.insert_all();
-                            DriveDocumentQuery::recursive_insert_on_query(
-                                Some(&mut inner_query),
-                                left_over,
-                                unique,
-                                starts_at_document,
-                                left_to_right,
-                                order_by,
-                                platform_version,
-                            )?;
-                            query.set_subquery(inner_query);
-                        }
-                        query.set_subquery_key(first.name.as_bytes().to_vec());
-                        Ok(None)
+                        query.add_conditional_subquery(
+                            QueryItem::Key(conditional_value.unwrap_or_default()),
+                            Some(vec![vec![0]]),
+                            Some(inner_query),
+                        );
                     }
                 }
             }
+            Some((first, left_over)) => {
+                let left_to_right = if let Some(order_by) = order_by {
+                    order_by
+                        .get(first.name.as_str())
+                        .map(|order_clause| order_clause.ascending)
+                        .unwrap_or(first.ascending)
+                } else {
+                    first.ascending
+                };
+
+                let StartAtDocument {
+                    document,
+                    document_type,
+                    ..
+                } = starts_at_document;
+
+                let lower_start_at_key = document
+                    .get_raw_for_document_type(
+                        first.name.as_str(),
+                        *document_type,
+                        None,
+                        platform_version,
+                    )
+                    .ok()
+                    .flatten();
+
+                // We include it if we are not unique,
+                // or if we are unique but the value is empty
+                let non_conditional_included = !unique || lower_start_at_key.is_none();
+
+                let mut non_conditional_query = Self::inner_query_starts_from_key(
+                    lower_start_at_key.clone(),
+                    left_to_right,
+                    non_conditional_included,
+                );
+
+                DriveDocumentQuery::recursive_insert_on_query(
+                    &mut non_conditional_query,
+                    left_over,
+                    unique,
+                    None,
+                    left_to_right,
+                    order_by,
+                    platform_version,
+                )?;
+
+                DriveDocumentQuery::recursive_conditional_insert_on_query(
+                    &mut non_conditional_query,
+                    lower_start_at_key,
+                    left_over,
+                    unique,
+                    starts_at_document,
+                    left_to_right,
+                    order_by,
+                    platform_version,
+                )?;
+
+                query.add_conditional_subquery(
+                    QueryItem::Key(conditional_value.unwrap_or_default()),
+                    Some(vec![first.name.as_bytes().to_vec()]),
+                    Some(non_conditional_query),
+                );
+            }
         }
+        Ok(())
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -1513,8 +1813,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 !(self
                     .internal_clauses
                     .equal_clauses
-                    .get(field.name.as_str())
-                    .is_some()
+                    .contains_key(field.name.as_str())
                     || (last_clause.is_some() && last_clause.unwrap().field == field.name)
                     || (subquery_clause.is_some() && subquery_clause.unwrap().field == field.name))
             })
@@ -1553,14 +1852,17 @@ impl<'a> DriveDocumentQuery<'a> {
                 let first_index = index.properties.first().ok_or(Error::Drive(
                     DriveError::CorruptedContractIndexes("index must have properties".to_string()),
                 ))?; // Index must have properties
-                Self::recursive_insert_on_query(
-                    None,
+                Self::recursive_create_query(
                     left_over_index_properties.as_slice(),
                     index.unique,
-                    &starts_at_document.map(|(document, included)| {
-                        (document, self.document_type, first_index, included)
-                    }),
-                    first_index.ascending,
+                    starts_at_document
+                        .map(|(document, included)| StartAtDocument {
+                            document,
+                            document_type: self.document_type,
+                            included,
+                        })
+                        .as_ref(),
+                    first_index,
                     None,
                     platform_version,
                 )?
@@ -1598,22 +1900,17 @@ impl<'a> DriveDocumentQuery<'a> {
 
                 match subquery_clause {
                     None => {
-                        // There is a last_clause, but no subquery_clause, we should use the index property of the last clause
-                        // We need to get the terminal indexes unused by clauses.
-                        let last_index_property = index
-                            .properties
-                            .iter()
-                            .find(|field| where_clause.field == field.name)
-                            .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have last_clause field".to_string(),
-                            )))?;
                         Self::recursive_insert_on_query(
-                            Some(&mut query),
+                            &mut query,
                             left_over_index_properties.as_slice(),
                             index.unique,
-                            &starts_at_document.map(|(document, included)| {
-                                (document, self.document_type, last_index_property, included)
-                            }),
+                            starts_at_document
+                                .map(|(document, included)| StartAtDocument {
+                                    document,
+                                    document_type: self.document_type,
+                                    included,
+                                })
+                                .as_ref(),
                             left_to_right,
                             Some(&self.order_by),
                             platform_version,
@@ -1632,20 +1929,17 @@ impl<'a> DriveDocumentQuery<'a> {
                             order_clause.ascending,
                             platform_version,
                         )?;
-                        let last_index_property = index
-                            .properties
-                            .iter()
-                            .find(|field| subquery_where_clause.field == field.name)
-                            .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have subquery_clause field".to_string(),
-                            )))?;
                         Self::recursive_insert_on_query(
-                            Some(&mut subquery),
+                            &mut subquery,
                             left_over_index_properties.as_slice(),
                             index.unique,
-                            &starts_at_document.map(|(document, included)| {
-                                (document, self.document_type, last_index_property, included)
-                            }),
+                            starts_at_document
+                                .map(|(document, included)| StartAtDocument {
+                                    document,
+                                    document_type: self.document_type,
+                                    included,
+                                })
+                                .as_ref(),
                             left_to_right,
                             Some(&self.order_by),
                             platform_version,
@@ -1849,6 +2143,7 @@ impl<'a> DriveDocumentQuery<'a> {
             drive_operations,
             platform_version,
         )?;
+
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
@@ -1976,6 +2271,8 @@ mod tests {
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::prelude::Identifier;
+    use grovedb::Query;
+    use indexmap::IndexMap;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;
@@ -1995,11 +2292,16 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{
+        setup_drive_with_initial_state_structure, setup_system_data_contract,
+    };
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::document::DocumentV0;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::Value;
+    use dpp::system_data_contracts::load_system_data_contract;
     use dpp::tests::fixtures::{get_data_contract_fixture, get_dpns_data_contract_fixture};
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
@@ -2037,8 +2339,38 @@ mod tests {
         (drive, contract)
     }
 
+    fn setup_withdrawal_contract() -> (Drive, DataContract) {
+        let tmp_dir = TempDir::new().unwrap();
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract = load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+            .expect("load system contact");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                storage_flags,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract)
+    }
+
     fn setup_family_birthday_contract() -> (Drive, DataContract) {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -2666,5 +2998,100 @@ mod tests {
             &DriveConfig::default(),
         )
         .expect_err("starts with can not start with an empty string");
+    }
+
+    #[test]
+    fn test_withdrawal_query_with_missing_transaction_index() {
+        // Setup the withdrawal contract
+        let (_, contract) = setup_withdrawal_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let document_type_name = "withdrawal";
+        let document_type = contract
+            .document_type_for_name(document_type_name)
+            .expect("expected to get document type");
+
+        // Create a DriveDocumentQuery that simulates missing 'transactionIndex' in documents
+        let drive_document_query = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: Some(WhereClause {
+                    field: "status".to_string(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::U64(0),
+                        Value::U64(1),
+                        Value::U64(2),
+                        Value::U64(3),
+                        Value::U64(4),
+                    ]),
+                }),
+                range_clause: None,
+                equal_clauses: BTreeMap::default(),
+            },
+            offset: None,
+            limit: Some(3),
+            order_by: IndexMap::from([
+                (
+                    "status".to_string(),
+                    OrderClause {
+                        field: "status".to_string(),
+                        ascending: true,
+                    },
+                ),
+                (
+                    "transactionIndex".to_string(),
+                    OrderClause {
+                        field: "transactionIndex".to_string(),
+                        ascending: true,
+                    },
+                ),
+            ]),
+            start_at: Some([3u8; 32]),
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        // Create a document that we are starting at, which may be missing 'transactionIndex'
+        let mut properties = BTreeMap::new();
+        properties.insert("status".to_string(), Value::U64(0));
+        // We intentionally omit 'transactionIndex' to simulate missing field
+
+        let starts_at_document = DocumentV0 {
+            id: Identifier::from([3u8; 32]), // The same as start_at
+            owner_id: Identifier::random(),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+        }
+        .into();
+
+        // Attempt to construct the path query
+        let result = drive_document_query
+            .construct_path_query(Some(starts_at_document), platform_version)
+            .expect("expected to construct a path query");
+
+        assert_eq!(
+            result
+                .clone()
+                .query
+                .query
+                .default_subquery_branch
+                .subquery
+                .expect("expected subquery")
+                .items,
+            Query::new_range_full().items
+        );
     }
 }

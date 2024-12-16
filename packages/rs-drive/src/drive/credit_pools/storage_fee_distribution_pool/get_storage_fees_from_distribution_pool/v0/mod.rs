@@ -68,7 +68,7 @@ mod tests {
 
         #[test]
         fn test_error_if_wrong_value_encoded() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -96,7 +96,7 @@ mod tests {
 
         #[test]
         fn test_error_if_storage_pool_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();

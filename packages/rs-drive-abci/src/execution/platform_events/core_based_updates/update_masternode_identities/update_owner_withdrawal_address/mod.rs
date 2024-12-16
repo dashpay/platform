@@ -11,6 +11,7 @@ use drive::util::batch::DriveOperation;
 use drive::grovedb::Transaction;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -61,11 +62,286 @@ where
                 drive_operations,
                 platform_version,
             ),
+            1 => self.update_owner_withdrawal_address_v1(
+                owner_identifier,
+                new_withdrawal_address,
+                block_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_owner_withdrawal_address".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::{Identifier, IdentityPublicKey};
+    use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::Rng;
+    use rand::SeedableRng;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_update_withdrawal_address() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let block_info = BlockInfo::default();
+
+        let mut rng = StdRng::seed_from_u64(5);
+
+        let payout_address: [u8; 20] = rng.gen();
+
+        let withdrawal_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            read_only: true,
+            data: BinaryData::new(payout_address.to_vec()),
+            disabled_at: None,
+            contract_bounds: None,
+        }
+        .into();
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([(0, withdrawal_key.clone())]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                true,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut drive_operations = vec![];
+
+        platform
+            .update_owner_withdrawal_address(
+                identity.id().to_buffer(),
+                [0; 20],
+                &block_info,
+                &transaction,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to update owner withdrawal address");
+
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply drive operations");
+    }
+
+    #[test]
+    fn test_update_to_same_withdrawal_address() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let block_info = BlockInfo::default();
+
+        let mut rng = StdRng::seed_from_u64(5);
+
+        let payout_address: [u8; 20] = rng.gen();
+
+        let withdrawal_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            read_only: true,
+            data: BinaryData::new(payout_address.to_vec()),
+            disabled_at: None,
+            contract_bounds: None,
+        }
+        .into();
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([(0, withdrawal_key.clone())]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                true,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut drive_operations = vec![];
+
+        platform
+            .update_owner_withdrawal_address(
+                identity.id().to_buffer(),
+                payout_address,
+                &block_info,
+                &transaction,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to update owner withdrawal address");
+
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply drive operations");
+    }
+    #[test]
+    fn test_update_to_previously_disabled_withdrawal_address() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let block_info = BlockInfo::default();
+
+        let mut rng = StdRng::seed_from_u64(5);
+
+        let payout_address: [u8; 20] = rng.gen();
+
+        let withdrawal_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            read_only: true,
+            data: BinaryData::new(payout_address.to_vec()),
+            disabled_at: None,
+            contract_bounds: None,
+        }
+        .into();
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([(0, withdrawal_key.clone())]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                true,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut drive_operations = vec![];
+
+        platform
+            .update_owner_withdrawal_address(
+                identity.id().to_buffer(),
+                [0; 20],
+                &block_info,
+                &transaction,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to update owner withdrawal address");
+
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply drive operations");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut drive_operations = vec![];
+
+        platform
+            .update_owner_withdrawal_address(
+                identity.id().to_buffer(),
+                payout_address,
+                &block_info,
+                &transaction,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to update owner withdrawal address");
+
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply drive operations");
     }
 }

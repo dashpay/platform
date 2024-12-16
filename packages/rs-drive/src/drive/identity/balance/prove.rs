@@ -70,7 +70,7 @@ mod tests {
 
         #[test]
         fn should_prove_a_single_identity_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -113,7 +113,7 @@ mod tests {
 
         #[test]
         fn should_prove_multiple_identity_balances() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
             let identities: BTreeMap<[u8; 32], Identity> =
                 Identity::random_identities(10, 3, Some(14), platform_version)

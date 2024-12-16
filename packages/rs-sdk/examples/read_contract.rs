@@ -3,7 +3,8 @@ use std::{num::NonZeroUsize, str::FromStr};
 use clap::Parser;
 use dash_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
 use dpp::prelude::{DataContract, Identifier};
-use rs_dapi_client::AddressList;
+use rs_dapi_client::{Address, AddressList};
+use zeroize::Zeroizing;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -22,7 +23,7 @@ pub struct Config {
 
     // Dash Core RPC password
     #[arg(short = 'p', long)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
 
     /// Dash Platform DAPI port
     #[arg(short = 'd', long)]
@@ -79,14 +80,14 @@ fn setup_sdk(config: &Config) -> Sdk {
 
     // Let's build the Sdk.
     // First, we need an URI of some Dash Platform DAPI host to connect to and use as seed.
-    let uri = http::Uri::from_str(&format!(
-        "http://{}:{}",
+    let address = Address::from_str(&format!(
+        "https://{}:{}",
         config.server_address, config.platform_port
     ))
     .expect("parse uri");
 
     // Now, we create the Sdk with the wallet and context provider.
-    let mut sdk = SdkBuilder::new(AddressList::from_iter([uri]))
+    let sdk = SdkBuilder::new(AddressList::from_iter([address]))
         .build()
         .expect("cannot build sdk");
 
