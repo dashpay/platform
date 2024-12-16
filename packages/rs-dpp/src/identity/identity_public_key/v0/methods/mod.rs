@@ -4,12 +4,13 @@ use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
+use dashcore::address::Payload;
 #[cfg(feature = "ed25519-dalek")]
 use dashcore::ed25519_dalek;
 use dashcore::hashes::Hash;
 use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
-use dashcore::{Network, PublicKey as ECDSAPublicKey};
+use dashcore::{Address, Network, PubkeyHash, PublicKey as ECDSAPublicKey};
 use platform_value::Bytes20;
 #[cfg(feature = "bls-signatures")]
 use {crate::bls_signatures, dashcore::blsful::Bls12381G2Impl};
@@ -47,6 +48,21 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 Ok(Bytes20::from_vec(self.data.to_vec())?.into_buffer())
+            }
+        }
+    }
+
+    fn address(&self, network: Network) -> Result<Address, ProtocolError> {
+        match self.key_type {
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::NotSupported(
+                "Can not get an address from a single script hash key".to_string(),
+            )),
+            _ => {
+                let public_key_hash = self.public_key_hash()?;
+                Ok(Address::new(
+                    network,
+                    Payload::PubkeyHash(PubkeyHash::from_byte_array(public_key_hash)),
+                ))
             }
         }
     }
