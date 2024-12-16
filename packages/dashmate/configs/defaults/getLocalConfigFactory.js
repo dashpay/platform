@@ -68,7 +68,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
             epochTime: 1200,
             validatorSet: {
               quorum: {
-                llmqType: 106,
+                llmqType: 111,
                 dkgInterval: 24,
                 activeSigners: 2,
                 rotation: false,
@@ -76,7 +76,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
             },
             chainLock: {
               quorum: {
-                llmqType: 100,
+                llmqType: 111,
                 dkgInterval: 24,
                 activeSigners: 2,
                 rotation: false,
@@ -84,7 +84,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
             },
             instantLock: {
               quorum: {
-                llmqType: 104,
+                llmqType: 111,
                 dkgInterval: 24,
                 activeSigners: 2,
                 rotation: false,

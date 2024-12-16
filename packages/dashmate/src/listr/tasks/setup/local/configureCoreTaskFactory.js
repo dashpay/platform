@@ -16,7 +16,8 @@ const { PrivateKey } = DashCoreLib;
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {generateBlsKeys} generateBlsKeys
- * @param {enableCoreQuorumsTask} enableCoreQuorumsTask
+ * @param {enableMultiCoreQuorumsTask} enableMultiCoreQuorumsTask
+ * @param {enableSingleCoreQuorumTask} enableSingleCoreQuorumTask
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {ConfigFile} configFile
  * @return {configureCoreTask}
@@ -30,7 +31,8 @@ export default function configureCoreTaskFactory(
   generateToAddressTask,
   registerMasternodeTask,
   generateBlsKeys,
-  enableCoreQuorumsTask,
+  enableMultiCoreQuorumsTask,
+  enableSingleCoreQuorumTask,
   waitForMasternodesSync,
   configFile,
 ) {
@@ -115,7 +117,8 @@ export default function configureCoreTaskFactory(
             {
               title: 'Generating funds to use as a collateral for masternodes',
               task: () => {
-                const amount = HPMN_COLLATERAL_AMOUNT * configGroup.length;
+                // Generate for evnodes (- a seed node) + some cash for fees
+                const amount = HPMN_COLLATERAL_AMOUNT * (configGroup.length - 1) + 100;
                 return generateToAddressTask(
                   configGroup.find((c) => c.getName() === 'local_seed'),
                   amount,
@@ -125,7 +128,7 @@ export default function configureCoreTaskFactory(
             {
               title: 'Activating v19 and v20',
               task: () => new Observable(async (observer) => {
-                const dip3ActivationHeight = 901;
+                const activationHeight = 901;
                 const blocksToGenerateInOneStep = 10;
 
                 let blocksGenerated = 0;
@@ -149,7 +152,7 @@ export default function configureCoreTaskFactory(
                       observer.next(`${blocksGenerated} blocks generated`);
                     },
                   );
-                } while (dip3ActivationHeight > currentBlockHeight);
+                } while (activationHeight > currentBlockHeight);
 
                 observer.complete();
 
@@ -235,6 +238,7 @@ export default function configureCoreTaskFactory(
             {
               title: 'Set initial mock time',
               task: async () => {
+                // TODO: We want to get rid of mock time
                 // Set initial mock time from the last block
                 const { result: bestBlockHash } = await ctx.seedRpcClient.getBestBlockHash();
                 const { result: bestBlock } = await ctx.seedRpcClient.getBlock(bestBlockHash);
@@ -298,8 +302,14 @@ export default function configureCoreTaskFactory(
               },
             },
             {
+              title: 'Wait for quorum to be enabled',
+              enabled: configGroup.length - 1 === 1,
+              task: () => enableSingleCoreQuorumTask(),
+            },
+            {
               title: 'Wait for quorums to be enabled',
-              task: () => enableCoreQuorumsTask(),
+              enabled: configGroup.length - 1 > 1,
+              task: () => enableMultiCoreQuorumsTask(),
             },
             {
               title: 'Wait for nodes to have the same height',
@@ -311,7 +321,10 @@ export default function configureCoreTaskFactory(
             {
               title: 'Activating v21 fork',
               task: () => new Observable(async (observer) => {
-                const dip3ActivationHeight = 1001;
+                // Drive expect all quorums available when we activate mn_rr (activation of
+                // Evolution)
+                // We activate v21 at block 1000 when we expect all quorums already formed
+                const activationHeight = 1001;
                 const blocksToGenerateInOneStep = 10;
 
                 let blocksGenerated = 0;
@@ -335,7 +348,7 @@ export default function configureCoreTaskFactory(
                       observer.next(`${blocksGenerated} blocks generated`);
                     },
                   );
-                } while (dip3ActivationHeight > currentBlockHeight);
+                } while (activationHeight > currentBlockHeight);
 
                 observer.complete();
 

@@ -96,7 +96,17 @@ testactivationheight=mn_rr@1000
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
+{{? it.platform.drive.abci.instantLock.quorum.llmqType == 111 }}
+llmqtestinstantsenddip0024=llmq_1_100
+{{??}}
 llmqtestinstantsenddip0024=llmq_test_instantsend
+{{?}}
+{{? it.platform.drive.abci.validatorSet.quorum.llmqType == 111 }}
+llmqtestplatform=llmq_1_100
+{{?}}
+{{? it.platform.drive.abci.chainLock.quorum.llmqType == 111 }}
+llmqtestchainlocks=llmq_1_100
+{{?}}
 
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnet.name}}

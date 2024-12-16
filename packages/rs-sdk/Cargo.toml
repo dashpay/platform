@@ -35,7 +35,7 @@ envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
 derive_more = { version = "1.0", features = ["from"] }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.13" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "f14bd9048cbc1767541f25b28db5c9ad1236d0da" }
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
