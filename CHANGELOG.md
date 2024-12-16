@@ -1,3 +1,25 @@
+## [1.8.0-dev.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.8.0-dev.1) (2024-12-16)
+
+
+### Continuous Integration
+
+* fix artifact upload issue on release build ([#2389](https://github.com/dashpay/platform/issues/2389))
+
+
+### Miscellaneous Chores
+
+* remove deprecated check_network_version.sh ([#2084](https://github.com/dashpay/platform/issues/2084))
+
+
+### Tests
+
+* **sdk:** generate test vectors using testnet ([#2381](https://github.com/dashpay/platform/issues/2381))
+
+
+### Code Refactoring
+
+* **platform:** replace bls library ([#2257](https://github.com/dashpay/platform/issues/2257))
+
 ### [1.7.0](https://github.com/dashpay/platform/compare/v1.6.2...v1.7.0) (2024-12-13)
 
 
