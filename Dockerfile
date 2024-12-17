@@ -130,7 +130,12 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
 # Switch to clang
+# Note that CC / CXX can be updated later on (eg. when configuring sccache)
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+RUN <<EOS
+echo "export CXX='clang++'" >> /root/env
+echo "export CC='clang'" >> /root/env
+EOS
 
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
@@ -261,7 +266,7 @@ WORKDIR /tmp/rocksdb
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v9.8.4 --depth 1 .
 source /root/env
 
 # Support any CPU architecture
