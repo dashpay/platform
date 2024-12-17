@@ -18,7 +18,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 35
     permissions:
       id-token: write
       contents: read
@@ -34,6 +34,9 @@ jobs:
         with:
           name: js-build-${{ github.sha }}
           path: packages
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
 
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
