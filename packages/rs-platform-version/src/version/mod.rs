@@ -1,5 +1,5 @@
 mod protocol_version;
-use crate::version::v5::PROTOCOL_VERSION_5;
+use crate::version::v7::PROTOCOL_VERSION_7;
 pub use protocol_version::*;
 
 mod consensus_versions;
@@ -17,8 +17,10 @@ pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod v5;
+pub mod v6;
+pub mod v7;
 
 pub type ProtocolVersion = u32;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_5;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_7;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;

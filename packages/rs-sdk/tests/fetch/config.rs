@@ -8,7 +8,7 @@ use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     prelude::Identifier,
 };
-use rs_dapi_client::AddressList;
+use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
 use zeroize::Zeroizing;
@@ -131,9 +131,12 @@ impl Config {
             false => "http",
         };
 
-        let address: String = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port);
+        let address: Address =
+            format!("{}://{}:{}", scheme, self.platform_host, self.platform_port)
+                .parse()
+                .expect("valid address");
 
-        AddressList::from_iter(vec![http::Uri::from_str(&address).expect("valid uri")])
+        AddressList::from_iter([address])
     }
 
     /// Create new SDK instance

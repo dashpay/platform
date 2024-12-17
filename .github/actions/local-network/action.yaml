@@ -11,32 +11,27 @@ runs:
     - name: Setup Node.JS
       uses: ./.github/actions/nodejs
 
-    - name: Restore JS build artifacts
-      uses: strophy/actions-cache@opendal-update
+    - name: Download JS build artifacts
+      uses: actions/download-artifact@v4
       with:
-        bucket: multi-runner-cache-x1xibo9c
-        root: actions-cache
-        path: build-js-artifacts-${{ github.sha }}.tar
-        key: build-js-artifacts/${{ github.sha }}
-
-    - name: Unpack JS build artifacts archive
-      shell: bash
-      run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+        name: js-build-${{ github.sha }}
+        path: packages
 
     - name: Get dashmate fingerprint
       id: dashmate-fingerprint
       shell: bash
       run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
-    # TODO: Use upload artifacts action instead
+    - name: Set HOME variable to github context
+      shell: bash
+      run: echo "HOME=$HOME" >> $GITHUB_ENV
+
     - name: Restore local network data
       id: local-network-data
-      uses: strophy/actions-cache/restore@opendal-update
+      uses: actions/cache/restore@v4
       with:
-        bucket: multi-runner-cache-x1xibo9c
-        root: local-network-data
         path: |
-          /home/ubuntu/.dashmate
+          ${{ env.HOME }}/.dashmate
           **/.env
           dashmate_volumes_dump
         key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
@@ -68,12 +63,10 @@ runs:
       if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Save local network data
-      uses: strophy/actions-cache/save@opendal-update
+      uses: actions/cache/save@v4
       with:
-        bucket: multi-runner-cache-x1xibo9c
-        root: local-network-data
         path: |
-          /home/ubuntu/.dashmate
+          ${{ env.HOME }}/.dashmate
           **/.env
           dashmate_volumes_dump
         key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
@@ -90,9 +83,9 @@ runs:
         docker tag ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
         # Replace DAPI and Drive images with new org and tag in dashmate config
-        sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
+        sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
 
-        cat /home/ubuntu/.dashmate/config.json
+        cat ${{ env.HOME }}/.dashmate/config.json
 
     - name: Start local network
       shell: bash

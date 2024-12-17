@@ -1,0 +1,49 @@
+{
+  "txMetadata": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "indices": [
+      {
+        "name": "updated",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$updatedAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "keyIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The derivation index used to create the encryption key.",
+        "position": 0
+      },
+      "encryptionKeyIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The secondary index used to derive the encryption key that is used to encrypt and decrypt encryptedData.",
+        "position": 1
+      },
+      "encryptedMetadata": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 4096,
+        "description": "encrypted metadata using AES-CBC-256",
+        "position": 2
+      }
+    },
+    "required": [
+      "keyIndex",
+      "encryptionKeyIndex",
+      "encryptedMetadata",
+      "$updatedAt"
+    ],
+    "additionalProperties": false
+  }
+}
