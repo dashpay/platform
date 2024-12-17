@@ -75,9 +75,9 @@ jobs:
 
       - name: Install Binaryen
         run: |
-          wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
-          tar -xzf binaryen-version_121-x86_64-linux.tar.gz
-          sudo cp -r binaryen-version_121/* /usr/local/
+          wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz -P /tmp
+          tar -xzf /tmp/binaryen-version_121-x86_64-linux.tar.gz -C /tmp
+          sudo cp -r /tmp/binaryen-version_121/* /usr/local/
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Build packages
