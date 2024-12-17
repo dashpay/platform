@@ -1056,6 +1056,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.8.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.core.miner.mediantime;
+          });
+        return configFile;
+      },
     };
   }
 
