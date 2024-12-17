@@ -44,7 +44,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.18
+ARG ALPINE_VERSION=3.21
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
@@ -72,6 +72,7 @@ RUN apk add --no-cache \
         ca-certificates \
         clang-static clang-dev \
         cmake \
+        curl \
         git \
         libc-dev \
         linux-headers \
@@ -129,7 +130,12 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
 # Switch to clang
+# Note that CC / CXX can be updated later on (eg. when configuring sccache)
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+RUN <<EOS
+echo "export CXX='clang++'" >> /root/env
+echo "export CC='clang'" >> /root/env
+EOS
 
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
