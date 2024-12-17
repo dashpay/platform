@@ -29,7 +29,7 @@
 # 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
-ARG ALPINE_VERSION=3.20
+ARG ALPINE_VERSION=3.21
 ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
