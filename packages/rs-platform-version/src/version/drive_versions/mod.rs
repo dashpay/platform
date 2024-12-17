@@ -1,4 +1,4 @@
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;

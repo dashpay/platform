@@ -1,6 +1,6 @@
 pub mod v1;
 
-use crate::version::protocol_version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]

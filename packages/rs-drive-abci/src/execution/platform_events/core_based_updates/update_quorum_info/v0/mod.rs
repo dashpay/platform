@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
+use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumHash, QuorumType};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
@@ -17,7 +17,7 @@ use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
-use dpp::dashcore::QuorumHash;
+// use dpp::dashcore::QuorumHash;
 use tracing::Level;
 
 #[derive(Copy, Clone)]
