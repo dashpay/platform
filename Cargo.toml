@@ -32,7 +32,7 @@ members = [
 ]
 [workspace.package]
 
-rust-version = "1.80"
+rust-version = "1.81"
 
 #[patch.crates-io]
 #tower-service = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }

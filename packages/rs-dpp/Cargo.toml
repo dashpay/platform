@@ -22,7 +22,7 @@ chrono = { version = "0.4.35", default-features = false, features = [
   "clock",
 ] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+dashcore = { git = "https://github.com/pankcuf/rust-dashcore", features = [
   "std",
   "secp-recovery",
   "rand",
@@ -30,7 +30,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "serde",
   "bls",
   "eddsa",
-], default-features = false, tag = "0.32.0" }
+], default-features = false, rev = "c91b0562fdd20e07d6de81dd8062b0b26d64bc3d" }
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
@@ -64,8 +64,8 @@ indexmap = { version = "2.0.2", features = ["serde"] }
 strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator' }
 once_cell = "1.19.0"
-ferment-macro = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment-macro" }
-ferment = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment" }
+ferment-macro = { git = "https://github.com/dashpay/ferment", branch = "feat/reorg", package = "ferment-macro" }
+ferment = { git = "https://github.com/dashpay/ferment", branch = "feat/reorg", package = "ferment" }
 
 [dev-dependencies]
 test-case = { version = "3.3" }
