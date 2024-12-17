@@ -1,6 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use crate::error::Error;
+use crate::error::{Error, StaleNodeError};
 use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
@@ -27,8 +27,7 @@ use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
-    transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor,
+    transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;
@@ -36,7 +35,8 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -49,6 +49,16 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
 pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
+
+/// The default request settings for the SDK, used when the user does not provide any.
+///
+/// Use [SdkBuilder::with_settings] to set custom settings.
+const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
+    retries: Some(3),
+    timeout: None,
+    ban_failed_address: None,
+    connect_timeout: None,
+};
 
 /// a type to represent staleness in seconds
 pub type StalenessInSeconds = u64;
@@ -83,7 +93,7 @@ pub type LastQueryTimestamp = u64;
 /// See tests/ for examples of using the SDK.
 #[ferment_macro::opaque]
 pub struct Sdk {
-    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)
     pub network: Network,
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.
@@ -101,8 +111,26 @@ pub struct Sdk {
     /// Note that setting this to None can panic.
     context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
 
+    /// Last seen height; used to determine if the remote node is stale.
+    ///
+    /// This is clone-able and can be shared between threads.
+    metadata_last_seen_height: Arc<atomic::AtomicU64>,
+
+    /// How many blocks difference is allowed between the last height and the current height received in metadata.
+    ///
+    /// See [SdkBuilder::with_height_tolerance] for more information.
+    metadata_height_tolerance: Option<u64>,
+
+    /// How many milliseconds difference is allowed between the time received in response and current local time.
+    ///
+    /// See [SdkBuilder::with_time_tolerance] for more information.
+    metadata_time_tolerance_ms: Option<u64>,
+
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
+
+    /// Global settings of dapi client
+    pub(crate) dapi_client_settings: RequestSettings,
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -116,6 +144,10 @@ impl Clone for Sdk {
             internal_cache: Arc::clone(&self.internal_cache),
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
+            metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
+            metadata_height_tolerance: self.metadata_height_tolerance,
+            metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+            dapi_client_settings: self.dapi_client_settings,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -163,7 +195,7 @@ enum SdkInstance {
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
         mock: Arc<Mutex<MockDashPlatformSdk>>,
-
+        address_list: AddressList,
         /// Platform version configured for this Sdk
         version: &'static PlatformVersion,
     },
@@ -193,7 +225,7 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<Option<O>, drive_proof_verifier::Error>
+    ) -> Result<Option<O>, Error>
     where
         O::Request: Mockable,
     {
@@ -214,31 +246,32 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    ) -> Result<(Option<O>, ResponseMetadata), Error>
     where
         O::Request: Mockable,
     {
-        let provider = self
-            .context_provider()
-            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+        let (object, metadata, _proof) = self
+            .parse_proof_with_metadata_and_proof(request, response)
+            .await?;
 
-        match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
-                request,
-                response,
-                self.network,
-                self.version(),
-                &provider,
-            )
-            .map(|(a, b, _)| (a, b)),
-            #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref mock, .. } => {
-                let guard = mock.lock().await;
-                guard
-                    .parse_proof_with_metadata(request, response)
-                    .map(|(a, b, _)| (a, b))
-            }
-        }
+        Ok((object, metadata))
+    }
+
+    /// Verify response metadata against the current state of the SDK.
+    fn verify_response_metadata(&self, metadata: &ResponseMetadata) -> Result<(), Error> {
+        if let Some(height_tolerance) = self.metadata_height_tolerance {
+            verify_metadata_height(
+                metadata,
+                height_tolerance,
+                Arc::clone(&(self.metadata_last_seen_height)),
+            )?;
+        };
+        if let Some(time_tolerance) = self.metadata_time_tolerance_ms {
+            let now = chrono::Utc::now().timestamp_millis() as u64;
+            verify_metadata_time(metadata, now, time_tolerance)?;
+        };
+
+        Ok(())
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
@@ -253,7 +286,7 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
         O::Request: Mockable,
     {
@@ -261,7 +294,7 @@ impl Sdk {
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        match self.inner {
+        let (object, metadata, proof) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
@@ -274,7 +307,10 @@ impl Sdk {
                 let guard = mock.lock().await;
                 guard.parse_proof_with_metadata(request, response)
             }
-        }
+        }?;
+
+        self.verify_response_metadata(&metadata)?;
+        Ok((object, metadata, proof))
     }
 
     /// Return [ContextProvider] used by the SDK.
@@ -396,6 +432,7 @@ impl Sdk {
         }
     }
 
+    // TODO: Move to a separate struct
     /// Updates or fetches the nonce for a given identity and contract pair from a cache,
     /// querying Platform if the cached value is stale or absent. Optionally
     /// increments the nonce before storing it, based on the provided settings.
@@ -528,21 +565,112 @@ impl Sdk {
     }
 
     /// Return the [DapiClient] address list
-    pub fn address_list(&self) -> Result<AddressList, String> {
+    pub fn address_list(&self) -> &AddressList {
         match &self.inner {
-            SdkInstance::Dapi { dapi, version: _ } => {
-                let address_list_arc = dapi.address_list();
-                let address_list_lock = address_list_arc
-                    .read()
-                    .map_err(|e| format!("Failed to read address list: {e}"))?;
-                Ok(address_list_lock.clone())
-            }
+            SdkInstance::Dapi { dapi, .. } => dapi.address_list(),
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { .. } => {
-                unimplemented!("mock Sdk does not have address list")
-            }
+            SdkInstance::Mock { address_list, .. } => address_list,
         }
     }
+}
+
+/// If received metadata time differs from local time by more than `tolerance`, the remote node is considered stale.
+///
+/// ## Parameters
+///
+/// - `metadata`: Metadata of the received response
+/// - `now_ms`: Current local time in milliseconds
+/// - `tolerance_ms`: Tolerance in milliseconds
+fn verify_metadata_time(
+    metadata: &ResponseMetadata,
+    now_ms: u64,
+    tolerance_ms: u64,
+) -> Result<(), Error> {
+    let metadata_time = metadata.time_ms;
+
+    // metadata_time - tolerance_ms <= now_ms <= metadata_time + tolerance_ms
+    if now_ms.abs_diff(metadata_time) > tolerance_ms {
+        tracing::warn!(
+            expected_time = now_ms,
+            received_time = metadata_time,
+            tolerance_ms,
+            "received response with stale time; you should retry with another server"
+        );
+        return Err(StaleNodeError::Time {
+            expected_timestamp_ms: now_ms,
+            received_timestamp_ms: metadata_time,
+            tolerance_ms,
+        }
+        .into());
+    }
+
+    tracing::trace!(
+        expected_time = now_ms,
+        received_time = metadata_time,
+        tolerance_ms,
+        "received response with valid time"
+    );
+    Ok(())
+}
+
+/// If current metadata height is behind previously seen height by more than `tolerance`, the remote node
+///  is considered stale.
+fn verify_metadata_height(
+    metadata: &ResponseMetadata,
+    tolerance: u64,
+    last_seen_height: Arc<atomic::AtomicU64>,
+) -> Result<(), Error> {
+    let mut expected_height = last_seen_height.load(Ordering::Relaxed);
+    let received_height = metadata.height;
+
+    // Same height, no need to update.
+    if received_height == expected_height {
+        tracing::trace!(
+            expected_height,
+            received_height,
+            tolerance,
+            "received message has the same height as previously seen"
+        );
+        return Ok(());
+    }
+
+    // If expected_height <= tolerance, then Sdk just started, so we just assume what we got is correct.
+    if expected_height > tolerance && received_height < expected_height - tolerance {
+        tracing::warn!(
+            expected_height,
+            received_height,
+            tolerance,
+            "received message with stale height; you should retry with another server"
+        );
+        return Err(StaleNodeError::Height {
+            expected_height,
+            received_height,
+            tolerance_blocks: tolerance,
+        }
+        .into());
+    }
+
+    // New height is ahead of the last seen height, so we update the last seen height.
+    tracing::trace!(
+        expected_height = expected_height,
+        received_height = received_height,
+        tolerance,
+        "received message with new height"
+    );
+    while let Err(stored_height) = last_seen_height.compare_exchange(
+        expected_height,
+        received_height,
+        Ordering::SeqCst,
+        Ordering::Relaxed,
+    ) {
+        // The value was changed to a higher value by another thread, so we need to retry.
+        if stored_height >= metadata.height {
+            break;
+        }
+        expected_height = stored_height;
+    }
+
+    Ok(())
 }
 
 #[async_trait::async_trait]
@@ -551,7 +679,7 @@ impl DapiRequestExecutor for Sdk {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> ExecutionResult<R::Response, DapiClientError> {
         match self.inner {
             SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
@@ -580,7 +708,7 @@ pub struct SdkBuilder {
     ///
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
-    settings: RequestSettings,
+    settings: Option<RequestSettings>,
 
     network: Network,
 
@@ -606,6 +734,17 @@ pub struct SdkBuilder {
     /// Context provider used by the SDK.
     context_provider: Option<Box<dyn ContextProvider>>,
 
+    /// How many blocks difference is allowed between the last seen metadata height and the height received in response
+    /// metadata.
+    ///
+    /// See [SdkBuilder::with_height_tolerance] for more information.
+    metadata_height_tolerance: Option<u64>,
+
+    /// How many milliseconds difference is allowed between the time received in response metadata and current local time.
+    ///
+    /// See [SdkBuilder::with_time_tolerance] for more information.
+    metadata_time_tolerance_ms: Option<u64>,
+
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -619,7 +758,7 @@ impl Default for SdkBuilder {
     fn default() -> Self {
         Self {
             addresses: None,
-            settings: RequestSettings::default(),
+            settings: None,
             network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
@@ -627,6 +766,8 @@ impl Default for SdkBuilder {
             core_user: "".to_string(),
 
             proofs: true,
+            metadata_height_tolerance: Some(1),
+            metadata_time_tolerance_ms: None,
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
@@ -698,7 +839,7 @@ impl SdkBuilder {
     ///
     /// See [`RequestSettings`] for more information.
     pub fn with_settings(mut self, settings: RequestSettings) -> Self {
-        self.settings = settings;
+        self.settings = Some(settings);
         self
     }
 
@@ -751,6 +892,41 @@ impl SdkBuilder {
         self
     }
 
+    /// Change number of blocks difference allowed between the last height and the height received in current response.
+    ///
+    /// If height received in response metadata is behind previously seen height by more than this value, the node
+    /// is considered stale, and the request will fail.
+    ///
+    /// If None, the height is not checked.
+    ///
+    /// Note that this feature doesn't guarantee that you are getting latest data, but it significantly decreases
+    /// probability of getting old data.
+    ///
+    /// This is set to `1` by default.
+    pub fn with_height_tolerance(mut self, tolerance: Option<u64>) -> Self {
+        self.metadata_height_tolerance = tolerance;
+        self
+    }
+
+    /// How many milliseconds difference is allowed between the time received in response and current local time.
+    /// If the received time differs from local time by more than this value, the remote node is stale.
+    ///
+    /// If None, the time is not checked.
+    ///
+    /// This is set to `None` by default.
+    ///
+    /// Note that enabling this check can cause issues if the local time is not synchronized with the network time,
+    /// when the network is stalled or time between blocks increases significantly.
+    ///
+    /// Selecting a safe value for this parameter depends on maximum time between blocks mined on the network.
+    /// For example, if the network is configured to mine a block every maximum 3 minutes, setting this value
+    /// to a bit more than 6 minutes (to account for misbehaving proposers, network delays and local time
+    /// synchronization issues) should be safe.
+    pub fn with_time_tolerance(mut self, tolerance_ms: Option<u64>) -> Self {
+        self.metadata_time_tolerance_ms = tolerance_ms;
+        self
+    }
+
     /// Configure directory where dumps of all requests and responses will be saved.
     /// Useful for debugging.
     ///
@@ -779,23 +955,33 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
+        let dapi_client_settings = match self.settings {
+            Some(settings) => DEFAULT_REQUEST_SETTINGS.override_by(settings),
+            None => DEFAULT_REQUEST_SETTINGS,
+        };
+
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let dapi = DapiClient::new(addresses, self.settings);
+                let dapi = DapiClient::new(addresses,dapi_client_settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     network: self.network,
+                    dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
+                    internal_cache: Default::default(),
+                    // Note: in future, we need to securely initialize initial height during Sdk bootstrap or first request.
+                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
+                    metadata_height_tolerance: self.metadata_height_tolerance,
+                    metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
-                    internal_cache: Default::default(),
                 };
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
                 if  sdk.context_provider.load().is_none() {
@@ -847,17 +1033,21 @@ impl SdkBuilder {
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
                     network: self.network,
+                    dapi_client_settings,
                     inner:SdkInstance::Mock {
                         mock:mock_sdk.clone(),
                         dapi,
-                        version:self.version,
-
+                        address_list: AddressList::new(),
+                        version: self.version,
                     },
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
                     context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
+                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
+                    metadata_height_tolerance: self.metadata_height_tolerance,
+                    metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
                 guard.set_sdk(sdk.clone());
@@ -902,4 +1092,142 @@ pub fn prettify_proof(proof: &Proof) -> String {
         hex::encode(&proof.block_id_hash),
         proof.quorum_type,
     )
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use dapi_grpc::platform::v0::ResponseMetadata;
+    use test_case::test_matrix;
+
+    use crate::SdkBuilder;
+
+    #[test_matrix(97..102, 100, 2, false; "valid height")]
+    #[test_case(103, 100, 2, true; "invalid height")]
+    fn test_verify_metadata_height(
+        expected_height: u64,
+        received_height: u64,
+        tolerance: u64,
+        expect_err: bool,
+    ) {
+        let metadata = ResponseMetadata {
+            height: received_height,
+            ..Default::default()
+        };
+
+        let last_seen_height =
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
+
+        let result =
+            super::verify_metadata_height(&metadata, tolerance, Arc::clone(&last_seen_height));
+
+        assert_eq!(result.is_err(), expect_err);
+        if result.is_ok() {
+            assert_eq!(
+                last_seen_height.load(std::sync::atomic::Ordering::Relaxed),
+                received_height,
+                "previous height should be updated"
+            );
+        }
+    }
+
+    #[test]
+    fn cloned_sdk_verify_metadata_height() {
+        let sdk1 = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+
+        // First message verified, height 1.
+        let metadata = ResponseMetadata {
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk1.verify_response_metadata(&metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(
+            sdk1.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "initial height"
+        );
+
+        // now, we clone sdk and do two requests.
+        let sdk2 = sdk1.clone();
+        let sdk3 = sdk1.clone();
+
+        // Second message verified, height 2.
+        let metadata = ResponseMetadata {
+            height: 2,
+            ..Default::default()
+        };
+        sdk2.verify_response_metadata(&metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(
+            sdk1.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "first sdk should see height from second sdk"
+        );
+        assert_eq!(
+            sdk3.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "third sdk should see height from second sdk"
+        );
+
+        // Third message verified, height 3.
+        let metadata = ResponseMetadata {
+            height: 3,
+            ..Default::default()
+        };
+        sdk3.verify_response_metadata(&metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(
+            sdk1.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "first sdk should see height from third sdk"
+        );
+
+        assert_eq!(
+            sdk2.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "second sdk should see height from third sdk"
+        );
+
+        // Now, using sdk1 for height 1 again should fail, as we are already at 3, with default tolerance 1.
+        let metadata = ResponseMetadata {
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk1.verify_response_metadata(&metadata)
+            .expect_err("metadata should be invalid");
+    }
+
+    #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
+    #[test_matrix([0,89,111], 100, 10, true; "invalid time")]
+    #[test_matrix([0,100], [0,100], 100, false; "zero time")]
+    #[test_matrix([99,101], 100, 0, true; "zero tolerance")]
+    fn test_verify_metadata_time(
+        received_time: u64,
+        now_time: u64,
+        tolerance: u64,
+        expect_err: bool,
+    ) {
+        let metadata = ResponseMetadata {
+            time_ms: received_time,
+            ..Default::default()
+        };
+
+        let result = super::verify_metadata_time(&metadata, now_time, tolerance);
+
+        assert_eq!(result.is_err(), expect_err);
+    }
 }

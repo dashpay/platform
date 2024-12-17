@@ -11,10 +11,12 @@ use crate::drive::votes::paths::{
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::query::QueryItem;
 use crate::util::grove_operations::BatchDeleteApplyType;
-use platform_value::Identifier;
+use dpp::dashcore::Network;
+use dpp::prelude::BlockHeight;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use platform_value::Identifier;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is
@@ -22,6 +24,9 @@ impl Drive {
     pub(super) fn remove_all_votes_given_by_identities_v0(
         &self,
         identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        block_height: BlockHeight,
+        network: Network,
+        chain_id: &str,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -112,9 +117,25 @@ impl Drive {
         }
 
         if !deletion_batch.is_empty() {
+            // We had a sequence of errors on the mainnet started since block 32326.
+            // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+            // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+            // validators just proceeded to the next block partially committing the state
+            // and updating the cache (https://github.com/dashpay/platform/pull/2305).
+            // Full nodes are stuck and proceeded after re-sync.
+            // For the mainnet chain, we enable this fix at the block when we consider the state is consistent.
+            let transaction =
+                if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
+                    // Old behaviour on mainnet
+                    None
+                } else {
+                    // We should use transaction
+                    transaction
+                };
+
             self.apply_batch_low_level_drive_operations(
                 None,
-                None,
+                transaction,
                 deletion_batch,
                 &mut vec![],
                 &platform_version.drive,

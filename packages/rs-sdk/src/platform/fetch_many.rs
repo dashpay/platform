@@ -4,21 +4,23 @@
 //!
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
+
 use super::LimitQuery;
 use crate::{
     error::Error,
     mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
+    sync::retry,
     Sdk,
 };
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetVotePollsByEndDateRequest,
+    GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
+    GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest, Proof,
+    ResponseMetadata,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
@@ -40,9 +42,10 @@ use drive_proof_verifier::types::{
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use platform_value::Identifier;
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use std::collections::BTreeMap;
-use dpp::platform_value;
+use rs_dapi_client::{
+    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
+    IntoInner, RequestSettings,
+};
 
 /// Fetch multiple objects from Platform.
 ///
@@ -143,22 +146,113 @@ where
         sdk: &Sdk,
         query: Q,
     ) -> Result<O, Error> {
-        let request = query.query(sdk.prove())?;
+        Self::fetch_many_with_metadata_and_proof(sdk, query, None)
+            .await
+            .map(|(objects, _, _)| objects)
+    }
 
-        let response = request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
+    /// Fetch multiple objects from Platform with metadata.
+    ///
+    /// Fetch objects from Platform that satisfy the provided [Query].
+    /// This method allows you to retrieve the metadata associated with the response.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: An optional `RequestSettings` to give greater flexibility on the request.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a `Result` containing either:
+    ///
+    /// * A tuple `(O, ResponseMetadata)` where `O` is the collection of fetched objects, and `ResponseMetadata` contains metadata about the response.
+    /// * [`Error`](crate::error::Error) when an error occurs.
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_many_with_metadata<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: Option<RequestSettings>,
+    ) -> Result<(O, ResponseMetadata), Error> {
+        Self::fetch_many_with_metadata_and_proof(sdk, query, settings)
+            .await
+            .map(|(objects, metadata, _)| (objects, metadata))
+    }
 
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+    /// Fetch multiple objects from Platform with metadata and underlying proof.
+    ///
+    /// Fetch objects from Platform that satisfy the provided [Query].
+    /// This method allows you to retrieve the metadata and the underlying proof associated with the response.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: An optional `RequestSettings` to give greater flexibility on the request.
+    ///
+    /// ## Returns
+    ///
+    /// Returns a `Result` containing either:
+    ///
+    /// * A tuple `(O, ResponseMetadata, Proof)` where `O` is the collection of fetched objects, `ResponseMetadata` contains metadata about the response, and `Proof` is the underlying proof.
+    /// * [`Error`](crate::error::Error) when an error occurs.
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_many_with_metadata_and_proof<Q: Query<<Self as FetchMany<K, O>>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: Option<RequestSettings>,
+    ) -> Result<(O, ResponseMetadata, Proof), Error> {
+        let request = &query.query(sdk.prove())?;
 
-        let object: O = sdk
-            .parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request, response)
-            .await?
-            .unwrap_or_default();
+        let fut = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|e| e.inner_into())?;
 
-        Ok(object)
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(
+                request = ?request,
+                response = ?response,
+                ?address,
+                retries,
+                object_type,
+                "fetched objects from platform"
+            );
+
+            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
+                request.clone(),
+                response,
+            )
+            .await
+            .map_err(|e| ExecutionError {
+                inner: e,
+                address: Some(address.clone()),
+                retries,
+            })
+            .map(|(o, metadata, proof)| ExecutionResponse {
+                inner: (o.unwrap_or_default(), metadata, proof),
+                retries,
+                address: address.clone(),
+            })
+        };
+
+        let settings = sdk
+            .dapi_client_settings
+            .override_by(settings.unwrap_or_default());
+
+        retry(sdk.address_list(), settings, fut).await.into_inner()
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -231,21 +325,38 @@ impl FetchMany<Identifier, Documents> for Document {
         sdk: &Sdk,
         query: Q,
     ) -> Result<Documents, Error> {
-        let document_query: DocumentQuery = query.query(sdk.prove())?;
+        let document_query: &DocumentQuery = &query.query(sdk.prove())?;
 
-        let request = document_query.clone();
-        let response: GetDocumentsResponse =
-            request.execute(sdk, RequestSettings::default()).await?;
+        retry(sdk.address_list(), sdk.dapi_client_settings, |settings| async move {
+            let request = document_query.clone();
 
-        tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response
+            } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
-        // let object: Option<BTreeMap<K,Document>> = sdk
-        let documents: BTreeMap<Identifier, Option<Document>> = sdk
-            .parse_proof::<DocumentQuery, Documents>(document_query, response)
-            .await?
-            .unwrap_or_default();
+            tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
 
-        Ok(documents)
+            // let object: Option<BTreeMap<K,Document>> = sdk
+            let documents = sdk
+                .parse_proof::<DocumentQuery, Documents>(document_query.clone(), response)
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    retries,
+                    address: Some(address.clone()),
+                })?
+                .unwrap_or_default();
+
+            Ok(ExecutionResponse {
+                inner: documents,
+                retries,
+                address,
+            })
+        })
+        .await
+        .into_inner()
     }
 }
 

@@ -3,6 +3,8 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::masternode_vote::advanced_structure::v0::MasternodeVoteStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionStructureKnownInStateValidationV0;
+use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
@@ -14,6 +16,8 @@ pub(crate) mod v0;
 impl StateTransitionStructureKnownInStateValidationV0 for MasternodeVoteTransition {
     fn validate_advanced_structure_from_state(
         &self,
+        _block_info: &BlockInfo,
+        _network: Network,
         action: &StateTransitionAction,
         identity: Option<&PartialIdentity>,
         execution_context: &mut StateTransitionExecutionContext,

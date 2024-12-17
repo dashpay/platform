@@ -4,7 +4,7 @@ use dapi_grpc::platform::v0::GetIdentitiesContractKeysRequest;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::Purpose;
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
 // use crate::platform::Identifier;
@@ -82,7 +82,7 @@ impl TransportRequest for IdentitiesContractKeysQuery {
         self,
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>> {
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
         let request: GetIdentitiesContractKeysRequest = self
             .try_into()
             .expect("IdentitiesContractKeysQuery should always be valid");

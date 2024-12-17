@@ -8,6 +8,10 @@ use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 #[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::rand::SeedableRng;
 use dashcore::secp256k1::Secp256k1;
+#[cfg(any(feature = "bls-signatures", feature = "random-public-keys"))]
+use dashcore::bls_signatures;
+#[cfg(any(feature = "ed25519-dalek", feature = "random-public-keys"))]
+use dashcore::ed25519_dalek;
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -264,9 +268,9 @@ impl KeyType {
                 ));
             }
             KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::NotSupported(
+                Err(ProtocolError::NotSupported(
                     "Converting a private key to a script hash is not supported".to_string(),
-                ));
+                ))
             }
         }
     }

@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// Coding conventions
+// Coding conventions .
 // #![forbid(unsafe_code)]
 //#![deny(missing_docs)]
 #![allow(dead_code)]
@@ -96,11 +96,11 @@ pub mod prelude {
 
 pub use bincode;
 #[cfg(all(not(target_arch = "wasm32"), feature = "bls-signatures"))]
-pub use bls_signatures;
+pub use dashcore::bls_signatures;
+#[cfg(feature = "ed25519-dalek")]
+pub use dashcore::ed25519_dalek;
 #[cfg(feature = "system_contracts")]
 pub use data_contracts;
-#[cfg(feature = "ed25519-dalek")]
-pub use ed25519_dalek;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;

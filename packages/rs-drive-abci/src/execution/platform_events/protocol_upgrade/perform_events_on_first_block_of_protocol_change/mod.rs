@@ -61,7 +61,7 @@ impl<C> Platform<C> {
                 previous_protocol_version,
                 platform_version,
             ),
-            None => return Ok(()),
+            None => Ok(()),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "perform_events_on_first_block_of_protocol_change".to_string(),
                 known_versions: vec![0],

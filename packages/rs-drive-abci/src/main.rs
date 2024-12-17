@@ -3,11 +3,15 @@
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 
 use clap::{Parser, Subcommand};
+use dapi_grpc::platform::v0::get_status_request;
+use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
+use dapi_grpc::platform::v0::platform_client::PlatformClient;
+use dapi_grpc::tonic::transport::Uri;
 use dpp::version::PlatformVersion;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
-use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
+use drive_abci::metrics::Prometheus;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
@@ -17,6 +21,7 @@ use std::fs::remove_file;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
@@ -54,6 +59,10 @@ enum Commands {
     /// by creating `.fsck` file in database directory (`DB_PATH`).
     #[command()]
     Verify,
+
+    /// Print current software version
+    #[command()]
+    Version,
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -98,6 +107,13 @@ impl Cli {
     ) -> Result<(), String> {
         match self.command {
             Commands::Start => {
+                tracing::info!(
+                    version = env!("CARGO_PKG_VERSION"),
+                    features = list_enabled_features().join(","),
+                    rust = env!("CARGO_PKG_RUST_VERSION"),
+                    "drive-abci server initializing",
+                );
+
                 if config.drive.grovedb_verify_on_startup {
                     verify_grovedb(&config.db_path, false)?;
                 }
@@ -129,11 +145,14 @@ impl Cli {
 
                 server::start(runtime, Arc::new(platform), config, cancel);
 
+                tracing::info!("drive-abci server is stopped");
+
                 return Ok(());
             }
             Commands::Config => dump_config(&config)?,
-            Commands::Status => check_status(&config)?,
+            Commands::Status => runtime.block_on(check_status(&config))?,
             Commands::Verify => verify_grovedb(&config.db_path, true)?,
+            Commands::Version => print_version(),
         };
 
         Ok(())
@@ -202,32 +221,18 @@ fn main() -> Result<(), ExitCode> {
     install_panic_hook(cancel.clone());
 
     // Start runtime in the main thread
-    tracing::info!(
-        version = env!("CARGO_PKG_VERSION"),
-        features = list_enabled_features().join(","),
-        rust = env!("CARGO_PKG_RUST_VERSION"),
-        "drive-abci server initializing",
-    );
-
     let runtime_guard = runtime.enter();
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));
 
-    let result = match cli.run(&runtime, config, cancel) {
-        Ok(()) => {
-            tracing::debug!("shutdown complete");
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!(error = e, "drive-abci failed");
-            Err(ExitCode::FAILURE)
-        }
-    };
+    let result = cli.run(&runtime, config, cancel).map_err(|e| {
+        tracing::error!(error = e, "drive-abci failed: {e}");
+
+        ExitCode::FAILURE
+    });
 
     drop(runtime_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
-    tracing::info!("drive-abci server is stopped");
-
     result
 }
 
@@ -303,31 +308,27 @@ fn list_enabled_features() -> Vec<&'static str> {
 }
 
 /// Check status of ABCI server.
-fn check_status(config: &PlatformConfig) -> Result<(), String> {
-    if let Some(prometheus_addr) = &config.prometheus_bind_address {
-        let url =
-            url::Url::parse(prometheus_addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
+async fn check_status(config: &PlatformConfig) -> Result<(), String> {
+    // Convert the gRPC bind address string to a Uri
+    let uri = Uri::from_str(&format!("http://{}", config.grpc_bind_address))
+        .map_err(|e| format!("invalid url: {e}"))?;
 
-        let addr = format!(
-            "{}://{}:{}/metrics",
-            url.scheme(),
-            url.host()
-                .ok_or("ABCI_PROMETHEUS_BIND_ADDRESS must contain valid host".to_string())?,
-            url.port().unwrap_or(DEFAULT_PROMETHEUS_PORT)
-        );
+    // Connect to the gRPC server
+    let mut client = PlatformClient::connect(uri.clone())
+        .await
+        .map_err(|e| format!("can't connect to grpc server {uri}: {e}"))?;
 
-        let body: String = ureq::get(&addr)
-            .set("Content-type", "text/plain")
-            .call()
-            .map_err(|e| e.to_string())?
-            .into_string()
-            .map_err(|e| e.to_string())?;
+    // Make a request to the server
+    let request = dapi_grpc::platform::v0::GetStatusRequest {
+        version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
+    };
 
-        println!("{}", body);
-        Ok(())
-    } else {
-        Err("ABCI_PROMETHEUS_BIND_ADDRESS not defined, cannot check status".to_string())
-    }
+    // Should return non-zero error code if Drive is not responding
+    client
+        .get_status(request)
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("can't request status: {e}"))
 }
 
 /// Verify GroveDB integrity.
@@ -386,6 +387,11 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
     }
 }
 
+/// Print current software version.
+fn print_version() {
+    println!("{}", env!("CARGO_PKG_VERSION"));
+}
+
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     if let Some(path) = path {
         if let Err(e) = dotenvy::from_path(path) {
@@ -415,7 +421,7 @@ fn configure_logging(cli: &Cli, config: &PlatformConfig) -> Result<Loggers, logg
     if configs.is_empty() || cli.verbose > 0 {
         let cli_config = LogConfig {
             destination: LogDestination::StdOut,
-            level: cli.verbose.try_into().unwrap(),
+            level: cli.verbose.try_into()?,
             color: cli.color,
             ..Default::default()
         };
@@ -442,14 +448,13 @@ fn install_panic_hook(cancel: CancellationToken) {
 
 #[cfg(test)]
 mod test {
+    use ::drive::{drive::Drive, query::Element};
+    use dpp::block::epoch::Epoch;
+    use drive::drive::credit_pools::epochs::epoch_key_constants;
     use std::{
         fs,
         path::{Path, PathBuf},
     };
-
-    use ::drive::{drive::Drive, query::Element};
-    use dpp::block::epoch::Epoch;
-    use drive::drive::credit_pools::epochs::epoch_key_constants;
 
     use dpp::version::PlatformVersion;
     use drive::drive::credit_pools::epochs::paths::EpochProposers;

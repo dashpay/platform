@@ -167,7 +167,8 @@ export default function collectSamplesTaskFactory(
                 title: 'Core P2P port',
                 task: async () => {
                   const port = config.get('core.p2p.port');
-                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'));
+                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'))
+                    .catch((e) => e.toString());
 
                   ctx.samples.setServiceInfo('core', 'p2pPort', response);
                 },
@@ -177,7 +178,8 @@ export default function collectSamplesTaskFactory(
                 enabled: () => config.get('platform.enable'),
                 task: async () => {
                   const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
-                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'));
+                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'))
+                    .catch((e) => e.toString());
 
                   ctx.samples.setServiceInfo('gateway', 'httpPort', response);
                 },
@@ -186,7 +188,8 @@ export default function collectSamplesTaskFactory(
                 title: 'Tenderdash P2P port',
                 task: async () => {
                   const port = config.get('platform.drive.tenderdash.p2p.port');
-                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'));
+                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'))
+                    .catch((e) => e.toString());
 
                   ctx.samples.setServiceInfo('drive_tenderdash', 'p2pPort', response);
                 },
@@ -293,7 +296,7 @@ export default function collectSamplesTaskFactory(
               // eslint-disable-next-line no-param-reassign
               task.output = 'Reading Drive metrics';
 
-              const url = `http://${config.get('platform.drive.abci.rpc.host')}:${config.get('platform.drive.abci.rpc.port')}/metrics`;
+              const url = `http://${config.get('platform.drive.abci.metrics.host')}:${config.get('platform.drive.abci.metrics.port')}/metrics`;
 
               const result = fetchTextOrError(url);
 

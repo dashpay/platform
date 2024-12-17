@@ -13,6 +13,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
+use bincode::{Decode, Encode};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
@@ -38,7 +39,7 @@ use platform_version::version::PlatformVersion;
 ///
 /// This enum defines the various types of results that can be returned when querying the drive
 /// for contested document vote poll information.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Encode, Decode)]
 pub enum ContestedDocumentVotePollDriveQueryResultType {
     /// The documents associated with the vote poll are returned in the query result.
     Documents,
@@ -92,7 +93,7 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
 }
 
 /// Vote Poll Drive Query struct
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
 pub struct ContestedDocumentVotePollDriveQuery {
     /// What vote poll are we asking for?
     pub vote_poll: ContestedDocumentResourceVotePoll,

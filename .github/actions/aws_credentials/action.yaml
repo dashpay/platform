@@ -1,0 +1,49 @@
+---
+name: "aws_credentials"
+description: |
+  Configure .aws/credentials file with provided access key ID and secret access key.
+
+  This action creates a credentials file in ${HOME}/.aws/credentials with the provided access key ID and secret access key.
+  It also sets AWS_PROFILE and AWS_SHARED_CREDENTIALS_FILE environment variables to use this profile.
+
+  It can conflict with other actions that define AWS credentials or set AWS_PROFILE env variable.
+  Explicitly set AWS_PROFILE=sccache and unset AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in case
+  of conflicting settings.
+inputs:
+  access_key_id:
+    description: Access key ID
+    required: true
+  secret_access_key:
+    description: Secret access key
+    required: true
+  profile:
+    description: AWS profile to use; set AWS_PROFILE env variable to use this profile
+    default: "default"
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials
+      shell: bash
+      run: |
+        mkdir -p "${HOME}/.aws"
+        cat >> ${HOME}/.aws/credentials << EOF
+        [${{ inputs.profile }}]
+        aws_access_key_id=${{ inputs.access_key_id }}
+        aws_secret_access_key=${{ inputs.secret_access_key }}
+        EOF
+        chmod -R go-rwx ${HOME}/.aws
+
+    - name: Set env variables
+      shell: bash
+      run: |
+        # Exit on any error  
+        set -euo pipefail  
+        # Validate AWS_PROFILE is not empty  
+        if [ -z "${{ inputs.profile }}" ]; then  
+          echo "Error: AWS_PROFILE cannot be empty"
+          exit 1
+        fi
+        # Export variables        
+        echo "AWS_PROFILE=${{ inputs.profile }}" >> $GITHUB_ENV
+        echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV

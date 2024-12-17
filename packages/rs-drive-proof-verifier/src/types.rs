@@ -29,7 +29,9 @@ use dpp::{
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
+// IndexMap is exposed to the public API
 use platform_value::{Identifier, Value};
+pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "mocks")]
@@ -50,36 +52,46 @@ pub use evonode_status::*;
 /// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
-/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
-/// If an object is found for a given key, the value is `Some(object)`.
-/// If no object is found for a given key, the value is `None`.
+/// Each key `K` in the `RetrievedObjects` corresponds to zero or one object of generic type `O`:
+/// * if an object is found for a given key, the value is `Some(object)`,
+/// * if no object is found for a given key, the value is `None`; this can be interpreted as a proof of absence.
+///
+/// This data structure preserves order of objects insertion. However, actual order of objects depends on the order of
+/// objects returned by Dash Drive, which is not always guaranteed to be correct.
+/// You can sort the objects by key if you need a specific order; see [`IndexMap::sort_keys`] and similar methods.
+///
+/// `RetrievedObjects` is a wrapper around the [`IndexMap`] type.
 ///
 /// # Generic Type Parameters
 ///
 /// * `K`: The type of the keys in the map.
 /// * `O`: The type of the objects in the map.
-pub type RetrievedObjects<K, O> = BTreeMap<K, Option<O>>;
+pub type RetrievedObjects<K, O> = IndexMap<K, Option<O>>;
 
-/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
+/// A data structure that holds a set of values of a generic type `I`, indexed by a key of type `K`.
 ///
 /// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
 /// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
-/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
-/// If a value is found for a given key, the value is `value`.
-/// If no value is found for a given key, the value is `0`.
+/// Each key in this data structure corresponds to an existing value of generic type `I`. It differs from
+/// [`RetrievedObjects`] in that it does not contain `Option<I>`, but only `I`, so it cannot be interpreted as a
+/// proof of absence.
+///
+/// This data structure preserves the order of object insertion. However, the actual order of objects depends on the
+/// order of objects returned by Dash Drive, which is not always guaranteed to be correct.
+/// You can sort the objects by key if you need a specific order; see [`IndexMap::sort_keys`] and similar methods.
 ///
 /// # Generic Type Parameters
 ///
 /// * `K`: The type of the keys in the map.
-/// * `I`: The type of the integer in the map.
-pub type RetrievedIntegerValue<K, I> = BTreeMap<K, I>;
+/// * `I`: The type of the integer values in the map.
+pub type RetrievedValues<K, I> = IndexMap<K, I>;
 
 /// History of a data contract.
 ///
 /// Contains a map of data contract revisions to data contracts.
-pub type DataContractHistory = BTreeMap<u64, DataContract>;
+pub type DataContractHistory = RetrievedValues<u64, DataContract>;
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
@@ -241,10 +253,9 @@ impl ContestedResource {
         )
     }
 }
-
-impl Into<Value> for ContestedResource {
-    fn into(self) -> Value {
-        self.0
+impl From<ContestedResource> for Value {
+    fn from(resource: ContestedResource) -> Self {
+        resource.0
     }
 }
 
@@ -562,7 +573,7 @@ pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtoco
 /// Mapping between proposers and the blocks they might have proposed
 #[derive(Debug, Default)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub struct ProposerBlockCounts(pub RetrievedIntegerValue<Identifier, u64>);
+pub struct ProposerBlockCounts(pub RetrievedValues<Identifier, u64>);
 
 impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBlockCounts {
     fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(
@@ -576,7 +587,7 @@ impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBl
                 let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
                 (identifier, block_count)
             })
-            .collect::<BTreeMap<Identifier, u64>>();
+            .collect::<IndexMap<Identifier, u64>>();
 
         ProposerBlockCounts(map)
     }
@@ -594,7 +605,7 @@ impl FromIterator<(ProTxHash, Option<ProposerBlockCountById>)> for ProposerBlock
                 let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
                 (identifier, block_count)
             })
-            .collect::<BTreeMap<Identifier, u64>>();
+            .collect::<IndexMap<Identifier, u64>>();
 
         ProposerBlockCounts(map)
     }

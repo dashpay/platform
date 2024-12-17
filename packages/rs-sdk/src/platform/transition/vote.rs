@@ -1,10 +1,8 @@
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::query::VoteQuery;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
@@ -12,17 +10,16 @@ use dpp::identity::IdentityPublicKey;
 use dpp::platform_value;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
-use drive::drive::Drive;
-use drive_proof_verifier::{error::ContextProviderError, DataContractProvider};
 use platform_value::Identifier;
-use rs_dapi_client::DapiRequest;
+use rs_dapi_client::{DapiRequest, IntoInner};
+
+use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
-pub trait PutVote<S: Signer> {
+pub trait PutVote<S: Signer>: Waitable {
     /// Puts an identity on platform
     async fn put_to_platform(
         &self,
@@ -72,7 +69,10 @@ impl<S: Signer> PutVote<S> for Vote {
         )?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
-        request.execute(sdk, settings.request_settings).await?;
+        request
+            .execute(sdk, settings.request_settings)
+            .await // TODO: We need better way to handle execution errors
+            .into_inner()?;
 
         Ok(())
     }
@@ -106,8 +106,11 @@ impl<S: Signer> PutVote<S> for Vote {
             None,
         )?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-
-        let response_result = request.execute(sdk, settings.request_settings).await;
+        // TODO: Implement retry logic
+        let response_result = request
+            .execute(sdk, settings.request_settings)
+            .await
+            .into_inner();
 
         match response_result {
             Ok(_) => {}
@@ -124,34 +127,7 @@ impl<S: Signer> PutVote<S> for Vote {
                 }
             }
         }
-
-        let request = masternode_vote_transition.wait_for_state_transition_result_request()?;
-        let response = request.execute(sdk, settings.request_settings).await?;
-
-        let block_info = block_info_from_metadata(response.metadata()?)?;
-        let proof = response.proof_owned()?;
-        let context_provider =
-            sdk.context_provider()
-                .ok_or(Error::from(ContextProviderError::Config(
-                    "Context provider not initialized".to_string(),
-                )))?;
-
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &masternode_vote_transition,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &context_provider.as_contract_lookup_fn(),
-            sdk.version(),
-        )?;
-
-        //todo verify
-
-        match result {
-            StateTransitionProofResult::VerifiedMasternodeVote(vote) => Ok(vote),
-            _ => Err(Error::DapiClientError(
-                "proved something that was not a vote".to_string(),
-            )),
-        }
+        Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await
     }
 }
 

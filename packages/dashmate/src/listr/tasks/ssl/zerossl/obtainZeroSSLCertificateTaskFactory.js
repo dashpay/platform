@@ -18,6 +18,8 @@ import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactor
  * @param {VerificationServer} verificationServer
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
+ * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {ConfigFile} configFile
  * @return {obtainZeroSSLCertificateTask}
  */
 export default function obtainZeroSSLCertificateTaskFactory(
@@ -32,13 +34,15 @@ export default function obtainZeroSSLCertificateTaskFactory(
   verificationServer,
   homeDir,
   validateZeroSslCertificate,
+  configFileRepository,
+  configFile,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
    * @param {Config} config
-   * @return {Promise<Listr>}
+   * @return {Listr}
    */
-  async function obtainZeroSSLCertificateTask(config) {
+  function obtainZeroSSLCertificateTask(config) {
     return new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
@@ -141,6 +145,9 @@ export default function obtainZeroSSLCertificateTaskFactory(
           config.set('platform.gateway.ssl.enabled', true);
           config.set('platform.gateway.ssl.provider', 'zerossl');
           config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
+
+          // Save config file
+          configFileRepository.write(configFile);
         },
       },
       {
@@ -159,7 +166,20 @@ export default function obtainZeroSSLCertificateTaskFactory(
       {
         title: 'Start verification server',
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
-        task: async () => verificationServer.start(),
+        task: async (ctx) => {
+          await verificationServer.start();
+
+          const isResponding = await verificationServer.waitForServerIsResponding();
+
+          if (!isResponding) {
+            throw new Error(`Verification server is not responding.
+Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
+for incoming HTTP connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`);
+          }
+        },
       },
       {
         title: 'Verify certificate IP address',
@@ -170,16 +190,38 @@ export default function obtainZeroSSLCertificateTaskFactory(
             try {
               await verifyDomain(ctx.certificate.id, ctx.apiKey);
             } catch (e) {
+              // Error: The given certificate is not ready for domain verification
+              // Sometimes this error means that certificate is already verified
+              if (e.code === 2831) {
+                const certificate = await getCertificate(ctx.apiKey, ctx.certificate.id);
+                // Just proceed on certificate download if we see it's already issued.
+                if (certificate.status === 'issued') {
+                  return;
+                }
+              }
+
+              // If retry is disabled, throw the error
+              // or prompt the user to retry
               if (ctx.noRetry !== true) {
+                let errorMessage = e.message;
+
+                // Get the error message from details if it exists
+                if (e.type === 'domain_control_validation_failed' && e.details[ctx.externalIp]) {
+                  const errorDetails = Object.values(e.details[ctx.externalIp])[0];
+                  if (errorDetails?.error) {
+                    errorMessage = errorDetails.error_info;
+                  }
+                }
+
                 retry = await task.prompt({
                   type: 'toggle',
-                  header: chalk`  An error occurred during verification: {red ${e.message}}
+                  header: chalk`  An error occurred during verification: {red ${errorMessage}}
 
-    Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
-    for incoming HTTP connections. You may need to configure your firewall to
-    ensure this port is accessible from the public internet. If you are using
-    Network Address Translation (NAT), please enable port forwarding for port 80
-    and all Dash service ports listed above.`,
+  Please ensure that port 80 on your public IP address ${ctx.externalIp} is open
+  for incoming HTTP connections. You may need to configure your firewall to
+  ensure this port is accessible from the public internet. If you are using
+  Network Address Translation (NAT), please enable port forwarding for port 80
+  and all Dash service ports listed above.`,
                   message: 'Try again?',
                   enabled: 'Yes',
                   disabled: 'No',

@@ -42,7 +42,8 @@ impl DocumentFactory {
     pub fn new(protocol_version: u32) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
-            .platform_architecture
+            .dpp
+            .factory_versions
             .document_factory_structure_version
         {
             0 => Ok(DocumentFactoryV0::new(protocol_version).into()),
@@ -60,7 +61,8 @@ impl DocumentFactory {
     ) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
-            .platform_architecture
+            .dpp
+            .factory_versions
             .document_factory_structure_version
         {
             0 => Ok(DocumentFactoryV0::new_with_entropy_generator(

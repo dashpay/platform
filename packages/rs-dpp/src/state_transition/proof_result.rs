@@ -5,7 +5,7 @@ use crate::voting::votes::Vote;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
-#[derive(Debug)]
+#[derive(Debug, strum::Display, derive_more::TryInto)]
 #[ferment_macro::export]
 pub enum StateTransitionProofResult {
     VerifiedDataContract(DataContract),

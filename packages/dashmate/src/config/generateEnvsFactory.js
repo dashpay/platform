@@ -69,6 +69,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
 
     let driveAbciMetricsUrl = '';
     if (config.get('platform.drive.abci.metrics.enabled')) {
+      // IP and port inside container
       driveAbciMetricsUrl = 'http://0.0.0.0:29090';
     }
 

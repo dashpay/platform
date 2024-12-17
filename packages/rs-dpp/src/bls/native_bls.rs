@@ -1,6 +1,6 @@
 use crate::{BlsModule, errors::ProtocolError, PublicKeyValidationError};
 use anyhow::anyhow;
-use bls_signatures::{PrivateKey, PublicKey};
+use dashcore::bls_signatures::{self, PrivateKey, PublicKey};
 
 #[derive(Default)]
 pub struct NativeBlsModule;

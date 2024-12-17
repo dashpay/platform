@@ -22,6 +22,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityRequest, ResponseMetadata,
 };
 use dpp::identity::Identity;
+use rs_dapi_client::transport::TransportError;
 
 // Create enum [IdentityRequest] and [IdentityResponse] that will wrap all possible
 // request/response types for [Identity] object.

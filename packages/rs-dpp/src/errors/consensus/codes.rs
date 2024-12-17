@@ -216,6 +216,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestNotJoinableError(_) => 40111,
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
+            Self::DocumentContestNotPaidForError(_) => 40114,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

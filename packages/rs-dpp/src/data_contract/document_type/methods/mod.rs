@@ -138,6 +138,12 @@ pub trait DocumentTypeV0Methods {
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Result<Option<VotePoll>, ProtocolError>;
+    /// Gets the vote poll associated with a document
+    fn contested_vote_poll_for_document_properties(
+        &self,
+        document_properties: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError>;
 }
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {
@@ -394,6 +400,28 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => Ok(self.contested_vote_poll_for_document_v0(document)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "contested_vote_poll_for_document".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Gets the vote poll associated with a document
+    fn contested_vote_poll_for_document_properties(
+        &self,
+        document_properties: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .contested_vote_poll_for_document
+        {
+            0 => Ok(self.contested_vote_poll_for_document_properties_v0(document_properties)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "contested_vote_poll_for_document_properties".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

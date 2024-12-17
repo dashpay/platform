@@ -68,15 +68,16 @@ use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
+use dpp::platform_value::string_encoding::Encoding;
 #[cfg(feature = "server")]
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-use once_cell::sync::Lazy;
-
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
+use once_cell::sync::Lazy;
+use rand::prelude::StdRng;
 
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
@@ -434,12 +435,36 @@ struct Domain {
     subdomain_rules: SubdomainRules,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Withdrawal {
+    #[serde(rename = "$id")]
+    pub id: Identifier, // Unique identifier for the withdrawal
+
+    #[serde(rename = "$ownerId")]
+    pub owner_id: Identifier, // Identity of the withdrawal owner
+
+    #[serde(rename = "$createdAt")]
+    pub created_at: TimestampMillis,
+
+    #[serde(rename = "$updatedAt")]
+    pub updated_at: TimestampMillis,
+
+    pub transaction_index: Option<u32>, // Optional sequential index of the transaction
+    pub transaction_sign_height: Option<u32>, // Optional Core height on which the transaction was signed
+    pub amount: u64,                          // Amount to withdraw (minimum: 1000)
+    pub core_fee_per_byte: u32,               // Fee in Duffs/Byte (minimum: 1, max: 4294967295)
+    pub pooling: u8,                          // Pooling level (enum: 0, 1, 2)
+    pub output_script: Vec<u8>,               // Byte array (size: 23-25)
+    pub status: u8,                           // Status (enum: 0 - Pending, 1 - Signed, etc.)
+}
+
 #[cfg(feature = "server")]
 #[test]
 fn test_serialization_and_deserialization() {
     let platform_version = PlatformVersion::latest();
 
-    let domains = Domain::random_domains_in_parent(20, 100, "dash");
+    let domains = Domain::random_domains_in_parent(20, None, 100, "dash");
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dpns/dpns-contract.json",
         false,
@@ -566,8 +591,10 @@ fn test_serialization_and_deserialization_with_null_values() {
 #[cfg(feature = "server")]
 impl Domain {
     /// Creates `count` random names as domain names for the given parent domain
+    /// If total owners in None it will create a new owner id per domain.
     fn random_domains_in_parent(
         count: u32,
+        total_owners: Option<u32>,
         seed: u64,
         normalized_parent_domain_name: &str,
     ) -> Vec<Self> {
@@ -575,13 +602,29 @@ impl Domain {
             "tests/supporting_files/contract/family/first-names.txt",
         );
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
+        let mut rng = StdRng::seed_from_u64(seed);
 
-        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let owners = if let Some(total_owners) = total_owners {
+            if total_owners == 0 {
+                return vec![];
+            }
+            (0..total_owners)
+                .map(|_| Identifier::random_with_rng(&mut rng))
+                .collect()
+        } else {
+            vec![]
+        };
+
         for _i in 0..count {
             let label = first_names.choose(&mut rng).unwrap();
             let domain = Domain {
                 id: Identifier::random_with_rng(&mut rng),
-                owner_id: Identifier::random_with_rng(&mut rng),
+                owner_id: if let Some(_) = total_owners {
+                    // Pick a random owner from the owners list
+                    *owners.choose(&mut rng).unwrap()
+                } else {
+                    Identifier::random_with_rng(&mut rng)
+                },
                 label: Some(label.clone()),
                 normalized_label: Some(label.to_lowercase()),
                 normalized_parent_domain_name: normalized_parent_domain_name.to_string(),
@@ -600,16 +643,86 @@ impl Domain {
 }
 
 #[cfg(feature = "server")]
+impl Withdrawal {
+    /// Generate `count` random withdrawals
+    /// If `total_owners` is provided, assigns withdrawals to random owners from a predefined set.
+    pub fn random_withdrawals(count: u32, total_owners: Option<u32>, seed: u64) -> Vec<Self> {
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        // Generate a list of random owners if `total_owners` is provided
+        let owners: Vec<Identifier> = if let Some(total) = total_owners {
+            (0..total)
+                .map(|_| Identifier::random_with_rng(&mut rng))
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let mut next_transaction_index = 1; // Start transaction index from 1
+
+        let mut next_timestamp = 1732192259000;
+
+        (0..count)
+            .map(|_| {
+                let owner_id = if !owners.is_empty() {
+                    *owners.choose(&mut rng).unwrap()
+                } else {
+                    Identifier::random_with_rng(&mut rng)
+                };
+
+                // Determine the status randomly
+                let status = if rng.gen_bool(0.5) {
+                    0
+                } else {
+                    rng.gen_range(1..=4)
+                }; // 0 = Pending, 1-4 = other statuses
+
+                // Determine transaction index and sign height based on status
+                let (transaction_index, transaction_sign_height) = if status == 0 {
+                    (None, None) // No transaction index or sign height for Pending status
+                } else {
+                    let index = next_transaction_index;
+                    next_transaction_index += 1; // Increment index for next withdrawal
+                    (Some(index), Some(rng.gen_range(1..=500000))) // Set sign height only if transaction index is set
+                };
+
+                let output_script_length = rng.gen_range(23..=25);
+                let output_script: Vec<u8> = (0..output_script_length).map(|_| rng.gen()).collect();
+
+                let created_at = next_timestamp;
+
+                next_timestamp += rng.gen_range(0..3) * 2000;
+
+                Withdrawal {
+                    id: Identifier::random_with_rng(&mut rng),
+                    owner_id,
+                    transaction_index,
+                    transaction_sign_height,
+                    amount: rng.gen_range(1000..=1_000_000), // Example range (minimum: 1000)
+                    core_fee_per_byte: 0,                    // Always 0
+                    pooling: 0,                              // Always 0
+                    output_script,
+                    status,
+                    created_at,
+                    updated_at: created_at,
+                }
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "server")]
 /// Adds `count` random domain names to the given contract
 pub fn add_domains_to_contract(
     drive: &Drive,
     contract: &DataContract,
     transaction: TransactionArg,
     count: u32,
+    total_owners: Option<u32>,
     seed: u64,
 ) {
     let platform_version = PlatformVersion::latest();
-    let domains = Domain::random_domains_in_parent(count, seed, "dash");
+    let domains = Domain::random_domains_in_parent(count, total_owners, seed, "dash");
     let document_type = contract
         .document_type_for_name("domain")
         .expect("expected to get document type");
@@ -642,8 +755,55 @@ pub fn add_domains_to_contract(
 }
 
 #[cfg(feature = "server")]
+/// Adds `count` random withdrawals to the given contract
+pub fn add_withdrawals_to_contract(
+    drive: &Drive,
+    contract: &DataContract,
+    transaction: TransactionArg,
+    count: u32,
+    total_owners: Option<u32>,
+    seed: u64,
+) {
+    let platform_version = PlatformVersion::latest();
+    let withdrawals = Withdrawal::random_withdrawals(count, total_owners, seed);
+    let document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("expected to get document type");
+    for domain in withdrawals {
+        let value = platform_value::to_value(domain).expect("expected value");
+        let document =
+            Document::from_platform_value(value, platform_version).expect("expected value");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                transaction,
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+    }
+}
+
+#[cfg(feature = "server")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
-pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, DataContract) {
+pub fn setup_dpns_tests_with_batches(
+    count: u32,
+    total_owners: Option<u32>,
+    seed: u64,
+) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
 
     let db_transaction = drive.grove.start_transaction();
@@ -667,7 +827,61 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, DataContr
         Some(&db_transaction),
     );
 
-    add_domains_to_contract(&drive, &contract, Some(&db_transaction), count, seed);
+    add_domains_to_contract(
+        &drive,
+        &contract,
+        Some(&db_transaction),
+        count,
+        total_owners,
+        seed,
+    );
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .unwrap()
+        .expect("transaction should be committed");
+
+    (drive, contract)
+}
+
+#[cfg(feature = "server")]
+/// Sets up and inserts random withdrawal to the Withdrawal contract to test queries on.
+pub fn setup_withdrawal_tests(
+    count: u32,
+    total_owners: Option<u32>,
+    seed: u64,
+) -> (Drive, DataContract) {
+    let drive = setup_drive(Some(DriveConfig::default()));
+
+    let db_transaction = drive.grove.start_transaction();
+
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
+    let platform_version = PlatformVersion::latest();
+
+    drive
+        .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+        .expect("expected to create contracts tree successfully");
+
+    // setup code
+    let contract = setup_contract(
+        &drive,
+        "tests/supporting_files/contract/withdrawals/withdrawals-contract.json",
+        None,
+        Some(&db_transaction),
+    );
+
+    add_withdrawals_to_contract(
+        &drive,
+        &contract,
+        Some(&db_transaction),
+        count,
+        total_owners,
+        seed,
+    );
     drive
         .grove
         .commit_transaction(db_transaction)
@@ -738,7 +952,7 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Dat
         Some(&db_transaction),
     );
 
-    add_domains_to_contract(&drive, &contract, Some(&db_transaction), count, seed);
+    add_domains_to_contract(&drive, &contract, Some(&db_transaction), count, None, seed);
     drive
         .grove
         .commit_transaction(db_transaction)
@@ -3078,7 +3292,7 @@ fn test_query_with_cached_contract() {
 #[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_contract_verification() {
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
 
     let platform_version = PlatformVersion::latest();
 
@@ -3155,7 +3369,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
 #[cfg(feature = "server")]
 #[test]
 fn test_dpns_query() {
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
 
     let platform_version = PlatformVersion::latest();
 
@@ -3707,7 +3921,7 @@ fn test_dpns_insertion_with_aliases() {
 #[test]
 fn test_dpns_query_start_at() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
 
     let platform_version = PlatformVersion::latest();
 
@@ -3801,7 +4015,7 @@ fn test_dpns_query_start_at() {
 #[test]
 fn test_dpns_query_start_after() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
 
     let platform_version = PlatformVersion::latest();
 
@@ -3895,7 +4109,7 @@ fn test_dpns_query_start_after() {
 #[test]
 fn test_dpns_query_start_at_desc() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
 
     let platform_version = PlatformVersion::latest();
 
@@ -3989,7 +4203,7 @@ fn test_dpns_query_start_at_desc() {
 #[test]
 fn test_dpns_query_start_after_desc() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4342,6 +4556,8 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let domain1_id = Identifier::random_with_rng(&mut rng);
 
+    assert!(domain0_id > domain1_id);
+
     let domain1 = Domain {
         id: domain1_id,
         owner_id: Identifier::random_with_rng(&mut rng),
@@ -4428,7 +4644,7 @@ fn test_dpns_query_start_after_with_null_id() {
             ["normalizedParentDomainName", "==", "dash"]
         ],
         "startAfter":  encoded_start_at,
-        "limit": 2,
+        "limit": 3,
         "orderBy": [
             ["normalizedLabel", "asc"]
         ]
@@ -4463,7 +4679,8 @@ fn test_dpns_query_start_after_with_null_id() {
                     .expect("we should be able to deserialize the document");
             let normalized_label_value = document
                 .get("normalizedLabel")
-                .expect("we should be able to get the first name");
+                .cloned()
+                .unwrap_or(Value::Null);
             if normalized_label_value.is_null() {
                 String::from("")
             } else {
@@ -4792,6 +5009,291 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .collect();
 
     let a_names = ["amalle".to_string(), "".to_string()];
+
+    assert_eq!(names, a_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_withdrawals_query_by_owner_id() {
+    // We create 10 withdrawals owned by 2 identities
+    let (drive, contract) = setup_withdrawal_tests(10, Some(2), 11456);
+
+    let platform_version = PlatformVersion::latest();
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let expected_app_hash = vec![
+        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
+        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+    ];
+
+    assert_eq!(root_hash.as_slice(), expected_app_hash);
+
+    // Document Ids are
+    // document v0 : id:2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:09 updated_at:2024-11-21 12:31:09 amount:(i64)646767 coreFeePerByte:(i64)0 outputScript:bytes 00952c808390e575c8dd29fc07ccfed7b428e1ec2ffcb23e pooling:(i64)0 status:(i64)1 transactionIndex:(i64)4 transactionSignHeight:(i64)303186
+    // document v0 : id:3T4aKmidGKA4ETnWYSedm6ETzrcdkfPL2r3D6eg6CSib owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)971045 coreFeePerByte:(i64)0 outputScript:bytes 525dfc160c160a7a52ef3301a7e55fccf41d73857f50a55a4d pooling:(i64)0 status:(i64)1 transactionIndex:(i64)2 transactionSignHeight:(i64)248787
+    // document v0 : id:3X2QfUfR8EeVZQAKmEjcue5xDv3CZXrfPTgXkZ5vQo13 owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)122155 coreFeePerByte:(i64)0 outputScript:bytes f76eb8b953ff41040d906c25a4ae42884bedb41a07fc3a pooling:(i64)0 status:(i64)3 transactionIndex:(i64)7 transactionSignHeight:(i64)310881
+    // document v0 : id:5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:30:59 updated_at:2024-11-21 12:30:59 amount:(i64)725014 coreFeePerByte:(i64)0 outputScript:bytes 51f203a755a7ff25ba8645841f80403ee98134690b2c0dd5e2 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)1 transactionSignHeight:(i64)4072
+    // document v0 : id:74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)151943 coreFeePerByte:(i64)0 outputScript:bytes 9db03f4c8a51e4e9855e008aae6121911b4831699c53ed pooling:(i64)0 status:(i64)1 transactionIndex:(i64)5 transactionSignHeight:(i64)343099
+    // document v0 : id:8iqDAFxTzHYcmUWtcNnCRoj9Fss4HE1G3GP3HhVAZJhn owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:13 updated_at:2024-11-21 12:31:13 amount:(i64)409642 coreFeePerByte:(i64)0 outputScript:bytes 19fe0a2458a47e1726191f4dc94d11bcfacf821d024043 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)8 transactionSignHeight:(i64)304397
+    // document v0 : id:BdH274iP17nhquQVY4KMCAM6nwyPRc8AFJkUT91vxhbc owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:03 updated_at:2024-11-21 12:31:03 amount:(i64)81005 coreFeePerByte:(i64)0 outputScript:bytes 2666e87b6cc7ddf2b63e7e52c348818c05e5562efa48f5 pooling:(i64)0 status:(i64)0
+    // document v0 : id:CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)455074 coreFeePerByte:(i64)0 outputScript:bytes acde2e1652771b50a2c68fd330ee1d4b8e115631ce72375432 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)3 transactionSignHeight:(i64)261103
+    // document v0 : id:DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:05 updated_at:2024-11-21 12:31:05 amount:(i64)271303 coreFeePerByte:(i64)0 outputScript:bytes 0b845e8c3a4679f1913172f7fd939cc153f458519de8ed3d pooling:(i64)0 status:(i64)0
+    // document v0 : id:FDnvFN7e72LcZEojTWNmJTP7uzok3BtvbKnaa5gjqCpW owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)123433 coreFeePerByte:(i64)0 outputScript:bytes 82712473b2d0fc5663afb1a08006913ccccbf38e091a8cc7 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)6 transactionSignHeight:(i64)319518
+
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "==", "A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ"]
+        ],
+        "limit": 2
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let domain_document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("contract should have a domain document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        domain_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            document.id().to_string(Encoding::Base58)
+        })
+        .collect();
+
+    let a_names = [
+        "5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV".to_string(),
+        "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+    ];
+
+    assert_eq!(names, a_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_withdrawals_query_start_after_query_by_owner_id() {
+    // We create 10 withdrawals owned by 2 identities
+    let (drive, contract) = setup_withdrawal_tests(10, Some(2), 11456);
+
+    let platform_version = PlatformVersion::latest();
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let expected_app_hash = vec![
+        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
+        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+    ];
+
+    assert_eq!(root_hash.as_slice(), expected_app_hash);
+
+    // Document Ids are
+    // document v0 : id:2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:09 updated_at:2024-11-21 12:31:09 amount:(i64)646767 coreFeePerByte:(i64)0 outputScript:bytes 00952c808390e575c8dd29fc07ccfed7b428e1ec2ffcb23e pooling:(i64)0 status:(i64)1 transactionIndex:(i64)4 transactionSignHeight:(i64)303186
+    // document v0 : id:3T4aKmidGKA4ETnWYSedm6ETzrcdkfPL2r3D6eg6CSib owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)971045 coreFeePerByte:(i64)0 outputScript:bytes 525dfc160c160a7a52ef3301a7e55fccf41d73857f50a55a4d pooling:(i64)0 status:(i64)1 transactionIndex:(i64)2 transactionSignHeight:(i64)248787
+    // document v0 : id:3X2QfUfR8EeVZQAKmEjcue5xDv3CZXrfPTgXkZ5vQo13 owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)122155 coreFeePerByte:(i64)0 outputScript:bytes f76eb8b953ff41040d906c25a4ae42884bedb41a07fc3a pooling:(i64)0 status:(i64)3 transactionIndex:(i64)7 transactionSignHeight:(i64)310881
+    // document v0 : id:5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:30:59 updated_at:2024-11-21 12:30:59 amount:(i64)725014 coreFeePerByte:(i64)0 outputScript:bytes 51f203a755a7ff25ba8645841f80403ee98134690b2c0dd5e2 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)1 transactionSignHeight:(i64)4072
+    // document v0 : id:74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)151943 coreFeePerByte:(i64)0 outputScript:bytes 9db03f4c8a51e4e9855e008aae6121911b4831699c53ed pooling:(i64)0 status:(i64)1 transactionIndex:(i64)5 transactionSignHeight:(i64)343099
+    // document v0 : id:8iqDAFxTzHYcmUWtcNnCRoj9Fss4HE1G3GP3HhVAZJhn owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:13 updated_at:2024-11-21 12:31:13 amount:(i64)409642 coreFeePerByte:(i64)0 outputScript:bytes 19fe0a2458a47e1726191f4dc94d11bcfacf821d024043 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)8 transactionSignHeight:(i64)304397
+    // document v0 : id:BdH274iP17nhquQVY4KMCAM6nwyPRc8AFJkUT91vxhbc owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:03 updated_at:2024-11-21 12:31:03 amount:(i64)81005 coreFeePerByte:(i64)0 outputScript:bytes 2666e87b6cc7ddf2b63e7e52c348818c05e5562efa48f5 pooling:(i64)0 status:(i64)0
+    // document v0 : id:CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)455074 coreFeePerByte:(i64)0 outputScript:bytes acde2e1652771b50a2c68fd330ee1d4b8e115631ce72375432 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)3 transactionSignHeight:(i64)261103
+    // document v0 : id:DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:05 updated_at:2024-11-21 12:31:05 amount:(i64)271303 coreFeePerByte:(i64)0 outputScript:bytes 0b845e8c3a4679f1913172f7fd939cc153f458519de8ed3d pooling:(i64)0 status:(i64)0
+    // document v0 : id:FDnvFN7e72LcZEojTWNmJTP7uzok3BtvbKnaa5gjqCpW owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)123433 coreFeePerByte:(i64)0 outputScript:bytes 82712473b2d0fc5663afb1a08006913ccccbf38e091a8cc7 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)6 transactionSignHeight:(i64)319518
+
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "==", "A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ"]
+        ],
+        "startAfter":  "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD",
+        "limit": 3,
+    });
+
+    // This will use the identity recent index
+    // {
+    //     "name": "identityRecent",
+    //     "properties": [
+    //     {
+    //         "$ownerId": "asc"
+    //     },
+    //     {
+    //         "$updatedAt": "asc"
+    //     },
+    //     {
+    //         "status": "asc"
+    //     }
+    //     ],
+    //     "unique": false
+    // },
+
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let domain_document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("contract should have a domain document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        domain_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            document.id().to_string(Encoding::Base58)
+        })
+        .collect();
+
+    // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
+    // empty tree and consumes a limit
+    let a_names = [
+        "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
+        "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu".to_string(),
+    ];
+
+    assert_eq!(names, a_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_withdrawals_query_start_after_query_by_owner_id_desc() {
+    // We create 10 withdrawals owned by 2 identities
+    let (drive, contract) = setup_withdrawal_tests(10, Some(2), 11456);
+
+    let platform_version = PlatformVersion::latest();
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let expected_app_hash = vec![
+        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
+        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+    ];
+
+    assert_eq!(root_hash.as_slice(), expected_app_hash);
+
+    // Document Ids are
+    // document v0 : id:2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:09 updated_at:2024-11-21 12:31:09 amount:(i64)646767 coreFeePerByte:(i64)0 outputScript:bytes 00952c808390e575c8dd29fc07ccfed7b428e1ec2ffcb23e pooling:(i64)0 status:(i64)1 transactionIndex:(i64)4 transactionSignHeight:(i64)303186
+    // document v0 : id:3T4aKmidGKA4ETnWYSedm6ETzrcdkfPL2r3D6eg6CSib owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)971045 coreFeePerByte:(i64)0 outputScript:bytes 525dfc160c160a7a52ef3301a7e55fccf41d73857f50a55a4d pooling:(i64)0 status:(i64)1 transactionIndex:(i64)2 transactionSignHeight:(i64)248787
+    // document v0 : id:3X2QfUfR8EeVZQAKmEjcue5xDv3CZXrfPTgXkZ5vQo13 owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)122155 coreFeePerByte:(i64)0 outputScript:bytes f76eb8b953ff41040d906c25a4ae42884bedb41a07fc3a pooling:(i64)0 status:(i64)3 transactionIndex:(i64)7 transactionSignHeight:(i64)310881
+    // document v0 : id:5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:30:59 updated_at:2024-11-21 12:30:59 amount:(i64)725014 coreFeePerByte:(i64)0 outputScript:bytes 51f203a755a7ff25ba8645841f80403ee98134690b2c0dd5e2 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)1 transactionSignHeight:(i64)4072
+    // document v0 : id:74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)151943 coreFeePerByte:(i64)0 outputScript:bytes 9db03f4c8a51e4e9855e008aae6121911b4831699c53ed pooling:(i64)0 status:(i64)1 transactionIndex:(i64)5 transactionSignHeight:(i64)343099
+    // document v0 : id:8iqDAFxTzHYcmUWtcNnCRoj9Fss4HE1G3GP3HhVAZJhn owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:13 updated_at:2024-11-21 12:31:13 amount:(i64)409642 coreFeePerByte:(i64)0 outputScript:bytes 19fe0a2458a47e1726191f4dc94d11bcfacf821d024043 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)8 transactionSignHeight:(i64)304397
+    // document v0 : id:BdH274iP17nhquQVY4KMCAM6nwyPRc8AFJkUT91vxhbc owner_id:CH1EHBkN5FUuQ7z8ep1abroLPzzYjagvM5XV2NYR3DEh created_at:2024-11-21 12:31:03 updated_at:2024-11-21 12:31:03 amount:(i64)81005 coreFeePerByte:(i64)0 outputScript:bytes 2666e87b6cc7ddf2b63e7e52c348818c05e5562efa48f5 pooling:(i64)0 status:(i64)0
+    // document v0 : id:CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:01 updated_at:2024-11-21 12:31:01 amount:(i64)455074 coreFeePerByte:(i64)0 outputScript:bytes acde2e1652771b50a2c68fd330ee1d4b8e115631ce72375432 pooling:(i64)0 status:(i64)3 transactionIndex:(i64)3 transactionSignHeight:(i64)261103
+    // document v0 : id:DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:05 updated_at:2024-11-21 12:31:05 amount:(i64)271303 coreFeePerByte:(i64)0 outputScript:bytes 0b845e8c3a4679f1913172f7fd939cc153f458519de8ed3d pooling:(i64)0 status:(i64)0
+    // document v0 : id:FDnvFN7e72LcZEojTWNmJTP7uzok3BtvbKnaa5gjqCpW owner_id:A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ created_at:2024-11-21 12:31:11 updated_at:2024-11-21 12:31:11 amount:(i64)123433 coreFeePerByte:(i64)0 outputScript:bytes 82712473b2d0fc5663afb1a08006913ccccbf38e091a8cc7 pooling:(i64)0 status:(i64)4 transactionIndex:(i64)6 transactionSignHeight:(i64)319518
+
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "==", "A8GdKdMT7eDvtjnmMXe1Z3YaTtJzZdxNDRkeLb8goFrZ"]
+        ],
+        "startAfter":  "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu",
+        "limit": 3,
+        "orderBy": [
+            ["$updatedAt", "desc"]
+        ]
+    });
+
+    // This will use the identity recent index
+    // {
+    //     "name": "identityRecent",
+    //     "properties": [
+    //     {
+    //         "$ownerId": "asc"
+    //     },
+    //     {
+    //         "$updatedAt": "asc"
+    //     },
+    //     {
+    //         "status": "asc"
+    //     }
+    //     ],
+    //     "unique": false
+    // },
+
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let domain_document_type = contract
+        .document_type_for_name("withdrawal")
+        .expect("contract should have a domain document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        domain_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            document.id().to_string(Encoding::Base58)
+        })
+        .collect();
+
+    // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
+    // empty tree and consumes a limit
+    let a_names = [
+        "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
+        "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+    ];
 
     assert_eq!(names, a_names);
 

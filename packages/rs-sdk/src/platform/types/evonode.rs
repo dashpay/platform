@@ -8,7 +8,7 @@ pub use drive_proof_verifier::types::EvoNodeStatus;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, PlatformGrpcClient, TransportClient, TransportRequest,
+    AppliedRequestSettings, PlatformGrpcClient, TransportClient, TransportError, TransportRequest,
 };
 use rs_dapi_client::{Address, ConnectionPool, RequestSettings};
 #[cfg(feature = "mocks")]
@@ -25,8 +25,8 @@ use std::fmt::Debug;
 /// use futures::executor::block_on;
 ///
 /// let sdk = Sdk::new_mock();
-/// let uri: http::Uri = "http://127.0.0.1:1".parse().unwrap();
-/// let node = EvoNode::new(uri.into());
+/// let address = "http://127.0.0.1:1".parse().expect("valid address");
+/// let node = EvoNode::new(address);
 /// let status = block_on(EvoNodeStatus::fetch_unproved(&sdk, node)).unwrap();
 /// ```
 
@@ -35,7 +35,7 @@ use std::fmt::Debug;
 pub struct EvoNode(Address);
 
 impl EvoNode {
-    /// Creates a new `EvoNode` with the given address.  
+    /// Creates a new `EvoNode` with the given address.
     pub fn new(address: Address) -> Self {
         Self(address)
     }
@@ -66,7 +66,7 @@ impl TransportRequest for EvoNode {
         self,
         _client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>> {
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
         let uri = self.0.uri();
         // As this is single node connection case, we create a new connection pool with space for a single connection
         // and we drop it after use.
@@ -98,6 +98,7 @@ impl TransportRequest for EvoNode {
         async move {
             let response = client
                 .get_status(grpc_request)
+                .map_err(TransportError::Grpc)
                 .map_ok(|response| response.into_inner())
                 .await;
 

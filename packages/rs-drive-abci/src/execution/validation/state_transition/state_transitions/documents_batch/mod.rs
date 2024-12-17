@@ -8,6 +8,7 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
@@ -137,6 +138,8 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state(
         &self,
+        block_info: &BlockInfo,
+        network: Network,
         action: &StateTransitionAction,
         identity: Option<&PartialIdentity>,
         execution_context: &mut StateTransitionExecutionContext,
@@ -162,6 +165,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                     )));
                 };
                 self.validate_advanced_structure_from_state_v0(
+                    block_info,
+                    network,
                     documents_batch_transition_action,
                     identity,
                     execution_context,
@@ -299,6 +304,14 @@ mod tests {
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
         use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
         use dpp::errors::consensus::state::state_error::StateError;
+        use dpp::dashcore::Network;
+        use dpp::dashcore::Network::Testnet;
+        use dpp::identity::SecurityLevel;
+        use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::documents_batch_transition::{DocumentCreateTransition, DocumentsBatchTransitionV0};
+        use dpp::state_transition::StateTransition;
+        use crate::config::PlatformConfig;
 
         #[test]
         fn test_document_creation() {
@@ -1109,6 +1122,557 @@ mod tests {
             assert_eq!(first_contender.vote_tally(), Some(0));
 
             assert_eq!(second_contender.vote_tally(), Some(0));
+        }
+
+        #[test]
+        fn test_document_creation_on_contested_unique_index_should_fail_if_not_paying_for_it() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                network: Network::Dash,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity_1, signer_1, key_1) =
+                setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+            let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+            let dpns_contract = dpns.clone();
+
+            let preorder = dpns_contract
+                .document_type_for_name("preorder")
+                .expect("expected a profile document type");
+
+            assert!(!preorder.documents_mutable());
+            assert!(preorder.documents_can_be_deleted());
+            assert!(!preorder.documents_transferable().is_transferable());
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            assert!(!domain.documents_mutable());
+            // Deletion is disabled with data trigger
+            assert!(domain.documents_can_be_deleted());
+            assert!(domain.documents_transferable().is_transferable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut preorder_document_1 = preorder
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let mut document_1 = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document_1.set("parentDomainName", "dash".into());
+            document_1.set("normalizedParentDomainName", "dash".into());
+            document_1.set("label", "quantum".into());
+            document_1.set("normalizedLabel", "quantum".into());
+            document_1.set("records.identity", document_1.owner_id().into());
+            document_1.set("subdomainRules.allowSubdomains", false.into());
+
+            let salt_1: [u8; 32] = rng.gen();
+
+            let mut salted_domain_buffer_1: Vec<u8> = vec![];
+            salted_domain_buffer_1.extend(salt_1);
+            salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+
+            let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+
+            preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+
+            document_1.set("preorderSalt", salt_1.into());
+
+            let documents_batch_create_preorder_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    preorder_document_1,
+                    preorder,
+                    entropy.0,
+                    &key_1,
+                    2,
+                    0,
+                    &signer_1,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_preorder_transition_1 =
+                documents_batch_create_preorder_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let owner_id = document_1.owner_id();
+            let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::from_document(
+                    &document_1,
+                    domain,
+                    3,
+                    platform_version,
+                    None,
+                )
+                .expect("expected a base transition"),
+                entropy: entropy.0,
+                data: document_1.clone().properties_consumed(),
+                // Sending 0 balance that should not be valid
+                prefunded_voting_balance: None,
+            }
+            .into();
+            let documents_batch_inner_create_transition_1: DocumentsBatchTransition =
+                DocumentsBatchTransitionV0 {
+                    owner_id,
+                    transitions: vec![create_transition.into()],
+                    user_fee_increase: 0,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                }
+                .into();
+            let mut documents_batch_create_transition_1: StateTransition =
+                documents_batch_inner_create_transition_1.into();
+            documents_batch_create_transition_1
+                .sign_external(&key_1, &signer_1, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .expect("expected to sign");
+
+            let documents_batch_create_serialized_transition_1 =
+                documents_batch_create_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError(
+                    ConsensusError::StateError(StateError::DocumentContestNotPaidForError(_)),
+                    _
+                )]
+            );
+
+            // Now let's run a query for the vote totals
+
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit();
+
+            let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                .expect("expected to encode the word dash");
+
+            let quantum_encoded =
+                bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                    .expect("expected to encode the word quantum");
+
+            let index_name = "parentNameAndLabel".to_string();
+
+            let query_validation_result = platform
+                .query_contested_resource_vote_state(
+                    GetContestedResourceVoteStateRequest {
+                        version: Some(get_contested_resource_vote_state_request::Version::V0(
+                            GetContestedResourceVoteStateRequestV0 {
+                                contract_id: dpns_contract.id().to_vec(),
+                                document_type_name: domain.name().clone(),
+                                index_name: index_name.clone(),
+                                index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
+                                result_type: ResultType::DocumentsAndVoteTally as i32,
+                                allow_include_locked_and_abstaining_vote_tally: false,
+                                start_at_identifier_info: None,
+                                count: None,
+                                prove: false,
+                            },
+                        )),
+                    },
+                    &platform_state,
+                    platform_version,
+                )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_resource_vote_state_response::Version::V0(
+                GetContestedResourceVoteStateResponseV0 {
+                    metadata: _,
+                    result,
+                },
+            ) = query_validation_result.version.expect("expected a version");
+
+            let Some(
+                get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                    get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                        contenders,
+                        abstain_vote_tally,
+                        lock_vote_tally,
+                        finished_vote_info,
+                    },
+                ),
+            ) = result
+            else {
+                panic!("expected contenders")
+            };
+
+            assert_eq!(abstain_vote_tally, None);
+
+            assert_eq!(lock_vote_tally, None);
+
+            assert_eq!(finished_vote_info, None);
+
+            assert_eq!(contenders.len(), 0);
+
+            let drive_query = DriveDocumentQuery::new_primary_key_single_item_query(
+                &dpns,
+                domain,
+                document_1.id(),
+            );
+
+            let documents = platform
+                .drive
+                .query_documents(drive_query, None, false, None, None)
+                .expect("expected to get back documents")
+                .documents_owned();
+
+            assert!(documents.first().is_none());
+        }
+
+        #[test]
+        fn test_document_creation_on_contested_unique_index_should_not_fail_if_not_paying_for_it_on_testnet_before_epoch_2080(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                network: Testnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity_1, signer_1, key_1) =
+                setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+            let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+            let dpns_contract = dpns.clone();
+
+            let preorder = dpns_contract
+                .document_type_for_name("preorder")
+                .expect("expected a profile document type");
+
+            assert!(!preorder.documents_mutable());
+            assert!(preorder.documents_can_be_deleted());
+            assert!(!preorder.documents_transferable().is_transferable());
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            assert!(!domain.documents_mutable());
+            // Deletion is disabled with data trigger
+            assert!(domain.documents_can_be_deleted());
+            assert!(domain.documents_transferable().is_transferable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut preorder_document_1 = preorder
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let mut document_1 = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document_1.set("parentDomainName", "dash".into());
+            document_1.set("normalizedParentDomainName", "dash".into());
+            document_1.set("label", "quantum".into());
+            document_1.set("normalizedLabel", "quantum".into());
+            document_1.set("records.identity", document_1.owner_id().into());
+            document_1.set("subdomainRules.allowSubdomains", false.into());
+
+            let salt_1: [u8; 32] = rng.gen();
+
+            let mut salted_domain_buffer_1: Vec<u8> = vec![];
+            salted_domain_buffer_1.extend(salt_1);
+            salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+
+            let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+
+            preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+
+            document_1.set("preorderSalt", salt_1.into());
+
+            let documents_batch_create_preorder_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    preorder_document_1,
+                    preorder,
+                    entropy.0,
+                    &key_1,
+                    2,
+                    0,
+                    &signer_1,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_preorder_transition_1 =
+                documents_batch_create_preorder_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let owner_id = document_1.owner_id();
+            let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::from_document(
+                    &document_1,
+                    domain,
+                    3,
+                    platform_version,
+                    None,
+                )
+                .expect("expected a base transition"),
+                entropy: entropy.0,
+                data: document_1.clone().properties_consumed(),
+                prefunded_voting_balance: None,
+            }
+            .into();
+            let documents_batch_inner_create_transition_1: DocumentsBatchTransition =
+                DocumentsBatchTransitionV0 {
+                    owner_id,
+                    transitions: vec![create_transition.into()],
+                    user_fee_increase: 0,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                }
+                .into();
+            let mut documents_batch_create_transition_1: StateTransition =
+                documents_batch_inner_create_transition_1.into();
+            documents_batch_create_transition_1
+                .sign_external(&key_1, &signer_1, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .expect("expected to sign");
+
+            let documents_batch_create_serialized_transition_1 =
+                documents_batch_create_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            );
+
+            // Now let's run a query for the vote totals
+
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit();
+
+            let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                .expect("expected to encode the word dash");
+
+            let quantum_encoded =
+                bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                    .expect("expected to encode the word quantum");
+
+            let index_name = "parentNameAndLabel".to_string();
+
+            let query_validation_result = platform
+                .query_contested_resource_vote_state(
+                    GetContestedResourceVoteStateRequest {
+                        version: Some(get_contested_resource_vote_state_request::Version::V0(
+                            GetContestedResourceVoteStateRequestV0 {
+                                contract_id: dpns_contract.id().to_vec(),
+                                document_type_name: domain.name().clone(),
+                                index_name: index_name.clone(),
+                                index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
+                                result_type: ResultType::DocumentsAndVoteTally as i32,
+                                allow_include_locked_and_abstaining_vote_tally: false,
+                                start_at_identifier_info: None,
+                                count: None,
+                                prove: false,
+                            },
+                        )),
+                    },
+                    &platform_state,
+                    platform_version,
+                )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_resource_vote_state_response::Version::V0(
+                GetContestedResourceVoteStateResponseV0 {
+                    metadata: _,
+                    result,
+                },
+            ) = query_validation_result.version.expect("expected a version");
+
+            let Some(
+                get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                    get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                        contenders,
+                        abstain_vote_tally,
+                        lock_vote_tally,
+                        finished_vote_info,
+                    },
+                ),
+            ) = result
+            else {
+                panic!("expected contenders")
+            };
+
+            assert_eq!(abstain_vote_tally, None);
+
+            assert_eq!(lock_vote_tally, None);
+
+            assert_eq!(finished_vote_info, None);
+
+            assert_eq!(contenders.len(), 0); // no contenders should have been created the document should just exist
+
+            let drive_query = DriveDocumentQuery::new_primary_key_single_item_query(
+                &dpns,
+                domain,
+                document_1.id(),
+            );
+
+            let documents = platform
+                .drive
+                .query_documents(drive_query, None, false, None, None)
+                .expect("expected to get back documents")
+                .documents_owned();
+
+            assert!(documents.first().is_some());
         }
 
         #[test]

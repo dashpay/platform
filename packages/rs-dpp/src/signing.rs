@@ -8,7 +8,7 @@ use crate::serialization::PlatformMessageSignable;
 use crate::validation::SimpleConsensusValidationResult;
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, errors::ProtocolError};
-use dashcore::signer;
+use dashcore::{bls_signatures, signer};
 
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]
