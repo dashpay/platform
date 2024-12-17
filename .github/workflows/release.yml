@@ -75,7 +75,7 @@ jobs:
 
       - name: Install Binaryen
         run: |
-          wget https://github.com/WebAssembly/binaryen/releases/download/version_109/binaryen-version_121-x86_64-linux.tar.gz
+          wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
           tar -xzf binaryen-version_121-x86_64-linux.tar.gz
           sudo cp -r binaryen-version_121/* /usr/local/
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
@@ -84,7 +84,6 @@ jobs:
         run: yarn build
         env:
           CARGO_BUILD_PROFILE: release
-
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Set suffix
