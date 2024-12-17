@@ -16,8 +16,14 @@ service Platform {
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
+  rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
+      returns (GetIdentitiesBalancesResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
       returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest)
+      returns (GetEvonodesProposedEpochBlocksResponse);
+  rpc getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest)
+      returns (GetEvonodesProposedEpochBlocksResponse);
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
@@ -48,6 +54,7 @@ service Platform {
   rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
   rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -305,6 +312,85 @@ message GetIdentitiesContractKeysResponse {
   }
 
   oneof version { GetIdentitiesContractKeysResponseV0 v0 = 1; }
+}
+
+message GetEvonodesProposedEpochBlocksByIdsRequest {
+
+  message GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+    optional uint32 epoch = 1; // The epoch we are querying for, if none is set, get current epoch
+    repeated bytes ids = 2;    // IDs of the evonodes for which we want to get their proposed blocks
+    bool prove = 3;  // Flag to request a proof as the response
+  }
+
+  oneof version { GetEvonodesProposedEpochBlocksByIdsRequestV0 v0 = 1; }
+}
+
+message GetEvonodesProposedEpochBlocksResponse {
+
+  message GetEvonodesProposedEpochBlocksResponseV0 {
+    message EvonodeProposedBlocks {
+      bytes pro_tx_hash = 1;
+      uint64 count = 2;
+    }
+
+    message EvonodesProposedBlocks {
+      repeated EvonodeProposedBlocks evonodes_proposed_block_counts = 1;
+    }
+
+    oneof result {
+      EvonodesProposedBlocks evonodes_proposed_block_counts_info = 1;    // The actual result
+      Proof proof = 2;  // Proof of the keys data, if requested
+    }
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+  }
+  oneof version { GetEvonodesProposedEpochBlocksResponseV0 v0 = 1; }
+}
+
+message GetEvonodesProposedEpochBlocksByRangeRequest {
+
+  message GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+    optional uint32 epoch = 1; // The epoch we are querying for, if none is set, get current epoch
+    optional uint32 limit = 2;            // Maximum number of evonodes proposed epoch blocks to return
+    oneof start {
+      bytes start_after = 3;  // Start retrieval after this document
+      bytes start_at = 4;     // Start retrieval at this document
+    }
+    bool prove = 5;  // Flag to request a proof as the response
+  }
+
+  oneof version { GetEvonodesProposedEpochBlocksByRangeRequestV0 v0 = 1; }
+}
+
+message GetIdentitiesBalancesRequest {
+  message GetIdentitiesBalancesRequestV0 {
+    repeated bytes ids = 1;
+    bool prove = 2;
+  }
+
+  oneof version {
+    GetIdentitiesBalancesRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesBalancesResponse {
+  message GetIdentitiesBalancesResponseV0 {
+    message IdentityBalance {
+      bytes identity_id = 1;
+      optional uint64 balance = 2;
+    }
+
+    message IdentitiesBalances {
+      repeated IdentityBalance entries = 1;
+    };
+
+    oneof result {
+      IdentitiesBalances identities_balances = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentitiesBalancesResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {
@@ -1098,4 +1184,34 @@ message GetStatusResponse {
   }
 
   oneof version { GetStatusResponseV0 v0 = 1; }
+}
+
+message GetCurrentQuorumsInfoRequest {
+  message GetCurrentQuorumsInfoRequestV0 {
+  }
+
+  oneof version { GetCurrentQuorumsInfoRequestV0 v0 = 1; }
+}
+
+message GetCurrentQuorumsInfoResponse {
+  message ValidatorV0 {
+    bytes pro_tx_hash = 1;
+    string node_ip = 2;
+    bool is_banned = 3;
+  }
+  message ValidatorSetV0 {
+    bytes quorum_hash = 1;
+    uint32 core_height = 2;
+    repeated ValidatorV0 members = 3;
+    bytes threshold_public_key = 4;
+  }
+
+  message GetCurrentQuorumsInfoResponseV0 {
+    repeated bytes quorum_hashes = 1;
+    bytes current_quorum_hash = 2;
+    repeated ValidatorSetV0 validator_sets = 3;
+    bytes last_block_proposer = 4;
+    ResponseMetadata metadata = 5;
+  }
+  oneof version { GetCurrentQuorumsInfoResponseV0 v0 = 1; }
 }

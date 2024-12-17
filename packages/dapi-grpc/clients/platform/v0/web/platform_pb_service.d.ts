@@ -67,6 +67,15 @@ type PlatformgetIdentityBalance = {
   readonly responseType: typeof platform_pb.GetIdentityBalanceResponse;
 };
 
+type PlatformgetIdentitiesBalances = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentitiesBalancesRequest;
+  readonly responseType: typeof platform_pb.GetIdentitiesBalancesResponse;
+};
+
 type PlatformgetIdentityBalanceAndRevision = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -74,6 +83,24 @@ type PlatformgetIdentityBalanceAndRevision = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetIdentityBalanceAndRevisionRequest;
   readonly responseType: typeof platform_pb.GetIdentityBalanceAndRevisionResponse;
+};
+
+type PlatformgetEvonodesProposedEpochBlocksByIds = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest;
+  readonly responseType: typeof platform_pb.GetEvonodesProposedEpochBlocksResponse;
+};
+
+type PlatformgetEvonodesProposedEpochBlocksByRange = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest;
+  readonly responseType: typeof platform_pb.GetEvonodesProposedEpochBlocksResponse;
 };
 
 type PlatformgetProofs = {
@@ -256,6 +283,15 @@ type PlatformgetStatus = {
   readonly responseType: typeof platform_pb.GetStatusResponse;
 };
 
+type PlatformgetCurrentQuorumsInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetCurrentQuorumsInfoRequest;
+  readonly responseType: typeof platform_pb.GetCurrentQuorumsInfoResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -265,7 +301,10 @@ export class Platform {
   static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
+  static readonly getIdentitiesBalances: PlatformgetIdentitiesBalances;
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
+  static readonly getEvonodesProposedEpochBlocksByIds: PlatformgetEvonodesProposedEpochBlocksByIds;
+  static readonly getEvonodesProposedEpochBlocksByRange: PlatformgetEvonodesProposedEpochBlocksByRange;
   static readonly getProofs: PlatformgetProofs;
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
@@ -286,6 +325,7 @@ export class Platform {
   static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
   static readonly getPathElements: PlatformgetPathElements;
   static readonly getStatus: PlatformgetStatus;
+  static readonly getCurrentQuorumsInfo: PlatformgetCurrentQuorumsInfo;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -383,6 +423,15 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentityBalanceRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceResponse|null) => void
   ): UnaryResponse;
+  getIdentitiesBalances(
+    requestMessage: platform_pb.GetIdentitiesBalancesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesBalancesResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesBalances(
+    requestMessage: platform_pb.GetIdentitiesBalancesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesBalancesResponse|null) => void
+  ): UnaryResponse;
   getIdentityBalanceAndRevision(
     requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     metadata: grpc.Metadata,
@@ -391,6 +440,24 @@ export class PlatformClient {
   getIdentityBalanceAndRevision(
     requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceAndRevisionResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByIds(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByIds(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByRange(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByRange(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
   ): UnaryResponse;
   getProofs(
     requestMessage: platform_pb.GetProofsRequest,
@@ -571,6 +638,15 @@ export class PlatformClient {
   getStatus(
     requestMessage: platform_pb.GetStatusRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetStatusResponse|null) => void
+  ): UnaryResponse;
+  getCurrentQuorumsInfo(
+    requestMessage: platform_pb.GetCurrentQuorumsInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetCurrentQuorumsInfoResponse|null) => void
+  ): UnaryResponse;
+  getCurrentQuorumsInfo(
+    requestMessage: platform_pb.GetCurrentQuorumsInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetCurrentQuorumsInfoResponse|null) => void
   ): UnaryResponse;
 }
 

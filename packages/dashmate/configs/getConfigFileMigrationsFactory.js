@@ -448,12 +448,63 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '1.0.0-dev.2': (configFile) => {
+        const consensusParams = {
+          block: {
+            max_bytes: '2097152',
+            max_gas: '57631392000',
+            time_iota_ms: '5000',
+          },
+          evidence: {
+            max_age: '100000',
+            max_age_num_blocks: '100000',
+            max_age_duration: '172800000000000',
+          },
+          validator: {
+            pub_key_types: ['bls12381'],
+          },
+          timeout: {
+            propose: '50000000000',
+            propose_delta: '5000000000',
+            vote: '10000000000',
+            vote_delta: '1000000000',
+          },
+          synchrony: {
+            message_delay: '70000000000',
+            precision: '1000000000',
+          },
+          abci: {
+            recheck_tx: true,
+          },
+          version: {
+            app_version: '1',
+          },
+        };
+
+        const genesis = {
+          base: {
+            consensus_params: lodash.cloneDeep(consensusParams),
+          },
+          local: {
+            consensus_params: lodash.cloneDeep(consensusParams),
+          },
+          testnet: {
+            chain_id: 'dash-testnet-51',
+            validator_quorum_type: 6,
+            consensus_params: lodash.cloneDeep(consensusParams),
+          },
+          mainnet: {
+            chain_id: 'evo1',
+            validator_quorum_type: 4,
+            consensus_params: lodash.cloneDeep(consensusParams),
+          },
+        };
+
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            if (defaultConfigs.has(name)) {
-              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name)
-                .get('platform.drive.tenderdash.genesis');
+            if (genesis[name]) {
+              options.platform.drive.tenderdash.genesis = genesis[name];
             }
+
             options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
 
             let baseConfigName = name;
@@ -774,6 +825,38 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '1.1.0-dev.1': (configFile) => {
+        const consensusParams = {
+          block: {
+            max_bytes: '2097152',
+            max_gas: '57631392000',
+            time_iota_ms: '5000',
+          },
+          evidence: {
+            max_age: '100000',
+            max_age_num_blocks: '100000',
+            max_age_duration: '172800000000000',
+          },
+          validator: {
+            pub_key_types: ['bls12381'],
+          },
+          timeout: {
+            propose: '50000000000',
+            propose_delta: '5000000000',
+            vote: '10000000000',
+            vote_delta: '1000000000',
+          },
+          synchrony: {
+            message_delay: '70000000000',
+            precision: '1000000000',
+          },
+          abci: {
+            recheck_tx: true,
+          },
+          version: {
+            app_version: '1',
+          },
+        };
+
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (name === 'local') {
@@ -792,8 +875,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             options.platform.drive.tenderdash.p2p.maxConnections = 64;
             options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
-            options.platform.drive.tenderdash.genesis
-              .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+
+            if (defaultConfigs.has(name)) {
+              options.platform.drive.tenderdash.genesis
+                .consensus_params = lodash.cloneDeep(consensusParams);
+            }
+
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
@@ -850,6 +937,122 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET) {
               delete options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
             }
+          });
+        return configFile;
+      },
+      '1.3.0-dev.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+
+            // Update core log settings
+            options.core.log.filePath = null;
+            options.core.log.debug = {
+              enabled: false,
+              ips: !!options.core.logIps,
+              sourceLocations: false,
+              threadNames: false,
+              timeMicros: false,
+              includeOnly: [],
+              exclude: [],
+            };
+
+            // If debug log was enabled
+            if (options.core.log.file.categories.length > 0) {
+              options.core.log.filePath = options.core.log.file.path;
+              options.core.log.debug.enabled = true;
+
+              if (!options.core.log.file.categories.includes('all')) {
+                options.core.log.debug.includeOnly = options.core.log.file.categories;
+              }
+            }
+
+            delete options.core.log.file;
+            delete options.core.logIps;
+          });
+        return configFile;
+      },
+      '1.3.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:fix-wrong-proposer-at-round';
+          });
+        return configFile;
+      },
+      '1.3.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+          });
+        return configFile;
+      },
+      '1.4.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+          });
+        return configFile;
+      },
+      '1.4.0-dev.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'base' || name === 'local') {
+              delete options.platform.drive.tenderdash.genesis.consensus_params.version;
+            } else if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.consensus_params.version = {
+                app_version: '1',
+              };
+            }
+          });
+        return configFile;
+      },
+      '1.4.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+          });
+        return configFile;
+      },
+      '1.5.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+          });
+        return configFile;
+      },
+      '1.6.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+          });
+        return configFile;
+      },
+      '1.6.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+          });
+        return configFile;
+      },
+      '1.7.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = 'dashpay/dashd:22';
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1';
           });
         return configFile;
       },

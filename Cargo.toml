@@ -28,10 +28,11 @@ members = [
     "packages/simple-signer",
     "packages/rs-json-schema-compatibility-validator",
     "packages/check-features",
+    "packages/wallet-utils-contract",
 ]
 [workspace.package]
 
-rust-version = "1.80"
+rust-version = "1.83"
 
 [patch.crates-io]
 tower-service = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }

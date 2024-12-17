@@ -74,7 +74,14 @@ cargo test -p dash-sdk --no-default-features --features network-testing
 ## Offline Testing
 
 Offline testing uses the vectors generated using `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
-These vectors must be saved in `packages/rs-sdk/tests/vectors`.
+This script will connect to node defined in `packages/rs-sdk/tests/.env`, execute all tests against it and
+update test vectors in `packages/rs-sdk/tests/vectors`.
+
+To generate test vectors against a testnet node (or other remote node), you can use helper script
+`packages/rs-sdk/scripts/connect_to_remote.sh` which will generate `.env` file for you and tunnel connection to Dash
+Core RPC on the remote host.
+
+Refer to rich comments / help in the forementioned scripts for more details.
 
 ### Generating test vectors
 
@@ -97,9 +104,9 @@ Run the offline test using the following command:
 cargo test -p dash-platform-sdk
 ```
 
-## Implementing Fetch and FetchAny on new objects
+## Implementing Fetch and FetchMany on new objects
 
-How to implement `Fetch` and `FetchAny` trait on new object types (`Object`).
+How to implement `Fetch` and `FetchMany` trait on new object types (`Object`).
 
 It's basically copy-paste and tweaking of existing implementation for another object type.
 
@@ -114,7 +121,7 @@ Definitions:
 Checklist:
 
 1. [ ] Ensure protobuf messages are defined in `packages/dapi-grpc/protos/platform/v0/platform.proto` and generated
-   correctly in `packages/dapi-grpc/src/platform/proto/org.dash.platform.dapi.v0.rs`.
+   correctly in `packages/dapi-grpc/src/platform/client/org.dash.platform.dapi.v0.rs`.
 2. [ ] In `packages/dapi-grpc/build.rs`, add `Request` to `VERSIONED_REQUESTS` and response `Response` to `VERSIONED_RESPONSES`.
    This should add derive of `VersionedGrpcMessage` (and some more) in `org.dash.platform.dapi.v0.rs`.
 3. [ ] Link request and response type to dapi-client by adding appropriate invocation of `impl_transport_request_grpc!` macro
@@ -123,7 +130,7 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    used internally.
 
    If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `RetrievedObjects`
-   that will store collection of  returned objects, indexd by some key.
+   that will store collection of  returned objects, indexed by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
 7. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,

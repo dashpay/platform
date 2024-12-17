@@ -8,9 +8,10 @@ use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     prelude::Identifier,
 };
-use rs_dapi_client::AddressList;
+use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
+use zeroize::Zeroizing;
 
 /// Existing document ID
 ///
@@ -35,6 +36,11 @@ pub struct Config {
     /// Port of the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_port: u16,
+    /// Host of the Dash Core RPC interface running on the Dash Platform node.
+    /// Defaults to the same as [platform_host](Config::platform_host).
+    #[serde(default)]
+    #[cfg_attr(not(feature = "network-testing"), allow(unused))]
+    pub core_host: Option<String>,
     /// Port of the Dash Core RPC interface running on the Dash Platform node
     #[serde(default)]
     pub core_port: u16,
@@ -43,7 +49,7 @@ pub struct Config {
     pub core_user: String,
     /// Password for Dash Core RPC interface
     #[serde(default)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
@@ -71,6 +77,7 @@ pub struct Config {
     /// ID of document of the type [`existing_document_type_name`](Config::existing_document_type_name)
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
+    #[allow(unused)]
     pub existing_document_id: Identifier,
     // Hex-encoded ProTxHash of the existing HP masternode
     #[serde(default = "Config::default_protxhash")]
@@ -129,9 +136,12 @@ impl Config {
             false => "http",
         };
 
-        let address: String = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port);
+        let address: Address =
+            format!("{}://{}:{}", scheme, self.platform_host, self.platform_port)
+                .parse()
+                .expect("valid address");
 
-        AddressList::from_iter(vec![http::Uri::from_str(&address).expect("valid uri")])
+        AddressList::from_iter([address])
     }
 
     /// Create new SDK instance
@@ -141,14 +151,14 @@ impl Config {
     /// ## Feature flags
     ///
     /// * `offline-testing` is not set - connect to Platform and generate
-    /// new test vectors during execution
+    ///   new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
-    /// load existing test vectors from disk
+    ///   load existing test vectors from disk
     ///
     /// ## Arguments
     ///
     /// * namespace - namespace to use when storing mock expectations; this is used to separate
-    /// expectations from different tests.
+    ///   expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
@@ -175,9 +185,10 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
+            let core_host = self.core_host.as_ref().unwrap_or(&self.platform_host);
             // Dump all traffic to disk
             let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
-                &self.platform_host,
+                core_host,
                 self.core_port,
                 &self.core_user,
                 &self.core_password,
@@ -223,8 +234,8 @@ impl Config {
         //  Next time we need to do it again and update this value :(. This is terrible.
         //  We should automate creation of identity for SDK tests when we have time.
         Identifier::from_string(
-            "a1534e47f60be71e823a9dbc9ceb6d3ea9f1ebde7a3773f03e49ef31c7d9c044",
-            Encoding::Hex,
+            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
+            Encoding::Base58,
         )
         .unwrap()
     }
@@ -250,7 +261,7 @@ impl Config {
     ///
     /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
     fn default_protxhash() -> String {
-        String::from("d10bf435af7c75f5b07b09486af1212469d69fdc787589548e315776bc1052a1")
+        String::from("069dcb6e829988af0edb245f30d3b1297a47081854a78c3cdea9fddb8fbd07eb")
     }
 
     /// Return ProTxHash of an existing evo node, or None if not set

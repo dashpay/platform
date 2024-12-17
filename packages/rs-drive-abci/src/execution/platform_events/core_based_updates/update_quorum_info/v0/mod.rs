@@ -7,7 +7,9 @@ use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
+use crate::platform_types::validator_set::v0::{
+    ValidatorSetMethodsV0, ValidatorSetV0, ValidatorSetV0Getters,
+};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
@@ -384,7 +386,7 @@ where
                 )?;
 
                 let public_key =
-                    match BlsPublicKey::from_bytes(quorum_info.quorum_public_key.as_slice())
+                    match BlsPublicKey::try_from(quorum_info.quorum_public_key.as_slice())
                         .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
                     {
                         Ok(public_key) => public_key,

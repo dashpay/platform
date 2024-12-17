@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn verify_total_credits_structure() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();

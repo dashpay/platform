@@ -1,11 +1,10 @@
+use crate::platform::fetch_current_no_parameters::FetchCurrent;
+use crate::platform::types::epoch::Epoch;
 use crate::{Error, Sdk};
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::{
     transactions_with_proofs_request, transactions_with_proofs_response, GetTransactionRequest,
     GetTransactionResponse, TransactionsWithProofsRequest, TransactionsWithProofsResponse,
-};
-use dapi_grpc::platform::v0::{
-    get_epochs_info_request, get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
 };
 use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Txid};
@@ -13,7 +12,7 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
@@ -57,7 +56,8 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
-            .map_err(|e| Error::DapiClientError(e.to_string()))
+            .into_inner()
+            .map_err(|e| e.into())
     }
 
     /// Waits for a response for the asset lock proof
@@ -181,7 +181,8 @@ impl Sdk {
                                     },
                                     RequestSettings::default(),
                                 )
-                                .await?;
+                                .await // TODO: We need better way to handle execution errors
+                                .into_inner()?;
 
                             core_chain_locked_height = height;
 
@@ -201,30 +202,8 @@ impl Sdk {
 
                         // Wait until platform chain is on the block's chain locked height
                         loop {
-                            let request = GetEpochsInfoRequest {
-                                version: Some(get_epochs_info_request::Version::V0(
-                                    get_epochs_info_request::GetEpochsInfoRequestV0 {
-                                        start_epoch: Some(0),
-                                        count: 1,
-                                        ..Default::default()
-                                    },
-                                )),
-                            };
-
-                            let GetEpochsInfoResponse {
-                                version:
-                                    Some(get_epochs_info_response::Version::V0(
-                                        get_epochs_info_response::GetEpochsInfoResponseV0 {
-                                            metadata: Some(metadata),
-                                            ..
-                                        },
-                                    )),
-                            } = self.execute(request, RequestSettings::default()).await?
-                            else {
-                                return Err(Error::DapiClientError(String::from(
-                                    "missing V0 `metadata` field",
-                                )));
-                            };
+                            let (_epoch, metadata) =
+                                Epoch::fetch_current_with_metadata(self).await?;
 
                             if metadata.core_chain_locked_height >= core_chain_locked_height {
                                 break;

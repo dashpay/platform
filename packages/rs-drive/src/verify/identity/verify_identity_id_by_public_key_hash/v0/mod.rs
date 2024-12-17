@@ -33,7 +33,7 @@ impl Drive {
     /// - More than one identity ID is found.
     ///
     #[inline(always)]
-    pub(crate) fn verify_identity_id_by_public_key_hash_v0(
+    pub(super) fn verify_identity_id_by_public_key_hash_v0(
         proof: &[u8],
         is_proof_subset: bool,
         public_key_hash: [u8; 20],

@@ -1,9 +1,13 @@
+use crate::error::PlatformVersionError;
 use crate::version::fee::data_contract::FeeDataContractValidationVersion;
 use crate::version::fee::hashing::FeeHashingVersion;
-use crate::version::fee::processing::FeeProcessingVersion;
+use crate::version::fee::processing::{
+    FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
+};
 use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 use crate::version::fee::storage::FeeStorageVersion;
+use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
 use bincode::{Decode, Encode};
 
@@ -16,8 +20,13 @@ pub mod storage;
 pub mod v1;
 pub mod vote_resolution_fund_fees;
 
+pub type FeeVersionNumber = u32;
+
+pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
+
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeVersion {
+    pub fee_version_number: FeeVersionNumber,
     // Permille means devise by 1000
     pub uses_version_fee_multiplier_permille: Option<u64>,
     pub storage: FeeStorageVersion,
@@ -29,135 +38,70 @@ pub struct FeeVersion {
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::FeeVersion;
-    use crate::version::fee::data_contract::FeeDataContractValidationVersion;
-    use crate::version::fee::hashing::FeeHashingVersion;
-    use crate::version::fee::processing::FeeProcessingVersion;
-    use crate::version::fee::signature::FeeSignatureVersion;
-    use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
-    use crate::version::fee::storage::FeeStorageVersion;
-    use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
+impl FeeVersion {
+    pub fn as_static(&self) -> &'static FeeVersion {
+        FeeVersion::get(self.fee_version_number).expect("expected fee version to exist")
+    }
+    pub fn get<'a>(version: FeeVersionNumber) -> Result<&'a Self, PlatformVersionError> {
+        if version > 0 {
+            FEE_VERSIONS.get(version as usize - 1).ok_or_else(|| {
+                PlatformVersionError::UnknownVersionError(format!("no fee version {version}"))
+            })
+        } else {
+            Err(PlatformVersionError::UnknownVersionError(format!(
+                "no fee version {version}"
+            )))
+        }
+    }
 
-    #[test]
-    // If this test failed, then a new field was added in FeeVersion. And the corresponding eq needs to be updated as well
-    fn test_fee_version_equality() {
-        let version1 = FeeVersion {
-            uses_version_fee_multiplier_permille: None,
-            storage: FeeStorageVersion {
-                storage_disk_usage_credit_per_byte: 1,
-                storage_processing_credit_per_byte: 2,
-                storage_load_credit_per_byte: 3,
-                non_storage_load_credit_per_byte: 4,
-                storage_seek_cost: 5,
-            },
-            signature: FeeSignatureVersion {
-                verify_signature_ecdsa_secp256k1: 1,
-                verify_signature_bls12_381: 2,
-                verify_signature_ecdsa_hash160: 3,
-                verify_signature_bip13_script_hash: 4,
-                verify_signature_eddsa25519_hash160: 5,
-            },
-            hashing: FeeHashingVersion {
-                single_sha256_base: 1,
-                blake3_base: 2,
-                sha256_ripe_md160_base: 3,
-                sha256_per_block: 4,
-                blake3_per_block: 5,
-            },
-            processing: FeeProcessingVersion {
-                fetch_identity_balance_processing_cost: 1,
-                fetch_identity_revision_processing_cost: 2,
-                fetch_identity_balance_and_revision_processing_cost: 3,
-                fetch_identity_cost_per_look_up_key_by_id: 4,
-                fetch_single_identity_key_processing_cost: 5,
-                validate_key_structure: 6,
-                fetch_prefunded_specialized_balance_processing_cost: 7,
-            },
-            data_contract: FeeDataContractValidationVersion {
-                document_type_base_fee: 1,
-                document_type_size_fee: 2,
-                document_type_per_property_fee: 3,
-                document_type_base_non_unique_index_fee: 4,
-                document_type_non_unique_index_per_property_fee: 5,
-                document_type_base_unique_index_fee: 6,
-                document_type_unique_index_per_property_fee: 7,
-            },
-            state_transition_min_fees: StateTransitionMinFees {
-                credit_transfer: 1,
-                credit_withdrawal: 2,
-                identity_update: 3,
-                document_batch_sub_transition: 4,
-                contract_create: 5,
-                contract_update: 6,
-                masternode_vote: 7,
-            },
-            vote_resolution_fund_fees: VoteResolutionFundFees {
-                contested_document_vote_resolution_fund_required_amount: 1,
-                contested_document_vote_resolution_unlock_fund_required_amount: 2,
-                contested_document_single_vote_cost: 3,
-            },
-        };
+    pub fn get_optional<'a>(version: FeeVersionNumber) -> Option<&'a Self> {
+        if version > 0 {
+            FEE_VERSIONS.get(version as usize - 1)
+        } else {
+            None
+        }
+    }
 
-        let version2 = FeeVersion {
-            uses_version_fee_multiplier_permille: None,
-            storage: FeeStorageVersion {
-                storage_disk_usage_credit_per_byte: 1,
-                storage_processing_credit_per_byte: 2,
-                storage_load_credit_per_byte: 3,
-                non_storage_load_credit_per_byte: 4,
-                storage_seek_cost: 5,
-            },
-            signature: FeeSignatureVersion {
-                verify_signature_ecdsa_secp256k1: 1,
-                verify_signature_bls12_381: 2,
-                verify_signature_ecdsa_hash160: 3,
-                verify_signature_bip13_script_hash: 4,
-                verify_signature_eddsa25519_hash160: 5,
-            },
-            hashing: FeeHashingVersion {
-                single_sha256_base: 1,
-                blake3_base: 2,
-                sha256_ripe_md160_base: 3,
-                sha256_per_block: 4,
-                blake3_per_block: 5,
-            },
-            processing: FeeProcessingVersion {
-                fetch_identity_balance_processing_cost: 1,
-                fetch_identity_revision_processing_cost: 2,
-                fetch_identity_balance_and_revision_processing_cost: 3,
-                fetch_identity_cost_per_look_up_key_by_id: 4,
-                fetch_single_identity_key_processing_cost: 5,
-                validate_key_structure: 6,
-                fetch_prefunded_specialized_balance_processing_cost: 7,
-            },
-            data_contract: FeeDataContractValidationVersion {
-                document_type_base_fee: 1,
-                document_type_size_fee: 2,
-                document_type_per_property_fee: 3,
-                document_type_base_non_unique_index_fee: 4,
-                document_type_non_unique_index_per_property_fee: 5,
-                document_type_base_unique_index_fee: 6,
-                document_type_unique_index_per_property_fee: 7,
-            },
-            state_transition_min_fees: StateTransitionMinFees {
-                credit_transfer: 1,
-                credit_withdrawal: 2,
-                identity_update: 3,
-                document_batch_sub_transition: 4,
-                contract_create: 5,
-                contract_update: 6,
-                masternode_vote: 7,
-            },
-            vote_resolution_fund_fees: VoteResolutionFundFees {
-                contested_document_vote_resolution_fund_required_amount: 1,
-                contested_document_vote_resolution_unlock_fund_required_amount: 2,
-                contested_document_single_vote_cost: 3,
-            },
-        };
+    pub fn first<'a>() -> &'a Self {
+        FEE_VERSIONS
+            .first()
+            .expect("expected to have a fee version")
+    }
 
-        // This assertion will check if all fields are considered in the equality comparison
-        assert_eq!(version1, version2, "FeeVersion equality test failed. If a field was added or removed, update the Eq implementation.");
+    pub fn latest<'a>() -> &'a Self {
+        FEE_VERSIONS.last().expect("expected to have a fee version")
+    }
+}
+
+// This is type only meant for deserialization because of an issue
+// The issue was that the platform state was stored with FeeVersions in it before version 1.4
+// When we would add new fields we would be unable to deserialize
+// This FeeProcessingVersionFieldsBeforeVersion4 is how things were before version 1.4 was released
+#[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
+pub struct FeeVersionFieldsBeforeVersion4 {
+    // Permille means devise by 1000
+    pub uses_version_fee_multiplier_permille: Option<u64>,
+    pub storage: FeeStorageVersion,
+    pub signature: FeeSignatureVersion,
+    pub hashing: FeeHashingVersion,
+    pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
+    pub data_contract: FeeDataContractValidationVersion,
+    pub state_transition_min_fees: StateTransitionMinFees,
+    pub vote_resolution_fund_fees: VoteResolutionFundFees,
+}
+
+impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
+    fn from(value: FeeVersionFieldsBeforeVersion4) -> Self {
+        FeeVersion {
+            fee_version_number: 1,
+            uses_version_fee_multiplier_permille: value.uses_version_fee_multiplier_permille,
+            storage: value.storage,
+            signature: value.signature,
+            hashing: value.hashing,
+            processing: FeeProcessingVersion::from(value.processing),
+            data_contract: value.data_contract,
+            state_transition_min_fees: value.state_transition_min_fees,
+            vote_resolution_fund_fees: value.vote_resolution_fund_fees,
+        }
     }
 }

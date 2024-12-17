@@ -22,11 +22,10 @@ on:
 jobs:
   test-suite:
     name: Run ${{ inputs.name }}
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      CHROME_BIN: /usr/bin/brave-browser
-      ECR_HOST: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+      ECR_HOST: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -39,15 +38,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
       - name: Login to ECR
-        run: aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
+        uses: ./.github/actions/aws_ecr_login
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION }}
+          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
 
       - name: Start local network
         uses: ./.github/actions/local-network
@@ -57,8 +54,8 @@ jobs:
       - name: Run test suite
         run: yarn workspace @dashevo/platform-test-suite ${{ inputs.command }}
         env:
-            BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
-            BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
+          BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
+          BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
 
       - name: Show Docker logs
         if: ${{ failure() }}

@@ -42,12 +42,6 @@ impl BlockExecutionContextV0Getters for BlockExecutionContext {
         }
     }
 
-    fn hpmn_count(&self) -> u32 {
-        match self {
-            BlockExecutionContext::V0(v0) => v0.hpmn_count,
-        }
-    }
-
     fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs {
         match self {
             BlockExecutionContext::V0(v0) => &v0.unsigned_withdrawal_transactions,
@@ -77,12 +71,6 @@ impl BlockExecutionContextV0Setters for BlockExecutionContext {
     fn set_epoch_info(&mut self, info: EpochInfo) {
         match self {
             BlockExecutionContext::V0(v0) => v0.epoch_info = info,
-        }
-    }
-
-    fn set_hpmn_count(&mut self, count: u32) {
-        match self {
-            BlockExecutionContext::V0(v0) => v0.hpmn_count = count,
         }
     }
 

@@ -41,7 +41,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     #[inline(always)]
-    pub(crate) fn verify_epoch_infos_v0(
+    pub(super) fn verify_epoch_infos_v0(
         proof: &[u8],
         current_epoch: EpochIndex,
         start_epoch: Option<EpochIndex>,

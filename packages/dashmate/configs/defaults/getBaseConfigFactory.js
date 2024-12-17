@@ -11,10 +11,9 @@ import {
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
 /**
- * @param {HomeDir} homeDir
  * @returns {getBaseConfig}
  */
-export default function getBaseConfigFactory(homeDir) {
+export default function getBaseConfigFactory() {
   const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
   const dockerImageVersion = `${semver.major(version)}${prereleaseTag}`;
 
@@ -54,7 +53,7 @@ export default function getBaseConfigFactory(homeDir) {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:21',
+          image: 'dashpay/dashd:22',
           commandArgs: [],
         },
         p2p: {
@@ -134,12 +133,17 @@ export default function getBaseConfigFactory(homeDir) {
           },
         },
         log: {
-          file: {
-            categories: [],
-            path: homeDir.joinPath('logs', 'base', 'core.log'),
+          filePath: null,
+          debug: {
+            enabled: false,
+            ips: false,
+            sourceLocations: false,
+            threadNames: false,
+            timeMicros: false,
+            includeOnly: [],
+            exclude: [],
           },
         },
-        logIps: 0,
         indexes: [],
       },
       platform: {
@@ -392,9 +396,6 @@ export default function getBaseConfigFactory(homeDir) {
                 },
                 validator: {
                   pub_key_types: ['bls12381'],
-                },
-                version: {
-                  app_version: '1',
                 },
                 timeout: {
                   propose: '50000000000',

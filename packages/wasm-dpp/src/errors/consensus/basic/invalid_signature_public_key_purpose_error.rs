@@ -23,8 +23,12 @@ impl InvalidSignaturePublicKeyPurposeErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getKeyPurposeRequirement)]
-    pub fn get_allowed_key_purpose(&self) -> u8 {
-        self.inner.allowed_key_purpose() as u8
+    pub fn get_allowed_key_purposes(&self) -> js_sys::Array {
+        let array = js_sys::Array::new();
+        for purpose in self.inner.allowed_key_purposes() {
+            array.push(&JsValue::from(*purpose as u8));
+        }
+        array
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -25,8 +25,6 @@ If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Devs
 Discord](https://chat.dashdevs.org/)!
 
-## Note: Dash Platform is currently available on the Dash Testnet only
-
 ## Intro
 
 This is a multi-package repository - sometimes also known as monorepository -
@@ -41,9 +39,9 @@ Dash Platform is currently undergoing testing and final development necessary to
 support its release on the Dash production network (mainnet). The packages in
 this repository may be used on the following networks:
 
-- [x] **Development networks** ([**devnets**](https://dashplatform.readme.io/docs/reference-glossary#devnet))
-- [x] [**Testnet**](https://dashplatform.readme.io/docs/reference-glossary#testnet)
-- [ ] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
+- [x] **Development networks** ([**devnets**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#devnet))
+- [x] [**Testnet**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#testnet)
+- [x] [Mainnet](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#mainnet)
 
 ## FAQ
 
@@ -53,8 +51,8 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.80+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
-  - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v25.2+
+  - [rust](https://www.rust-lang.org/tools/install) v1.83+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v27.3+
     - if needed, set PROTOC environment variable to location of `protoc` binary
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
@@ -63,7 +61,7 @@ this repository may be used on the following networks:
         in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
         You can find your default shell with `echo $SHELL`
       - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile`
-    - `cargo install wasm-bindgen-cli@0.2.85`
+    - `cargo install wasm-bindgen-cli@0.2.86`
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
   - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`
@@ -89,7 +87,7 @@ Discord](https://chat.dashdevs.org/)
 ### Where are the docs?
 
 Our docs are hosted on
-[readme.io](https://dashplatform.readme.io/docs/introduction-what-is-dash-platform).
+[docs.dash.org](https://docs.dash.org/projects/platform/en/stable/docs/intro/what-is-dash-platform.html).
 You can create issues and feature requests in the
 [issues](https://github.com/dashpay/platform/issues) for this repository.
 

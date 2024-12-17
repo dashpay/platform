@@ -1,15 +1,19 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Setters;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
-use drive::grovedb_storage::Error::{RocksDBError, StorageError};
+use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -32,7 +36,51 @@ where
 
     let platform_state = app.platform().state.load();
 
+    // Verify that Platform State corresponds to Drive commited state
+    let platform_state_app_hash = platform_state
+        .last_committed_block_app_hash()
+        .unwrap_or_default();
+
+    let grove_version = &platform_state
+        .current_platform_version()?
+        .drive
+        .grove_version;
+
+    let drive_storage_root_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()?;
+
+    // We had a sequence of errors on the mainnet started since block 32326.
+    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+    // validators just proceeded to the next block partially committing the state and updating the cache.
+    // Full nodes are stuck and proceeded after re-sync.
+    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    let config = &app.platform().config;
+
+    #[allow(clippy::collapsible_if)]
+    if !(config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && request.height < 33000)
+    {
+        // App hash in memory must be equal to app hash on disk
+        if drive_storage_root_hash != platform_state_app_hash {
+            // We panic because we can't recover from this situation.
+            // Better to restart the Drive, so we might self-heal the node
+            // reloading state form the disk
+            panic!(
+                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+                drive_storage_root_hash, platform_state_app_hash
+            );
+        }
+    }
+
     let last_committed_core_height = platform_state.last_committed_core_height();
+
+    let starting_platform_version = platform_state.current_platform_version()?;
 
     let core_chain_lock_update = match app.platform().core_rpc.get_best_chain_lock() {
         Ok(latest_chain_lock) => {
@@ -129,6 +177,8 @@ where
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    let epoch_info = block_execution_context.epoch_info();
+
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
     let failed_tx_count = state_transitions_result.failed_count();
@@ -156,10 +206,26 @@ where
             // Such state transitions must be invalidated by check tx, but they might
             // still be added to mempool due to inconsistency between check tx and tx processing
             // (fees calculation) or malicious proposer.
-            StateTransitionExecutionResult::UnpaidConsensusError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) => {
+                tracing::trace!(
+                    "UnpaidConsensusError at height {}, round {}: {:?}",
+                    request.height,
+                    request.round,
+                    consensus_error
+                );
+                TxAction::Removed
+            }
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::InternalError(error_message) => {
+                tracing::debug!(
+                    "InternalError at height {}, round {}: {}",
+                    request.height,
+                    request.round,
+                    error_message
+                );
+                TxAction::Removed
+            }
             // State Transition was not executed as it reached the maximum time limit
             StateTransitionExecutionResult::NotExecuted(..) => TxAction::Delayed,
         };
@@ -199,8 +265,12 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
+            starting_platform_version,
+            platform_version,
+            epoch_info,
+        )?,
         app_version: platform_version.protocol_version as u64,
     };
 

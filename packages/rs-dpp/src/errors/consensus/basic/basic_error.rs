@@ -52,7 +52,7 @@ use crate::consensus::basic::identity::{
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError,
+    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -333,6 +333,11 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
         InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    ),
+
+    #[error(transparent)]
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(
+        WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
     ),
 
     #[error(transparent)]

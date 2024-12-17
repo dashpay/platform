@@ -4,8 +4,8 @@ pub mod v0;
 
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::{
-    MasternodeListChanges, PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
-    PlatformStateV0PrivateMethods,
+    MasternodeListChanges, PlatformStateForSavingV0, PlatformStateForSavingV1, PlatformStateV0,
+    PlatformStateV0Methods, PlatformStateV0PrivateMethods,
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
@@ -42,23 +42,8 @@ pub enum PlatformState {
 pub enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
-}
-
-impl PlatformStateForSaving {
-    /// Retrieves the current protocol version used in consensus.
-    ///
-    /// Matches against `PlatformStateForSaving` variants to extract the protocol version.
-    ///
-    /// # Returns
-    /// A `ProtocolVersion` indicating the current consensus protocol version.
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    #[allow(deprecated)]
-    pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
-        match self {
-            PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,
-        }
-    }
+    /// Version 1
+    V1(PlatformStateForSavingV1),
 }
 
 impl PlatformSerializable for PlatformState {
@@ -153,11 +138,11 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
                 match platform_version
                     .drive_abci
                     .structs
-                    .platform_state_for_saving_structure
+                    .platform_state_for_saving_structure_default
                 {
                     0 => {
-                        let saving_v0: PlatformStateForSavingV0 = v0.try_into()?;
-                        Ok(saving_v0.into())
+                        let saving_v1: PlatformStateForSavingV1 = v0.try_into()?;
+                        Ok(saving_v1.into())
                     }
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
@@ -189,7 +174,23 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                     }
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
-                            "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
+                            "PlatformState::try_from_platform_versioned(PlatformStateForSavingV0)"
+                                .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                }
+            }
+            PlatformStateForSaving::V1(v1) => {
+                match platform_version.drive_abci.structs.platform_state_structure {
+                    0 => {
+                        let platform_state_v0 = PlatformStateV0::from(v1);
+
+                        Ok(platform_state_v0.into())
+                    }
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method:
+                            "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
                                 .to_string(),
                         known_versions: vec![0],
                         received: version,
@@ -280,6 +281,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn hpmn_list_len(&self) -> usize {
         match self {
             PlatformState::V0(v0) => v0.hpmn_list_len(),
+        }
+    }
+
+    fn hpmn_active_list_len(&self) -> usize {
+        match self {
+            PlatformState::V0(v0) => v0.hpmn_active_list_len(),
         }
     }
 
@@ -538,6 +545,27 @@ impl PlatformStateV0Methods for PlatformState {
     fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
         match self {
             PlatformState::V0(v0) => v0.previous_fee_versions_mut(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod versioned_deserialize {
+        use super::*;
+        use crate::test::fixture::platform_state::PLATFORM_STATE_V3_TESTNET;
+        use platform_version::version::v3::PLATFORM_V3;
+        use std::ops::Deref;
+
+        #[test]
+        fn should_deserialize_state_stored_in_version_0_from_testnet() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
+
+            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
+                .expect("failed to deserialize state");
         }
     }
 }

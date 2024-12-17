@@ -17,8 +17,7 @@ on:
 jobs:
   dashmate-test:
     name: Run ${{ inputs.name }} tests
-    # TODO: Try with Github Runner, probably it will be the same time
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -32,34 +31,29 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Login to ECR
+        uses: ./.github/actions/aws_ecr_login
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION }}
+          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      - name: Restore JS build artifacts
-        uses: strophy/actions-cache@opendal-update
+      - name: Download JS build artifacts
+        uses: actions/download-artifact@v4
         with:
-          bucket: multi-runner-cache-x1xibo9c
-          root: actions-cache
-          path: build-js-artifacts-${{ github.sha }}.tar
-          key: build-js-artifacts/${{ github.sha }}
-
-      - name: Unpack JS build artifacts archive
-        run: tar -xvf build-js-artifacts-${{ github.sha }}.tar
+          name: js-build-${{ github.sha }}
+          path: packages
 
       - name: Replace with pre-built images
         run: |
-          set -x
+          set -e
 
           # Login to ECR
-          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
 
           SHA_TAG=sha-${{ github.sha }}
 
@@ -84,14 +78,17 @@ jobs:
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
         if: inputs.restore_local_network_data == true
 
-      - name: Use test suite local network data to speed up dashmate local network tests
+      - name: Set HOME variable to github context
+        shell: bash
+        run: echo "HOME=$HOME" >> $GITHUB_ENV
+
+      - name: Restore test suite local network data to speed up dashmate local network tests
         id: local-network-data
-        uses: strophy/actions-cache/restore@opendal-update
+        uses: actions/cache/restore@v4
         with:
-          bucket: multi-runner-cache-x1xibo9c
-          root: local-network-data
           path: |
-            /home/ubuntu/.dashmate
+            ${{ env.HOME }}/.dashmate
+            **/.env
             dashmate_volumes_dump
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
         if: inputs.restore_local_network_data == true
@@ -105,7 +102,7 @@ jobs:
         env:
           DEBUG: 1
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
-          DASHMATE_E2E_TESTS_LOCAL_HOMEDIR: /home/ubuntu/.dashmate
+          DASHMATE_E2E_TESTS_LOCAL_HOMEDIR: ${{ env.HOME }}/.dashmate
         if: steps.local-network-data.outputs.cache-hit == 'true'
 
       - name: Run tests without cache
@@ -113,9 +110,8 @@ jobs:
         env:
           DEBUG: 1
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
-        if: steps.local-network-data.outputs.cache-hit != 'true'
+        if: steps.local-network-data.outputs.cache-hit == 'false'
 
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
-

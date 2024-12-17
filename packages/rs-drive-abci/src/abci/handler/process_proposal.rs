@@ -1,6 +1,7 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
 };
@@ -8,8 +9,10 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
 use crate::platform_types::block_execution_outcome;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
 use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
@@ -177,6 +180,50 @@ where
 
     let platform_state = app.platform().state.load();
 
+    // Verify that Platform State corresponds to Drive commited state
+    let platform_state_app_hash = platform_state
+        .last_committed_block_app_hash()
+        .unwrap_or_default();
+
+    let grove_version = &platform_state
+        .current_platform_version()?
+        .drive
+        .grove_version;
+
+    let drive_storage_root_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()?;
+
+    // We had a sequence of errors on the mainnet started since block 32326.
+    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+    // validators just proceeded to the next block partially committing the state and updating the cache.
+    // Full nodes are stuck and proceeded after re-sync.
+    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    let config = &app.platform().config;
+
+    #[allow(clippy::collapsible_if)]
+    if !(app.platform().config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && request.height < 33000)
+    {
+        // App hash in memory must be equal to app hash on disk
+        if drive_storage_root_hash != platform_state_app_hash {
+            // We panic because we can't recover from this situation.
+            // Better to restart the Drive, so we might self-heal the node
+            // reloading state form the disk
+            panic!(
+                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+                drive_storage_root_hash, platform_state_app_hash
+            );
+        }
+    }
+
+    let starting_platform_version = platform_state.current_platform_version()?;
+
     // Running the proposal executes all the state transitions for the block
     let run_result = app.platform().run_block_proposal(
         (&request).try_into()?,
@@ -211,6 +258,8 @@ where
         platform_version,
         block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
+
+    let epoch_info = *block_execution_context.epoch_info();
 
     app.block_execution_context()
         .write()
@@ -274,8 +323,12 @@ where
         tx_results,
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
-        // TODO: Implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
+            starting_platform_version,
+            platform_version,
+            &epoch_info,
+        )?,
         events: Vec::new(),
     };
 

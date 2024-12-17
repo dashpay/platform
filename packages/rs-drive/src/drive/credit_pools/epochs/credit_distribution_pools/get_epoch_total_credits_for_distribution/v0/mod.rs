@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn test_get_epoch_total_credits_for_distribution_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
 

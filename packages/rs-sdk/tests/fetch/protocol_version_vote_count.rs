@@ -1,6 +1,7 @@
 use super::{common::setup_logs, config::Config};
 use dash_sdk::platform::FetchMany;
 use dpp::version::ProtocolVersionVoteCount;
+use drive_proof_verifier::types::ProtocolVersionUpgrades;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -10,7 +11,7 @@ async fn test_protocol_version_vote_count() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_protocol_version_vote_count").await;
 
-    let votings = ProtocolVersionVoteCount::fetch_many(&sdk, ())
+    let votings: ProtocolVersionUpgrades = ProtocolVersionVoteCount::fetch_many(&sdk, ())
         .await
         .expect("fetch protocol version votes");
 
