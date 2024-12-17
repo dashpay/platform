@@ -64,6 +64,10 @@ jobs:
         run: yarn build
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: built?
+        run: |
+          ls -la packages/wasm-dpp
+
       - name: Ignore only already cached artifacts
         run: |
           find . -name '.gitignore' -exec rm -f {} +
@@ -83,6 +87,10 @@ jobs:
           git ls-files --others --exclude-standard >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Modified?
+        run: |
+          echo '${{ steps.diff.outputs.files }}'
 
       - name: Upload the archive of built files
         uses: actions/upload-artifact@v4
