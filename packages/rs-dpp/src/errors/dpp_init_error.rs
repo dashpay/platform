@@ -1,5 +1,5 @@
-use platform_version::version::protocol_version::FeatureVersion;
 use thiserror::Error;
+use versioned_feature_core::FeatureVersion;
 
 #[derive(Error, Debug)]
 #[ferment_macro::export]

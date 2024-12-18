@@ -12,7 +12,7 @@ use crate::state_transition::state_transitions::identity::identity_update_transi
 
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityUpdate;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl From<IdentityUpdateTransitionV0> for StateTransition {
     fn from(value: IdentityUpdateTransitionV0) -> Self {

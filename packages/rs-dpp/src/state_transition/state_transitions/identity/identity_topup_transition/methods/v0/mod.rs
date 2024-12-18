@@ -10,7 +10,8 @@ use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 pub trait IdentityTopUpTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

@@ -25,7 +25,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
 
 use platform_value::{Identifier, Value};
-use platform_version::version::protocol_version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 use std::collections::BTreeMap;
 

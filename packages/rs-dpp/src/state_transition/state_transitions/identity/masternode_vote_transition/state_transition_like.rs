@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for MasternodeVoteTransition {

@@ -5,7 +5,7 @@ use crate::errors::consensus::basic::BasicError;
 #[cfg(feature = "cbor")]
 use crate::errors::consensus::ConsensusError;
 use integer_encoding::VarInt;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use serde_json::{Map, Number, Value};
 // use serde_json::{Map, Number, Value as JsonValue};
 

@@ -1,6 +1,6 @@
 use dpp::platform_value::Error as ValueError;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use dpp::ProtocolError;
 use drive::error::proof::ProofError;
 use drive::error::query::QuerySyntaxError as SyntaxError;

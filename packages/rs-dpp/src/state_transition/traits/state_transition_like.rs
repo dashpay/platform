@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use platform_value::{BinaryData, Identifier};
 
 use crate::prelude::UserFeeIncrease;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 use crate::state_transition::StateTransitionType;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};

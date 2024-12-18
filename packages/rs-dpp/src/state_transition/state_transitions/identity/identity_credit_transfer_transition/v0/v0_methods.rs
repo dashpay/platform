@@ -15,7 +15,10 @@ use crate::state_transition::state_transitions::identity::identity_credit_transf
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
+
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::{Purpose, SecurityLevel};
 

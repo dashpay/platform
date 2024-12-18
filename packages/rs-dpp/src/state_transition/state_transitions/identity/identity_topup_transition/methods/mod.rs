@@ -14,7 +14,7 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 

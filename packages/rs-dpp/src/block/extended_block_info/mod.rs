@@ -4,7 +4,7 @@ use crate::block::extended_block_info::v0::{
 };
 use crate::errors::ProtocolError;
 
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

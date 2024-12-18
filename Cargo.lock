@@ -1306,6 +1306,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1320,6 +1321,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wallet-utils-contract",
  "withdrawals-contract",
 ]
@@ -1448,6 +1450,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1500,6 +1503,7 @@ dependencies = [
  "test-case",
  "thiserror",
  "tokio",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1542,6 +1546,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1597,6 +1602,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1868,6 +1874,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2997,6 +3004,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5657,6 +5665,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6054,6 +6063,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "thiserror",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

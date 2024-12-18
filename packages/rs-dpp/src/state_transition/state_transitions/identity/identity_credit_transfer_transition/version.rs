@@ -1,6 +1,6 @@
 use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::FeatureVersioned;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl FeatureVersioned for IdentityCreditTransferTransition {
     fn feature_version(&self) -> FeatureVersion {

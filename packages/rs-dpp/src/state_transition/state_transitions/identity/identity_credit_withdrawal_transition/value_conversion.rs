@@ -11,7 +11,8 @@ use crate::state_transition::StateTransitionValueConvert;
 
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

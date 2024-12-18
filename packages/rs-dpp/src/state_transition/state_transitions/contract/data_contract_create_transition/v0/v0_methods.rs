@@ -16,7 +16,7 @@ use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 
 use crate::state_transition::StateTransition;
-use platform_version::version::protocol_version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
     fn new_from_data_contract<S: Signer>(

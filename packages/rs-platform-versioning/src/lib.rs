@@ -47,7 +47,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         impl #name {
-            pub fn feature_version(&self) -> platform_version::version::FeatureVersion {
+            pub fn feature_version(&self) -> versioned_feature_core::FeatureVersion {
                 match self {
                     #(#version_arms),*
                 }

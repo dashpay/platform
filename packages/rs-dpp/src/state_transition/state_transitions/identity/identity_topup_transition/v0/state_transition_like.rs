@@ -12,7 +12,7 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityTopUp;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl From<IdentityTopUpTransitionV0> for StateTransition {
     fn from(value: IdentityTopUpTransitionV0) -> Self {

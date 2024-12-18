@@ -5,7 +5,7 @@ use crate::identity::identity_public_key::KeyID;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::StateTransition;
-use platform_version::version::protocol_version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 

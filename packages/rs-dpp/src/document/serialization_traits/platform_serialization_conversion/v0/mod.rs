@@ -2,7 +2,8 @@ use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "validation")]
 use crate::validation::ConsensusValidationResult;
 use crate::errors::ProtocolError;
-use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 pub trait DocumentPlatformConversionMethodsV0: Clone {
     /// Serializes the document.

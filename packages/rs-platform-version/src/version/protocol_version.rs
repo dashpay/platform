@@ -23,7 +23,7 @@ use crate::version::v5::PLATFORM_V5;
 use crate::version::v6::PLATFORM_V6;
 use crate::version::v7::PLATFORM_V7;
 use crate::version::ProtocolVersion;
-pub use versioned_feature_core::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
+pub use versioned_feature_core::{FeatureVersionBounds, OptionalFeatureVersion};
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: ProtocolVersion,

@@ -3,7 +3,8 @@ use crate::document::Document;
 use crate::balances::credits::Credits;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{DocumentPurchaseTransition};
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_purchase_transition::DocumentPurchaseTransitionV0;

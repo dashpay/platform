@@ -15,7 +15,9 @@ use crate::{
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransition {
     #[cfg(feature = "state-transition-signing")]

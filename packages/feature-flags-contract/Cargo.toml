@@ -11,3 +11,4 @@ thiserror = "1.0.64"
 platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }
+versioned-feature-core = "1.0.0"

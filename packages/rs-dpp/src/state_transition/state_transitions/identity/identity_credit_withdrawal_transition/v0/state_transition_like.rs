@@ -12,7 +12,7 @@ use crate::state_transition::state_transitions::identity::identity_credit_withdr
 
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityCreditWithdrawal;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl From<IdentityCreditWithdrawalTransitionV0> for StateTransition {
     fn from(value: IdentityCreditWithdrawalTransitionV0) -> Self {

@@ -1,4 +1,5 @@
-use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 use crate::data_contract::document_type::{DocumentTypeRef};
 use crate::document::{Document};
 use crate::prelude::IdentityNonce;

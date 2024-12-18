@@ -5,7 +5,8 @@ use crate::prelude::IdentityNonce;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::DocumentCreateTransitionV0;
 use crate::ProtocolError;
-use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl DocumentCreateTransitionV0 {
     pub(crate) fn from_document(

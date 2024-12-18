@@ -28,7 +28,9 @@ use crate::state_transition::state_transitions::identity::public_key_in_creation
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 use platform_value::Identifier;
 use crate::{
     identity::identity_public_key::KeyID,

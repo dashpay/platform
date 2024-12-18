@@ -1,6 +1,6 @@
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use dpp::fee::Credits;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 /// Drive errors
 #[derive(Debug, thiserror::Error)]

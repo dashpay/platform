@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityUpdateTransition {

@@ -14,7 +14,9 @@ use crate::{
 };
 
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;

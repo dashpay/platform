@@ -6,7 +6,8 @@ use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 use std::collections::BTreeMap;
 
 impl<'a> ValueConvertible<'a> for IdentityPublicKeyInCreation {}
