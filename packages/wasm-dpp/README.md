@@ -39,7 +39,7 @@ Library consumers must ignore class names minification for `@dashevo/wasm-dpp` l
 
 - Install [Rust](https://www.rust-lang.org/tools/install) v1.73+
 - Add wasm32 target: `$ rustup target add wasm32-unknown-unknown`
-- Install wasm-bingen-cli: `cargo install wasm-bindgen-cli@0.2.86`
+- Install wasm-bingen-cli: `cargo install wasm-bindgen-cli@0.2.99`
   - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
   - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
 
