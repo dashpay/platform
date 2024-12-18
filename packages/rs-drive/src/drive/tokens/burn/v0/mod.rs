@@ -93,7 +93,7 @@ impl Drive {
 
         // Add estimation info if needed
         if let Some(esti) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(esti, &platform_version.drive)?;
+            Self::add_estimation_costs_for_token_balances(esti, &platform_version.drive)?;
             Self::add_estimation_costs_for_negative_credit(
                 identity_id,
                 esti,

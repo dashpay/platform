@@ -1,4 +1,4 @@
-use crate::drive::tokens::token_balances_root_path;
+use crate::drive::tokens::tokens_root_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -111,7 +111,7 @@ impl Drive {
 
         // Insert an empty tree for this token if it doesn't exist
         let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((token_balances_root_path(), token_id.to_vec())),
+            PathFixedSizeKey((tokens_root_path(), token_id.to_vec())),
             true,
             None, // No storage flags
             apply_type,

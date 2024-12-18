@@ -113,8 +113,8 @@ pub enum RootTree {
     WithdrawalTransactions = 80,
     /// Balances (For identities)
     Balances = 96,
-    /// Token Balances
-    TokenBalances = 16,
+    /// Token Balances and Info
+    Tokens = 16,
     /// Versions desired by proposers
     Versions = 120,
     /// Registered votes
@@ -138,7 +138,7 @@ impl fmt::Display for RootTree {
             RootTree::Misc => "Misc",
             RootTree::WithdrawalTransactions => "WithdrawalTransactions",
             RootTree::Balances => "Balances",
-            RootTree::TokenBalances => "TokenBalances",
+            RootTree::Tokens => "TokenBalances",
             RootTree::Versions => "Versions",
             RootTree::Votes => "Votes",
         };
@@ -181,7 +181,7 @@ impl TryFrom<u8> for RootTree {
             104 => Ok(RootTree::Misc),
             80 => Ok(RootTree::WithdrawalTransactions),
             96 => Ok(RootTree::Balances),
-            16 => Ok(RootTree::TokenBalances),
+            16 => Ok(RootTree::Tokens),
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
             _ => Err(Error::Drive(DriveError::NotSupported(
@@ -205,7 +205,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],
-            RootTree::TokenBalances => &[16],
+            RootTree::Tokens => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],

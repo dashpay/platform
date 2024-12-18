@@ -105,7 +105,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<Credits>, Error> {
+    ) -> Result<Option<TokenAmount>, Error> {
         match platform_version.drive.methods.token.fetch.balance {
             0 => self.fetch_identity_token_balance_operations_v0(
                 token_id,

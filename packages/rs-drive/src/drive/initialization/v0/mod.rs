@@ -61,7 +61,7 @@ impl Drive {
 
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
-            &[RootTree::TokenBalances as u8],
+            &[RootTree::Tokens as u8],
             transaction,
             None,
             &mut drive_operations,
@@ -302,7 +302,7 @@ mod tests {
 
         // Merk Level 2
         let mut query = Query::new();
-        query.insert_key(vec![RootTree::TokenBalances as u8]);
+        query.insert_key(vec![RootTree::Tokens as u8]);
         let root_path_query = PathQuery::new(
             vec![],
             SizedQuery {

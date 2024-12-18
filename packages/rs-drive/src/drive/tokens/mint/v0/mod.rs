@@ -1,5 +1,4 @@
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
@@ -89,36 +88,20 @@ impl Drive {
 
         // Estimation
         if let Some(esti) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(esti, &platform_version.drive)?;
-            Self::add_estimation_costs_for_negative_credit(
-                identity_id,
-                esti,
-                &platform_version.drive,
-            )?;
+            Self::add_estimation_costs_for_token_balances(esti, &platform_version.drive)?;
         }
 
-        // Fetch current balance
-        let current_balance = self
-            .fetch_identity_token_balance_operations(
-                token_id,
-                identity_id,
-                estimated_costs_only_with_layer_info.is_none(),
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-            .unwrap_or(0);
-
-        let new_balance = current_balance
-            .checked_add(issuance_amount)
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "overflow when adding issuance_amount".to_string(),
-            )))?;
-
         // Update identity balance
-        drive_operations.push(self.update_identity_balance_operation_v0(identity_id, new_balance)?);
+        drive_operations.extend(self.add_to_identity_token_balance_operations(
+            token_id,
+            identity_id,
+            issuance_amount,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
 
-        drive_operations.push(self.add_to_token_total_supply_operations(
+        drive_operations.extend(self.add_to_token_total_supply_operations(
             token_id,
             issuance_amount,
             estimated_costs_only_with_layer_info,

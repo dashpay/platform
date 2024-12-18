@@ -234,7 +234,7 @@ impl Drive {
         }
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(
+            Self::add_estimation_costs_for_token_balances(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;

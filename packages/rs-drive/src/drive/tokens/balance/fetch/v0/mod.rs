@@ -1,4 +1,4 @@
-use crate::drive::tokens::token_balances_path_vec;
+use crate::drive::tokens::{token_balances_path, token_balances_path_vec};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -48,7 +48,7 @@ impl Drive {
             }
         };
 
-        let balance_path = token_balances_path_vec(token_id);
+        let balance_path = token_balances_path(&token_id);
 
         match self.grove_get_raw_optional(
             (&balance_path).into(),

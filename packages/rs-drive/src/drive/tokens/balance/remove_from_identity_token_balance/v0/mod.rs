@@ -8,10 +8,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
+use crate::drive::tokens::token_balances_path_vec;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -79,22 +80,19 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(
-                estimated_costs_only_with_layer_info,
-                &platform_version.drive,
-            )?;
-            Self::add_estimation_costs_for_negative_credit(
-                identity_id,
+            Self::add_estimation_costs_for_token_balances(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
         }
 
-        let previous_balance = if estimated_costs_only_with_layer_info.is_none() {
+        let apply = estimated_costs_only_with_layer_info.is_none();
+
+        let previous_balance = if apply {
             self.fetch_identity_token_balance_operations(
                 token_id,
                 identity_id,
-                estimated_costs_only_with_layer_info.is_none(),
+                apply,
                 transaction,
                 &mut drive_operations,
                 platform_version,
@@ -117,10 +115,13 @@ impl Drive {
             )));
         }
 
-        drive_operations.push(self.update_identity_token_balance_operation_v0(
-            identity_id,
-            previous_balance - balance_to_remove,
-        )?);
+        let balance_path = token_balances_path_vec(token_id);
+
+        drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
+            balance_path,
+            identity_id.to_vec(),
+            Element::new_sum_item((previous_balance - balance_to_remove) as i64),
+        ));
 
         Ok(drive_operations)
     }

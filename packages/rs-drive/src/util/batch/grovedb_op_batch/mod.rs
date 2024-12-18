@@ -71,7 +71,7 @@ impl From<RootTree> for KnownPath {
             RootTree::Misc => KnownPath::MiscRoot,
             RootTree::WithdrawalTransactions => KnownPath::WithdrawalTransactionsRoot,
             RootTree::Balances => KnownPath::BalancesRoot,
-            RootTree::TokenBalances => KnownPath::TokenBalancesRoot,
+            RootTree::Tokens => KnownPath::TokenBalancesRoot,
             RootTree::Versions => KnownPath::VersionsRoot,
             RootTree::Votes => KnownPath::VotesRoot,
         }

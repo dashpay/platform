@@ -1,0 +1,137 @@
+use crate::drive::constants::AVERAGE_BALANCE_SIZE;
+
+use crate::drive::Drive;
+
+use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerInformation;
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+
+use crate::drive::tokens::{
+    token_balances_path, token_identity_infos_path, token_path, tokens_root_path,
+};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
+use std::collections::HashMap;
+
+pub const ESTIMATED_TOKEN_INFO_SIZE_BYTES: u16 = 256;
+
+impl Drive {
+    /// Adds estimation costs for token balances in Drive for version 0.
+    ///
+    /// This function provides a mechanism to estimate the costs of token balances
+    /// in the drive by updating the provided `HashMap` with layer information
+    /// relevant to balances.
+    ///
+    /// # Parameters
+    ///
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    ///   that stores estimated layer information based on the key information path.
+    ///
+    /// # Notes
+    ///
+    /// The function estimates costs for three layers:
+    ///
+    /// 1. **Top Layer**:
+    ///    - Contains general balance information and is assumed to be located on
+    ///      layer 3 (third level in the hierarchy). The update will involve modifying:
+    ///      - 1 normal tree for token balances.
+    ///      - 1 normal tree for identities.
+    ///      - 1 normal tree for contract/documents.
+    ///
+    /// 2. **Token Balances or Info Layer**:
+    ///    - This layer contains two nodes, either for representing the token balances or info.
+    ///
+    /// 3. **All Token Balances Layer**:
+    ///    - This layer contains the token balance root path and is considered to be
+    ///      a normal tree that will require updates to an average of 10 nodes.
+    ///
+    /// 3. **Token Layer**:
+    ///    - This layer contains the contract-specific token balance information, which
+    ///      is a sum tree structure with all token amounts for all identities that have a balance.
+    /// ```
+    pub(super) fn add_estimation_costs_for_token_balances_v0(
+        token_id: [u8; 32],
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        with_info: bool,
+    ) {
+        // we have constructed the top layer so contract/documents tree are at the top
+        // since balance will be on layer 3 (level 2 on left then left)
+        // updating will mean we will update:
+        // 1 normal tree (token balances)
+        // 1 normal tree (identities)
+        // 1 normal tree (contract/documents)
+        // hence we should give an equal weight to both
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path([]),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: EstimatedLevel(2, false),
+                estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
+            },
+        );
+
+        // there is one tree for the root path
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(tokens_root_path()),
+            EstimatedLayerInformation {
+                is_sum_tree: false,
+                estimated_layer_count: EstimatedLevel(10, false), // We estimate that on average we need to update 10 nodes
+                estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
+            },
+        );
+
+        if with_info {
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(token_path(&token_id)),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: EstimatedLevel(1, false),
+                    estimated_layer_sizes: AllSubtrees(
+                        1,
+                        SomeSumTrees {
+                            sum_trees_weight: 1,
+                            non_sum_trees_weight: 1,
+                        },
+                        None,
+                    ),
+                },
+            );
+        } else {
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(token_path(&token_id)),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: EstimatedLevel(0, false),
+                    estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
+                },
+            );
+        }
+
+        if with_info {
+            // there is one tree for the root path
+            estimated_costs_only_with_layer_info.insert(
+                KeyInfoPath::from_known_path(token_identity_infos_path(&token_id)),
+                EstimatedLayerInformation {
+                    is_sum_tree: false,
+                    estimated_layer_count: PotentiallyAtMaxElements,
+                    estimated_layer_sizes: AllItems(
+                        DEFAULT_HASH_SIZE_U8,
+                        ESTIMATED_TOKEN_INFO_SIZE_BYTES,
+                        None,
+                    ),
+                },
+            );
+        }
+
+        // this is where the balances are
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(token_balances_path(&token_id)),
+            EstimatedLayerInformation {
+                is_sum_tree: true,
+                estimated_layer_count: PotentiallyAtMaxElements,
+                estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
+            },
+        );
+    }
+}
