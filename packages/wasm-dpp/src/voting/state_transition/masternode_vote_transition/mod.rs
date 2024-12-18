@@ -133,7 +133,7 @@ impl MasternodeVoteTransitionWasm {
         let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::MasternodeVote(
             self.0.clone(),
         ))
-            .with_js_error()?;
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -300,7 +300,7 @@ impl MasternodeVoteTransitionWasm {
                         Some(js_object)
                     }
                 }
-            }
+            },
         }
     }
 
@@ -319,7 +319,7 @@ impl MasternodeVoteTransitionWasm {
             return Err(JsError::new(
                 format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
             )
-                .into());
+            .into());
         }
 
         let bls_adapter = if let Some(adapter) = bls {
