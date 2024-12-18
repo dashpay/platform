@@ -5,7 +5,6 @@ use crate::DPPError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Asset Lock transaction {transaction_id:?} is not found")]
-#[ferment_macro::export]
 pub struct AssetLockTransactionIsNotFoundError {
     pub transaction_id: Txid,
 }
