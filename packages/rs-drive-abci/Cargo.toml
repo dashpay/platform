@@ -113,3 +113,7 @@ grovedbg = ["drive/grovedbg"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
+
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }

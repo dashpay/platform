@@ -114,9 +114,28 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
 ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
 
-# Configure Rust toolchain
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
+# Configure Rust toolchain and C / C++ compiler
+RUN <<EOS
 # It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
-RUN echo 'source $HOME/.cargo/env' >> /root/env
+echo 'source $HOME/.cargo/env' >> /root/env
+
+# Enable gcc / g++ optimizations
+if [[ "$TARGETARCH" == "amd64" ]] ; then
+    if [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then
+        echo "export CFLAGS=-march=x86-64-v3" >> /root/env
+        echo "export CXXFLAGS=-march=x86-64-v3" >> /root/env
+        echo "export PORTABLE=x86-64-v3" >> /root/env
+    else
+        echo "export CFLAGS=-march=x86-64" >> /root/env
+        echo "export CXXFLAGS=-march=x86-64" >> /root/env
+        echo "export PORTABLE=x86-64" >> /root/env
+    fi
+else
+    echo "export PORTABLE=1" >> /root/env
+fi
+EOS
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -258,13 +277,14 @@ WORKDIR /tmp/rocksdb
 # sccache -s
 # EOS
 
+# Select whether we want dev or release
+# This variable will be also visibe in next stages
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
-
-# Support any CPU architecture
-export PORTABLE=1
 
 make -j$(nproc) static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
@@ -319,10 +339,6 @@ RUN --mount=type=secret,id=AWS \
     --disable-telemetry \
     --no-track \
     --no-confirm
-
-
-# Select whether we want dev or release
-ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 #
 # Rust build planner to speed up builds
@@ -464,6 +480,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove /platform to reduce layer size
     rm -rf /platform
+
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
