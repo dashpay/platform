@@ -143,10 +143,6 @@ export default function setupLocalPresetTaskFactory(
                   config.set('core.log.debug.enabled', true);
                 }
 
-                // Although not all nodes are miners, all nodes should be aware of
-                // the miner interval to be able to sync mocked time
-                config.set('core.miner.interval', ctx.minerInterval);
-
                 config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
 
                 // We use single node quorums by default
@@ -175,6 +171,8 @@ export default function setupLocalPresetTaskFactory(
                 }
 
                 if (config.getName() === 'local_seed') {
+                  config.set('core.miner.interval', ctx.minerInterval);
+
                   config.set('description', 'seed node for local network');
 
                   config.set('core.masternode.enable', false);

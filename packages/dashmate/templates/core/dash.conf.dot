@@ -95,7 +95,6 @@ regtest=1
 testactivationheight=mn_rr@1000 
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
-{{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
 {{? it.platform.drive.abci.instantLock.quorum.llmqType == 111 }}
 llmqtestinstantsenddip0024=llmq_1_100
 {{??}}
