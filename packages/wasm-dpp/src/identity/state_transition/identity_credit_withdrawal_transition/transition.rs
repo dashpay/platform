@@ -146,16 +146,6 @@ impl IdentityCreditWithdrawalTransitionWasm {
         self.0.set_user_fee_increase(user_fee_increase);
     }
 
-    #[wasm_bindgen(js_name=getIdentityContractNonce)]
-    pub fn get_identity_nonce(&self) -> u64 {
-        self.0.nonce()
-    }
-
-    #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_nonce: u64) -> () {
-        self.0.set_nonce(identity_nonce)
-    }
-
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
         let opts: super::to_object::ToObjectOptions = if options.is_object() {
