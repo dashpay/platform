@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumHash, QuorumType};
+use dashcore_rpc::json::{ExtendedQuorumListResult,  dashcore::hash_types::QuorumHash, QuorumType};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
@@ -386,7 +386,7 @@ where
                 )?;
 
                 let public_key =
-                    match BlsPublicKey::from_bytes(quorum_info.quorum_public_key.as_slice())
+                    match BlsPublicKey::try_from(quorum_info.quorum_public_key.as_slice())
                         .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
                     {
                         Ok(public_key) => public_key,
