@@ -109,14 +109,14 @@ impl IdentityCreditTransferTransitionWasm {
         self.0.set_user_fee_increase(user_fee_increase);
     }
 
-    #[wasm_bindgen(js_name=getIdentityContractNonce)]
-    pub fn get_identity_nonce(&self) -> u64 {
+    #[wasm_bindgen(js_name=getNonce)]
+    pub fn get_nonce(&self) -> u64 {
         self.0.nonce()
     }
 
-    #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_nonce: u64) -> () {
-        self.0.set_nonce(identity_nonce)
+    #[wasm_bindgen(js_name=setNonce)]
+    pub fn set_nonce(&mut self, nonce: u64) -> () {
+        self.0.set_nonce(nonce)
     }
 
     #[wasm_bindgen(js_name=toObject)]
