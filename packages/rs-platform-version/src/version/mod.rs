@@ -11,7 +11,7 @@ pub mod fee;
 pub mod mocks;
 pub mod patches;
 pub mod system_data_contract_versions;
-mod system_limits;
+pub mod system_limits;
 pub mod v1;
 pub mod v2;
 pub mod v3;
