@@ -3,8 +3,8 @@
 
 ### ⚠ BREAKING CHANGES
 
-* emergency hard fork to fix masternode voting (#2397)
-* update rust to 1.83 - backport #2393 to v1.7 (#2398)
+* On epoch 13, masternode vote state transition validation logic will be changed. Nodes which aren't upgraded to this version will halt (#2397)
+* Rust 1.83 is required to build the project (#2398)
 
 ### Bug Fixes
 
