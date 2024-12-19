@@ -1,3 +1,20 @@
+### [1.7.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.7.1) (2024-12-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* emergency hard fork to fix masternode voting (#2397)
+* update rust to 1.83 - backport #2393 to v1.7 (#2398)
+
+### Bug Fixes
+
+* emergency hard fork to fix masternode voting ([#2397](https://github.com/dashpay/platform/issues/2397))
+
+
+### Build System
+
+* update rust to 1.83 - backport [#2393](https://github.com/dashpay/platform/issues/2393) to v1.7 ([#2398](https://github.com/dashpay/platform/issues/2398))
+
 ### [1.7.0](https://github.com/dashpay/platform/compare/v1.6.2...v1.7.0) (2024-12-13)
 
 
