@@ -22,7 +22,7 @@ impl Drive {
             .into_iter()
             .map(|(public_key_hash, maybe_identity_id)| {
                 if let Some(identity_id) = maybe_identity_id {
-                    Self::full_identity_with_public_key_hash_query(
+                    Self::full_identity_with_unique_public_key_hash_query(
                         public_key_hash,
                         identity_id,
                         &platform_version.drive.grove_version,

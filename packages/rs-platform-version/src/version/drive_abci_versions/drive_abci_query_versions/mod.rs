@@ -5,6 +5,7 @@ use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVersions {
     pub max_returned_elements: u16,
+    pub max_returned_full_identities: u16,
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
@@ -32,6 +33,7 @@ pub struct DriveAbciQueryIdentityVersions {
     pub identities_balances: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
     pub identity_by_public_key_hash: FeatureVersionBounds,
+    pub identities_for_non_unique_public_key_hash: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

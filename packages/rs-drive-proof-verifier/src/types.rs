@@ -12,7 +12,7 @@ use dpp::core_types::validator_set::ValidatorSet;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
-use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::prelude::{Identity, IdentityNonce, TimestampMillis};
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
@@ -96,6 +96,9 @@ pub type DataContractHistory = RetrievedValues<u64, DataContract>;
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
+
+/// Collection of identities, indexed by their identifiers.
+pub type Identities = RetrievedObjects<Identifier, Identity>;
 
 /// Multiple contenders for a vote resolution.
 ///

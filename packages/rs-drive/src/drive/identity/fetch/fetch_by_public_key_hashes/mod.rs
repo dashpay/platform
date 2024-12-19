@@ -1,4 +1,5 @@
 mod fetch_full_identities_by_unique_public_key_hashes;
+mod fetch_full_identities_for_non_unique_public_key_hash;
 mod fetch_full_identity_by_unique_public_key_hash;
 mod fetch_identity_id_by_unique_public_key_hash;
 mod fetch_identity_ids_by_non_unique_public_key_hash;
@@ -71,6 +72,7 @@ mod tests {
                 let identity_ids = drive
                     .fetch_identity_ids_by_non_unique_public_key_hash(
                         hash,
+                        None,
                         Some(&transaction),
                         &drive_version,
                     )

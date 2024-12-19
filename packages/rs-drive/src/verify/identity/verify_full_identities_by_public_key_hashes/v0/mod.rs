@@ -48,7 +48,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
         let (root_hash, identity_ids_by_key_hashes) =
-            Self::verify_identity_ids_by_public_key_hashes::<Vec<(_, _)>>(
+            Self::verify_identity_ids_by_unique_public_key_hashes::<Vec<(_, _)>>(
                 proof,
                 true,
                 public_key_hashes,
