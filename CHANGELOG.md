@@ -1,3 +1,33 @@
+## [1.8.0-dev.2](https://github.com/dashpay/platform/compare/v1.8.0-dev.1...v1.8.0-dev.2) (2024-12-19)
+
+### ⚠ BREAKING CHANGES
+
+* On epoch 13, masternode vote state transition validation logic will be changed. Nodes which aren't upgraded to this version will halt (#2397)
+* Rust 1.83 is required to build the project (#2398)
+
+### Bug Fixes
+
+* **dashmate:** local network starting issues ([#2394](https://github.com/dashpay/platform/issues/2394))
+* **dashmate:** some group commands fail with mtime not found ([#2400](https://github.com/dashpay/platform/issues/2400))
+* emergency hard fork to fix masternode voting ([#2397](https://github.com/dashpay/platform/issues/2397))
+
+
+### Performance Improvements
+
+* **dpp:** reduce JS binding size by 3x ([#2396](https://github.com/dashpay/platform/issues/2396))
+
+
+### Build System
+
+* bump wasm-bindgen to 0.2.99 ([#2395](https://github.com/dashpay/platform/issues/2395))
+* update rust to 1.83 ([#2393](https://github.com/dashpay/platform/issues/2393))
+
+
+### Code Refactoring
+
+* **dpp:** using deprecated param to init wasm module ([#2399](https://github.com/dashpay/platform/issues/2399))
+
+
 ### [1.7.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.7.1) (2024-12-19)
 
 ### ⚠ BREAKING CHANGES
