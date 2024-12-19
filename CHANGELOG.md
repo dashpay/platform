@@ -1,5 +1,21 @@
-## [1.8.0-dev.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.8.0-dev.1) (2024-12-16)
+### [1.7.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.7.1) (2024-12-19)
 
+### ⚠ BREAKING CHANGES
+
+* On epoch 13, masternode vote state transition validation logic will be changed. Nodes which aren't upgraded to this version will halt (#2397)
+* Rust 1.83 is required to build the project (#2398)
+
+### Bug Fixes
+
+* emergency hard fork to fix masternode voting ([#2397](https://github.com/dashpay/platform/issues/2397))
+
+
+### Build System
+
+* update rust to 1.83 - backport [#2393](https://github.com/dashpay/platform/issues/2393) to v1.7 ([#2398](https://github.com/dashpay/platform/issues/2398))
+
+
+## [1.8.0-dev.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.8.0-dev.1) (2024-12-16)
 
 ### Continuous Integration
 
@@ -19,6 +35,7 @@
 ### Code Refactoring
 
 * **platform:** replace bls library ([#2257](https://github.com/dashpay/platform/issues/2257))
+
 
 ### [1.7.0](https://github.com/dashpay/platform/compare/v1.6.2...v1.7.0) (2024-12-13)
 
