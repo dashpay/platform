@@ -99,6 +99,26 @@ impl IdentityCreditTransferTransitionWasm {
         self.0.set_amount(amount as u64);
     }
 
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase() as u16
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
+    #[wasm_bindgen(js_name=getNonce)]
+    pub fn get_nonce(&self) -> u64 {
+        self.0.nonce()
+    }
+
+    #[wasm_bindgen(js_name=setNonce)]
+    pub fn set_nonce(&mut self, nonce: u64) -> () {
+        self.0.set_nonce(nonce)
+    }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
         let opts: super::to_object::ToObjectOptions = if options.is_object() {
@@ -316,6 +336,11 @@ impl IdentityCreditTransferTransitionWasm {
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
             .set_signature(BinaryData::new(signature.unwrap_or_default()))
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen]

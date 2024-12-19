@@ -160,6 +160,26 @@ impl IdentityUpdateTransitionWasm {
         StateTransitionLike::owner_id(&self.0).to_owned().into()
     }
 
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase() as u16
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_nonce(&self) -> u64 {
+        self.0.nonce()
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, identity_nonce: u64) -> () {
+        self.0.set_nonce(identity_nonce)
+    }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
         let opts: super::to_object::ToObjectOptions = if options.is_object() {
@@ -401,6 +421,11 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
         Buffer::from_bytes_owned(self.0.signature().to_vec())
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(js_name=setSignature)]

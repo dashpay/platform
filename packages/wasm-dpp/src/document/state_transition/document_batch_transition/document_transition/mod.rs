@@ -17,6 +17,8 @@ use dpp::{
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 
 use crate::{
     buffer::Buffer,
@@ -40,6 +42,24 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> String {
         self.0.document_type_name().to_owned()
+    }
+
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&self) -> JsValue {
+        match &self.0 {
+            DocumentTransition::Create(document_create_transition) => {
+                let json_value = document_create_transition.data().to_json_value().unwrap();
+                json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
+            }
+            DocumentTransition::Replace(document_replace_transition) => {
+                let json_value = document_replace_transition.data().to_json_value().unwrap();
+                json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
+            }
+            DocumentTransition::Delete(document_delete_transition) => JsValue::null(),
+            DocumentTransition::Transfer(document_transfer_transition) => JsValue::null(),
+            DocumentTransition::UpdatePrice(document_update_price_transition) => JsValue::null(),
+            DocumentTransition::Purchase(document_purchase_transition) => JsValue::null()
+        }
     }
 
     #[wasm_bindgen(js_name=getAction)]
@@ -80,6 +100,32 @@ impl DocumentTransitionWasm {
                 create_transition.prefunded_voting_balance().is_some()
             }
             _ => false,
+        }
+    }
+
+    #[wasm_bindgen(js_name=getPrefundedVotingBalance)]
+    pub fn get_prefunded_voting_balance(&self) -> Result<JsValue, JsValue> {
+        match &self.0 {
+            DocumentTransition::Create(create_transition) => {
+                let prefunded_voting_balance = create_transition.prefunded_voting_balance().clone();
+
+                if prefunded_voting_balance.is_none() {
+                    return Ok(JsValue::null())
+                }
+
+                let (index_name, credits) = prefunded_voting_balance.unwrap();
+
+                let js_object = js_sys::Object::new();
+
+                js_sys::Reflect::set(
+                    &js_object,
+                    &JsValue::from_str(&index_name),
+                    &JsValue::from(credits),
+                )?;
+
+                Ok(JsValue::from(js_object))
+            }
+            _ => Ok(JsValue::null()),
         }
     }
 }
