@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     fs::{create_dir_all, remove_dir_all},
     path::PathBuf,
-    process::exit,
 };
 
 use tonic_build::Builder;
@@ -14,9 +13,19 @@ const SERDE_WITH_STRING: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
 
 fn main() {
+    #[cfg(feature = "server")]
+    generate_code(ImplType::Server);
+    #[cfg(feature = "client")]
+    generate_code(ImplType::Client);
+    #[cfg(feature = "wasm")]
+    generate_code(ImplType::Wasm);
+}
+
+fn generate_code(typ: ImplType) {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
         PathBuf::from("src/core"),
+        &typ,
     );
 
     configure_core(core)
@@ -26,6 +35,7 @@ fn main() {
     let platform = MappingConfig::new(
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform"),
+        &typ,
     );
 
     configure_platform(platform)
@@ -210,6 +220,43 @@ fn configure_core(core: MappingConfig) -> MappingConfig {
     core
 }
 
+#[allow(unused)]
+enum ImplType {
+    Server,
+    Client,
+    Wasm,
+}
+
+impl ImplType {
+    // Configure the builder based on the implementation type.
+    pub fn configure(&self, builder: Builder) -> Builder {
+        match self {
+            Self::Server => builder
+                .build_client(true)
+                .build_server(true)
+                .build_transport(true),
+            Self::Client => builder
+                .build_client(true)
+                .build_server(false)
+                .build_transport(true),
+            Self::Wasm => builder
+                .build_client(true)
+                .build_server(false)
+                .build_transport(false),
+        }
+    }
+
+    /// Get the directory name for the implementation type.
+    fn dirname(&self) -> String {
+        match self {
+            Self::Server => "server",
+            Self::Client => "client",
+            Self::Wasm => "wasm",
+        }
+        .to_string()
+    }
+}
+
 impl MappingConfig {
     /// Create a new MappingConfig instance.
     ///
@@ -220,31 +267,18 @@ impl MappingConfig {
     ///
     /// Depending on the features, either `client`, `server` or `client_server` subdirectory
     /// will be created inside `out_dir`.
-    fn new(protobuf_file: PathBuf, out_dir: PathBuf) -> Self {
+    fn new(protobuf_file: PathBuf, out_dir: PathBuf, typ: &ImplType) -> Self {
         let protobuf_file = abs_path(&protobuf_file);
-
-        let build_server = cfg!(feature = "server");
-        let build_client = cfg!(feature = "client");
 
         // Depending on the features, we need to build the server, client or both.
         // We save these artifacts in separate directories to avoid overwriting the generated files
         // when another crate requires different features.
-        let out_dir_suffix = match (build_server, build_client) {
-            (true, true) => "client_server",
-            (true, false) => "server",
-            (false, true) => "client",
-            (false, false) => {
-                println!("WARNING: At least one of the features 'server' or 'client' must be enabled; dapi-grpc will not generate any files.");
-                exit(0)
-            }
-        };
+        let out_dir_suffix = typ.dirname();
 
         let out_dir = abs_path(&out_dir.join(out_dir_suffix));
 
-        let builder = tonic_build::configure()
-            .build_server(build_server)
-            .build_client(build_client)
-            .build_transport(build_server || build_client)
+        let builder = typ
+            .configure(tonic_build::configure())
             .out_dir(out_dir.clone())
             .protoc_arg("--experimental_allow_proto3_optional");
 
