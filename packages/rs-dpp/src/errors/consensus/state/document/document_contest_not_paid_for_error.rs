@@ -19,11 +19,11 @@ pub struct DocumentContestNotPaidForError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
+    pub document_id: Identifier,
 
-    expected_amount: Credits,
+    pub expected_amount: Credits,
 
-    paid_amount: Credits,
+    pub paid_amount: Credits,
 }
 
 impl DocumentContestNotPaidForError {
