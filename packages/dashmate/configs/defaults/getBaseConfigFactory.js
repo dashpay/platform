@@ -140,7 +140,7 @@ export default function getBaseConfigFactory() {
             threadNames: false,
             timeMicros: false,
             includeOnly: [],
-            exclude: [],
+            exclude: ['libevent', 'leveldb'],
           },
         },
         indexes: [],
