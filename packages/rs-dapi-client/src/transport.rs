@@ -1,16 +1,23 @@
 //! Transport options that DAPI requests use under the hood.
 
 pub(crate) mod grpc;
+#[cfg(not(feature = "wasm"))]
+pub(crate) mod tonic_channel;
+#[cfg(feature = "wasm")]
+pub(crate) mod wasm_channel;
 
 use crate::connection_pool::ConnectionPool;
 pub use crate::request_settings::AppliedRequestSettings;
-use crate::{CanRetry, RequestSettings};
+use crate::{CanRetry, RequestSettings, Uri};
+pub use channel_impl::{BackonSleeper, CoreGrpcClient, PlatformGrpcClient};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::tonic::transport::Uri;
 pub use futures::future::BoxFuture;
-pub use grpc::{CoreGrpcClient, PlatformGrpcClient};
 use std::any;
 use std::fmt::Debug;
+#[cfg(not(feature = "wasm"))]
+pub(crate) use tonic_channel as channel_impl;
+#[cfg(feature = "wasm")]
+pub(crate) use wasm_channel as channel_impl;
 
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.

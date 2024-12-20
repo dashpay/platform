@@ -4,7 +4,8 @@ version = "1.7.0"
 edition = "2021"
 
 [features]
-default = ["mocks", "offline-testing"]
+# TODO we should not enable deps features in default
+default = ["mocks", "offline-testing", "dapi-grpc/client", "backon/tokio-sleep"]
 mocks = [
     "dep:sha2",
     "dep:hex",
@@ -17,17 +18,34 @@ mocks = [
 dump = ["mocks"]
 # skip tests that require connection to the platform; enabled by default
 offline-testing = []
+wasm = [
+    "dapi-grpc/wasm",
+    "dapi-grpc/platform",
+    "dapi-grpc/core",
+    # "backon/gloo-timers-sleep",
+    # "backon/std-blocking-sleep",
+    "dep:async-std",
+    "dep:tonic-web-wasm-client",
+    "dep:http",
+    "getrandom/js",
+]
 
 [dependencies]
-backon = { version = "1.2", features = ["tokio-sleep"] }
+backon = { version = "1.3", default-features = false }
+
 dapi-grpc = { path = "../dapi-grpc", features = [
     "core",
     "platform",
-    "client",
 ], default-features = false }
 futures = "0.3.28"
+http = { version = "1.1.0", default-features = false, optional = true }
 http-serde = { version = "2.1", optional = true }
-rand = { version = "0.8.5", features = ["small_rng"] }
+getrandom = { version = "0.2", optional = true }
+tonic-web-wasm-client = { version = "0.6.0", optional = true }
+rand = { version = "0.8.5", features = [
+    "small_rng",
+    "getrandom",
+], default-features = false }
 thiserror = "1.0.64"
 tracing = "0.1.40"
 tokio = { version = "1.40", default-features = false }
@@ -37,6 +55,6 @@ lru = { version = "0.12.3" }
 serde = { version = "1.0.197", optional = true, features = ["derive"] }
 serde_json = { version = "1.0.120", optional = true }
 chrono = { version = "0.4.38", features = ["serde"] }
-
+async-std = { version = "1.13", optional = true }
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros"] }

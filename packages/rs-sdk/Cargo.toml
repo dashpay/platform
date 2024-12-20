@@ -11,17 +11,19 @@ chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
-dapi-grpc = { path = "../dapi-grpc" }
+
+dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
+
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 http = { version = "1.1" }
 rustls-pemfile = { version = "2.0.0" }
 thiserror = "1.0.64"
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
@@ -42,8 +44,8 @@ bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter",
 zeroize = { version = "1.8", features = ["derive"] }
 
 [dev-dependencies]
+rs-dapi-client = { path = "../rs-dapi-client" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
-rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 dpp = { path = "../rs-dpp", features = [
@@ -54,11 +56,19 @@ dpp = { path = "../rs-dpp", features = [
 data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
-sanitize-filename = { version = "0.5.0" }
+sanitize-filename = { version = "0.6.0" }
 test-case = { version = "3.3.1" }
 
 [features]
-default = ["mocks", "offline-testing"]
+# TODO make a way to enable "tokio/rt-multi-thread" if someone uses --no-default-features
+default = [
+  "mocks",
+  "offline-testing",
+  "dapi-grpc/client",
+  "tokio/rt-multi-thread",
+]
+
+wasm = ["dapi-grpc/wasm", "rs-dapi-client/wasm"]
 
 mocks = [
   "dep:serde",
@@ -106,3 +116,6 @@ system-data-contracts = ["dpp/data-contracts"]
 
 name = "read_contract"
 required-features = ["mocks"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]

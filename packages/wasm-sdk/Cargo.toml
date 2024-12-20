@@ -1,0 +1,31 @@
+[package]
+name = "wasm-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+publish = false
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+web-sys = { version = "0.3.4", features = [
+    'Document',
+    'Element',
+    'HtmlElement',
+    'Node',
+    'Window',
+] }
+wasm-bindgen = { version = "=0.2.99" }
+# tenderdash-proto = { path = "../../../rs-tenderdash-abci/proto", default-features = false, features = [
+#     "client",
+# ] }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["wasm"] }
+# tonic = { version = "*", features = ["transport"], default-features = false }
+# client = [
+#   "tonic/channel", FAIL
+#   "tonic/transport", FAIL
+#   "tonic/tls",
+#   "tonic/tls-roots",
+#   "tonic/tls-webpki-roots",
+#   "platform",
+# ]

@@ -19,6 +19,8 @@ pub use address_list::AddressListError;
 pub use address_list::AddressStatus;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::{update_address_ban_status, DapiClient, DapiClientError};
+#[cfg(not(feature = "wasm"))]
+pub use dapi_grpc::tonic::transport::http;
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
 pub use executor::{
@@ -26,6 +28,11 @@ pub use executor::{
     WrapToExecutionResult,
 };
 use futures::{future::BoxFuture, FutureExt};
+#[cfg(feature = "wasm")]
+pub use http::Uri;
+#[cfg(not(feature = "wasm"))]
+pub use http_serde::http::Uri;
+
 pub use request_settings::RequestSettings;
 
 /// A DAPI request could be executed with an initialized [DapiClient].
