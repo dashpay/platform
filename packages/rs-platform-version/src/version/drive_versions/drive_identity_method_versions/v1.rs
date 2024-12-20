@@ -119,6 +119,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
         cost_estimation: DriveIdentityCostEstimationMethodVersions {
             for_authentication_keys_security_level_in_key_reference_tree: 0,
             for_balances: 0,
+            for_token_balances: 0,
+            for_token_total_supply: 0,
             for_contract_info: 0,
             for_contract_info_group: 0,
             for_contract_info_group_keys: 0,

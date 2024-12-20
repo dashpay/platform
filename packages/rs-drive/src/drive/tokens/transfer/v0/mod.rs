@@ -1,6 +1,4 @@
-// token_transfer/v0.rs
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
@@ -29,7 +27,6 @@ impl Drive {
             to_identity_id,
             amount,
             apply,
-            &mut None,
             transaction,
             &mut drive_operations,
             platform_version,
@@ -54,7 +51,6 @@ impl Drive {
         to_identity_id: [u8; 32],
         amount: u64,
         apply: bool,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -67,7 +63,6 @@ impl Drive {
             from_identity_id,
             to_identity_id,
             amount,
-            previous_batch_operations,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -84,11 +79,10 @@ impl Drive {
 
     pub(super) fn token_transfer_operations_v0(
         &self,
-        _token_id: [u8; 32],
+        token_id: [u8; 32],
         from_identity_id: [u8; 32],
         to_identity_id: [u8; 32],
         amount: u64,
-        _previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -97,54 +91,22 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
-        // Estimation
-        if let Some(esti) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_token_balances(esti, &platform_version.drive)?;
-        }
-
-        // Fetch sender balance
-        let from_balance = self
-            .fetch_identity_balance_operations(
-                from_identity_id,
-                estimated_costs_only_with_layer_info.is_none(),
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "sender identity must have a balance".to_string(),
-            )))?;
-
-        if from_balance < amount {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "sender does not have enough balance to transfer".to_string(),
-            )));
-        }
-
-        let new_from_balance = from_balance - amount;
-        drive_operations.push(
-            self.update_identity_token_balance_operation_v0(from_identity_id, new_from_balance)?,
-        );
-
-        // Fetch recipient balance
-        let to_balance = self
-            .fetch_identity_balance_operations(
-                to_identity_id,
-                estimated_costs_only_with_layer_info.is_none(),
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-            .unwrap_or(0);
-
-        let new_to_balance =
-            to_balance
-                .checked_add(amount)
-                .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                    "overflow on recipient balance".to_string(),
-                )))?;
-        drive_operations
-            .push(self.update_identity_token_balance_operation_v0(to_identity_id, new_to_balance)?);
+        drive_operations.extend(self.remove_from_identity_token_balance_operations(
+            token_id,
+            from_identity_id,
+            amount,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
+        drive_operations.extend(self.add_to_identity_token_balance_operations(
+            token_id,
+            to_identity_id,
+            amount,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
 
         // Total supply remains the same.
         Ok(drive_operations)

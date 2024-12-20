@@ -7,9 +7,7 @@ mod v0;
 
 pub use v0::*; // re-export the v0 module items (including TokenIssuanceTransitionActionV0)
 
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{
-    TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
-};
+use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 
 /// Token issuance transition action
 #[derive(Debug, Clone, From)]

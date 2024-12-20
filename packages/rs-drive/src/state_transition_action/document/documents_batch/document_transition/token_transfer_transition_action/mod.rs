@@ -11,8 +11,10 @@ use crate::drive::contract::DataContractFetchInfo;
 
 /// transformer module
 pub mod transformer;
+/// v0
 pub mod v0;
 
+/// TokenTransferTransitionAction
 #[derive(Debug, Clone, From)]
 pub enum TokenTransferTransitionAction {
     /// v0

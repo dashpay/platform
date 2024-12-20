@@ -17,6 +17,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         amount: u64,
+        allow_first_mint: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -32,6 +33,7 @@ impl Drive {
             0 => self.add_to_token_total_supply_v0(
                 token_id,
                 amount,
+                allow_first_mint,
                 block_info,
                 apply,
                 transaction,
@@ -50,6 +52,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         amount: u64,
+        allow_first_mint: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -65,6 +68,7 @@ impl Drive {
             0 => self.add_to_token_total_supply_add_to_operations_v0(
                 token_id,
                 amount,
+                allow_first_mint,
                 apply,
                 transaction,
                 drive_operations,
@@ -83,6 +87,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         amount: u64,
+        allow_first_mint: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -99,6 +104,7 @@ impl Drive {
             0 => self.add_to_token_total_supply_operations_v0(
                 token_id,
                 amount,
+                allow_first_mint,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

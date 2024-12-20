@@ -13,6 +13,7 @@ impl Drive {
         token_id: [u8; 32],
         identity_id: [u8; 32],
         issuance_amount: u64,
+        allow_first_mint: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -24,6 +25,7 @@ impl Drive {
             token_id,
             identity_id,
             issuance_amount,
+            allow_first_mint,
             apply,
             transaction,
             &mut drive_operations,
@@ -47,6 +49,7 @@ impl Drive {
         token_id: [u8; 32],
         identity_id: [u8; 32],
         issuance_amount: u64,
+        allow_first_mint: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -59,6 +62,7 @@ impl Drive {
             token_id,
             identity_id,
             issuance_amount,
+            allow_first_mint,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -78,6 +82,7 @@ impl Drive {
         token_id: [u8; 32],
         identity_id: [u8; 32],
         issuance_amount: u64,
+        allow_first_mint: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -85,11 +90,6 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
-
-        // Estimation
-        if let Some(esti) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_token_balances(esti, &platform_version.drive)?;
-        }
 
         // Update identity balance
         drive_operations.extend(self.add_to_identity_token_balance_operations(
@@ -104,6 +104,7 @@ impl Drive {
         drive_operations.extend(self.add_to_token_total_supply_operations(
             token_id,
             issuance_amount,
+            allow_first_mint,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,

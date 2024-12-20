@@ -41,6 +41,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction 
                     token_id: self.token_id(),
                     identity_balance_holder_id: owner_id,
                     mint_amount: self.issuance_amount(),
+                    allow_first_mint: false,
                 }));
 
                 Ok(ops)

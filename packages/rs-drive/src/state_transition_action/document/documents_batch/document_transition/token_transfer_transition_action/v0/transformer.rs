@@ -5,7 +5,7 @@ use dpp::state_transition::documents_batch_transition::token_transfer_transition
 use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionActionV0;
 
 impl TokenTransferTransitionActionV0 {

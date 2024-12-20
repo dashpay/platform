@@ -234,7 +234,7 @@ impl Drive {
         }
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_token_balances(
+            Self::add_estimation_costs_for_balances(
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -257,7 +257,7 @@ impl Drive {
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
             public_keys.into_values().collect(),
-            // if we are a masternode identity, we want to register all keys as non unique
+            // if we are a masternode identity, we want to register all keys as non-unique
             is_masternode_identity,
             &block_info.epoch,
             estimated_costs_only_with_layer_info,

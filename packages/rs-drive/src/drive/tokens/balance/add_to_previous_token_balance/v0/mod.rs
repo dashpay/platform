@@ -83,6 +83,8 @@ impl Drive {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_token_balances(
+                token_id,
+                false,
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -109,12 +111,9 @@ impl Drive {
             // Check for overflow
             let new_balance = (previous_balance as i64)
                 .checked_add(balance_to_add as i64)
-                .ok_or(
-                    ProtocolError::CriticalCorruptedCreditsCodeExecution(
-                        "Overflow of total token balance".to_string(),
-                    )
-                    .into(),
-                )?;
+                .ok_or(ProtocolError::CriticalCorruptedCreditsCodeExecution(
+                    "Overflow of total token balance".to_string(),
+                ))?;
 
             drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
                 balance_path,

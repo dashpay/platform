@@ -30,6 +30,8 @@ pub enum TokenOperationType {
         identity_balance_holder_id: Identifier,
         /// The amount to issue
         mint_amount: TokenAmount,
+        /// Should we allow this to be the first ever mint
+        allow_first_mint: bool,
     },
     /// Adds a document to a contract matching the desired info.
     TokenTransfer {
@@ -51,7 +53,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        block_info: &BlockInfo,
+        _block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -67,7 +69,6 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     token_id_bytes,
                     identity_id_bytes,
                     burn_amount,
-                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -78,6 +79,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 token_id,
                 identity_balance_holder_id,
                 mint_amount,
+                allow_first_mint,
             } => {
                 let token_id_bytes: [u8; 32] = token_id.to_buffer();
                 let identity_id_bytes: [u8; 32] = identity_balance_holder_id.to_buffer();
@@ -85,6 +87,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     token_id_bytes,
                     identity_id_bytes,
                     mint_amount,
+                    allow_first_mint,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -106,7 +109,6 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     sender_id_bytes,
                     recipient_id_bytes,
                     amount,
-                    &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

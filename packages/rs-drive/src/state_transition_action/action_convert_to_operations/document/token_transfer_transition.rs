@@ -9,11 +9,10 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use crate::util::batch::drive_op_batch::TokenOperationType;
 use crate::util::batch::DriveOperation::{IdentityOperation, TokenOperation};
-use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 
 impl DriveHighLevelDocumentOperationConverter for TokenTransferTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
-        mut self,
+        self,
         _epoch: &Epoch,
         owner_id: Identifier,
         platform_version: &PlatformVersion,

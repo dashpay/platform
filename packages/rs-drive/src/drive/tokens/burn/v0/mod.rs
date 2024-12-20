@@ -1,5 +1,4 @@
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
@@ -26,7 +25,6 @@ impl Drive {
             identity_id,
             burn_amount,
             apply,
-            &mut None,
             transaction,
             &mut drive_operations,
             platform_version,
@@ -50,7 +48,6 @@ impl Drive {
         identity_id: [u8; 32],
         burn_amount: u64,
         apply: bool,
-        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -62,7 +59,6 @@ impl Drive {
             token_id,
             identity_id,
             burn_amount,
-            previous_batch_operations,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -82,7 +78,6 @@ impl Drive {
         token_id: [u8; 32],
         identity_id: [u8; 32],
         burn_amount: u64,
-        _previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -91,63 +86,22 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
-        // Add estimation info if needed
-        if let Some(esti) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_token_balances(esti, &platform_version.drive)?;
-            Self::add_estimation_costs_for_negative_credit(
-                identity_id,
-                esti,
-                &platform_version.drive,
-            )?;
-        }
+        drive_operations.extend(self.remove_from_identity_token_balance_operations(
+            token_id,
+            identity_id,
+            burn_amount,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
 
-        // Fetch current balance
-        let current_balance = self
-            .fetch_identity_token_balance_operations(
-                token_id,
-                identity_id,
-                estimated_costs_only_with_layer_info.is_none(),
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "there should be a balance when burning tokens".to_string(),
-            )))?;
-
-        if current_balance < burn_amount {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "cannot burn more tokens than currently owned".to_string(),
-            )));
-        }
-
-        let new_balance = current_balance - burn_amount;
-
-        // Update identity balance
-        drive_operations
-            .push(self.update_identity_token_balance_operation_v0(identity_id, new_balance)?);
-
-        // Update total supply for the token (subtract burn_amount)
-        let current_supply = self
-            .fetch_token_total_supply_operations(
-                token_id,
-                estimated_costs_only_with_layer_info.is_none(),
-                transaction,
-                &mut drive_operations,
-                platform_version,
-            )?
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "token should have a total supply".to_string(),
-            )))?;
-
-        if current_supply < burn_amount {
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "cannot burn more tokens than total supply".to_string(),
-            )));
-        }
-
-        let new_supply = current_supply - burn_amount;
-        drive_operations.push(self.update_token_total_supply_operation_v0(token_id, new_supply)?);
+        drive_operations.extend(self.remove_from_token_total_supply_operations(
+            token_id,
+            burn_amount,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?);
 
         Ok(drive_operations)
     }

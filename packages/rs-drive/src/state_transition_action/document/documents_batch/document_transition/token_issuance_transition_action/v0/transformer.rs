@@ -9,6 +9,7 @@ use dpp::tokens::errors::TokenError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::v0::TokenIssuanceTransitionActionV0;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 
 impl TokenIssuanceTransitionActionV0 {
     /// Attempt to convert a `TokenIssuanceTransitionV0` into a `TokenIssuanceTransitionActionV0` using a data contract lookup function.
@@ -31,6 +32,8 @@ impl TokenIssuanceTransitionActionV0 {
             amount,
         } = value;
 
+        let position = base.token_contract_position();
+
         let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
             base,
             get_data_contract,
@@ -42,12 +45,14 @@ impl TokenIssuanceTransitionActionV0 {
                     .data_contract_fetch_info_ref()
                     .contract
                     .tokens()
-                    .get(&base.token_contract_position())
+                    .get(&position)
                     .and_then(|token_configuration| {
                         token_configuration.new_tokens_destination_identity()
                     })
             })
-            .ok_or(TokenError::DestinationIdentityForMintingNotSetError.into())?;
+            .ok_or(ProtocolError::Token(
+                TokenError::DestinationIdentityForMintingNotSetError.into(),
+            ))?;
 
         Ok(TokenIssuanceTransitionActionV0 {
             base: base_action,
@@ -93,7 +98,9 @@ impl TokenIssuanceTransitionActionV0 {
                         token_configuration.new_tokens_destination_identity()
                     })
             })
-            .ok_or(TokenError::DestinationIdentityForMintingNotSetError.into())?;
+            .ok_or(ProtocolError::Token(
+                TokenError::DestinationIdentityForMintingNotSetError.into(),
+            ))?;
 
         Ok(TokenIssuanceTransitionActionV0 {
             base: base_action,
