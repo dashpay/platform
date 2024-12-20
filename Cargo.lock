@@ -5990,6 +5990,7 @@ version = "0.1.0"
 dependencies = [
  "dash-sdk",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 
