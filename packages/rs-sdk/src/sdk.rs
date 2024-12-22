@@ -208,7 +208,7 @@ impl Sdk {
             SdkInstance::Dapi { dapi, .. } => Some(dapi),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { .. } => None,
-
+        }
     }
     /// Initialize Dash Platform  SDK in mock mode.
     ///
