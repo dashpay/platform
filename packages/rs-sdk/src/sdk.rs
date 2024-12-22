@@ -202,6 +202,14 @@ enum SdkInstance {
 }
 
 impl Sdk {
+
+    pub fn maybe_dapi_client(&self) -> Option<&DapiClient> {
+        match &self.inner {
+            SdkInstance::Dapi { dapi, .. } => Some(dapi),
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { .. } => None,
+
+    }
     /// Initialize Dash Platform  SDK in mock mode.
     ///
     /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.
