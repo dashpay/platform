@@ -22,7 +22,7 @@ use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
@@ -59,11 +59,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         .iter()
         .enumerate()
         .map(|(num, (state_transition, result))| {
-            if let StateTransition::DocumentsBatch(batch) = state_transition {
-                let _first = batch.transitions().first().unwrap();
-
-                // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
-            }
+            // if let StateTransition::DocumentsBatch(batch) = state_transition {
+            //     let _first = batch.document_transitions().first().unwrap();
+            //
+            //     // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
+            // }
 
             let mut execution_context =
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)

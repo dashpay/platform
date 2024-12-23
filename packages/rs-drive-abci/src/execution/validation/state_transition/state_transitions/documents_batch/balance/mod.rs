@@ -3,12 +3,12 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::balance::v0::DocumentsBatchTransitionBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionIdentityBalanceValidationV0;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 pub(crate) mod v0;
-impl StateTransitionIdentityBalanceValidationV0 for DocumentsBatchTransition {
+impl StateTransitionIdentityBalanceValidationV0 for BatchTransition {
     fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
@@ -18,7 +18,7 @@ impl StateTransitionIdentityBalanceValidationV0 for DocumentsBatchTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .balance_pre_check
         {
             0 => self.validate_advanced_minimum_balance_pre_check_v0(identity, platform_version),

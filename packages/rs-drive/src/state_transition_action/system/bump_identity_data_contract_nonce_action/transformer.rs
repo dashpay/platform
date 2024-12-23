@@ -2,7 +2,7 @@ use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionV0};

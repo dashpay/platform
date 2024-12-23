@@ -1,10 +1,10 @@
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new_identity_nonce};
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransitionLike;
 
 use dpp::validation::SimpleConsensusValidationResult;
@@ -29,7 +29,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl DocumentsBatchStateTransitionIdentityContractNonceV0 for DocumentsBatchTransition {
+impl DocumentsBatchStateTransitionIdentityContractNonceV0 for BatchTransition {
     fn validate_identity_contract_nonces_v0(
         &self,
         platform: &PlatformStateRef,
@@ -39,7 +39,7 @@ impl DocumentsBatchStateTransitionIdentityContractNonceV0 for DocumentsBatchTran
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         // We should validate that all newly created documents have valid ids
-        for transition in self.transitions() {
+        for transition in self.document_transitions() {
             let revision_nonce = transition.identity_contract_nonce();
             let identity_id = self.owner_id();
             let (existing_nonce, fee) = platform.drive.fetch_identity_contract_nonce_with_fees(

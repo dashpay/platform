@@ -16,7 +16,7 @@ pub fn reject_data_trigger(
         .drive_abci
         .validation_and_processing
         .state_transitions
-        .documents_batch_state_transition
+        .batch_state_transition
         .data_triggers
         .triggers
         .reject_data_trigger

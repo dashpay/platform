@@ -45,7 +45,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
+    pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -97,6 +97,12 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,
     pub document_update_price_transition_state_validation: FeatureVersion,
+    pub token_issuance_transition_structure_validation: FeatureVersion,
+    pub token_burn_transition_structure_validation: FeatureVersion,
+    pub token_transfer_transition_structure_validation: FeatureVersion,
+    pub token_issuance_transition_state_validation: FeatureVersion,
+    pub token_burn_transition_state_validation: FeatureVersion,
+    pub token_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

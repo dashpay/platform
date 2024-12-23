@@ -13,8 +13,8 @@ use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
@@ -77,7 +77,7 @@ impl<S: Signer> TransferDocument<S> for Document {
 
         let settings = settings.unwrap_or_default();
 
-        let transition = DocumentsBatchTransition::new_document_transfer_transition_from_document(
+        let transition = BatchTransition::new_document_transfer_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             recipient_id,

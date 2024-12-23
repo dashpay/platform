@@ -12,9 +12,9 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
@@ -27,7 +27,9 @@ use crate::{
 };
 
 use document_transition::DocumentTransitionWasm;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::ed25519_dalek::ed25519::signature::SignerMut;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 use dpp::state_transition::StateTransitionIdentitySigned;
 
@@ -35,8 +37,8 @@ pub mod document_transition;
 // pub mod validation;
 
 #[derive(Clone, Debug)]
-#[wasm_bindgen(js_name = DocumentsBatchTransition)]
-pub struct DocumentsBatchTransitionWasm(DocumentsBatchTransition);
+#[wasm_bindgen(js_name = BatchTransition)]
+pub struct BatchTransitionWasm(BatchTransition);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
@@ -47,8 +49,8 @@ pub struct ToObjectOptions {
     skip_identifiers_conversion: bool,
 }
 
-#[wasm_bindgen(js_class=DocumentsBatchTransition)]
-impl DocumentsBatchTransitionWasm {
+#[wasm_bindgen(js_class=BatchTransition)]
+impl BatchTransitionWasm {
     // #[wasm_bindgen(constructor)]
     // pub fn from_object(
     //     js_raw_transition: JsValue,
@@ -90,7 +92,7 @@ impl DocumentsBatchTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
-        StateTransitionType::DocumentsBatch.into()
+        StateTransitionType::Batch.into()
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -101,10 +103,10 @@ impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(js_name=getTransitions)]
     pub fn get_transitions(&self) -> js_sys::Array {
         let array = js_sys::Array::new();
-        let transitions = self.0.transitions();
+        let transitions = self.0.document_transitions();
 
         for tr in transitions.iter().cloned() {
-            let transition: DocumentTransitionWasm = tr.into();
+            let transition: BatchTransitionWasm = tr.into();
             array.push(&transition.into());
         }
 
@@ -115,8 +117,8 @@ impl DocumentsBatchTransitionWasm {
     pub fn set_transitions(&mut self, js_transitions: Array) -> Result<(), JsValue> {
         let mut transitions = vec![];
         for js_transition in js_transitions.iter() {
-            let transition: DocumentTransition = js_transition
-                .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
+            let transition: BatchedTransition = js_transition
+                .to_wasm::<BatchTransitionWasm>("BatchedTransition")?
                 .to_owned()
                 .into();
             transitions.push(transition)
@@ -276,7 +278,7 @@ impl DocumentsBatchTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         // TODO: come up with a better way to set signature to the binding.
-        let mut state_transition = StateTransition::DocumentsBatch(self.0.clone());
+        let mut state_transition = StateTransition::Batch(self.0.clone());
         state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
@@ -322,7 +324,7 @@ impl DocumentsBatchTransitionWasm {
     ) -> Result<bool, JsValue> {
         let bls_adapter = BlsAdapter(bls);
 
-        let verification_result = StateTransition::DocumentsBatch(self.0.clone())
+        let verification_result = StateTransition::Batch(self.0.clone())
             .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
 
         match verification_result {
@@ -402,10 +404,9 @@ impl DocumentsBatchTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::DocumentsBatch(
-            self.0.clone(),
-        ))
-        .with_js_error()?;
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&StateTransition::Batch(self.0.clone()))
+                .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -423,14 +424,14 @@ impl DocumentsBatchTransitionWasm {
     // }
 }
 
-impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWasm {
-    fn from(t: DocumentsBatchTransition) -> Self {
-        DocumentsBatchTransitionWasm(t)
+impl From<BatchTransition> for BatchTransitionWasm {
+    fn from(t: BatchTransition) -> Self {
+        BatchTransitionWasm(t)
     }
 }
 
-impl From<DocumentsBatchTransitionWasm> for DocumentsBatchTransition {
-    fn from(t: DocumentsBatchTransitionWasm) -> Self {
+impl From<BatchTransitionWasm> for BatchTransition {
+    fn from(t: BatchTransitionWasm) -> Self {
         t.0
     }
 }

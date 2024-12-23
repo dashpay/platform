@@ -2,7 +2,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
@@ -50,7 +50,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition {
+impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
     fn validate_state_v0(
         &self,
         mut state_transition_action: DocumentsBatchTransitionAction,

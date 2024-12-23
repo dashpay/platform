@@ -127,7 +127,7 @@ mod test {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
     use dpp::errors::consensus::state::data_trigger::DataTriggerError;
-    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_identity_fixture};
+    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_batched_transitions_fixture, get_identity_fixture};
     use dpp::version::DefaultForPlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
@@ -165,7 +165,7 @@ mod test {
             .document_type_for_name("contactRequest")
             .expect("expected a contact request");
 
-        let document_transitions = get_document_transitions_fixture(
+        let document_transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
                 vec![(contact_request_document, document_type, Bytes32::default())],
@@ -268,7 +268,7 @@ mod test {
             .document_type_for_name("contactRequest")
             .expect("expected a contact request");
 
-        let document_transitions = get_document_transitions_fixture(
+        let document_transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
                 vec![(contact_request_document, document_type, Bytes32::default())],
@@ -396,7 +396,7 @@ mod test {
             .get_identifier("toUserId")
             .expect("expected to get toUserId");
 
-        let document_transitions = get_document_transitions_fixture(
+        let document_transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
                 vec![(contact_request_document, document_type, Bytes32::default())],

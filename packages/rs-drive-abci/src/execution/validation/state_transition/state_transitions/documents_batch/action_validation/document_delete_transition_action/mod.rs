@@ -40,7 +40,7 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .document_delete_transition_structure_validation
         {
             0 => self.validate_structure_v0(),
@@ -65,7 +65,7 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .document_delete_transition_state_validation
         {
             0 => self.validate_state_v0(

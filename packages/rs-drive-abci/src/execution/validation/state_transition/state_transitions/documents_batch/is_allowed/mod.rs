@@ -2,19 +2,19 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionIsAllowedValidationV0;
 use crate::platform_types::platform::PlatformRef;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 mod v0;
 
-impl StateTransitionIsAllowedValidationV0 for DocumentsBatchTransition {
+impl StateTransitionIsAllowedValidationV0 for BatchTransition {
     fn has_is_allowed_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
         match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .is_allowed
         {
             0 => Ok(true),
@@ -36,7 +36,7 @@ impl StateTransitionIsAllowedValidationV0 for DocumentsBatchTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .is_allowed
         {
             0 => Ok(v0::validate_is_allowed_v0(self, platform)),

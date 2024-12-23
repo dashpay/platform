@@ -229,8 +229,8 @@ mod tests {
     use dpp::serialization::{PlatformSerializable, Signable};
 
     use dpp::native_bls::NativeBlsModule;
-    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
     use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
@@ -1592,7 +1592,7 @@ mod tests {
         altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
         let documents_batch_create_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document,
                 profile,
                 entropy.0,
@@ -1612,7 +1612,7 @@ mod tests {
             .expect("expected documents batch serialized state transition");
 
         let documents_batch_update_transition =
-            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+            BatchTransition::new_document_replacement_transition_from_document(
                 altered_document,
                 profile,
                 &key,

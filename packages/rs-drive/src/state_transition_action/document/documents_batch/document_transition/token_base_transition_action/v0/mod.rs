@@ -1,8 +1,11 @@
 use crate::drive::contract::DataContractFetchInfo;
+use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
-use dpp::util::hash::hash_double;
+use dpp::ProtocolError;
 use std::sync::Arc;
 
 /// transformer
@@ -11,10 +14,12 @@ pub mod transformer;
 /// Token base transition action v0
 #[derive(Debug, Clone)]
 pub struct TokenBaseTransitionActionV0 {
+    /// Token Id
+    pub token_id: Identifier,
     /// The identity contract nonce, used to prevent replay attacks
     pub identity_contract_nonce: IdentityNonce,
     /// The token position within the data contract
-    pub token_position: u16,
+    pub token_contract_position: u16,
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
 }
@@ -25,13 +30,7 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
     fn token_position(&self) -> u16;
 
     /// The token id
-    fn token_id(&self) -> Identifier {
-        // Prepare the data for hashing
-        let mut bytes = b"token".to_vec();
-        bytes.extend_from_slice(self.data_contract_id().as_bytes());
-        bytes.extend_from_slice(&self.token_position().to_be_bytes());
-        hash_double(bytes).into()
-    }
+    fn token_id(&self) -> Identifier;
 
     /// Returns the data contract ID
     fn data_contract_id(&self) -> Identifier;
@@ -44,11 +43,18 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
 
     /// Returns the identity contract nonce
     fn identity_contract_nonce(&self) -> IdentityNonce;
+
+    /// Gets the token configuration associated to the action
+    fn token_configuration(&self) -> Result<&TokenConfiguration, Error>;
 }
 
 impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
     fn token_position(&self) -> u16 {
-        self.token_position
+        self.token_contract_position
+    }
+
+    fn token_id(&self) -> Identifier {
+        self.token_id
     }
 
     fn data_contract_id(&self) -> Identifier {
@@ -65,5 +71,19 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
 
     fn identity_contract_nonce(&self) -> IdentityNonce {
         self.identity_contract_nonce
+    }
+
+    fn token_configuration(&self) -> Result<&TokenConfiguration, Error> {
+        self.data_contract
+            .as_ref()
+            .contract
+            .tokens()
+            .get(&self.token_contract_position)
+            .ok_or(Error::Protocol(ProtocolError::CorruptedCodeExecution(
+                format!(
+                    "data contract does not have a token at position {}",
+                    self.token_contract_position
+                ),
+            )))
     }
 }

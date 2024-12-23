@@ -90,8 +90,8 @@ pub(in crate::execution) mod tests {
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
@@ -1044,7 +1044,7 @@ pub(in crate::execution) mod tests {
         document_2.set("preorderSalt", salt_2.into());
 
         let documents_batch_create_preorder_transition_1 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 preorder_document_1.clone(),
                 preorder,
                 entropy.0,
@@ -1065,7 +1065,7 @@ pub(in crate::execution) mod tests {
                 .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_preorder_transition_2 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 preorder_document_2.clone(),
                 preorder,
                 entropy.0,
@@ -1086,7 +1086,7 @@ pub(in crate::execution) mod tests {
                 .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_transition_1 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document_1.clone(),
                 domain,
                 entropy.0,
@@ -1106,7 +1106,7 @@ pub(in crate::execution) mod tests {
             .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_transition_2 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document_2.clone(),
                 domain,
                 entropy.0,
@@ -1354,7 +1354,7 @@ pub(in crate::execution) mod tests {
         document_2.set("preorderSalt", salt_2.into());
 
         let documents_batch_create_preorder_transition_1 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 preorder_document_1.clone(),
                 preorder,
                 entropy.0,
@@ -1375,7 +1375,7 @@ pub(in crate::execution) mod tests {
                 .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_preorder_transition_2 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 preorder_document_2.clone(),
                 preorder,
                 entropy.0,
@@ -1396,7 +1396,7 @@ pub(in crate::execution) mod tests {
                 .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_transition_1 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document_1.clone(),
                 domain,
                 entropy.0,
@@ -1416,7 +1416,7 @@ pub(in crate::execution) mod tests {
             .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_transition_2 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document_2.clone(),
                 domain,
                 entropy.0,
@@ -1576,7 +1576,7 @@ pub(in crate::execution) mod tests {
         document_1.set("preorderSalt", salt_1.into());
 
         let documents_batch_create_preorder_transition_1 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 preorder_document_1,
                 preorder,
                 entropy.0,
@@ -1597,7 +1597,7 @@ pub(in crate::execution) mod tests {
                 .expect("expected documents batch serialized state transition");
 
         let documents_batch_create_transition_1 =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document_1,
                 domain,
                 entropy.0,

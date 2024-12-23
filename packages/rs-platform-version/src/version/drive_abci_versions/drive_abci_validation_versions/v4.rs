@@ -97,7 +97,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
-            documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
+            batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 balance_pre_check: 0,
                 basic_structure: 0,
                 advanced_structure: 0,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::token_burn_transition::v0::TokenBurnTransitionV0;
+use dpp::state_transition::batch_transition::token_burn_transition::v0::TokenBurnTransitionV0;
 use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;

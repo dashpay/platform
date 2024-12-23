@@ -7,7 +7,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{
     TokenIssuanceTransitionAction, TokenIssuanceTransitionActionV0,
 };
-use dpp::state_transition::documents_batch_transition::token_issuance_transition::TokenIssuanceTransition;
+use dpp::state_transition::batch_transition::token_issuance_transition::TokenIssuanceTransition;
 
 /// Implement methods to transform a `TokenIssuanceTransition` into a `TokenIssuanceTransitionAction`.
 impl TokenIssuanceTransitionAction {

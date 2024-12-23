@@ -1,4 +1,5 @@
 use derive_more::From;
+use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ mod v0;
 
 use crate::drive::contract::DataContractFetchInfo;
 
+use crate::error::Error;
 pub use v0::*;
 
 /// document base transition action
@@ -21,7 +23,13 @@ pub enum TokenBaseTransitionAction {
 impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
     fn token_position(&self) -> u16 {
         match self {
-            TokenBaseTransitionAction::V0(v0) => v0.token_position,
+            TokenBaseTransitionAction::V0(v0) => v0.token_contract_position,
+        }
+    }
+
+    fn token_id(&self) -> Identifier {
+        match self {
+            TokenBaseTransitionAction::V0(v0) => v0.token_id,
         }
     }
 
@@ -40,6 +48,12 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.data_contract_fetch_info(),
+        }
+    }
+
+    fn token_configuration(&self) -> Result<&TokenConfiguration, Error> {
+        match self {
+            TokenBaseTransitionAction::V0(v0) => v0.token_configuration(),
         }
     }
 

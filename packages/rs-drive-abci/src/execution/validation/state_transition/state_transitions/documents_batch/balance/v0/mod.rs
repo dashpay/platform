@@ -4,9 +4,9 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::ProtocolError;
 
 use dpp::validation::SimpleConsensusValidationResult;
@@ -23,7 +23,7 @@ pub(in crate::execution::validation::state_transition::state_transitions) trait 
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl DocumentsBatchTransitionBalanceValidationV0 for DocumentsBatchTransition {
+impl DocumentsBatchTransitionBalanceValidationV0 for BatchTransition {
     fn validate_advanced_minimum_balance_pre_check_v0(
         &self,
         identity: &PartialIdentity,
@@ -36,7 +36,7 @@ impl DocumentsBatchTransitionBalanceValidationV0 for DocumentsBatchTransition {
                     "expected to have a balance on identity for documents batch transition",
                 )))?;
 
-        let purchases_amount = match self.all_purchases_amount() {
+        let purchases_amount = match self.all_document_purchases_amount() {
             Ok(purchase_amount) => purchase_amount.unwrap_or_default(),
             Err(ProtocolError::Overflow(e)) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -65,7 +65,7 @@ impl DocumentsBatchTransitionBalanceValidationV0 for DocumentsBatchTransition {
                 Err(e) => return Err(e.into()),
             };
 
-        let base_fees = match platform_version.fee_version.state_transition_min_fees.document_batch_sub_transition.checked_mul(self.transitions().len() as u64) {
+        let base_fees = match platform_version.fee_version.state_transition_min_fees.document_batch_sub_transition.checked_mul(self.document_transitions().len() as u64) {
             None => return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::OverflowError(OverflowError::new("overflow when multiplying base fee and amount of sub transitions in documents batch transition".to_string()))))),
             Some(base_fees) => base_fees
         };

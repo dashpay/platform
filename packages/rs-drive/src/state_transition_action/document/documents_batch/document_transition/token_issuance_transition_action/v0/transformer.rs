@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::token_issuance_transition::v0::TokenIssuanceTransitionV0;
+use dpp::state_transition::batch_transition::token_issuance_transition::v0::TokenIssuanceTransitionV0;
 use dpp::ProtocolError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
-use dpp::state_transition::documents_batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::tokens::errors::TokenError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};

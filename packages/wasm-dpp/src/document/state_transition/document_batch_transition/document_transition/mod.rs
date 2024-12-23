@@ -7,13 +7,12 @@ mod document_create_transition;
 // pub use document_replace_transition::*;
 
 use dpp::platform_value::Value;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transition_action_type::TransitionActionTypeGetter;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
-use dpp::{
-    state_transition::documents_batch_transition::document_transition::DocumentTransition,
-    util::json_value::JsonValueExt, ProtocolError,
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
 };
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::TransitionActionTypeGetter;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::{util::json_value::JsonValueExt, ProtocolError};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;

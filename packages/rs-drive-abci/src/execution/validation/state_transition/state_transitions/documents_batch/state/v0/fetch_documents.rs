@@ -14,10 +14,10 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;

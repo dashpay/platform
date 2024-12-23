@@ -25,11 +25,9 @@ use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
-use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -42,9 +40,10 @@ use crate::execution::validation::state_transition::documents_batch::state::v0::
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionAction;
@@ -120,7 +119,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     ) -> SimpleConsensusValidationResult;
 }
 
-impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
+impl DocumentsBatchTransitionTransformerV0 for BatchTransition {
     fn try_into_action_v0(
         &self,
         platform: &PlatformStateRef,
@@ -138,7 +137,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
         > = BTreeMap::new();
 
         // We want to validate by contract, and then for each document type within a contract
-        for document_transition in self.transitions().iter() {
+        for document_transition in self.document_transitions().iter() {
             let document_type = document_transition.base().document_type_name();
             let data_contract_id = document_transition.base().data_contract_id_ref();
 
@@ -200,7 +199,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
     }
 }
 
-impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition {
+impl DocumentsBatchTransitionInternalTransformerV0 for BatchTransition {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,

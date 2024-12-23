@@ -6,15 +6,12 @@ use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionLike};
-
 use dpp::validation::ConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
@@ -24,7 +21,7 @@ use drive::state_transition_action::document::documents_batch::DocumentsBatchTra
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -47,7 +44,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransition {
+impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
     fn validate_advanced_structure_from_state_v0(
         &self,
         block_info: &BlockInfo,
@@ -65,7 +62,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
             // We only need to bump the first identity data contract nonce as that will make a replay
             // attack not possible
 
-            let first_transition = self.transitions().first().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("There must be at least one state transition as this is already verified in basic validation")))?;
+            let first_transition = self.document_transitions().first().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("There must be at least one state transition as this is already verified in basic validation")))?;
 
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
@@ -88,7 +85,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         }
 
         // We should validate that all newly created documents have valid ids
-        for transition in self.transitions() {
+        for transition in self.document_transitions() {
             if let DocumentTransition::Create(create_transition) = transition {
                 // Validate the ID
                 let generated_document_id = Document::generate_document_id_v0(

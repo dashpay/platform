@@ -6,7 +6,7 @@ use grovedb::TransactionArg;
 use std::sync::Arc;
 
 use dpp::ProtocolError;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use platform_version::version::PlatformVersion;

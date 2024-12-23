@@ -24,8 +24,8 @@ mod refund_tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::Bytes32;
-    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::batch_transition::BatchTransition;
     use drive::util::test_helpers::setup_contract;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -71,7 +71,7 @@ mod refund_tests {
         altered_document.set("avatarUrl", "http://test.com/dog.jpg".into());
 
         let documents_batch_create_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document.clone(),
                 profile,
                 entropy.0,
@@ -178,7 +178,7 @@ mod refund_tests {
         assert_eq!(serialized_len, 173);
 
         let documents_batch_create_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
+            BatchTransition::new_document_creation_transition_from_document(
                 document.clone(),
                 profile,
                 entropy.0,
@@ -296,7 +296,7 @@ mod refund_tests {
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
         let documents_batch_delete_transition =
-            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+            BatchTransition::new_document_deletion_transition_from_document(
                 document,
                 profile,
                 &key,
@@ -392,7 +392,7 @@ mod refund_tests {
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
         let documents_batch_delete_transition =
-            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+            BatchTransition::new_document_deletion_transition_from_document(
                 document,
                 profile,
                 &key,
@@ -491,7 +491,7 @@ mod refund_tests {
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 40, false); //a year later
 
         let documents_batch_delete_transition =
-            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+            BatchTransition::new_document_deletion_transition_from_document(
                 document,
                 profile,
                 &key,
@@ -586,7 +586,7 @@ mod refund_tests {
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 25, false); //25 years later
 
         let documents_batch_delete_transition =
-            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+            BatchTransition::new_document_deletion_transition_from_document(
                 document,
                 profile,
                 &key,
@@ -681,7 +681,7 @@ mod refund_tests {
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 50, false); //50 years later
 
         let documents_batch_delete_transition =
-            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+            BatchTransition::new_document_deletion_transition_from_document(
                 document,
                 profile,
                 &key,
@@ -777,7 +777,7 @@ mod refund_tests {
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 10, false); //next epoch
 
         let documents_batch_delete_transition =
-            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+            BatchTransition::new_document_deletion_transition_from_document(
                 document,
                 profile,
                 &key,

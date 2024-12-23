@@ -17,7 +17,7 @@ pub fn create_feature_flag_data_trigger(
         .drive_abci
         .validation_and_processing
         .state_transitions
-        .documents_batch_state_transition
+        .batch_state_transition
         .data_triggers
         .triggers
         .create_feature_flag_data_trigger

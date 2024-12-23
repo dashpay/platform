@@ -1,5 +1,6 @@
 use crate::drive::RootTree;
 
+mod add_transaction_history;
 pub mod balance;
 pub mod burn;
 pub mod estimated_costs;

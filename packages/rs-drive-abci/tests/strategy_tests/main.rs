@@ -2270,10 +2270,7 @@ mod tests {
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
-                assert!(!matches!(
-                    state_transition,
-                    StateTransition::DocumentsBatch(_)
-                ));
+                assert!(!matches!(state_transition, StateTransition::Batch(_)));
             }
         }
     }

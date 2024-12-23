@@ -19,6 +19,7 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
+mod v8;
 
 pub type ProtocolVersion = u32;
 

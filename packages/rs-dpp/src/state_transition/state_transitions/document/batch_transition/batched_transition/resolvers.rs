@@ -1,0 +1,124 @@
+use crate::state_transition::batch_transition::batched_transition::{
+    BatchedTransition, BatchedTransitionRef, DocumentPurchaseTransition, DocumentTransferTransition,
+};
+use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use crate::state_transition::batch_transition::{
+    DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
+    TokenBurnTransition, TokenIssuanceTransition, TokenTransferTransition,
+};
+
+impl BatchTransitionResolversV0 for BatchedTransition {
+    fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
+        match self {
+            BatchedTransition::Document(document) => document.as_transition_create(),
+            BatchedTransition::Token(_) => None,
+        }
+    }
+
+    fn as_transition_replace(&self) -> Option<&DocumentReplaceTransition> {
+        match self {
+            BatchedTransition::Document(document) => document.as_transition_replace(),
+            BatchedTransition::Token(_) => None,
+        }
+    }
+
+    fn as_transition_delete(&self) -> Option<&DocumentDeleteTransition> {
+        match self {
+            BatchedTransition::Document(document) => document.as_transition_delete(),
+            BatchedTransition::Token(_) => None,
+        }
+    }
+
+    fn as_transition_transfer(&self) -> Option<&DocumentTransferTransition> {
+        match self {
+            BatchedTransition::Document(document) => document.as_transition_transfer(),
+            BatchedTransition::Token(_) => None,
+        }
+    }
+
+    fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
+        match self {
+            BatchedTransition::Document(document) => document.as_transition_purchase(),
+            BatchedTransition::Token(_) => None,
+        }
+    }
+
+    fn as_transition_token_burn(&self) -> Option<&TokenBurnTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_burn(),
+        }
+    }
+
+    fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_issuance(),
+        }
+    }
+
+    fn as_transition_token_transfer(&self) -> Option<&TokenTransferTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_transfer(),
+        }
+    }
+}
+
+impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
+    fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
+        match self {
+            BatchedTransitionRef::Document(document) => document.as_transition_create(),
+            BatchedTransitionRef::Token(_) => None,
+        }
+    }
+
+    fn as_transition_replace(&self) -> Option<&DocumentReplaceTransition> {
+        match self {
+            BatchedTransitionRef::Document(document) => document.as_transition_replace(),
+            BatchedTransitionRef::Token(_) => None,
+        }
+    }
+
+    fn as_transition_delete(&self) -> Option<&DocumentDeleteTransition> {
+        match self {
+            BatchedTransitionRef::Document(document) => document.as_transition_delete(),
+            BatchedTransitionRef::Token(_) => None,
+        }
+    }
+
+    fn as_transition_transfer(&self) -> Option<&DocumentTransferTransition> {
+        match self {
+            BatchedTransitionRef::Document(document) => document.as_transition_transfer(),
+            BatchedTransitionRef::Token(_) => None,
+        }
+    }
+
+    fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
+        match self {
+            BatchedTransitionRef::Document(document) => document.as_transition_purchase(),
+            BatchedTransitionRef::Token(_) => None,
+        }
+    }
+
+    fn as_transition_token_burn(&self) -> Option<&TokenBurnTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_burn(),
+        }
+    }
+
+    fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_issuance(),
+        }
+    }
+
+    fn as_transition_token_transfer(&self) -> Option<&TokenTransferTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_transfer(),
+        }
+    }
+}

@@ -1,0 +1,363 @@
+{
+  "burn": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "amount": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The amount that was burned",
+        "position": 1
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation of why this burn took place",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "amount",
+      "$createdAt",
+      "$createdAtBlockHeight",
+      "$createdAtCoreBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "mint": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "amount": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The amount that was burned",
+        "position": 1
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation of why this burn took place",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "amount",
+      "$createdAt",
+      "$createdAtBlockHeight",
+      "$createdAtCoreBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "transfer": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "amount": "asc"
+          }
+        ]
+      },
+      {
+        "name": "from",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "to",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "toIdentityId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The amount that was burned",
+        "position": 1
+      },
+      "toIdentityId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identity or the group Id",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "amount",
+      "toIdentityId",
+      "$createdAt",
+      "$createdAtBlockHeight",
+      "$createdAtCoreBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "frozen": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byFrozenIdentityId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "frozenIdentityId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "frozenIdentityId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identity Id of the frozen token account",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "frozenIdentityId",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "unfrozen": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byUnfrozenIdentityId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "unfrozenIdentityId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "unfrozenIdentityId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identity Id of the frozen token account",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "unfrozenIdentityId",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  }
+}

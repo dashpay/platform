@@ -11,7 +11,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -49,7 +49,7 @@ impl ValidationMode {
     }
 }
 
-impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
+impl StateTransitionActionTransformerV0 for BatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -64,7 +64,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .transform_into_action
         {
             0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
@@ -77,7 +77,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
+impl StateTransitionBasicStructureValidationV0 for BatchTransition {
     fn validate_basic_structure(
         &self,
         platform_version: &PlatformVersion,
@@ -86,7 +86,7 @@ impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .basic_structure
         {
             0 => {
@@ -103,7 +103,7 @@ impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
+impl StateTransitionNonceValidationV0 for BatchTransition {
     fn validate_nonces(
         &self,
         platform: &PlatformStateRef,
@@ -116,7 +116,7 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .revision
         {
             0 => self.validate_identity_contract_nonces_v0(
@@ -135,7 +135,7 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
+impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
     fn validate_advanced_structure_from_state(
         &self,
         block_info: &BlockInfo,
@@ -149,7 +149,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .advanced_structure
         {
             0 => {
@@ -190,7 +190,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
     }
 }
 
-impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
+impl StateTransitionStateValidationV0 for BatchTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
@@ -206,7 +206,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .state
         {
             0 => {
@@ -262,8 +262,8 @@ mod tests {
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
@@ -307,9 +307,9 @@ mod tests {
         use dpp::dashcore::Network;
         use dpp::dashcore::Network::Testnet;
         use dpp::identity::SecurityLevel;
-        use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
-        use dpp::state_transition::documents_batch_transition::{DocumentCreateTransition, DocumentsBatchTransitionV0};
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::{DocumentCreateTransition, BatchTransitionV0};
         use dpp::state_transition::StateTransition;
         use crate::config::PlatformConfig;
 
@@ -352,7 +352,7 @@ mod tests {
             document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -438,7 +438,7 @@ mod tests {
             document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -500,7 +500,7 @@ mod tests {
             document.set("avatarUrl", "http://test.com/coy.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -605,7 +605,7 @@ mod tests {
             );
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -785,7 +785,7 @@ mod tests {
             document_2.set("preorderSalt", salt_2.into());
 
             let documents_batch_create_preorder_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_1,
                     preorder,
                     entropy.0,
@@ -806,7 +806,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_2,
                     preorder,
                     entropy.0,
@@ -827,7 +827,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_1,
                     domain,
                     entropy.0,
@@ -848,7 +848,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_2,
                     domain,
                     entropy.0,
@@ -1208,7 +1208,7 @@ mod tests {
             document_1.set("preorderSalt", salt_1.into());
 
             let documents_batch_create_preorder_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_1,
                     preorder,
                     entropy.0,
@@ -1244,15 +1244,14 @@ mod tests {
                 prefunded_voting_balance: None,
             }
             .into();
-            let documents_batch_inner_create_transition_1: DocumentsBatchTransition =
-                DocumentsBatchTransitionV0 {
-                    owner_id,
-                    transitions: vec![create_transition.into()],
-                    user_fee_increase: 0,
-                    signature_public_key_id: 0,
-                    signature: Default::default(),
-                }
-                .into();
+            let documents_batch_inner_create_transition_1: BatchTransition = BatchTransitionV0 {
+                owner_id,
+                transitions: vec![create_transition.into()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
             let mut documents_batch_create_transition_1: StateTransition =
                 documents_batch_inner_create_transition_1.into();
             documents_batch_create_transition_1
@@ -1486,7 +1485,7 @@ mod tests {
             document_1.set("preorderSalt", salt_1.into());
 
             let documents_batch_create_preorder_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_1,
                     preorder,
                     entropy.0,
@@ -1521,15 +1520,14 @@ mod tests {
                 prefunded_voting_balance: None,
             }
             .into();
-            let documents_batch_inner_create_transition_1: DocumentsBatchTransition =
-                DocumentsBatchTransitionV0 {
-                    owner_id,
-                    transitions: vec![create_transition.into()],
-                    user_fee_increase: 0,
-                    signature_public_key_id: 0,
-                    signature: Default::default(),
-                }
-                .into();
+            let documents_batch_inner_create_transition_1: BatchTransition = BatchTransitionV0 {
+                owner_id,
+                transitions: vec![create_transition.into()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
             let mut documents_batch_create_transition_1: StateTransition =
                 documents_batch_inner_create_transition_1.into();
             documents_batch_create_transition_1
@@ -1838,7 +1836,7 @@ mod tests {
             document_3_on_identity_1.set("preorderSalt", salt_3.into());
 
             let documents_batch_create_preorder_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_1,
                     preorder,
                     entropy.0,
@@ -1859,7 +1857,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_2,
                     preorder,
                     entropy.0,
@@ -1880,7 +1878,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_3 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_3_on_identity_1,
                     preorder,
                     new_entropy.0,
@@ -1901,7 +1899,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_1,
                     domain,
                     entropy.0,
@@ -1922,7 +1920,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_2,
                     domain,
                     entropy.0,
@@ -1943,7 +1941,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_3 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_3_on_identity_1,
                     domain,
                     entropy.0,
@@ -2383,7 +2381,7 @@ mod tests {
             ));
 
             let documents_batch_create_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_1,
                     domain,
                     different_entropy.0,
@@ -2616,7 +2614,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -2678,7 +2676,7 @@ mod tests {
             document.set("defense", 2.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -2787,7 +2785,7 @@ mod tests {
             altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -2831,7 +2829,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             let documents_batch_update_transition =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -2939,7 +2937,7 @@ mod tests {
             document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     profile,
                     entropy.0,
@@ -2996,7 +2994,7 @@ mod tests {
                 ); //less than a week
 
                 let documents_batch_update_transition =
-                    DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    BatchTransition::new_document_replacement_transition_from_document(
                         document.clone(),
                         profile,
                         &key,
@@ -3286,7 +3284,7 @@ mod tests {
             altered_document.set("senderKeyIndex", Value::U32(2));
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     contact_request_document_type,
                     entropy.0,
@@ -3330,7 +3328,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             let documents_batch_update_transition =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     contact_request_document_type,
                     &key,
@@ -3416,7 +3414,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -3512,7 +3510,7 @@ mod tests {
             document.set("defense", 0.into());
 
             let documents_batch_transfer_transition =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     document,
                     card_document_type,
                     &key,
@@ -3620,7 +3618,7 @@ mod tests {
             altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
             let documents_batch_update_transition =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -3722,7 +3720,7 @@ mod tests {
             altered_document_2.set("avatarUrl", "http://test.com/drapes.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -3787,7 +3785,7 @@ mod tests {
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
             let documents_batch_update_transition_1 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -3807,7 +3805,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document_2,
                     profile,
                     &key,
@@ -3940,7 +3938,7 @@ mod tests {
             altered_document_2.set("avatarUrl", "http://test.com/drapes.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -4009,7 +4007,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             let documents_batch_update_transition_1 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -4029,7 +4027,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document_2,
                     profile,
                     &key,
@@ -4199,7 +4197,7 @@ mod tests {
             altered_document_2.increment_revision().unwrap();
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -4268,7 +4266,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             let documents_batch_update_transition_1 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -4288,7 +4286,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document_2,
                     profile,
                     &key,
@@ -4462,7 +4460,7 @@ mod tests {
             altered_document_2.set("avatarUrl", "http://test.com/drapes.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -4531,7 +4529,7 @@ mod tests {
             let platform_state = platform.state.load();
 
             let documents_batch_update_transition_1 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -4551,7 +4549,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     altered_document_2,
                     profile,
                     &key,
@@ -4723,7 +4721,7 @@ mod tests {
             altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     profile,
                     entropy.0,
@@ -4767,7 +4765,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             let documents_batch_deletion_transition =
-                DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                BatchTransition::new_document_deletion_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -4904,7 +4902,7 @@ mod tests {
             altered_document.set("senderKeyIndex", Value::U32(2));
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     contact_request_document_type,
                     entropy.0,
@@ -4948,7 +4946,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             let documents_batch_deletion_transition =
-                DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                BatchTransition::new_document_deletion_transition_from_document(
                     altered_document,
                     contact_request_document_type,
                     &key,
@@ -5069,7 +5067,7 @@ mod tests {
             altered_document.set("senderKeyIndex", Value::U32(2));
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     contact_request_document_type,
                     entropy.0,
@@ -5113,7 +5111,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             let documents_batch_deletion_transition =
-                DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                BatchTransition::new_document_deletion_transition_from_document(
                     altered_document,
                     contact_request_document_type,
                     &key,
@@ -5234,7 +5232,7 @@ mod tests {
             altered_document.set("senderKeyIndex", Value::U32(2));
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document,
                     contact_request_document_type,
                     entropy.0,
@@ -5278,7 +5276,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             let documents_batch_deletion_transition =
-                DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                BatchTransition::new_document_deletion_transition_from_document(
                     altered_document,
                     contact_request_document_type,
                     &key,
@@ -5371,7 +5369,7 @@ mod tests {
             altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
             let documents_batch_delete_transition =
-                DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                BatchTransition::new_document_deletion_transition_from_document(
                     altered_document,
                     profile,
                     &key,
@@ -5484,7 +5482,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -5530,7 +5528,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_transfer_transition =
-                DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                BatchTransition::new_document_transfer_transition_from_document(
                     document,
                     card_document_type,
                     receiver.id(),
@@ -5639,7 +5637,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -5732,7 +5730,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_transfer_transition =
-                DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                BatchTransition::new_document_transfer_transition_from_document(
                     document,
                     card_document_type,
                     receiver.id(),
@@ -5864,7 +5862,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -5957,7 +5955,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_transfer_transition =
-                DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                BatchTransition::new_document_transfer_transition_from_document(
                     document,
                     card_document_type,
                     receiver.id(),
@@ -6109,7 +6107,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_transfer_transition =
-                DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                BatchTransition::new_document_transfer_transition_from_document(
                     document,
                     card_document_type,
                     receiver.id(),
@@ -6215,7 +6213,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -6308,7 +6306,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_transfer_transition =
-                DocumentsBatchTransition::new_document_transfer_transition_from_document(
+                BatchTransition::new_document_transfer_transition_from_document(
                     document.clone(),
                     card_document_type,
                     receiver.id(),
@@ -6378,7 +6376,7 @@ mod tests {
             document.set_owner_id(receiver.id());
 
             let documents_batch_deletion_transition =
-                DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                BatchTransition::new_document_deletion_transition_from_document(
                     document,
                     card_document_type,
                     &recipient_key,
@@ -6485,7 +6483,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -6555,7 +6553,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -6645,7 +6643,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -6738,7 +6736,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -6865,7 +6863,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -6984,7 +6982,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -7099,7 +7097,7 @@ mod tests {
             document.set_revision(Some(3));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     purchaser.id(),
@@ -7245,7 +7243,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -7291,7 +7289,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.5),
@@ -7340,7 +7338,7 @@ mod tests {
             document.set_revision(Some(3));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     purchaser.id(),
@@ -7439,7 +7437,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -7485,7 +7483,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -7534,7 +7532,7 @@ mod tests {
             document.set_revision(Some(3));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     identity.id(),
@@ -7638,7 +7636,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -7684,7 +7682,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -7733,7 +7731,7 @@ mod tests {
             document.set_revision(Some(3));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     purchaser.id(),
@@ -7845,7 +7843,7 @@ mod tests {
             document.set_revision(Some(4));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     identity.id(),
@@ -7943,7 +7941,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -8036,7 +8034,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -8129,7 +8127,7 @@ mod tests {
             document.set_revision(Some(3));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     receiver.id(),
@@ -8223,7 +8221,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -8271,7 +8269,7 @@ mod tests {
             document.set_owner_id(other_identity.id()); // we do this to trick the system
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -8359,7 +8357,7 @@ mod tests {
             DocumentFieldFillSize, DocumentFieldFillType,
         };
         use dpp::platform_value::Bytes32;
-        use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransition;
         use dpp::util::hash::hash_double;
         use drive::query::{InternalClauses, OrderClause, WhereClause, WhereOperator};
         use drive::util::test_helpers::setup_contract;
@@ -8548,7 +8546,7 @@ mod tests {
             document_3.set("preorderSalt", salt_3.into());
 
             let documents_batch_create_preorder_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_1,
                     preorder,
                     entropy.0,
@@ -8569,7 +8567,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_2,
                     preorder,
                     entropy.0,
@@ -8590,7 +8588,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_3 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_3,
                     preorder,
                     entropy.0,
@@ -8611,7 +8609,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_1,
                     domain,
                     entropy.0,
@@ -8632,7 +8630,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_2,
                     domain,
                     entropy.0,
@@ -8653,7 +8651,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_3 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_3.clone(),
                     domain,
                     entropy.0,
@@ -8997,7 +8995,7 @@ mod tests {
             document_3.set("preorderSalt", salt_3.into());
 
             let documents_batch_create_preorder_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_1,
                     preorder,
                     entropy.0,
@@ -9018,7 +9016,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_2,
                     preorder,
                     entropy.0,
@@ -9039,7 +9037,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_preorder_transition_3 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     preorder_document_3,
                     preorder,
                     entropy.0,
@@ -9060,7 +9058,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_1 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_1,
                     domain,
                     entropy.0,
@@ -9081,7 +9079,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_2 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_2,
                     domain,
                     entropy.0,
@@ -9102,7 +9100,7 @@ mod tests {
                     .expect("expected documents batch serialized state transition");
 
             let documents_batch_create_transition_3 =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document_3.clone(),
                     domain,
                     entropy.0,

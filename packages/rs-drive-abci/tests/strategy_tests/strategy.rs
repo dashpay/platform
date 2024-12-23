@@ -31,54 +31,61 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::util::storage_flags::StorageFlags::SingleEpoch;
 
-use dpp::identity::KeyType::ECDSA_SECP256K1;
-use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-use drive::query::DriveDocumentQuery;
-use drive_abci::mimic::test_quorum::TestQuorumInfo;
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
-use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
-use rand::Rng;
-use strategy_tests::Strategy;
-use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture_with_dynamic_range};
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::ops::RangeInclusive;
-use std::str::FromStr;
-use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::dashcore::hashes::Hash;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
-use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
-use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
-use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition};
-use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
+use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
+use dpp::state_transition::batch_transition::batched_transition::{
+    DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition,
+};
+use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::batch_transition::document_create_transition::{
+    DocumentCreateTransition, DocumentCreateTransitionV0,
+};
+use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::VotePoll;
-use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use drive::query::DriveDocumentQuery;
 use drive_abci::abci::app::FullAbciApplication;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::config::PlatformConfig;
+use drive_abci::mimic::test_quorum::TestQuorumInfo;
+use drive_abci::platform_types::platform::Platform;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::platform_types::signature_verification_quorum_set::{
     QuorumConfig, Quorums, SigningQuorum,
 };
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+use drive_abci::rpc::core::MockCoreRPCLike;
+use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
+use rand::Rng;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::RangeInclusive;
+use std::str::FromStr;
+use strategy_tests::transitions::{
+    create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs,
+    instant_asset_lock_proof_fixture_with_dynamic_range,
+};
+use strategy_tests::Strategy;
+use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use simple_signer::signer::SimpleSigner;
@@ -648,8 +655,8 @@ impl NetworkStrategy {
                                     }
                                     .into();
 
-                                let document_batch_transition: DocumentsBatchTransition =
-                                    DocumentsBatchTransitionV0 {
+                                let document_batch_transition: BatchTransition =
+                                    BatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
                                         user_fee_increase: 0,
@@ -778,8 +785,8 @@ impl NetworkStrategy {
                                     }
                                     .into();
 
-                                let document_batch_transition: DocumentsBatchTransition =
-                                    DocumentsBatchTransitionV0 {
+                                let document_batch_transition: BatchTransition =
+                                    BatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
                                         user_fee_increase: 0,
@@ -884,15 +891,14 @@ impl NetworkStrategy {
                                 }
                                 .into();
 
-                            let document_batch_transition: DocumentsBatchTransition =
-                                DocumentsBatchTransitionV0 {
-                                    owner_id: identity.id,
-                                    transitions: vec![document_delete_transition.into()],
-                                    user_fee_increase: 0,
-                                    signature_public_key_id: 0,
-                                    signature: BinaryData::default(),
-                                }
-                                .into();
+                            let document_batch_transition: BatchTransition = BatchTransitionV0 {
+                                owner_id: identity.id,
+                                transitions: vec![document_delete_transition.into()],
+                                user_fee_increase: 0,
+                                signature_public_key_id: 0,
+                                signature: BinaryData::default(),
+                            }
+                            .into();
 
                             let mut document_batch_transition: StateTransition =
                                 document_batch_transition.into();
@@ -987,15 +993,14 @@ impl NetworkStrategy {
                                 }
                                 .into();
 
-                            let document_batch_transition: DocumentsBatchTransition =
-                                DocumentsBatchTransitionV0 {
-                                    owner_id: identity.id,
-                                    transitions: vec![document_replace_transition.into()],
-                                    user_fee_increase: 0,
-                                    signature_public_key_id: 0,
-                                    signature: BinaryData::default(),
-                                }
-                                .into();
+                            let document_batch_transition: BatchTransition = BatchTransitionV0 {
+                                owner_id: identity.id,
+                                transitions: vec![document_replace_transition.into()],
+                                user_fee_increase: 0,
+                                signature_public_key_id: 0,
+                                signature: BinaryData::default(),
+                            }
+                            .into();
 
                             let mut document_batch_transition: StateTransition =
                                 document_batch_transition.into();
@@ -1098,15 +1103,14 @@ impl NetworkStrategy {
                                 }
                                 .into();
 
-                            let document_batch_transition: DocumentsBatchTransition =
-                                DocumentsBatchTransitionV0 {
-                                    owner_id: identity.id,
-                                    transitions: vec![document_transfer_transition.into()],
-                                    user_fee_increase: 0,
-                                    signature_public_key_id: 0,
-                                    signature: BinaryData::default(),
-                                }
-                                .into();
+                            let document_batch_transition: BatchTransition = BatchTransitionV0 {
+                                owner_id: identity.id,
+                                transitions: vec![document_transfer_transition.into()],
+                                user_fee_increase: 0,
+                                signature_public_key_id: 0,
+                                signature: BinaryData::default(),
+                            }
+                            .into();
 
                             let mut document_batch_transition: StateTransition =
                                 document_batch_transition.into();

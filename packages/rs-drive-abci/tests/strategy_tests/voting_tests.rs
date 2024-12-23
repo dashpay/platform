@@ -315,7 +315,7 @@ mod tests {
             .first()
             .expect("expected a document insert");
 
-        assert_matches!(state_transition, StateTransition::DocumentsBatch(_));
+        assert_matches!(state_transition, StateTransition::Batch(_));
 
         assert_eq!(execution_result.code, 0);
     }

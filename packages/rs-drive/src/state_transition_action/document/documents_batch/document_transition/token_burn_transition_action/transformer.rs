@@ -7,7 +7,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{
     TokenBurnTransitionAction, TokenBurnTransitionActionV0,
 };
-use dpp::state_transition::documents_batch_transition::token_burn_transition::TokenBurnTransition;
+use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransition;
 
 /// Implement methods to transform a `TokenBurnTransition` into a `TokenBurnTransitionAction`.
 impl TokenBurnTransitionAction {

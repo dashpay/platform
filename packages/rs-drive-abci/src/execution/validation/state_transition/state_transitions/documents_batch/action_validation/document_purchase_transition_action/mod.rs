@@ -41,7 +41,7 @@ impl DocumentPurchaseTransitionActionValidation for DocumentPurchaseTransitionAc
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .document_purchase_transition_structure_validation
         {
             0 => self.validate_structure_v0(platform_version),
@@ -66,7 +66,7 @@ impl DocumentPurchaseTransitionActionValidation for DocumentPurchaseTransitionAc
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .documents_batch_state_transition
+            .batch_state_transition
             .document_purchase_transition_state_validation
         {
             0 => self.validate_state_v0(

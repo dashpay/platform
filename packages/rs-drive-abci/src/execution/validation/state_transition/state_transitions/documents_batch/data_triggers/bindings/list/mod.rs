@@ -11,7 +11,7 @@ pub fn data_trigger_bindings_list(
         .drive_abci
         .validation_and_processing
         .state_transitions
-        .documents_batch_state_transition
+        .batch_state_transition
         .data_triggers
         .bindings
     {

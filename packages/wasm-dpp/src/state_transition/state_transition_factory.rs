@@ -56,9 +56,7 @@ impl StateTransitionFactoryWasm {
                 StateTransition::IdentityCreditWithdrawal(st) => {
                     Ok(IdentityCreditWithdrawalTransitionWasm::from(st).into())
                 }
-                StateTransition::DocumentsBatch(st) => {
-                    Ok(DocumentsBatchTransitionWasm::from(st).into())
-                }
+                StateTransition::Batch(st) => Ok(DocumentsBatchTransitionWasm::from(st).into()),
                 StateTransition::MasternodeVote(st) => {
                     Ok(MasternodeVoteTransitionWasm::from(st).into())
                 }

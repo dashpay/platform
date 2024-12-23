@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
-use dpp::state_transition::documents_batch_transition::TokenTransferTransition;
+use dpp::state_transition::batch_transition::TokenTransferTransition;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionV0;

@@ -22,7 +22,7 @@ pub mod token_issuance_transition_action;
 /// token_transfer_transition_action
 pub mod token_transfer_transition_action;
 
-pub use dpp::state_transition::documents_batch_transition::document_transition::document_transition_action_type::DocumentTransitionActionType;
+pub use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 
 use derive_more::From;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;

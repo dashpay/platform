@@ -431,7 +431,7 @@ mod test {
     use dpp::platform_value::Bytes32;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
-    use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
+    use dpp::tests::fixtures::{get_batched_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::{DefaultForPlatformVersion};
     use drive::drive::contract::DataContractFetchInfo;
@@ -481,7 +481,7 @@ mod test {
         let document_type = data_contract
             .document_type_for_name("domain")
             .expect("expected to get domain document type");
-        let transitions = get_document_transitions_fixture(
+        let transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
                 vec![(document, document_type, Bytes32::default())],

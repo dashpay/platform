@@ -1,6 +1,6 @@
 use dpp::prelude::Revision;
 
-use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
 
 use dpp::document::INITIAL_REVISION;
 

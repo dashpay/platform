@@ -5,7 +5,7 @@ use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
 use dpp::ProtocolError;
-use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
+use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::v0::DocumentUpdatePriceTransitionActionV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
