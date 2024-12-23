@@ -8,7 +8,7 @@ use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
-use dapi_grpc::tonic::transport::{ClientTlsConfig, Uri};
+use dapi_grpc::tonic::transport::{Certificate, ClientTlsConfig, Uri};
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
@@ -22,18 +22,28 @@ fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
 ) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
-    let mut builder = Channel::builder(uri).tls_config(
-        ClientTlsConfig::new()
-            .with_native_roots()
-            .with_webpki_roots()
-            .assume_http2(true),
-    )?;
+    let host = uri.host().expect("Failed to get host from URI").to_string();
+
+    let mut builder = Channel::builder(uri);
+    let mut tls_config = ClientTlsConfig::new()
+        .with_native_roots()
+        .with_webpki_roots()
+        .assume_http2(true);
 
     if let Some(settings) = settings {
         if let Some(timeout) = settings.connect_timeout {
             builder = builder.connect_timeout(timeout);
         }
+
+        if let Some(pem) = settings.ca_certificate.as_ref() {
+            let cert = Certificate::from_pem(pem);
+            tls_config = tls_config.ca_certificate(cert).domain_name(host);
+        };
     }
+
+    builder = builder
+        .tls_config(tls_config)
+        .expect("Failed to set TLS config");
 
     Ok(builder.connect_lazy())
 }
@@ -44,8 +54,8 @@ impl TransportClient for PlatformGrpcClient {
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
                 match create_channel(uri.clone(), None) {
                     Ok(channel) => Ok(Self::new(channel).into()),
-                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
-                        "Channel creation failed: {}",
+                    Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
+                        "channel creation failed: {}",
                         e
                     ))),
                 }
@@ -65,7 +75,7 @@ impl TransportClient for PlatformGrpcClient {
                 Some(settings),
                 || match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => Ok(Self::new(channel).into()),
-                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                    Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
                     ))),
@@ -81,7 +91,7 @@ impl TransportClient for CoreGrpcClient {
             .get_or_create(PoolPrefix::Core, &uri, None, || {
                 match create_channel(uri.clone(), None) {
                     Ok(channel) => Ok(Self::new(channel).into()),
-                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                    Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
                     ))),
@@ -102,7 +112,7 @@ impl TransportClient for CoreGrpcClient {
                 Some(settings),
                 || match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => Ok(Self::new(channel).into()),
-                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                    Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
                     ))),
@@ -256,8 +266,10 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(120)),
-        ..RequestSettings::default()
+        timeout: Some(Duration::from_secs(80)),
+        retries: Some(0),
+        ban_failed_address: None,
+        connect_timeout: None,
     },
     wait_for_state_transition_result
 );
@@ -487,7 +499,9 @@ impl_transport_request_grpc!(
     CoreGrpcClient,
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
-        ..RequestSettings::default()
+        ban_failed_address: None,
+        connect_timeout: None,
+        retries: None,
     },
     subscribe_to_transactions_with_proofs
 );

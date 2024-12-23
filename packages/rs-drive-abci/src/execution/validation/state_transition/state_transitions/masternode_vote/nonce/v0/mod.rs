@@ -14,6 +14,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::masternode_vote::nonce::v1::MasternodeVoteTransitionIdentityNonceV1;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -39,6 +40,17 @@ impl MasternodeVoteTransitionIdentityNonceV0 for MasternodeVoteTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        // We are introducing this as an emergency hard fork activating at epoch 13.
+        if block_info.epoch.index >= 13 {
+            return self.validate_nonce_v1(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            );
+        }
+
         let revision_nonce = self.nonce();
 
         if revision_nonce & MISSING_IDENTITY_REVISIONS_FILTER > 0 {

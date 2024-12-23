@@ -1,7 +1,7 @@
 use dashcore::{ProTxHash, PubkeyHash};
 use std::fmt::{Debug, Formatter};
 
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 #[cfg(feature = "core-types-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum
-    pub public_key: Option<BlsPublicKey>,
+    pub public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
     /// The node address
     pub node_ip: String,
     /// The node id
@@ -54,7 +54,7 @@ impl Encode for ValidatorV0 {
         match &self.public_key {
             Some(public_key) => {
                 true.encode(encoder)?; // Indicate that public_key is present
-                public_key.to_bytes().encode(encoder)?;
+                public_key.0.to_compressed().encode(encoder)?;
             }
             None => {
                 false.encode(encoder)?; // Indicate that public_key is not present
@@ -94,9 +94,12 @@ impl Decode for ValidatorV0 {
         let has_public_key = bool::decode(decoder)?;
         let public_key = if has_public_key {
             let public_key_bytes = <[u8; 48]>::decode(decoder)?;
-            Some(BlsPublicKey::from_bytes(&public_key_bytes).map_err(|_| {
-                DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
-            })?)
+
+            Some(
+                BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|_| {
+                    DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
+                })?,
+            )
         } else {
             None
         };
@@ -150,7 +153,7 @@ pub trait ValidatorV0Getters {
     /// Returns the proTxHash of the validator.
     fn pro_tx_hash(&self) -> &ProTxHash;
     /// Returns the public key share of this validator for this quorum.
-    fn public_key(&self) -> &Option<BlsPublicKey>;
+    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>>;
     /// Returns the node address of the validator.
     fn node_ip(&self) -> &String;
     /// Returns the node id of the validator.
@@ -170,7 +173,7 @@ pub trait ValidatorV0Setters {
     /// Sets the proTxHash of the validator.
     fn set_pro_tx_hash(&mut self, pro_tx_hash: ProTxHash);
     /// Sets the public key share of this validator for this quorum.
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>);
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>);
     /// Sets the node address of the validator.
     fn set_node_ip(&mut self, node_ip: String);
     /// Sets the node id of the validator.
@@ -190,7 +193,7 @@ impl ValidatorV0Getters for ValidatorV0 {
         &self.pro_tx_hash
     }
 
-    fn public_key(&self) -> &Option<BlsPublicKey> {
+    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>> {
         &self.public_key
     }
 
@@ -224,7 +227,7 @@ impl ValidatorV0Setters for ValidatorV0 {
         self.pro_tx_hash = pro_tx_hash;
     }
 
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>) {
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>) {
         self.public_key = public_key;
     }
 
@@ -257,12 +260,16 @@ impl ValidatorV0Setters for ValidatorV0 {
 mod tests {
     use super::*;
     use bincode::config;
+    use dashcore::blsful::SecretKey;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_serialize_deserialize_validator_v0() {
         // Sample data for testing
         let pro_tx_hash = ProTxHash::from_slice(&[1; 32]).unwrap();
-        let public_key = Some(BlsPublicKey::generate());
+        let mut rng = StdRng::seed_from_u64(0);
+        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
         let node_ip = "127.0.0.1".to_string();
         let node_id = PubkeyHash::from_slice(&[3; 20]).unwrap();
         let core_port = 9999;
