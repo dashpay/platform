@@ -24,7 +24,7 @@ fn create_channel(
 ) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
     let mut builder = Channel::builder(uri).tls_config(
         ClientTlsConfig::new()
-            .with_native_roots()
+            // .with_native_roots()
             .with_webpki_roots()
             .assume_http2(true),
     )?;
