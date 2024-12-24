@@ -17,8 +17,7 @@ export async function transfer(
   receiver: Identity,
   sender: Identity,
 ): Promise<any> {
-  this.logger.debug(`[Document#transfer] Transfer document ${document.getId().toString()}
- from ${sender.getId().toString} to {${receiver.getId().toString()}`);
+  this.logger.debug(`[Document#transfer] Transfer document ${document.getId().toString()} from ${sender.getId().toString} to {${receiver.getId().toString()}`);
   await this.initialize();
 
   const identityContractNonce = await this.nonceManager
