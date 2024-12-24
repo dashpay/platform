@@ -6,12 +6,12 @@ import { signStateTransition } from '../../signStateTransition';
 /**
  * Broadcast document onto the platform
  *
- * @param {Platform} this - bound instance class
  * @param {Object} documents
  * @param {ExtendedDocument[]} [documents.create]
  * @param {ExtendedDocument[]} [documents.replace]
  * @param {ExtendedDocument[]} [documents.delete]
  * @param identity - identity
+ * @param keyIndex - identity key index
  */
 export default async function broadcast(
   this: Platform,
@@ -19,15 +19,14 @@ export default async function broadcast(
     create?: ExtendedDocument[],
     replace?: ExtendedDocument[],
     delete?: ExtendedDocument[],
-    transfer?: ExtendedDocument[]
   },
   identity: any,
+  keyIndex : number,
 ): Promise<any> {
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
-    transfer: documents.transfer?.length || 0,
   });
   await this.initialize();
 
@@ -38,7 +37,6 @@ export default async function broadcast(
     ...(documents.create || []),
     ...(documents.replace || []),
     ...(documents.delete || []),
-    ...(documents.transfer || []),
   ][0]?.getDataContractId();
 
   if (!dataContractId) {
@@ -56,7 +54,7 @@ export default async function broadcast(
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 
-  await signStateTransition(this, documentsBatchTransition, identity, 1);
+  await signStateTransition(this, documentsBatchTransition, identity, keyIndex ?? 1);
 
   // Broadcast state transition also wait for the result to be obtained
   await broadcastStateTransition(this, documentsBatchTransition);
@@ -82,7 +80,6 @@ export default async function broadcast(
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
-    transfer: documents.transfer?.length || 0,
   });
 
   return documentsBatchTransition;
