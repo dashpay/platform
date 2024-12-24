@@ -6,10 +6,9 @@ import { signStateTransition } from '../../signStateTransition';
  * Transfer document in the platform
  *
  * @param {Platform} this - bound instance class
- * @param {string} typeLocator - type locator
- * @param identity - identity
- * @param {Object} [data] - options
- * @returns {StateTransition}
+ * @param {ExtendedDocument} document - document from the DAPI
+ * @param {Identifier} receiver - identifier of the document recipient ownership
+ * @param {Identifier} sender - identifier of the document owner
  */
 export async function transfer(
   this: Platform,
