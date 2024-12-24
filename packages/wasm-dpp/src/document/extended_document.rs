@@ -234,8 +234,8 @@ impl ExtendedDocumentWasm {
             .set_created_at(ts.map(|t| t.get_time() as TimestampMillis));
     }
 
-    #[wasm_bindgen(js_name=createTransferTransition)]
-    pub fn create_transfer_transition(&mut self, recipient: IdentifierWrapper, identity_contract_nonce: IdentityNonce) -> DocumentsBatchTransitionWasm {
+    #[wasm_bindgen(js_name=createTransferStateTransition)]
+    pub fn create_transfer_state_transition(&mut self, recipient: IdentifierWrapper, identity_contract_nonce: IdentityNonce) -> DocumentsBatchTransitionWasm {
         let mut cloned_document = self.0.document().clone();
 
         cloned_document.set_revision(Some(cloned_document.revision().unwrap() + 1));
@@ -244,7 +244,7 @@ impl ExtendedDocumentWasm {
             cloned_document,
             self.0.document_type().unwrap(),
             identity_contract_nonce,
-            recipient.try_into().expect("identity into failed"),
+            recipient.into(),
             PlatformVersion::latest(),
             None,
             None,
@@ -256,9 +256,9 @@ impl ExtendedDocumentWasm {
             user_fee_increase: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
-        }.try_into().expect("Failed to convert into DocumentsBatchTransition");
+        }.into();
 
-        documents_batch_transition.try_into().expect("Failed to convert into DocumentsBatchTransitionWasm")
+        documents_batch_transition.into()
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
