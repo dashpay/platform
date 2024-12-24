@@ -263,25 +263,9 @@ impl DocumentFactoryV0 {
                     nonce_counter,
                     platform_version,
                 ),
-                DocumentTransitionActionType::Transfer => Self::document_transfer_transitions(
-                    documents
-                        .into_iter()
-                        .map(|(document, document_type, _)| (document, document_type))
-                        .collect(),
-                    nonce_counter,
-                    platform_version,
-                ),
-                DocumentTransitionActionType::Purchase => {
-                    Err(ProtocolError::InvalidStateTransitionType(
-                        "action type not accounted for Transfer".to_string(),
-                    ))
-                }
-                DocumentTransitionActionType::UpdatePrice => Err(ProtocolError::InvalidStateTransitionType(
-                    "action type not accounted for UpdatePrice".to_string(),
+                _ => Err(ProtocolError::InvalidStateTransitionType(
+                    "action type not accounted for".to_string(),
                 )),
-                DocumentTransitionActionType::IgnoreWhileBumpingRevision => Err(ProtocolError::InvalidStateTransitionType(
-                    "action type not accounted for IgnoreWhileBumpingRevision".to_string(),
-                ))
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
@@ -473,93 +457,6 @@ impl DocumentFactoryV0 {
                     document,
                     document_type,
                     *nonce,
-                    platform_version,
-                    None,
-                    None,
-                )?;
-
-                *nonce += 1;
-
-                Ok(transition.into())
-            })
-            .collect()
-        // let mut raw_transitions = vec![];
-        // for (document, document_type) in documents {
-        //     if !document_type.documents_mutable() {
-        //         return Err(DocumentError::TryingToReplaceImmutableDocument {
-        //             document: Box::new(document),
-        //         }
-        //         .into());
-        //     }
-        //     let Some(document_revision) = document.revision() else {
-        //         return Err(DocumentError::RevisionAbsentError {
-        //             document: Box::new(document),
-        //         }.into());
-        //     };
-        //     let mut map = document.to_map_value()?;
-        //
-        //     map.retain(|key, _| {
-        //         !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
-        //     });
-        //     map.insert(
-        //         PROPERTY_ACTION.to_string(),
-        //         Value::U8(DocumentTransitionActionType::Replace as u8),
-        //     );
-        //     let new_revision = document_revision + 1;
-        //     map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
-        //
-        //     // If document have an originally set `updatedAt`
-        //     // we should update it then
-        //     let contains_updated_at = document_type
-        //         .required_fields()
-        //         .contains(PROPERTY_UPDATED_AT);
-        //
-        //     if contains_updated_at {
-        //         let now = Utc::now().timestamp_millis() as TimestampMillis;
-        //         map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
-        //     }
-        //
-        //     raw_transitions.push(map.into());
-        // }
-        // Ok(raw_transitions)
-    }
-
-    #[cfg(feature = "state-transitions")]
-    fn document_transfer_transitions(
-        documents: Vec<(Document, DocumentTypeRef)>,
-        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
-        documents
-            .into_iter()
-            .map(|(mut document, document_type)| {
-                if !document_type.documents_mutable() {
-                    return Err(DocumentError::TryingToReplaceImmutableDocument {
-                        document: Box::new(document),
-                    }
-                    .into());
-                }
-                if document.revision().is_none() {
-                    return Err(DocumentError::RevisionAbsentError {
-                        document: Box::new(document),
-                    }
-                    .into());
-                };
-
-                document.increment_revision()?;
-                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
-
-                let recipient_owner_id = document.owner_id();
-
-                let nonce = nonce_counter
-                    .entry((document.owner_id(), document_type.data_contract_id()))
-                    .or_default();
-
-                let transition = DocumentTransferTransition::from_document(
-                    document,
-                    document_type,
-                    *nonce,
-                    recipient_owner_id,
                     platform_version,
                     None,
                     None,
