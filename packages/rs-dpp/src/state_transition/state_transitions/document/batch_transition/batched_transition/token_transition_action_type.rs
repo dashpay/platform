@@ -17,7 +17,7 @@ impl TransitionActionTypeGetter for TokenTransition {
     fn action_type(&self) -> TokenTransitionActionType {
         match self {
             TokenTransition::Burn(_) => TokenTransitionActionType::Burn,
-            TokenTransition::Issuance(_) => TokenTransitionActionType::Issuance,
+            TokenTransition::Mint(_) => TokenTransitionActionType::Issuance,
             TokenTransition::Transfer(_) => TokenTransitionActionType::Transfer,
         }
     }

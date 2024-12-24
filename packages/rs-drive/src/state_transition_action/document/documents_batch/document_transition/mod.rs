@@ -36,7 +36,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
-use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenIssuanceTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenMintTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction, TokenTransferTransitionActionAccessors};
 
 /// version
@@ -57,34 +57,30 @@ pub enum DocumentTransitionAction {
     PurchaseAction(DocumentPurchaseTransitionAction),
     /// update price
     UpdatePriceAction(DocumentUpdatePriceTransitionAction),
-    /// bump identity data contract nonce
-    BumpIdentityDataContractNonce(BumpIdentityDataContractNonceAction),
 }
 
 impl DocumentTransitionAction {
     /// base
-    pub fn base(&self) -> Option<&DocumentBaseTransitionAction> {
+    pub fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
-            DocumentTransitionAction::CreateAction(d) => Some(d.base()),
-            DocumentTransitionAction::DeleteAction(d) => Some(d.base()),
-            DocumentTransitionAction::ReplaceAction(d) => Some(d.base()),
-            DocumentTransitionAction::TransferAction(d) => Some(d.base()),
-            DocumentTransitionAction::PurchaseAction(d) => Some(d.base()),
-            DocumentTransitionAction::UpdatePriceAction(d) => Some(d.base()),
-            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => None,
+            DocumentTransitionAction::CreateAction(d) => d.base(),
+            DocumentTransitionAction::DeleteAction(d) => d.base(),
+            DocumentTransitionAction::ReplaceAction(d) => d.base(),
+            DocumentTransitionAction::TransferAction(d) => d.base(),
+            DocumentTransitionAction::PurchaseAction(d) => d.base(),
+            DocumentTransitionAction::UpdatePriceAction(d) => d.base(),
         }
     }
 
     /// base owned
-    pub fn base_owned(self) -> Option<DocumentBaseTransitionAction> {
+    pub fn base_owned(self) -> DocumentBaseTransitionAction {
         match self {
-            DocumentTransitionAction::CreateAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::DeleteAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::ReplaceAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::TransferAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::PurchaseAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::UpdatePriceAction(d) => Some(d.base_owned()),
-            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => None,
+            DocumentTransitionAction::CreateAction(d) => d.base_owned(),
+            DocumentTransitionAction::DeleteAction(d) => d.base_owned(),
+            DocumentTransitionAction::ReplaceAction(d) => d.base_owned(),
+            DocumentTransitionAction::TransferAction(d) => d.base_owned(),
+            DocumentTransitionAction::PurchaseAction(d) => d.base_owned(),
+            DocumentTransitionAction::UpdatePriceAction(d) => d.base_owned(),
         }
     }
 }
@@ -95,36 +91,38 @@ pub enum TokenTransitionAction {
     /// burn
     BurnAction(TokenBurnTransitionAction),
     /// issuance
-    IssuanceAction(TokenIssuanceTransitionAction),
+    MintAction(TokenMintTransitionAction),
     /// transfer
     TransferAction(TokenTransferTransitionAction),
 }
 
 impl TokenTransitionAction {
     /// Returns a reference to the base token transition action if available
-    pub fn base(&self) -> Option<&TokenBaseTransitionAction> {
+    pub fn base(&self) -> &TokenBaseTransitionAction {
         match self {
-            TokenTransitionAction::BurnAction(action) => Some(action.base()),
-            TokenTransitionAction::IssuanceAction(action) => Some(action.base()),
-            TokenTransitionAction::TransferAction(action) => Some(action.base()),
+            TokenTransitionAction::BurnAction(action) => action.base(),
+            TokenTransitionAction::MintAction(action) => action.base(),
+            TokenTransitionAction::TransferAction(action) => action.base(),
         }
     }
 
     /// Consumes self and returns the base token transition action if available
-    pub fn base_owned(self) -> Option<TokenBaseTransitionAction> {
+    pub fn base_owned(self) -> TokenBaseTransitionAction {
         match self {
-            TokenTransitionAction::BurnAction(action) => Some(action.base_owned()),
-            TokenTransitionAction::IssuanceAction(action) => Some(action.base_owned()),
-            TokenTransitionAction::TransferAction(action) => Some(action.base_owned()),
+            TokenTransitionAction::BurnAction(action) => action.base_owned(),
+            TokenTransitionAction::MintAction(action) => action.base_owned(),
+            TokenTransitionAction::TransferAction(action) => action.base_owned(),
         }
     }
 }
 
 /// token action
 #[derive(Debug, Clone, From)]
-pub enum BatchTransitionAction {
+pub enum BatchedTransitionAction {
     /// document
     DocumentAction(DocumentTransitionAction),
     /// token
     TokenAction(TokenTransitionAction),
+    /// bump identity data contract nonce
+    BumpIdentityDataContractNonce(BumpIdentityDataContractNonceAction),
 }

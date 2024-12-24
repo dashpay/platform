@@ -367,9 +367,7 @@ impl StateTransition {
                         BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
                             "TokenTransfer"
                         }
-                        BatchedTransitionRef::Token(TokenTransition::Issuance(_)) => {
-                            "TokenIssuance"
-                        }
+                        BatchedTransitionRef::Token(TokenTransition::Mint(_)) => "TokenIssuance",
                         BatchedTransitionRef::Token(TokenTransition::Burn(_)) => "TokenBurn",
                     };
                     document_transition_types.push(document_transition_name);

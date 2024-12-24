@@ -21,7 +21,7 @@ pub enum TokenTransition {
     Burn(TokenBurnTransition),
 
     #[display("TokenIssuanceTransition({})", "_0")]
-    Issuance(TokenIssuanceTransition),
+    Mint(TokenIssuanceTransition),
 
     #[display("TokenTransferTransition({})", "_0")]
     Transfer(TokenTransferTransition),
@@ -55,7 +55,7 @@ impl BatchTransitionResolversV0 for TokenTransition {
         }
     }
     fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition> {
-        if let Self::Issuance(ref t) = self {
+        if let Self::Mint(ref t) = self {
             Some(t)
         } else {
             None
@@ -95,7 +95,7 @@ impl TokenTransitionV0Methods for TokenTransition {
     fn base(&self) -> &TokenBaseTransition {
         match self {
             TokenTransition::Burn(t) => t.base(),
-            TokenTransition::Issuance(t) => t.base(),
+            TokenTransition::Mint(t) => t.base(),
             TokenTransition::Transfer(t) => t.base(),
         }
     }
@@ -103,7 +103,7 @@ impl TokenTransitionV0Methods for TokenTransition {
     fn base_mut(&mut self) -> &mut TokenBaseTransition {
         match self {
             TokenTransition::Burn(t) => t.base_mut(),
-            TokenTransition::Issuance(t) => t.base_mut(),
+            TokenTransition::Mint(t) => t.base_mut(),
             TokenTransition::Transfer(t) => t.base_mut(),
         }
     }

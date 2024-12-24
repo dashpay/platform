@@ -11,45 +11,45 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 
 /// Token issuance transition action
 #[derive(Debug, Clone, From)]
-pub enum TokenIssuanceTransitionAction {
+pub enum TokenMintTransitionAction {
     /// v0
     V0(TokenIssuanceTransitionActionV0),
 }
 
-impl TokenIssuanceTransitionActionAccessorsV0 for TokenIssuanceTransitionAction {
+impl TokenIssuanceTransitionActionAccessorsV0 for TokenMintTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
-            TokenIssuanceTransitionAction::V0(v0) => &v0.base,
+            TokenMintTransitionAction::V0(v0) => &v0.base,
         }
     }
 
     fn base_owned(self) -> TokenBaseTransitionAction {
         match self {
-            TokenIssuanceTransitionAction::V0(v0) => v0.base,
+            TokenMintTransitionAction::V0(v0) => v0.base,
         }
     }
 
     fn issuance_amount(&self) -> u64 {
         match self {
-            TokenIssuanceTransitionAction::V0(v0) => v0.issuance_amount,
+            TokenMintTransitionAction::V0(v0) => v0.issuance_amount,
         }
     }
 
     fn set_issuance_amount(&mut self, amount: u64) {
         match self {
-            TokenIssuanceTransitionAction::V0(v0) => v0.issuance_amount = amount,
+            TokenMintTransitionAction::V0(v0) => v0.issuance_amount = amount,
         }
     }
 
     fn identity_balance_holder_id(&self) -> Identifier {
         match self {
-            TokenIssuanceTransitionAction::V0(v0) => v0.identity_balance_holder_id,
+            TokenMintTransitionAction::V0(v0) => v0.identity_balance_holder_id,
         }
     }
 
     fn set_identity_balance_holder_id(&mut self, id: Identifier) {
         match self {
-            TokenIssuanceTransitionAction::V0(v0) => v0.identity_balance_holder_id = id,
+            TokenMintTransitionAction::V0(v0) => v0.identity_balance_holder_id = id,
         }
     }
 }

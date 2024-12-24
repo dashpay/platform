@@ -5,12 +5,12 @@ use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{
-    TokenIssuanceTransitionAction, TokenIssuanceTransitionActionV0,
+    TokenMintTransitionAction, TokenIssuanceTransitionActionV0,
 };
 use dpp::state_transition::batch_transition::token_issuance_transition::TokenIssuanceTransition;
 
 /// Implement methods to transform a `TokenIssuanceTransition` into a `TokenIssuanceTransitionAction`.
-impl TokenIssuanceTransitionAction {
+impl TokenMintTransitionAction {
     /// Transform a `TokenIssuanceTransition` into a `TokenIssuanceTransitionAction` using the provided data contract lookup.
     ///
     /// # Arguments
@@ -47,7 +47,7 @@ impl TokenIssuanceTransitionAction {
     /// # Returns
     ///
     /// * `Result<TokenIssuanceTransitionAction, ProtocolError>` - A `TokenIssuanceTransitionAction` if successful, otherwise `ProtocolError`.
-    pub fn from_borrowed_token_issuance_transition_with_contract_lookup(
+    pub fn try_from_borrowed_token_mint_transition_with_contract_lookup(
         value: &TokenIssuanceTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {

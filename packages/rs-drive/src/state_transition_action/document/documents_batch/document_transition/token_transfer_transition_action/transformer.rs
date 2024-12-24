@@ -45,7 +45,7 @@ impl TokenTransferTransitionAction {
     /// # Returns
     ///
     /// * `Result<TokenTransferTransitionAction, ProtocolError>` - A `TokenTransferTransitionAction` if successful, otherwise `ProtocolError`.
-    pub fn from_borrowed_token_transfer_transition_with_contract_lookup(
+    pub fn try_from_borrowed_token_transfer_transition_with_contract_lookup(
         value: &TokenTransferTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {

@@ -5,12 +5,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenIssuanceTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenMintTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use crate::util::batch::drive_op_batch::TokenOperationType;
 use crate::util::batch::DriveOperation::{IdentityOperation, TokenOperation};
 
-impl DriveHighLevelDocumentOperationConverter for TokenIssuanceTransitionAction {
+impl DriveHighLevelDocumentOperationConverter for TokenMintTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
         self,
         _epoch: &Epoch,

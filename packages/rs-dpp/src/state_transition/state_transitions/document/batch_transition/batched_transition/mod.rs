@@ -31,6 +31,7 @@ pub use document_replace_transition::DocumentReplaceTransition;
 pub use document_transfer_transition::DocumentTransferTransition;
 use document_transition::DocumentTransition;
 pub use document_update_price_transition::DocumentUpdatePriceTransition;
+use platform_value::Identifier;
 use token_transition::TokenTransition;
 
 pub const PROPERTY_ACTION: &str = "$action";
@@ -62,6 +63,26 @@ impl<'a> BatchedTransitionRef<'a> {
                 BatchedTransition::Document((*doc_ref).clone())
             }
             BatchedTransitionRef::Token(tok_ref) => BatchedTransition::Token((*tok_ref).clone()),
+        }
+    }
+
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
+        match self {
+            BatchedTransitionRef::Document(document_transition) => {
+                document_transition.identity_contract_nonce()
+            }
+            BatchedTransitionRef::Token(token_transition) => {
+                token_transition.identity_contract_nonce()
+            }
+        }
+    }
+
+    pub fn data_contract_id(&self) -> Identifier {
+        match self {
+            BatchedTransitionRef::Document(document_transition) => {
+                document_transition.data_contract_id()
+            }
+            BatchedTransitionRef::Token(token_transition) => token_transition.data_contract_id(),
         }
     }
 }

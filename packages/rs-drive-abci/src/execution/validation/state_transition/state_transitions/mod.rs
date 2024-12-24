@@ -1,5 +1,5 @@
 /// Module containing functionality related to batch processing of documents.
-pub mod documents_batch;
+pub mod batch;
 
 /// Module for creating an identity entity.
 pub mod identity_create;

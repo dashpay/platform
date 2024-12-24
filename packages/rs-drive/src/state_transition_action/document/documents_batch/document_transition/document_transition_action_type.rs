@@ -14,9 +14,6 @@ impl TransitionActionTypeGetter for DocumentTransitionAction {
             DocumentTransitionAction::UpdatePriceAction(_) => {
                 DocumentTransitionActionType::UpdatePrice
             }
-            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
-                DocumentTransitionActionType::IgnoreWhileBumpingRevision
-            }
         }
     }
 }

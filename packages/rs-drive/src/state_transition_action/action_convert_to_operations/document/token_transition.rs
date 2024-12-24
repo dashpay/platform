@@ -16,7 +16,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenTransitionAction {
         match self {
             TokenTransitionAction::BurnAction(token_burn_transition) => token_burn_transition
                 .into_high_level_document_drive_operations(epoch, owner_id, platform_version),
-            TokenTransitionAction::IssuanceAction(token_issuance_transition) => {
+            TokenTransitionAction::MintAction(token_issuance_transition) => {
                 token_issuance_transition.into_high_level_document_drive_operations(
                     epoch,
                     owner_id,
