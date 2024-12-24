@@ -25,7 +25,7 @@ export default async function broadcast(
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
-    delete: documents.delete?.length || 0,
+    delete: documents.delete?.length || 0
   });
   await this.initialize();
 
