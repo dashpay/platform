@@ -1,30 +1,4 @@
-use std::convert;
-
-use serde_json::Value as JsonValue;
-
-use dpp::platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
-};
-use dpp::platform_value::ReplacementType;
-use dpp::prelude::Revision;
-use dpp::{
-    prelude::{Identifier},
-    ProtocolError,
-};
-use wasm_bindgen::prelude::*;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-
-use crate::{
-    buffer::Buffer,
-    document::state_transition::document_batch_transition::document_transition::to_object,
-    identifier::IdentifierWrapper,
-    lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
-    BinaryType, DataContractWasm,
-};
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use wasm_bindgen::prelude::wasm_bindgen;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransferTransition;
 
 #[wasm_bindgen(js_name=DocumentTransferTransition)]

@@ -1,6 +1,7 @@
+import { Identity, ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
-
+import { signStateTransition } from '../../signStateTransition';
 /**
  * Transfer document in the platform
  *
@@ -8,33 +9,26 @@ import broadcastStateTransition from '../../broadcastStateTransition';
  * @param {string} typeLocator - type locator
  * @param identity - identity
  * @param {Object} [data] - options
+ * @returns {StateTransition}
  */
 export async function transfer(
   this: Platform,
-  documentId: string,
-  identity: any,
+  document: ExtendedDocument,
+  receiver: Identity,
+  sender: Identity,
 ): Promise<any> {
-  this.logger.debug(`[Document#transfer] Transfer document`);
+  this.logger.debug('[Document#transfer] Transfer document');
   await this.initialize();
 
-  const { dpp } = this;
+  const identityContractNonce = await this.nonceManager
+    .bumpIdentityContractNonce(sender.getId(), document.getDataContractId());
 
-  const document = await this.documents.get(documentId);
+  const documentsBatchTransition = document
+    .createTransferTransition(receiver.getId(), BigInt(identityContractNonce));
 
-  this.logger.silly(`[Document#create] Obtained document ${document.getId()}`);
+  await signStateTransition(this, documentsBatchTransition, sender, 1);
 
-  if (document === null) {
-    throw new Error(`Document ${documentId} not found. Ensure contractId ${documentId} is correct.`);
-  }
-
-  document.setOwnerId(identity);
-
-  const transition = dpp.document.createStateTransition(
-    { transfer: [document] },
-    identity.getId(),
-  );
-
-  await broadcastStateTransition(this, transition);
+  await broadcastStateTransition(this, documentsBatchTransition);
 }
 
 export default transfer;

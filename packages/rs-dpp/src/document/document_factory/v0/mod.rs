@@ -263,9 +263,25 @@ impl DocumentFactoryV0 {
                     nonce_counter,
                     platform_version,
                 ),
-                _ => Err(ProtocolError::InvalidStateTransitionType(
-                    "action type not accounted for".to_string(),
+                DocumentTransitionActionType::Transfer => Self::document_transfer_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    nonce_counter,
+                    platform_version,
+                ),
+                DocumentTransitionActionType::Purchase => {
+                    Err(ProtocolError::InvalidStateTransitionType(
+                        "action type not accounted for Transfer".to_string(),
+                    ))
+                }
+                DocumentTransitionActionType::UpdatePrice => Err(ProtocolError::InvalidStateTransitionType(
+                    "action type not accounted for UpdatePrice".to_string(),
                 )),
+                DocumentTransitionActionType::IgnoreWhileBumpingRevision => Err(ProtocolError::InvalidStateTransitionType(
+                    "action type not accounted for IgnoreWhileBumpingRevision".to_string(),
+                ))
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()

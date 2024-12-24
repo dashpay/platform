@@ -1,10 +1,8 @@
-use dpp::document::{
-    DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
-};
+use dpp::document::{DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::{Identifier, Revision, TimestampMillis};
+use dpp::prelude::{Identifier, IdentityNonce, Revision, TimestampMillis, UserFeeIncrease};
 
 use dpp::util::json_value::JsonValueExt;
 
@@ -16,12 +14,15 @@ use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransferTransition;
+use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
 
 use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
 #[allow(deprecated)] // BinaryType is unsed in unused code below
 use crate::document::BinaryType;
 use crate::document::{ConversionOptions, DocumentWasm};
+use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
@@ -233,6 +234,33 @@ impl ExtendedDocumentWasm {
         self.0
             .document_mut()
             .set_created_at(ts.map(|t| t.get_time() as TimestampMillis));
+    }
+
+    #[wasm_bindgen(js_name=createTransferTransition)]
+    pub fn create_transfer_transition(&mut self, recipient: IdentifierWrapper, identity_contract_nonce: IdentityNonce) -> DocumentsBatchTransitionWasm {
+        let mut cloned_document = self.0.document().clone();
+
+        cloned_document.set_revision(Some(cloned_document.revision().unwrap() + 1));
+
+        let transfer_transition = DocumentTransferTransition::from_document(
+            cloned_document,
+            self.0.document_type().unwrap(),
+            identity_contract_nonce,
+            recipient.try_into().expect("identity into failed"),
+            PlatformVersion::latest(),
+            None,
+            None,
+        ).unwrap();
+
+        let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
+            owner_id: self.0.owner_id(),
+            transitions: vec![transfer_transition.into()],
+            user_fee_increase: Default::default(),
+            signature_public_key_id: Default::default(),
+            signature: Default::default(),
+        }.try_into().expect("Failed to convert into DocumentsBatchTransition");
+
+        documents_batch_transition.try_into().expect("Failed to convert into DocumentsBatchTransitionWasm")
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
