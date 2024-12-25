@@ -22,18 +22,19 @@ use dapi_grpc::platform::v0::{
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
     GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
     GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
+    GetIdentitiesTokenBalancesResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
-    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
-    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
-    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
-    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetStatusRequest, GetStatusResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -606,6 +607,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_current_quorums_info,
             "query_current_quorums_info",
+        )
+        .await
+    }
+
+    async fn get_identity_token_balances(
+        &self,
+        request: Request<GetIdentityTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentityTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_balances,
+            "query_identity_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identities_token_balances(
+        &self,
+        request: Request<GetIdentitiesTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_balances,
+            "query_identities_token_balances",
         )
         .await
     }

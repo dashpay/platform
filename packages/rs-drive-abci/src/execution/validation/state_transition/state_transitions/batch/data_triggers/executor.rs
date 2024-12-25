@@ -27,18 +27,8 @@ impl DataTriggerExecutor for DocumentTransitionAction {
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {
-        let data_contract_id = self
-            .base()
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "expecting action to have a base",
-            )))?
-            .data_contract_id();
-        let document_type_name = self
-            .base()
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "expecting action to have a base",
-            )))?
-            .document_type_name();
+        let data_contract_id = self.base().data_contract_id();
+        let document_type_name = self.base().document_type_name();
         let transition_action = self.action_type();
 
         // Match data triggers by action type, contract ID and document type name

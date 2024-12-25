@@ -54,7 +54,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::TokenBurnTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::TokenMintTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -84,7 +84,7 @@ trait BatchTransitionInternalTransformerV0 {
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
+    ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -96,7 +96,7 @@ trait BatchTransitionInternalTransformerV0 {
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
+    ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
     /// The data contract can be of multiple difference versions
     fn transform_token_transition_v0(
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
@@ -114,7 +114,7 @@ trait BatchTransitionInternalTransformerV0 {
         owner_id: Identifier,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
     fn find_replaced_document_v0<'a>(
         document_transition: &'a DocumentTransition,
         fetched_documents: &'a [Document],

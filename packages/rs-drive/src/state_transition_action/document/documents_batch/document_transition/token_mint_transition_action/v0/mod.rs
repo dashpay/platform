@@ -17,7 +17,7 @@ pub struct TokenIssuanceTransitionActionV0 {
 }
 
 /// Accessors for `TokenIssuanceTransitionActionV0`
-pub trait TokenIssuanceTransitionActionAccessorsV0 {
+pub trait TokenMintTransitionActionAccessorsV0 {
     /// Returns a reference to the base token transition action
     fn base(&self) -> &TokenBaseTransitionAction;
 
@@ -62,7 +62,7 @@ pub trait TokenIssuanceTransitionActionAccessorsV0 {
     }
 }
 
-impl TokenIssuanceTransitionActionAccessorsV0 for TokenIssuanceTransitionActionV0 {
+impl TokenMintTransitionActionAccessorsV0 for TokenIssuanceTransitionActionV0 {
     fn base(&self) -> &TokenBaseTransitionAction {
         &self.base
     }

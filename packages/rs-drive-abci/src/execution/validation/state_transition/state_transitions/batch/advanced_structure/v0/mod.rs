@@ -25,6 +25,13 @@ use crate::execution::validation::state_transition::state_transitions::batch::ac
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionActionAccessors;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -33,7 +40,9 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 use crate::execution::validation::state_transition::batch::action_validation::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_issuance_transition_action::TokenIssuanceTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_mint_transition_action::TokenMintTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
@@ -66,11 +75,11 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
             // We only need to bump the first identity data contract nonce as that will make a replay
             // attack not possible
 
-            let first_transition = self.document_transitions().first().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("There must be at least one state transition as this is already verified in basic validation")))?;
+            let first_transition = self.first_transition().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("There must be at least one state transition as this is already verified in basic validation")))?;
 
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
-                    first_transition.base(),
+                BumpIdentityDataContractNonceAction::from_batched_transition_ref(
+                    first_transition,
                     self.owner_id(),
                     self.user_fee_increase(),
                 ),
@@ -108,7 +117,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                 if generated_document_id != id {
                     let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
-                            transition.base(),
+                            create_transition.base(),
                             self.owner_id(),
                             self.user_fee_increase(),
                         ),
@@ -137,7 +146,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         )?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(document_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -150,7 +159,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         let result = replace_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the replace action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(replace_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -163,7 +172,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         let result = delete_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the delete action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(delete_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -176,7 +185,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         let result = transfer_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the transfer action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transfer_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -189,7 +198,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         let result = update_price_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the update price action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(update_price_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -202,7 +211,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         let result = purchase_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the purchase action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(purchase_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -210,11 +219,6 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                                 result.errors,
                             ));
                         }
-                    }
-                    DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
-                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "we should not have a bump identity contract nonce at this stage",
-                        )));
                     }
                 },
                 BatchedTransitionAction::TokenAction(token_action) => match token_action {
@@ -222,7 +226,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         let result = burn_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the transfer action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(token_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -231,11 +235,11 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                             ));
                         }
                     }
-                    TokenTransitionAction::MintAction(issuance_action) => {
-                        let result = issuance_action.validate_structure(platform_version)?;
+                    TokenTransitionAction::MintAction(mint_action) => {
+                        let result = mint_action.validate_structure(platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the transfer action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(mint_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -245,10 +249,11 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         }
                     }
                     TokenTransitionAction::TransferAction(transfer_action) => {
-                        let result = transfer_action.validate_structure(platform_version)?;
+                        let result = transfer_action
+                            .validate_structure(self.owner_id(), platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the transfer action"), self.owner_id(), self.user_fee_increase()),
+                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(transfer_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -258,6 +263,11 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         }
                     }
                 },
+                BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "we should not have a bump identity contract nonce at this stage",
+                    )));
+                }
             }
         }
         Ok(ConsensusValidationResult::new())

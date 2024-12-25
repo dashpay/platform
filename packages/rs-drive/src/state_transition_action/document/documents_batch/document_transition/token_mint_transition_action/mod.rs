@@ -16,7 +16,7 @@ pub enum TokenMintTransitionAction {
     V0(TokenIssuanceTransitionActionV0),
 }
 
-impl TokenIssuanceTransitionActionAccessorsV0 for TokenMintTransitionAction {
+impl TokenMintTransitionActionAccessorsV0 for TokenMintTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
             TokenMintTransitionAction::V0(v0) => &v0.base,

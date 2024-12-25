@@ -11,30 +11,24 @@ use dpp::data_contract::validate_document::DataContractDocumentValidationMethods
 use dpp::identifier::Identifier;
 use dpp::validation::{SimpleConsensusValidationResult};
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenMintTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
+use drive::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 
-pub(super) trait TokenIssuanceTransitionActionStructureValidationV0 {
+pub(super) trait TokenBurnTransitionActionStructureValidationV0 {
     fn validate_structure_v0(
         &self,
-        owner_id: Identifier,
-        block_info: &BlockInfo,
-        network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
-impl TokenIssuanceTransitionActionStructureValidationV0 for TokenMintTransitionAction {
+impl TokenBurnTransitionActionStructureValidationV0 for TokenBurnTransitionAction {
     fn validate_structure_v0(
         &self,
-        owner_id: Identifier,
-        block_info: &BlockInfo,
-        network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let token_configuration = self.base().token_configuration()?;
 
-        token_configuration.Ok(SimpleConsensusValidationResult::default())
+        Ok(SimpleConsensusValidationResult::default())
     }
 }

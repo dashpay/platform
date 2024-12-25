@@ -19,7 +19,9 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_issuance_transition_action::TokenIssuanceTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_mint_transition_action::TokenMintTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
@@ -135,11 +137,6 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             transaction,
                             platform_version,
                         )?,
-                    DocumentTransitionAction::BumpIdentityDataContractNonce(..) => {
-                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "we should never start with a bump identity data contract nonce",
-                        )));
-                    }
                 },
                 BatchedTransitionAction::TokenAction(token_action) => match token_action {
                     TokenTransitionAction::BurnAction(burn_action) => burn_action.validate_state(
@@ -168,24 +165,23 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             platform_version,
                         )?,
                 },
+                BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "we should never start with a bump identity data contract nonce",
+                    )));
+                }
             };
 
             if !transition_validation_result.is_valid() {
                 // If a state transition isn't valid we still need to bump the identity data contract nonce
                 validation_result.add_errors(transition_validation_result.errors);
-                validated_transitions.push(
-                    DocumentTransitionAction::BumpIdentityDataContractNonce(
-                        BumpIdentityDataContractNonceAction::from_document_base_transition_action(
-                            transition.base_owned().ok_or(Error::Execution(
-                                ExecutionError::CorruptedCodeExecution(
-                                    "base should always exist on transition",
-                                ),
-                            ))?,
-                            owner_id,
-                            state_transition_action.user_fee_increase(),
-                        ),
-                    ),
-                );
+                validated_transitions.push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                    BumpIdentityDataContractNonceAction::try_from_batched_transition_action(
+                        transition,
+                        owner_id,
+                        state_transition_action.user_fee_increase(),
+                    )?,
+                ));
             } else if platform.config.execution.use_document_triggers {
                 if let BatchedTransitionAction::DocumentAction(document_transition) = &transition {
                     // we should also validate document triggers
@@ -212,13 +208,9 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             .collect();
                         validation_result.add_errors(consensus_errors);
                         validated_transitions
-                            .push(DocumentTransitionAction::BumpIdentityDataContractNonce(
+                            .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
                                 BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
-                                    document_transition.base().ok_or(Error::Execution(
-                                        ExecutionError::CorruptedCodeExecution(
-                                            "base should always exist on transition",
-                                        ),
-                                    ))?,
+                                    document_transition.base(),
                                     owner_id,
                                     state_transition_action.user_fee_increase(),
                                 ),

@@ -59,6 +59,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
     fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_cbor(platform_version),
+            DataContract::V1(v1) => v1.to_cbor(platform_version),
         }
     }
 

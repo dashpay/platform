@@ -4,4 +4,6 @@ pub(crate) mod document_purchase_transition_action;
 pub(crate) mod document_replace_transition_action;
 pub(crate) mod document_transfer_transition_action;
 pub(crate) mod document_update_price_transition_action;
-pub(crate) mod token_issuance_transition_action;
+pub(crate) mod token_burn_transition_action;
+pub(crate) mod token_mint_transition_action;
+pub(crate) mod token_transfer_transition_action;

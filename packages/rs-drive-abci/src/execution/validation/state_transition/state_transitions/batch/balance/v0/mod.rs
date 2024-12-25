@@ -4,11 +4,11 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::PartialIdentity;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::ProtocolError;
-
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::ProtocolError;
 
 use crate::error::execution::ExecutionError;
 use dpp::version::PlatformVersion;
@@ -64,7 +64,7 @@ impl DocumentsBatchTransitionBalanceValidationV0 for BatchTransition {
                 Err(e) => return Err(e.into()),
             };
 
-        let base_fees = match platform_version.fee_version.state_transition_min_fees.document_batch_sub_transition.checked_mul(self.document_transitions().len() as u64) {
+        let base_fees = match platform_version.fee_version.state_transition_min_fees.document_batch_sub_transition.checked_mul(self.transitions_len() as u64) {
             None => return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::OverflowError(OverflowError::new("overflow when multiplying base fee and amount of sub transitions in documents batch transition".to_string()))))),
             Some(base_fees) => base_fees
         };

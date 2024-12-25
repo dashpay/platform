@@ -1,6 +1,5 @@
 use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::data_contract::DataContractV1;
 use crate::util::cbor_value::CborCanonicalMap;
 
 use crate::data_contract::DataContractV1;

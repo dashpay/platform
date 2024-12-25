@@ -8,7 +8,7 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::v0_metho
 use dpp::tokens::errors::TokenError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
-use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::v0::TokenIssuanceTransitionActionV0;
+use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::v0::TokenIssuanceTransitionActionV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 
 impl TokenIssuanceTransitionActionV0 {

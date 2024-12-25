@@ -4,7 +4,7 @@ use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{
+use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{
     TokenMintTransitionAction, TokenIssuanceTransitionActionV0,
 };
 use dpp::state_transition::batch_transition::token_issuance_transition::TokenIssuanceTransition;

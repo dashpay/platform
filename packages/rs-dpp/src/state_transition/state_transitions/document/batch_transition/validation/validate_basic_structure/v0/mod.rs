@@ -15,6 +15,8 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 
 impl BatchTransition {
@@ -51,18 +53,26 @@ impl BatchTransition {
         let mut document_transitions_by_contracts: BTreeMap<Identifier, Vec<&DocumentTransition>> =
             BTreeMap::new();
 
-        self.document_transitions_iter()
-            .for_each(|document_transition| {
-                let contract_identifier = document_transition.data_contract_id();
+        // Group transitions by contract ID
+        let mut token_transitions: Vec<&TokenTransition> = vec![];
 
-                match document_transitions_by_contracts.entry(contract_identifier) {
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(vec![document_transition]);
-                    }
-                    Entry::Occupied(mut identifiers) => {
-                        identifiers.get_mut().push(document_transition);
-                    }
-                };
+        self.transitions_iter()
+            .for_each(|batch_transition| match batch_transition {
+                BatchedTransitionRef::Document(document_transition) => {
+                    let contract_identifier = document_transition.data_contract_id();
+
+                    match document_transitions_by_contracts.entry(contract_identifier) {
+                        Entry::Vacant(vacant) => {
+                            vacant.insert(vec![document_transition]);
+                        }
+                        Entry::Occupied(mut identifiers) => {
+                            identifiers.get_mut().push(document_transition);
+                        }
+                    };
+                }
+                BatchedTransitionRef::Token(token_transition) => {
+                    token_transitions.push(token_transition)
+                }
             });
 
         let mut result = SimpleConsensusValidationResult::default();
@@ -94,6 +104,16 @@ impl BatchTransition {
 
                 result.add_error(BasicError::DuplicateDocumentTransitionsWithIdsError(
                     DuplicateDocumentTransitionsWithIdsError::new(references),
+                ));
+            }
+        }
+
+        for transition in token_transitions {
+            // We need to make sure that the identity contract nonce is within the allowed bounds
+            // This means that it is stored on 40 bits
+            if transition.identity_contract_nonce() & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
+                result.add_error(BasicError::NonceOutOfBoundsError(
+                    NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                 ));
             }
         }

@@ -18,7 +18,7 @@ pub mod token_base_transition_action;
 /// token_burn_transition_action
 pub mod token_burn_transition_action;
 /// token_issuance_transition_action
-pub mod token_issuance_transition_action;
+pub mod token_mint_transition_action;
 /// token_transfer_transition_action
 pub mod token_transfer_transition_action;
 
@@ -36,7 +36,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
-use crate::state_transition_action::document::documents_batch::document_transition::token_issuance_transition_action::{TokenMintTransitionAction, TokenIssuanceTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction, TokenTransferTransitionActionAccessors};
 
 /// version

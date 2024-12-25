@@ -129,7 +129,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
-                token_issuance_transition_structure_validation: 0,
+                token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
                 token_issuance_transition_state_validation: 0,
