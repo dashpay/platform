@@ -96,6 +96,11 @@ impl DocumentReplaceTransitionWasm {
         self.inner.revision()
     }
 
+    #[wasm_bindgen(js_name = getEntropy)]
+    pub fn get_entropy(&self) -> Vec<u8> {
+        Vec::from(self.inner.entropy())
+    }
+
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn updated_at(&self) -> Option<js_sys::Date> {
         self.inner

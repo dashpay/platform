@@ -68,6 +68,11 @@ impl DocumentDeleteTransitionWasm {
         self.inner.base().document_type_name().clone()
     }
 
+    #[wasm_bindgen(js_name = getEntropy)]
+    pub fn get_entropy(&self) -> Vec<u8> {
+        Vec::from(self.inner.entropy())
+    }
+
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
         self.inner.base().data_contract_id().into()
