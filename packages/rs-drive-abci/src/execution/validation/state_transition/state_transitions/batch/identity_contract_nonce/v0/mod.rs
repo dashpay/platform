@@ -2,7 +2,6 @@ use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new_identity_nonce};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransitionLike;

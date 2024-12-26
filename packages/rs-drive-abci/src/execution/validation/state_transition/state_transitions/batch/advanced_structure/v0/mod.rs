@@ -6,9 +6,7 @@ use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::{
-    DocumentTransition, DocumentTransitionV0Methods,
-};
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionLike};
@@ -20,7 +18,7 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use drive::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
-use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use drive::state_transition_action::document::documents_batch::BatchTransitionAction;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
@@ -50,7 +48,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
         &self,
         block_info: &BlockInfo,
         network: Network,
-        action: &DocumentsBatchTransitionAction,
+        action: &BatchTransitionAction,
         identity: &PartialIdentity,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -62,7 +60,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
         &self,
         block_info: &BlockInfo,
         network: Network,
-        action: &DocumentsBatchTransitionAction,
+        action: &BatchTransitionAction,
         identity: &PartialIdentity,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,

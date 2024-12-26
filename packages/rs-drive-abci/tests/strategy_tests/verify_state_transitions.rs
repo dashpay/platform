@@ -15,7 +15,9 @@ use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::{
+    BatchedTransitionAction, DocumentTransitionAction,
+};
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform::PlatformRef;
@@ -209,59 +211,57 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
-                StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
-                    documents_batch_transition
+                StateTransitionAction::BatchAction(batch_transition) => {
+                    batch_transition
                         .transitions()
                         .iter()
-                        .for_each(|transition| {
-                            let document_contested_status =
-                                if let DocumentTransitionAction::CreateAction(create_action) =
-                                    transition
-                                {
-                                    if create_action.prefunded_voting_balance().is_some() {
-                                        SingleDocumentDriveQueryContestedStatus::Contested as u8
+                        .for_each(|transition| match transition {
+                            BatchedTransitionAction::DocumentAction(document_transition_action) => {
+                                let document_contested_status =
+                                    if let DocumentTransitionAction::CreateAction(create_action) =
+                                        document_transition_action
+                                    {
+                                        if create_action.prefunded_voting_balance().is_some() {
+                                            SingleDocumentDriveQueryContestedStatus::Contested as u8
+                                        } else {
+                                            SingleDocumentDriveQueryContestedStatus::NotContested
+                                                as u8
+                                        }
                                     } else {
                                         SingleDocumentDriveQueryContestedStatus::NotContested as u8
-                                    }
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested as u8
-                                };
-                            proofs_request
-                                .documents
-                                .push(get_proofs_request_v0::DocumentRequest {
-                                    contract_id: transition
-                                        .base()
-                                        .expect("expected a base for the document transition")
-                                        .data_contract_id()
-                                        .to_vec(),
-                                    document_type: transition
-                                        .base()
-                                        .expect("expected a base for the document transition")
-                                        .document_type_name()
-                                        .clone(),
-                                    document_type_keeps_history: transition
-                                        .base()
-                                        .expect("expected a base for the document transition")
-                                        .data_contract_fetch_info()
-                                        .contract
-                                        .document_type_for_name(
-                                            transition
-                                                .base()
-                                                .expect(
-                                                    "expected a base for the document transition",
-                                                )
-                                                .document_type_name()
-                                                .as_str(),
-                                        )
-                                        .expect("get document type")
-                                        .documents_keep_history(),
-                                    document_id: transition
-                                        .base()
-                                        .expect("expected a base for the document transition")
-                                        .id()
-                                        .to_vec(),
-                                    document_contested_status: document_contested_status as i32,
-                                });
+                                    };
+                                proofs_request.documents.push(
+                                    get_proofs_request_v0::DocumentRequest {
+                                        contract_id: document_transition_action
+                                            .base()
+                                            .data_contract_id()
+                                            .to_vec(),
+                                        document_type: document_transition_action
+                                            .base()
+                                            .document_type_name()
+                                            .clone(),
+                                        document_type_keeps_history: document_transition_action
+                                            .base()
+                                            .data_contract_fetch_info()
+                                            .contract
+                                            .document_type_for_name(
+                                                document_transition_action
+                                                    .base()
+                                                    .document_type_name()
+                                                    .as_str(),
+                                            )
+                                            .expect("get document type")
+                                            .documents_keep_history(),
+                                        document_id: document_transition_action
+                                            .base()
+                                            .id()
+                                            .to_vec(),
+                                        document_contested_status: document_contested_status as i32,
+                                    },
+                                );
+                            }
+                            BatchedTransitionAction::TokenAction(_) => {}
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {}
                         });
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
@@ -274,210 +274,206 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
-                    for document_transition_action in
-                        documents_batch_transition.transitions().iter()
-                    {
-                        let contract_fetch_info = document_transition_action
-                            .base()
-                            .expect("expected a base for the document transition")
-                            .data_contract_fetch_info();
+                    for transition_action in batch_transition.transitions().iter() {
+                        match transition_action {
+                            BatchedTransitionAction::DocumentAction(document_action) => {
+                                let contract_fetch_info =
+                                    document_action.base().data_contract_fetch_info();
 
-                        let document_type = contract_fetch_info
-                            .contract
-                            .document_type_for_name(
-                                document_transition_action
-                                    .base()
-                                    .expect("expected a base for the document transition")
-                                    .document_type_name()
-                                    .as_str(),
-                            )
-                            .expect("get document type");
-                        let contested_status =
-                            if let DocumentTransitionAction::CreateAction(create_action) =
-                                document_transition_action
-                            {
-                                if create_action.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested
-                                }
-                            } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested
-                            };
+                                let document_type = contract_fetch_info
+                                    .contract
+                                    .document_type_for_name(
+                                        document_action.base().document_type_name().as_str(),
+                                    )
+                                    .expect("get document type");
+                                let contested_status =
+                                    if let DocumentTransitionAction::CreateAction(create_action) =
+                                        document_action
+                                    {
+                                        if create_action.prefunded_voting_balance().is_some() {
+                                            SingleDocumentDriveQueryContestedStatus::Contested
+                                        } else {
+                                            SingleDocumentDriveQueryContestedStatus::NotContested
+                                        }
+                                    } else {
+                                        SingleDocumentDriveQueryContestedStatus::NotContested
+                                    };
 
-                        let query = SingleDocumentDriveQuery {
-                            contract_id: document_transition_action
-                                .base()
-                                .expect("expected a base for the document transition")
-                                .data_contract_id()
-                                .into_buffer(),
-                            document_type_name: document_transition_action
-                                .base()
-                                .expect("expected a base for the document transition")
-                                .document_type_name()
-                                .clone(),
-                            document_type_keeps_history: document_type.documents_keep_history(),
-                            document_id: document_transition_action
-                                .base()
-                                .expect("expected a base for the document transition")
-                                .id()
-                                .into_buffer(),
-                            block_time_ms: None, //None because we want latest
-                            contested_status,
-                        };
+                                let query = SingleDocumentDriveQuery {
+                                    contract_id: document_action
+                                        .base()
+                                        .data_contract_id()
+                                        .into_buffer(),
+                                    document_type_name: document_action
+                                        .base()
+                                        .document_type_name()
+                                        .clone(),
+                                    document_type_keeps_history: document_type
+                                        .documents_keep_history(),
+                                    document_id: document_action.base().id().into_buffer(),
+                                    block_time_ms: None, //None because we want latest
+                                    contested_status,
+                                };
 
-                        // dbg!(
-                        //     platform.state.height(),
-                        //     document_transition_action.action_type(),
-                        //     document_transition_action
-                        //         .base()
-                        //         .id()
-                        //         .to_string(Encoding::Base58)
-                        // );
+                                // dbg!(
+                                //     platform.state.height(),
+                                //     document_transition_action.action_type(),
+                                //     document_transition_action
+                                //         .base()
+                                //         .id()
+                                //         .to_string(Encoding::Base58)
+                                // );
 
-                        let (root_hash, document) = query
-                            .verify_proof(
-                                false,
-                                &response_proof.grovedb_proof,
-                                document_type,
-                                platform_version,
-                            )
-                            .expect("expected to verify a document");
+                                let (root_hash, document) = query
+                                    .verify_proof(
+                                        false,
+                                        &response_proof.grovedb_proof,
+                                        document_type,
+                                        platform_version,
+                                    )
+                                    .expect("expected to verify a document");
 
-                        assert_eq!(
-                            &root_hash,
-                            expected_root_hash,
-                            "state last block info {:?}",
-                            platform.state.last_committed_block_info()
-                        );
+                                assert_eq!(
+                                    &root_hash,
+                                    expected_root_hash,
+                                    "state last block info {:?}",
+                                    platform.state.last_committed_block_info()
+                                );
 
-                        match document_transition_action {
-                            DocumentTransitionAction::CreateAction(creation_action) => {
-                                if *was_executed {
-                                    let document = document.unwrap_or_else(|| {
-                                        panic!(
-                                            "expected a document on block {}",
-                                            platform.state.last_committed_block_height()
-                                        )
-                                    });
-                                    // dbg!(
-                                    //     &document,
-                                    //     Document::try_from_create_transition(
-                                    //         creation_action,
-                                    //         documents_batch_transition.owner_id(),
-                                    //         platform_version,
-                                    //     )
-                                    //     .expect("expected to get document")
-                                    // );
-                                    assert_eq!(
-                                        document,
-                                        Document::try_from_create_transition_action(
-                                            creation_action,
-                                            documents_batch_transition.owner_id(),
-                                            platform_version,
-                                        )
-                                        .expect("expected to get document")
-                                    );
-                                } else {
-                                    //there is the possibility that the state transition was not executed because it already existed,
-                                    // we can discount that for now in tests
-                                    assert!(document.is_none());
-                                }
-                            }
-                            DocumentTransitionAction::ReplaceAction(replace_action) => {
-                                if *was_executed {
-                                    // it's also possible we deleted something we replaced
-                                    if let Some(document) = document {
-                                        assert_eq!(
-                                            document,
-                                            Document::try_from_replace_transition_action(
-                                                replace_action,
-                                                documents_batch_transition.owner_id(),
-                                                platform_version,
-                                            )
-                                            .expect("expected to get document")
-                                        );
+                                match document_action {
+                                    DocumentTransitionAction::CreateAction(creation_action) => {
+                                        if *was_executed {
+                                            let document = document.unwrap_or_else(|| {
+                                                panic!(
+                                                    "expected a document on block {}",
+                                                    platform.state.last_committed_block_height()
+                                                )
+                                            });
+                                            // dbg!(
+                                            //     &document,
+                                            //     Document::try_from_create_transition(
+                                            //         creation_action,
+                                            //         documents_batch_transition.owner_id(),
+                                            //         platform_version,
+                                            //     )
+                                            //     .expect("expected to get document")
+                                            // );
+                                            assert_eq!(
+                                                document,
+                                                Document::try_from_create_transition_action(
+                                                    creation_action,
+                                                    batch_transition.owner_id(),
+                                                    platform_version,
+                                                )
+                                                .expect("expected to get document")
+                                            );
+                                        } else {
+                                            //there is the possibility that the state transition was not executed because it already existed,
+                                            // we can discount that for now in tests
+                                            assert!(document.is_none());
+                                        }
                                     }
-                                } else {
-                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
-                                    // state, aka there would have been no change anyways, we can discount that for now
-                                    if let Some(document) = document {
-                                        assert_ne!(
-                                            document,
-                                            Document::try_from_replace_transition_action(
-                                                replace_action,
-                                                documents_batch_transition.owner_id(),
-                                                platform_version,
-                                            )
-                                            .expect("expected to get document")
-                                        );
+                                    DocumentTransitionAction::ReplaceAction(replace_action) => {
+                                        if *was_executed {
+                                            // it's also possible we deleted something we replaced
+                                            if let Some(document) = document {
+                                                assert_eq!(
+                                                    document,
+                                                    Document::try_from_replace_transition_action(
+                                                        replace_action,
+                                                        batch_transition.owner_id(),
+                                                        platform_version,
+                                                    )
+                                                    .expect("expected to get document")
+                                                );
+                                            }
+                                        } else {
+                                            //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                            // state, aka there would have been no change anyways, we can discount that for now
+                                            if let Some(document) = document {
+                                                assert_ne!(
+                                                    document,
+                                                    Document::try_from_replace_transition_action(
+                                                        replace_action,
+                                                        batch_transition.owner_id(),
+                                                        platform_version,
+                                                    )
+                                                    .expect("expected to get document")
+                                                );
+                                            }
+                                        }
+                                    }
+                                    DocumentTransitionAction::DeleteAction(_) => {
+                                        // we expect no document
+                                        assert!(document.is_none());
+                                    }
+                                    DocumentTransitionAction::TransferAction(transfer_action) => {
+                                        if *was_executed {
+                                            // it's also possible we deleted something we replaced
+                                            if let Some(document) = document {
+                                                assert_eq!(
+                                                    document.owner_id(),
+                                                    transfer_action.document().owner_id()
+                                                );
+                                            }
+                                        } else {
+                                            //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                            // state, aka there would have been no change anyways, we can discount that for now
+                                            if let Some(document) = document {
+                                                assert_ne!(
+                                                    document.owner_id(),
+                                                    transfer_action.document().owner_id()
+                                                );
+                                            }
+                                        }
+                                    }
+                                    DocumentTransitionAction::PurchaseAction(purchase_action) => {
+                                        if *was_executed {
+                                            if let Some(document) = document {
+                                                assert_eq!(
+                                                    document.owner_id(),
+                                                    purchase_action.document().owner_id()
+                                                );
+                                            }
+                                        } else {
+                                            //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                            // state, aka there would have been no change anyways, we can discount that for now
+                                            if let Some(document) = document {
+                                                assert_ne!(
+                                                    document.owner_id(),
+                                                    purchase_action.document().owner_id()
+                                                );
+                                            }
+                                        }
+                                    }
+                                    DocumentTransitionAction::UpdatePriceAction(
+                                        update_price_action,
+                                    ) => {
+                                        if *was_executed {
+                                            if let Some(document) = document {
+                                                assert_eq!(
+                                                    document.get(PRICE),
+                                                    update_price_action.document().get(PRICE)
+                                                );
+                                            }
+                                        } else {
+                                            //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                            // state, aka there would have been no change anyways, we can discount that for now
+                                            if let Some(document) = document {
+                                                assert_ne!(
+                                                    document.get(PRICE),
+                                                    update_price_action.document().get(PRICE)
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            DocumentTransitionAction::DeleteAction(_) => {
-                                // we expect no document
-                                assert!(document.is_none());
+                            BatchedTransitionAction::TokenAction(_) => {
+                                todo!();
                             }
-                            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                                 panic!("we should not have a bump identity data contract nonce");
-                            }
-                            DocumentTransitionAction::TransferAction(transfer_action) => {
-                                if *was_executed {
-                                    // it's also possible we deleted something we replaced
-                                    if let Some(document) = document {
-                                        assert_eq!(
-                                            document.owner_id(),
-                                            transfer_action.document().owner_id()
-                                        );
-                                    }
-                                } else {
-                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
-                                    // state, aka there would have been no change anyways, we can discount that for now
-                                    if let Some(document) = document {
-                                        assert_ne!(
-                                            document.owner_id(),
-                                            transfer_action.document().owner_id()
-                                        );
-                                    }
-                                }
-                            }
-                            DocumentTransitionAction::PurchaseAction(purchase_action) => {
-                                if *was_executed {
-                                    if let Some(document) = document {
-                                        assert_eq!(
-                                            document.owner_id(),
-                                            purchase_action.document().owner_id()
-                                        );
-                                    }
-                                } else {
-                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
-                                    // state, aka there would have been no change anyways, we can discount that for now
-                                    if let Some(document) = document {
-                                        assert_ne!(
-                                            document.owner_id(),
-                                            purchase_action.document().owner_id()
-                                        );
-                                    }
-                                }
-                            }
-                            DocumentTransitionAction::UpdatePriceAction(update_price_action) => {
-                                if *was_executed {
-                                    if let Some(document) = document {
-                                        assert_eq!(
-                                            document.get(PRICE),
-                                            update_price_action.document().get(PRICE)
-                                        );
-                                    }
-                                } else {
-                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
-                                    // state, aka there would have been no change anyways, we can discount that for now
-                                    if let Some(document) = document {
-                                        assert_ne!(
-                                            document.get(PRICE),
-                                            update_price_action.document().get(PRICE)
-                                        );
-                                    }
-                                }
                             }
                         }
                     }

@@ -8,7 +8,7 @@ use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
-use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use drive::state_transition_action::document::documents_batch::BatchTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
@@ -36,7 +36,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 {
     fn validate_state_v0(
         &self,
-        action: DocumentsBatchTransitionAction,
+        action: BatchTransitionAction,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
@@ -56,7 +56,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
     fn validate_state_v0(
         &self,
-        mut state_transition_action: DocumentsBatchTransitionAction,
+        mut state_transition_action: BatchTransitionAction,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,

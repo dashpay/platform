@@ -34,7 +34,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<TokenAmount>, Error> {
-        match platform_version.drive.methods.token.fetch.balance {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .fetch
+            .identity_token_balance
+        {
             0 => self.fetch_identity_token_balance_v0(
                 token_id,
                 identity_id,
@@ -106,7 +112,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<TokenAmount>, Error> {
-        match platform_version.drive.methods.token.fetch.balance {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .fetch
+            .identity_token_balance
+        {
             0 => self.fetch_identity_token_balance_operations_v0(
                 token_id,
                 identity_id,

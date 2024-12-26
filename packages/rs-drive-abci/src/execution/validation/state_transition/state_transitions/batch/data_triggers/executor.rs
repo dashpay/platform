@@ -9,7 +9,6 @@ use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;
 use crate::error::Error;
-use crate::error::execution::ExecutionError;
 
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers(

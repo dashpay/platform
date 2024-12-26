@@ -34,7 +34,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
-use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use drive::state_transition_action::document::documents_batch::BatchTransitionAction;
 use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
@@ -70,7 +70,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
         full_validation: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<BatchTransitionAction>, Error>;
 }
 
 trait BatchTransitionInternalTransformerV0 {
@@ -146,7 +146,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
         validate_against_state: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<BatchTransitionAction>, Error> {
         let owner_id = self.owner_id();
         let user_fee_increase = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;

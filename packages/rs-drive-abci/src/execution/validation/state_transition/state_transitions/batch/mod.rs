@@ -157,8 +157,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                     identity.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "The identity must be known on advanced structure validation",
                     )))?;
-                let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
-                    action
+                let StateTransitionAction::BatchAction(documents_batch_transition_action) = action
                 else {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "action must be a documents batch transition action",
@@ -214,8 +213,7 @@ impl StateTransitionStateValidationV0 for BatchTransition {
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "documents batch structure validation should have an action",
                     )))?;
-                let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
-                    action
+                let StateTransitionAction::BatchAction(documents_batch_transition_action) = action
                 else {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "action must be a documents batch transition action",

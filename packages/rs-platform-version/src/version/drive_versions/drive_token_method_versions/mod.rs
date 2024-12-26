@@ -11,11 +11,15 @@ pub struct DriveTokenMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenFetchMethodVersions {
-    pub balance: FeatureVersion,
+    pub identity_token_balance: FeatureVersion,
+    pub identity_token_balances: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DriveTokenProveMethodVersions {}
+pub struct DriveTokenProveMethodVersions {
+    pub identity_token_balance: FeatureVersion,
+    pub identity_token_balances: FeatureVersion,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenUpdateMethodVersions {

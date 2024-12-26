@@ -1,0 +1,74 @@
+use crate::drive::tokens::token_balances_path_vec;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use dpp::balances::credits::TokenAmount;
+use dpp::version::PlatformVersion;
+use grovedb::Element::SumItem;
+use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use std::collections::BTreeMap;
+
+impl Drive {
+    pub(super) fn fetch_identities_token_balances_v0(
+        &self,
+        token_id: [u8; 32],
+        identity_ids: &[[u8; 32]],
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+        self.fetch_identities_token_balances_operations_v0(
+            token_id,
+            identity_ids,
+            transaction,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    pub(super) fn fetch_identities_token_balances_operations_v0(
+        &self,
+        token_id: [u8; 32],
+        identity_ids: &[[u8; 32]],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+        let tokens_root = token_balances_path_vec(token_id);
+
+        let mut query = Query::new();
+
+        for identity_id in identity_ids {
+            query.insert_key(identity_id.to_vec());
+        }
+
+        let path_query = PathQuery::new(
+            tokens_root,
+            SizedQuery::new(query, Some(identity_ids.len() as u16), None),
+        );
+
+        self.grove_get_raw_path_query_with_optional(
+            &path_query,
+            false,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?
+        .into_iter()
+        .map(|(_, key, element)| {
+            let identity_id: [u8; 32] = key.try_into().map_err(|_| {
+                Error::Drive(DriveError::CorruptedDriveState(
+                    "identity id not 32 bytes".to_string(),
+                ))
+            })?;
+            match element {
+                Some(SumItem(value, ..)) => Ok((identity_id, Some(value as TokenAmount))),
+                None => Ok((identity_id, None)),
+                _ => Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "token tree for balances should contain only sum items".to_string(),
+                ))),
+            }
+        })
+        .collect()
+    }
+}

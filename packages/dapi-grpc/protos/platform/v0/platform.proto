@@ -1221,7 +1221,7 @@ message GetCurrentQuorumsInfoResponse {
 message GetIdentityTokenBalancesRequest {
   message GetIdentityTokenBalancesRequestV0 {
     bytes identity_id = 1;            // ID of the identity
-    repeated bytes contract_ids = 2;  // List of token contract IDs
+    repeated bytes token_ids = 2;     // List of token IDs
     bool prove = 3;                   // Flag to request a proof as the response
   }
   oneof version {
@@ -1232,8 +1232,8 @@ message GetIdentityTokenBalancesRequest {
 message GetIdentityTokenBalancesResponse {
   message GetIdentityTokenBalancesResponseV0 {
     message TokenBalanceEntry {
-      bytes contract_id = 1;  // Token contract ID
-      uint64 balance = 2;     // Token balance for the contract
+      bytes token_id = 1;     // Token ID
+      optional uint64 balance = 2;     // Token balance for the contract
     }
 
     message TokenBalances {
@@ -1253,7 +1253,7 @@ message GetIdentityTokenBalancesResponse {
 
 message GetIdentitiesTokenBalancesRequest {
   message GetIdentitiesTokenBalancesRequestV0 {
-    bytes contract_id = 1;            // Token contract ID
+    bytes token_id = 1;               // Token ID
     repeated bytes identity_ids = 2;  // List of identity IDs
     bool prove = 3;                   // Flag to request a proof as the response
   }
@@ -1266,7 +1266,7 @@ message GetIdentitiesTokenBalancesResponse {
   message GetIdentitiesTokenBalancesResponseV0 {
     message IdentityTokenBalanceEntry {
       bytes identity_id = 1;  // Identity ID
-      uint64 balance = 2;     // Token balance for the identity
+      optional uint64 balance = 2;     // Token balance for the identity
     }
 
     message IdentityTokenBalances {

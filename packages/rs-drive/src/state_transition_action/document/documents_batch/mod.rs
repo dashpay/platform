@@ -17,74 +17,74 @@ pub mod v0;
 
 /// documents batch transition action
 #[derive(Debug, Clone, From)]
-pub enum DocumentsBatchTransitionAction {
+pub enum BatchTransitionAction {
     /// v0
     V0(DocumentsBatchTransitionActionV0),
 }
 
-impl DocumentsBatchTransitionAction {
+impl BatchTransitionAction {
     /// owner id
     pub fn owner_id(&self) -> Identifier {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => v0.owner_id,
+            BatchTransitionAction::V0(v0) => v0.owner_id,
         }
     }
 
     /// transitions
     pub fn transitions(&self) -> &Vec<BatchedTransitionAction> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => &v0.transitions,
+            BatchTransitionAction::V0(v0) => &v0.transitions,
         }
     }
 
     /// transitions
     pub fn transitions_mut(&mut self) -> &mut Vec<BatchedTransitionAction> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => &mut v0.transitions,
+            BatchTransitionAction::V0(v0) => &mut v0.transitions,
         }
     }
 
     /// transitions
     pub fn transitions_take(&mut self) -> Vec<BatchedTransitionAction> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => std::mem::take(&mut v0.transitions),
+            BatchTransitionAction::V0(v0) => std::mem::take(&mut v0.transitions),
         }
     }
 
     /// transitions owned
     pub fn transitions_owned(self) -> Vec<BatchedTransitionAction> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => v0.transitions,
+            BatchTransitionAction::V0(v0) => v0.transitions,
         }
     }
 
     /// set transitions
     pub fn set_transitions(&mut self, transitions: Vec<BatchedTransitionAction>) {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => v0.transitions = transitions,
+            BatchTransitionAction::V0(v0) => v0.transitions = transitions,
         }
     }
 
     /// fee multiplier
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            DocumentsBatchTransitionAction::V0(transition) => transition.user_fee_increase,
+            BatchTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }
 
-impl DocumentsBatchTransitionAction {
+impl BatchTransitionAction {
     /// The sum of all purchases amount and all conflicting index collateral voting funds
     pub fn all_used_balances(&self) -> Result<Option<Credits>, ProtocolError> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => v0.all_used_balances(),
+            BatchTransitionAction::V0(v0) => v0.all_used_balances(),
         }
     }
 
     /// The sum of all purchases amounts for all purchase transitions in the batch
     pub fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => v0.all_purchases_amount(),
+            BatchTransitionAction::V0(v0) => v0.all_purchases_amount(),
         }
     }
 
@@ -93,9 +93,7 @@ impl DocumentsBatchTransitionAction {
         &self,
     ) -> Result<Option<Credits>, ProtocolError> {
         match self {
-            DocumentsBatchTransitionAction::V0(v0) => {
-                v0.all_conflicting_index_collateral_voting_funds()
-            }
+            BatchTransitionAction::V0(v0) => v0.all_conflicting_index_collateral_voting_funds(),
         }
     }
 

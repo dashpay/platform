@@ -4,8 +4,14 @@ use crate::version::drive_versions::drive_token_method_versions::{
 };
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
-    fetch: DriveTokenFetchMethodVersions { balance: 0 },
-    prove: DriveTokenProveMethodVersions {},
+    fetch: DriveTokenFetchMethodVersions {
+        identity_token_balance: 0,
+        identity_token_balances: 0,
+    },
+    prove: DriveTokenProveMethodVersions {
+        identity_token_balance: 0,
+        identity_token_balances: 0,
+    },
     update: DriveTokenUpdateMethodVersions {
         create_token_root_tree: 0,
         burn: 0,

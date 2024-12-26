@@ -6,6 +6,7 @@ mod proofs;
 mod response_metadata;
 mod service;
 mod system;
+mod token_queries;
 mod validator_queries;
 mod voting;
 

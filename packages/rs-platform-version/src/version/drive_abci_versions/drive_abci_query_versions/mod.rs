@@ -10,6 +10,7 @@ pub struct DriveAbciQueryVersions {
     pub document_query: FeatureVersionBounds,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
+    pub token_queries: DriveAbciQueryTokenVersions,
     pub validator_queries: DriveAbciQueryValidatorVersions,
     pub data_contract_based_queries: DriveAbciQueryDataContractVersions,
     pub voting_based_queries: DriveAbciQueryVotingVersions,
@@ -19,6 +20,12 @@ pub struct DriveAbciQueryVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryPrefundedSpecializedBalancesVersions {
     pub balance: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryTokenVersions {
+    pub identity_token_balances: FeatureVersionBounds,
+    pub identities_token_balances: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
