@@ -83,6 +83,11 @@ impl DocumentCreateTransitionWasm {
         INITIAL_REVISION as u32
     }
 
+    #[wasm_bindgen(js_name = getEntropy)]
+    pub fn get_entropy(&self) -> Vec<u8> {
+        Vec::from(self.inner.entropy())
+    }
+
     #[wasm_bindgen(js_name=getIdentityContractNonce)]
     pub fn get_identity_contract_nonce(&self) -> u64 {
         self.inner.base().identity_contract_nonce() as u64
