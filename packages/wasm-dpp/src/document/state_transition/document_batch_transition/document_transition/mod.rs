@@ -88,7 +88,7 @@ impl DocumentTransitionWasm {
         }
     }
     #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&self) -> Vec<u8> {
+    pub fn get_entropy(&self) -> Option<Vec<u8>> {
         self.0.entropy()
     }
 
