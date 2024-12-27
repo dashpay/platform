@@ -1,4 +1,4 @@
-use crate::drive::tokens::tokens_root_path;
+use crate::drive::tokens::{TOKEN_BALANCES_KEY, token_path, tokens_root_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -11,13 +11,15 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
+use crate::drive::balances::total_tokens_root_supply_path;
 
 impl Drive {
     /// Creates a new token root subtree at `TokenBalances` keyed by `token_id`.
     /// This function applies the operations directly, calculates fees, and returns the fee result.
-    pub(super) fn create_token_root_tree_v0(
+    pub(super) fn create_token_trees_v0(
         &self,
         token_id: [u8; 32],
+        allow_already_exists: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -26,8 +28,9 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // Add operations to create the token root tree
-        self.create_token_root_tree_add_to_operations_v0(
+        self.create_token_trees_add_to_operations_v0(
             token_id,
+            allow_already_exists,
             apply,
             &mut None,
             transaction,
@@ -50,9 +53,10 @@ impl Drive {
 
     /// Adds the token root creation operations to the provided `drive_operations` vector without
     /// calculating or returning fees. If `apply` is false, it will only estimate costs.
-    pub(super) fn create_token_root_tree_add_to_operations_v0(
+    pub(super) fn create_token_trees_add_to_operations_v0(
         &self,
         token_id: [u8; 32],
+        allow_already_exists: bool,
         apply: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
@@ -66,8 +70,9 @@ impl Drive {
         };
 
         // Get the operations required to create the token tree
-        let batch_operations = self.create_token_root_tree_operations_v0(
+        let batch_operations = self.create_token_trees_operations_v0(
             token_id,
+            allow_already_exists,
             previous_batch_operations,
             &mut estimated_costs_only_with_layer_info,
             transaction,
@@ -86,9 +91,10 @@ impl Drive {
 
     /// Gathers the operations needed to create the token root subtree. If `apply` is false, it
     /// populates `estimated_costs_only_with_layer_info` instead of applying.
-    pub(super) fn create_token_root_tree_operations_v0(
+    pub(super) fn create_token_trees_operations_v0(
         &self,
         token_id: [u8; 32],
+        allow_already_exists: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -99,32 +105,78 @@ impl Drive {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // Decide if we're doing a stateful or stateless insert for cost estimation
-        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+        let non_sum_tree_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
+        } else {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                in_tree_using_sums: false,
+                is_sum_tree: false,
+                flags_len: 0,
+            }
+        };
+
+        let token_balance_tree_apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: true,
-                flags_len: 0, // No additional storage flags here
+                flags_len: 0,
             }
         };
 
         // Insert an empty tree for this token if it doesn't exist
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKey((tokens_root_path(), token_id.to_vec())),
-            true,
+            false,
             None, // No storage flags
-            apply_type,
+            non_sum_tree_apply_type,
             transaction,
             previous_batch_operations,
             &mut batch_operations,
             &platform_version.drive,
         )?;
 
-        if !inserted {
+        if !inserted && !allow_already_exists {
             // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
             return Err(Error::Drive(DriveError::CorruptedDriveState(
                 "token root tree already exists".to_string(),
+            )));
+        }
+
+        let inserted = self.batch_insert_empty_tree_if_not_exists(
+            PathFixedSizeKey((token_path(&token_id), vec![TOKEN_BALANCES_KEY])),
+            true,
+            None,
+            token_balance_tree_apply_type,
+            transaction,
+            &mut None,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
+
+        if !inserted && !allow_already_exists {
+            // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "token balance tree already exists".to_string(),
+            )));
+        }
+
+        let inserted = self.batch_insert_empty_tree_if_not_exists(
+            PathFixedSizeKey((total_tokens_root_supply_path(), token_id.to_vec())),
+            false,
+            None,
+            non_sum_tree_apply_type,
+            transaction,
+            &mut None,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
+
+        if !inserted && !allow_already_exists {
+            // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "sum tree tree already exists".to_string(),
             )));
         }
 

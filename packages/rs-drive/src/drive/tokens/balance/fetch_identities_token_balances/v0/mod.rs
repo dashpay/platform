@@ -1,4 +1,3 @@
-use crate::drive::tokens::token_balances_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -6,7 +5,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -34,18 +33,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
-        let tokens_root = token_balances_path_vec(token_id);
-
-        let mut query = Query::new();
-
-        for identity_id in identity_ids {
-            query.insert_key(identity_id.to_vec());
-        }
-
-        let path_query = PathQuery::new(
-            tokens_root,
-            SizedQuery::new(query, Some(identity_ids.len() as u16), None),
-        );
+        let path_query = Self::token_balances_for_identity_ids_query(token_id, identity_ids);
 
         self.grove_get_raw_path_query_with_optional(
             &path_query,

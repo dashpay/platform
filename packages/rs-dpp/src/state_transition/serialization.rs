@@ -29,7 +29,7 @@ mod tests {
     };
     use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
     use crate::state_transition::batch_transition::{
-        BatchTransition, BatchTransitionV0,
+        BatchTransition, BatchTransitionV1,
     };
     use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -342,7 +342,7 @@ mod tests {
             [(DocumentTransitionActionType::Create, documents)],
             &mut nonces,
         );
-        let documents_batch_transition: BatchTransition = BatchTransitionV0 {
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()

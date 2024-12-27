@@ -18,7 +18,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
 
-use crate::document_batch_transition::DocumentsBatchTransitionWasm;
+use crate::batch_transition::BatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
     identifier::identifier_from_js_value,
@@ -109,7 +109,7 @@ impl DocumentFactoryWASM {
         &self,
         documents: &JsValue,
         nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
+    ) -> Result<BatchTransitionWasm, JsValue> {
         let mut nonce_counter = BTreeMap::new();
         let mut contract_ids_to_check = HashSet::<&Identifier>::new();
 

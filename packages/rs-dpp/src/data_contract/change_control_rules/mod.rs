@@ -1,14 +1,15 @@
 pub mod authorized_action_takers;
-mod v0;
+pub mod v0;
 
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::group::Group;
 use crate::multi_identity_events::ActionTaker;
 use bincode::{Decode, Encode};
+use derive_more::From;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From)]
 pub enum ChangeControlRules {
     V0(ChangeControlRulesV0),
 }

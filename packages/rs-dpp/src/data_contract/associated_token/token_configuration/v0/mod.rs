@@ -8,6 +8,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -64,5 +65,54 @@ impl fmt::Display for TokenConfigurationV0 {
             self.main_control_group,
             self.main_control_group_can_be_modified
         )
+    }
+}
+
+impl TokenConfigurationV0 {
+    pub fn default_most_restrictive() -> Self {
+        Self {
+            conventions: TokenConfigurationConventionV0 { localizations: Default::default(), decimals: 8 },
+            base_supply: 100000,
+            max_supply: None,
+            max_supply_change_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }.into(),
+            new_tokens_destination_identity: None,
+            new_tokens_destination_identity_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }.into(),
+            manual_minting_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }.into(),
+            manual_burning_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }.into(),
+            freeze_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }.into(),
+            unfreeze_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }.into(),
+            main_control_group: None,
+            main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
+        }
     }
 }

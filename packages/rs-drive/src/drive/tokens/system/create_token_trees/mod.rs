@@ -14,9 +14,10 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
-    pub fn create_token_root_tree(
+    pub fn create_token_trees(
         &self,
         token_id: [u8; 32],
+        allow_already_exists: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -27,17 +28,18 @@ impl Drive {
             .methods
             .token
             .update
-            .create_token_root_tree
+            .create_token_trees
         {
-            0 => self.create_token_root_tree_v0(
+            0 => self.create_token_trees_v0(
                 token_id,
+                allow_already_exists,
                 block_info,
                 apply,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "create_token_root_tree".to_string(),
+                method: "create_token_trees".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -45,9 +47,10 @@ impl Drive {
     }
 
     /// Adds identity creation operations to drive operations
-    pub fn create_token_root_tree_add_to_operations(
+    pub fn create_token_trees_add_to_operations(
         &self,
         token_id: [u8; 32],
+        allow_already_exists: bool,
         apply: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
@@ -59,10 +62,11 @@ impl Drive {
             .methods
             .token
             .update
-            .create_token_root_tree
+            .create_token_trees
         {
-            0 => self.create_token_root_tree_add_to_operations_v0(
+            0 => self.create_token_trees_add_to_operations_v0(
                 token_id,
+                allow_already_exists,
                 apply,
                 previous_batch_operations,
                 transaction,
@@ -70,7 +74,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "create_token_root_tree_add_to_operations".to_string(),
+                method: "create_token_trees_add_to_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -78,9 +82,10 @@ impl Drive {
     }
 
     /// The operations needed to create an identity
-    pub fn create_token_root_tree_operations(
+    pub fn create_token_trees_operations(
         &self,
         token_id: [u8; 32],
+        allow_already_exists: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -93,17 +98,18 @@ impl Drive {
             .methods
             .token
             .update
-            .create_token_root_tree
+            .create_token_trees
         {
-            0 => self.create_token_root_tree_operations_v0(
+            0 => self.create_token_trees_operations_v0(
                 token_id,
+                allow_already_exists,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "create_token_root_tree_operations".to_string(),
+                method: "create_token_trees_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

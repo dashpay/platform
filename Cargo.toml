@@ -28,7 +28,8 @@ members = [
     "packages/simple-signer",
     "packages/rs-json-schema-compatibility-validator",
     "packages/check-features",
-    "packages/wallet-utils-contract"
+    "packages/wallet-utils-contract",
+    "packages/token-history-contract"
 ]
 [workspace.package]
 

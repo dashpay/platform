@@ -19,7 +19,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v4::DRIVE_ABCI_VALIDATION_VERSIONS_V4;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v2::DRIVE_VERSION_V2;
+use crate::version::drive_versions::v3::DRIVE_VERSION_V3;
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
@@ -32,7 +32,7 @@ pub const PROTOCOL_VERSION_8: ProtocolVersion = 8;
 //todo: make changes
 pub const PLATFORM_V8: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_8,
-    drive: DRIVE_VERSION_V2,
+    drive: DRIVE_VERSION_V3, // changed (for data contract insert)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V4,

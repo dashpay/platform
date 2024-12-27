@@ -7,7 +7,7 @@ use std::fmt;
 
 pub mod accessors;
 mod methods;
-mod v0;
+pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
 #[serde(tag = "$format_version")]

@@ -7,8 +7,6 @@ mod fetch_identities_token_balances;
 #[cfg(feature = "server")]
 mod fetch_identity_token_balances;
 #[cfg(feature = "server")]
-mod prove;
-#[cfg(feature = "server")]
 mod prove_identities_token_balances;
 #[cfg(feature = "server")]
 mod prove_identity_token_balances;

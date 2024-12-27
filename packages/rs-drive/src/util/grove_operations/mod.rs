@@ -57,6 +57,9 @@ pub mod grove_has_raw;
 /// Batch insert operation into empty tree
 pub mod batch_insert_empty_tree;
 
+/// Batch insert operation into empty sum tree
+pub mod batch_insert_empty_sum_tree;
+
 /// Batch insert operation into empty tree, but only if it doesn't already exist
 pub mod batch_insert_empty_tree_if_not_exists;
 

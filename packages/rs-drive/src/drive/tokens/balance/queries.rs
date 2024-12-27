@@ -26,7 +26,7 @@ impl Drive {
             path: balance_path,
             query: SizedQuery {
                 query,
-                limit: None,
+                limit: Some(identity_ids.len() as u16),
                 offset: None,
             },
         }

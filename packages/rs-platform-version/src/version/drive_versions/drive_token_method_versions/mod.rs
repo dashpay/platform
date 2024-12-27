@@ -23,7 +23,7 @@ pub struct DriveTokenProveMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenUpdateMethodVersions {
-    pub create_token_root_tree: FeatureVersion,
+    pub create_token_trees: FeatureVersion,
     pub burn: FeatureVersion,
     pub mint: FeatureVersion,
     pub transfer: FeatureVersion,

@@ -46,6 +46,7 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V5,
     PLATFORM_V6,
     PLATFORM_V7,
+    PLATFORM_V8,
 ];
 
 #[cfg(feature = "mock-versions")]

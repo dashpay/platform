@@ -13,7 +13,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         identity_token_balances: 0,
     },
     update: DriveTokenUpdateMethodVersions {
-        create_token_root_tree: 0,
+        create_token_trees: 0,
         burn: 0,
         mint: 0,
         transfer: 0,

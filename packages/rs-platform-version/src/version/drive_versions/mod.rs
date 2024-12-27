@@ -23,6 +23,7 @@ pub mod drive_verify_method_versions;
 pub mod drive_vote_method_versions;
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {

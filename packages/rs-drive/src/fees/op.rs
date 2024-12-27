@@ -398,6 +398,22 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty sum tree at the given path and key
+    pub fn for_estimated_path_key_empty_sum_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_sum_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
     /// Sets `GroveOperation` for inserting an element at the given path and key
     pub fn insert_for_known_path_key_element(
         path: Vec<Vec<u8>>,

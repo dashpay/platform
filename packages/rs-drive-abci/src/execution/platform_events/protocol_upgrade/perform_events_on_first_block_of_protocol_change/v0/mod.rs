@@ -8,6 +8,7 @@ use dpp::data_contracts::SystemDataContract;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
+use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -15,6 +16,7 @@ use drive::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
+use drive::drive::system::misc_path;
 use drive::grovedb::{Element, Transaction};
 
 impl<C> Platform<C> {
@@ -58,6 +60,10 @@ impl<C> Platform<C> {
             self.transition_to_version_6(block_info, transaction, platform_version)?;
         }
 
+        if previous_protocol_version < 8 && platform_version.protocol_version >= 8 {
+            self.transition_to_version_8(block_info, transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -85,6 +91,41 @@ impl<C> Platform<C> {
 
         Ok(())
     }
+
+    /// Adds all trees needed for tokens, also adds the token history system data contract
+    ///
+    /// This function is called during the transition from protocol version 5 to protocol version 6
+    /// and higher to set up the wallet contract in the platform.
+    fn transition_to_version_8(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let path = misc_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.as_slice(),
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        
+        let contract =
+            load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+
+        self.drive.insert_contract(
+            &contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        Ok(())
+    }
+
 
     /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
     ///

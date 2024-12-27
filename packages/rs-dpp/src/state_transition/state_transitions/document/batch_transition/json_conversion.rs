@@ -22,6 +22,15 @@ impl<'a> StateTransitionJsonConvert<'a> for BatchTransition {
                 );
                 Ok(value)
             }
+            BatchTransition::V1(transition) => {
+                let mut value = transition.to_json(options)?;
+                let map_value = value.as_object_mut().expect("expected an object");
+                map_value.insert(
+                    STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
+                    JsonValue::Number(Number::from(1)),
+                );
+                Ok(value)
+            }
         }
     }
 }

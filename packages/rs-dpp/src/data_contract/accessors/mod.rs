@@ -219,6 +219,13 @@ impl DataContractV1Getters for DataContract {
             DataContract::V1(v1) => Some(&mut v1.tokens),
         }
     }
+
+    fn token_id(&self, position: TokenContractPosition) -> Option<Identifier> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.token_id(position),
+        }
+    }
 }
 
 impl DataContractV1Setters for DataContract {

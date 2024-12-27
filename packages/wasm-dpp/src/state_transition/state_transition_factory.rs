@@ -1,5 +1,5 @@
 use crate::data_contract::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm};
-use crate::document_batch_transition::DocumentsBatchTransitionWasm;
+use crate::batch_transition::BatchTransitionWasm;
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::{
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
@@ -56,7 +56,7 @@ impl StateTransitionFactoryWasm {
                 StateTransition::IdentityCreditWithdrawal(st) => {
                     Ok(IdentityCreditWithdrawalTransitionWasm::from(st).into())
                 }
-                StateTransition::Batch(st) => Ok(DocumentsBatchTransitionWasm::from(st).into()),
+                StateTransition::Batch(st) => Ok(BatchTransitionWasm::from(st).into()),
                 StateTransition::MasternodeVote(st) => {
                     Ok(MasternodeVoteTransitionWasm::from(st).into())
                 }

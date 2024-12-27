@@ -1234,6 +1234,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.69",
+ "token-history-contract",
  "wallet-utils-contract",
  "withdrawals-contract",
 ]
@@ -4893,6 +4894,16 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "token-history-contract"
+version = "1.6.2"
+dependencies = [
+ "platform-value",
+ "platform-version",
+ "serde_json",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "tokio"

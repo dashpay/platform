@@ -103,7 +103,7 @@ mod test {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
-    use crate::data_contract::v0::DataContractV1;
+    use crate::data_contract::v1::DataContractV1;
     use platform_value::{platform_value, Identifier};
 
     #[test]

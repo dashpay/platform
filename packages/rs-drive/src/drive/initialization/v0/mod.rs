@@ -22,6 +22,24 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
+        self.create_initial_state_structure_top_level_0(transaction, platform_version)?;
+
+        // On lower layers we can use batching
+
+        let batch = self.create_initial_state_structure_lower_layers_operations_0(platform_version)?;
+
+        self.grove_apply_batch(batch, false, transaction, drive_version)?;
+
+        Ok(())
+    }
+
+    /// Creates the initial state structure.
+    pub(in crate::drive::initialization) fn create_initial_state_structure_top_level_0(
+        &self,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let drive_version = &platform_version.drive;
         // We can not use batching to insert the root tree structure
 
         let mut drive_operations = vec![];
@@ -151,6 +169,14 @@ impl Drive {
             drive_version,
         )?;
 
+        Ok(())
+    }
+
+    /// Creates the initial state structure.
+    pub(in crate::drive::initialization) fn create_initial_state_structure_lower_layers_operations_0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<GroveDbOpBatch, Error> {
         // On lower layers we can use batching
 
         let mut batch = GroveDbOpBatch::new();
@@ -180,10 +206,8 @@ impl Drive {
 
         // For the votes tree structure
         Drive::add_initial_vote_tree_main_structure_operations(&mut batch, platform_version)?;
-
-        self.grove_apply_batch(batch, false, transaction, drive_version)?;
-
-        Ok(())
+        
+        Ok(batch)
     }
 }
 

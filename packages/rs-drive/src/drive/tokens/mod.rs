@@ -27,7 +27,7 @@ pub(crate) fn tokens_root_path_vec() -> Vec<Vec<u8>> {
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn token_path(token_id: &[u8; 32]) -> [&[u8]; 2] {
     [
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
         token_id,
     ]
 }
@@ -42,7 +42,7 @@ pub(crate) fn token_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn token_balances_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
         token_id,
         &[TOKEN_BALANCES_KEY],
     ]
@@ -62,7 +62,7 @@ pub(crate) fn token_balances_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn token_identity_infos_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
         token_id,
         &[TOKEN_IDENTITY_INFO_KEY],
     ]

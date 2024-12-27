@@ -198,7 +198,7 @@ impl Drive {
     }
 
     /// operations for updating a contract.
-    fn update_contract_operations_v0(
+    pub(in crate::drive::contract::update::update_contract) fn update_contract_operations_v0(
         &self,
         contract_element: Element,
         contract: &DataContract,

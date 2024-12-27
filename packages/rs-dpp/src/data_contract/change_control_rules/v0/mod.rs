@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 pub struct ChangeControlRulesV0 {
     /// This is who is authorized to make such a change
-    authorized_to_make_change: AuthorizedActionTakers,
+    pub authorized_to_make_change: AuthorizedActionTakers,
     /// This is who is authorized to make such a change to the people authorized to make a change
-    authorized_to_change_authorized_action_takers: AuthorizedActionTakers,
+    pub authorized_to_change_authorized_action_takers: AuthorizedActionTakers,
     /// Are we allowed to change to None in the future
-    changing_authorized_action_takers_to_no_one_allowed: bool,
+    pub changing_authorized_action_takers_to_no_one_allowed: bool,
     /// Are we allowed to change to None in the future
-    changing_authorized_action_takers_to_contract_owner_allowed: bool,
+    pub changing_authorized_action_takers_to_contract_owner_allowed: bool,
 }
 
 impl ChangeControlRulesV0 {

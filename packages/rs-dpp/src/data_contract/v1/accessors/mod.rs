@@ -13,6 +13,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::group::{Group, GroupName};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
+use crate::util::hash::hash_double;
 
 impl DataContractV0Getters for DataContractV1 {
     fn id(&self) -> Identifier {
@@ -157,6 +158,16 @@ impl DataContractV1Getters for DataContractV1 {
 
     fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>> {
         Some(&mut self.tokens)
+    }
+
+    /// Returns the token id if a token exists at that position
+    fn token_id(&self, position: TokenContractPosition) -> Option<Identifier> {
+        self.tokens.get(&position).map(|_| {
+            let mut bytes = b"dash_token".to_vec();
+            bytes.extend_from_slice(self.id().as_bytes());
+            bytes.extend_from_slice(&position.to_be_bytes());
+            hash_double(bytes).into()
+        })
     }
 }
 
