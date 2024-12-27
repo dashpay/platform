@@ -87,6 +87,17 @@ impl DocumentTransitionWasm {
             JsValue::NULL
         }
     }
+    #[wasm_bindgen(js_name=getEntropy)]
+    pub fn get_revision(&self) -> Vec<u8> {
+        match self.0.clone() {
+            DocumentTransition::Create(document_transition) => Vec::from(document_transition.entropy()),
+            DocumentTransition::Replace(document_transition) => Vec::from(document_transition.entropy()),
+            DocumentTransition::Delete(document_transition) => Vec::from(document_transition.entropy()),
+            DocumentTransition::Transfer(document_transition) => Vec::from(document_transition.entropy()),
+            DocumentTransition::UpdatePrice(document_transition) => Vec::from(document_transition.entropy()),
+            DocumentTransition::Purchase(document_transition) => Vec::from(document_transition.entropy()),
+        }
+    }
 
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: u32) {
