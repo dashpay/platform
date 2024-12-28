@@ -111,7 +111,7 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
-        
+
         let contract =
             load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
 
@@ -125,7 +125,6 @@ impl<C> Platform<C> {
 
         Ok(())
     }
-
 
     /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
     ///

@@ -11,9 +11,9 @@ use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1S
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::group::{Group, GroupName};
+use crate::util::hash::hash_double;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use crate::util::hash::hash_double;
 
 impl DataContractV0Getters for DataContractV1 {
     fn id(&self) -> Identifier {

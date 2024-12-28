@@ -23,7 +23,11 @@ impl TokenBurnTransitionActionV0 {
         value: TokenBurnTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let TokenBurnTransitionV0 { base, burn_amount } = value;
+        let TokenBurnTransitionV0 {
+            base,
+            burn_amount,
+            public_note,
+        } = value;
 
         let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
             base,
@@ -33,6 +37,7 @@ impl TokenBurnTransitionActionV0 {
         Ok(TokenBurnTransitionActionV0 {
             base: base_action,
             burn_amount,
+            public_note,
         })
     }
 
@@ -50,7 +55,11 @@ impl TokenBurnTransitionActionV0 {
         value: &TokenBurnTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
-        let TokenBurnTransitionV0 { base, burn_amount } = value;
+        let TokenBurnTransitionV0 {
+            base,
+            burn_amount,
+            public_note,
+        } = value;
 
         let base_action =
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
@@ -61,6 +70,7 @@ impl TokenBurnTransitionActionV0 {
         Ok(TokenBurnTransitionActionV0 {
             base: base_action,
             burn_amount: *burn_amount,
+            public_note: public_note.clone(),
         })
     }
 }

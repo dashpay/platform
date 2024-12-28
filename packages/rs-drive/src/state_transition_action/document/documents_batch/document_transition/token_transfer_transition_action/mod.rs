@@ -5,7 +5,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 };
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use dpp::identifier::Identifier;
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
 use std::sync::Arc;
 use crate::drive::contract::DataContractFetchInfo;
 
@@ -21,57 +21,13 @@ pub enum TokenTransferTransitionAction {
     V0(TokenTransferTransitionActionV0),
 }
 
-/// Accessors trait for TokenTransferTransitionAction
-pub trait TokenTransferTransitionActionAccessors {
-    /// Returns a reference to the base token transition action
-    fn base(&self) -> &TokenBaseTransitionAction;
-
-    /// Returns a reference to the base token transition action
-    fn base_owned(self) -> TokenBaseTransitionAction;
-
-    /// Returns the amount of tokens to transfer
-    fn amount(&self) -> u64;
-
-    /// Returns the recipient ID
-    fn recipient_id(&self) -> Identifier;
-
-    /// Returns the token position in the contract
-    fn token_position(&self) -> u16 {
-        self.base().token_position()
-    }
-
-    /// Returns the token ID
-    fn token_id(&self) -> Identifier {
-        self.base().token_id()
-    }
-
-    /// Returns the data contract ID
-    fn data_contract_id(&self) -> Identifier {
-        self.base().data_contract_id()
-    }
-
-    /// Returns a reference to the data contract fetch info
-    fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo> {
-        self.base().data_contract_fetch_info_ref()
-    }
-
-    /// Returns the data contract fetch info
-    fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
-        self.base().data_contract_fetch_info()
-    }
-
-    /// Returns the identity contract nonce
-    fn identity_contract_nonce(&self) -> IdentityNonce {
-        self.base().identity_contract_nonce()
-    }
-}
-
-impl TokenTransferTransitionActionAccessors for TokenTransferTransitionAction {
+impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.base(),
         }
     }
+
     fn base_owned(self) -> TokenBaseTransitionAction {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.base_owned(),
@@ -87,6 +43,102 @@ impl TokenTransferTransitionActionAccessors for TokenTransferTransitionAction {
     fn recipient_id(&self) -> Identifier {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.recipient_id(),
+        }
+    }
+
+    fn public_note(&self) -> Option<&String> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.public_note(),
+        }
+    }
+
+    fn public_note_owned(self) -> Option<String> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.public_note_owned(),
+        }
+    }
+
+    fn set_public_note(&mut self, public_note: Option<String>) {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.set_public_note(public_note),
+        }
+    }
+
+    fn shared_encrypted_note(&self) -> Option<&(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.shared_encrypted_note(),
+        }
+    }
+
+    fn shared_encrypted_note_owned(self) -> Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.shared_encrypted_note_owned(),
+        }
+    }
+
+    fn set_shared_encrypted_note(
+        &mut self,
+        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+    ) {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => {
+                v0.set_shared_encrypted_note(shared_encrypted_note)
+            }
+        }
+    }
+
+    fn private_encrypted_note(
+        &self,
+    ) -> Option<&(
+        RootEncryptionKeyIndex,
+        DerivationEncryptionKeyIndex,
+        Vec<u8>,
+    )> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.private_encrypted_note(),
+        }
+    }
+
+    fn private_encrypted_note_owned(
+        self,
+    ) -> Option<(
+        RootEncryptionKeyIndex,
+        DerivationEncryptionKeyIndex,
+        Vec<u8>,
+    )> {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.private_encrypted_note_owned(),
+        }
+    }
+
+    fn set_private_encrypted_note(
+        &mut self,
+        private_encrypted_note: Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    ) {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => {
+                v0.set_private_encrypted_note(private_encrypted_note)
+            }
+        }
+    }
+
+    fn notes_owned(
+        self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    ) {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.notes_owned(),
         }
     }
 }

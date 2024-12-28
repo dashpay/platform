@@ -27,6 +27,11 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         self.base_supply
     }
 
+    /// Returns if we keep history.
+    fn keeps_history(&self) -> bool {
+        self.keeps_history
+    }
+
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<u64> {
         self.max_supply

@@ -1,4 +1,5 @@
-use crate::drive::tokens::{TOKEN_BALANCES_KEY, token_path, tokens_root_path};
+use crate::drive::balances::total_tokens_root_supply_path;
+use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -11,7 +12,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
-use crate::drive::balances::total_tokens_root_supply_path;
 
 impl Drive {
     /// Creates a new token root subtree at `TokenBalances` keyed by `token_id`.

@@ -35,4 +35,22 @@ impl TokenBurnTransitionV0Methods for TokenBurnTransition {
             TokenBurnTransition::V0(v0) => v0.set_burn_amount(burn_amount),
         }
     }
+
+    fn public_note(&self) -> Option<&String> {
+        match self {
+            TokenBurnTransition::V0(v0) => v0.public_note(),
+        }
+    }
+
+    fn public_note_owned(self) -> Option<String> {
+        match self {
+            TokenBurnTransition::V0(v0) => v0.public_note_owned(),
+        }
+    }
+
+    fn set_public_note(&mut self, public_note: Option<String>) {
+        match self {
+            TokenBurnTransition::V0(v0) => v0.set_public_note(public_note),
+        }
+    }
 }

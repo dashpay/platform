@@ -1,6 +1,6 @@
 mod protocol_version;
-pub use protocol_version::*;
 use crate::version::v8::PROTOCOL_VERSION_8;
+pub use protocol_version::*;
 
 mod consensus_versions;
 pub mod dpp_versions;

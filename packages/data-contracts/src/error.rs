@@ -136,4 +136,3 @@ impl From<token_history_contract::Error> for Error {
         }
     }
 }
-

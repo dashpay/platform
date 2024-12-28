@@ -11,9 +11,11 @@ pub struct TokenIssuanceTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
     /// The amount of tokens to create
-    pub issuance_amount: u64,
+    pub mint_amount: u64,
     /// The identity to credit the token to
     pub identity_balance_holder_id: Identifier,
+    /// A public note
+    pub public_note: Option<String>,
 }
 
 /// Accessors for `TokenIssuanceTransitionActionV0`
@@ -25,10 +27,10 @@ pub trait TokenMintTransitionActionAccessorsV0 {
     fn base_owned(self) -> TokenBaseTransitionAction;
 
     /// Returns the amount of tokens to issuance
-    fn issuance_amount(&self) -> u64;
+    fn mint_amount(&self) -> u64;
 
     /// Sets the amount of tokens to issuance
-    fn set_issuance_amount(&mut self, amount: u64);
+    fn set_mint_amount(&mut self, amount: u64);
 
     /// Consumes self and returns the identity balance holder ID
     fn identity_balance_holder_id(&self) -> Identifier;
@@ -60,6 +62,15 @@ pub trait TokenMintTransitionActionAccessorsV0 {
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
         self.base().data_contract_fetch_info()
     }
+
+    /// Returns the public note (optional)
+    fn public_note(&self) -> Option<&String>;
+
+    /// Returns the public note (owned)
+    fn public_note_owned(self) -> Option<String>;
+
+    /// Sets the public note
+    fn set_public_note(&mut self, public_note: Option<String>);
 }
 
 impl TokenMintTransitionActionAccessorsV0 for TokenIssuanceTransitionActionV0 {
@@ -71,12 +82,12 @@ impl TokenMintTransitionActionAccessorsV0 for TokenIssuanceTransitionActionV0 {
         self.base
     }
 
-    fn issuance_amount(&self) -> u64 {
-        self.issuance_amount
+    fn mint_amount(&self) -> u64 {
+        self.mint_amount
     }
 
-    fn set_issuance_amount(&mut self, amount: u64) {
-        self.issuance_amount = amount;
+    fn set_mint_amount(&mut self, amount: u64) {
+        self.mint_amount = amount;
     }
 
     fn identity_balance_holder_id(&self) -> Identifier {
@@ -85,5 +96,17 @@ impl TokenMintTransitionActionAccessorsV0 for TokenIssuanceTransitionActionV0 {
 
     fn set_identity_balance_holder_id(&mut self, id: Identifier) {
         self.identity_balance_holder_id = id;
+    }
+
+    fn public_note(&self) -> Option<&String> {
+        self.public_note.as_ref()
+    }
+
+    fn public_note_owned(self) -> Option<String> {
+        self.public_note
+    }
+
+    fn set_public_note(&mut self, public_note: Option<String>) {
+        self.public_note = public_note;
     }
 }

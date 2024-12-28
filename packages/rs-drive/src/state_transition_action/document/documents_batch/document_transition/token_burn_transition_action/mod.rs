@@ -22,48 +22,6 @@ pub enum TokenBurnTransitionAction {
     V0(TokenBurnTransitionActionV0),
 }
 
-/// Accessors trait for TokenBurnTransitionAction for version 0 fields
-pub trait TokenBurnTransitionActionAccessorsV0 {
-    /// Returns a reference to the base token transition action
-    fn base(&self) -> &TokenBaseTransitionAction;
-
-    /// Returns the base token transition action
-    fn base_owned(self) -> TokenBaseTransitionAction;
-
-    /// Returns the burn amount
-    fn burn_amount(&self) -> u64;
-
-    /// Returns the token position in the contract
-    fn token_position(&self) -> u16 {
-        self.base().token_position()
-    }
-
-    /// Returns the token ID
-    fn token_id(&self) -> Identifier {
-        self.base().token_id()
-    }
-
-    /// Returns the data contract ID
-    fn data_contract_id(&self) -> Identifier {
-        self.base().data_contract_id()
-    }
-
-    /// Returns a reference to the data contract fetch info
-    fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo> {
-        self.base().data_contract_fetch_info_ref()
-    }
-
-    /// Returns the data contract fetch info
-    fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
-        self.base().data_contract_fetch_info()
-    }
-
-    /// Returns the identity contract nonce
-    fn identity_contract_nonce(&self) -> IdentityNonce {
-        self.base().identity_contract_nonce()
-    }
-}
-
 impl TokenBurnTransitionActionAccessorsV0 for TokenBurnTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
@@ -80,6 +38,30 @@ impl TokenBurnTransitionActionAccessorsV0 for TokenBurnTransitionAction {
     fn burn_amount(&self) -> u64 {
         match self {
             TokenBurnTransitionAction::V0(v0) => v0.burn_amount,
+        }
+    }
+
+    fn set_burn_amount(&mut self, amount: u64) {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.burn_amount = amount,
+        }
+    }
+
+    fn public_note(&self) -> Option<&String> {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.public_note.as_ref(),
+        }
+    }
+
+    fn public_note_owned(self) -> Option<String> {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.public_note,
+        }
+    }
+
+    fn set_public_note(&mut self, public_note: Option<String>) {
+        match self {
+            TokenBurnTransitionAction::V0(v0) => v0.public_note = public_note,
         }
     }
 }

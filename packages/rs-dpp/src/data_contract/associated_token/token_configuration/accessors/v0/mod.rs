@@ -1,4 +1,5 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationConventionV0;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::group::RequiredSigners;
@@ -15,6 +16,8 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the base supply.
     fn base_supply(&self) -> u64;
+    /// Returns the base supply.
+    fn keeps_history(&self) -> bool;
 
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<u64>;

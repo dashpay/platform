@@ -5,9 +5,9 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
-use grovedb::GroveDb;
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
+use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -16,7 +16,7 @@ impl Drive {
         I: From<[u8; 32]>,
     >(
         proof: &[u8],
-        token_id: [u8;32],
+        token_id: [u8; 32],
         identity_ids: &[[u8; 32]],
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,

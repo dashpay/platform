@@ -5,6 +5,8 @@ use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
+use dpp::prelude::IdentityNonce;
+use dpp::tokens::token_event::TokenEvent;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -44,6 +46,17 @@ pub enum TokenOperationType {
         /// The amount to transfer
         amount: TokenAmount,
     },
+    /// Adds a document to a contract matching the desired info.
+    TokenHistory {
+        /// The token id
+        token_id: Identifier,
+        /// The identity making the event
+        owner_id: Identifier,
+        /// The nonce
+        nonce: IdentityNonce,
+        /// The token event
+        event: TokenEvent,
+    },
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {
@@ -53,7 +66,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        _block_info: &BlockInfo,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -109,6 +122,24 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     sender_id_bytes,
                     recipient_id_bytes,
                     amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenHistory {
+                token_id,
+                owner_id,
+                nonce,
+                event,
+            } => {
+                let batch_operations = drive.add_token_transaction_history_operations(
+                    token_id,
+                    owner_id,
+                    nonce,
+                    event,
+                    block_info,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

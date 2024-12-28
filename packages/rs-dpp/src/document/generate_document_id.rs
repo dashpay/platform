@@ -1,4 +1,5 @@
 use crate::document::Document;
+use crate::prelude::IdentityNonce;
 use crate::{prelude::Identifier, util::hash::hash_double_to_vec};
 
 impl Document {

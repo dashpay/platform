@@ -134,7 +134,7 @@
       "note": {
         "type": "string",
         "maxLength": 2048,
-        "description": "An optional explanation of why this burn took place",
+        "description": "An optional explanation of why this mint took place",
         "position": 2
       }
     },
@@ -226,6 +226,52 @@
         "maxItems": 32,
         "description": "The identity or the group Id",
         "position": 2
+      },
+      "encryptedPersonalNote": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 2048,
+        "description": "An optional encrypted explanation of why this transfer took place only meant for the sender",
+        "position": 3
+      },
+      "encryptedSharedNote": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 2048,
+        "description": "An optional encrypted explanation of why this transfer took place shared between the sender and the receiver",
+        "position": 4
+      },
+      "publicNote": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional public explanation of why this transfer took place",
+        "position": 5
+      },
+      "senderKeyIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Used with the encrypted shared note",
+        "position": 6
+      },
+      "recipientKeyIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Used with the encrypted shared note",
+        "position": 7
+      },
+      "rootEncryptionKeyIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Used with the encrypted private note",
+        "position": 8
+      },
+      "derivationEncryptionKeyIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Used with the encrypted private note",
+        "position": 9
       }
     },
     "required": [

@@ -1,5 +1,7 @@
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::identifier::Identifier;
+use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -42,6 +44,16 @@ impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
                     identity_balance_holder_id: owner_id,
                     burn_amount: self.burn_amount(),
                 }));
+
+                let token_configuration = self.base().token_configuration()?;
+                if token_configuration.keeps_history() {
+                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                        token_id: self.token_id(),
+                        owner_id,
+                        nonce: identity_contract_nonce,
+                        event: TokenEvent::Burn(self.burn_amount(), self.public_note_owned()),
+                    }));
+                }
 
                 Ok(ops)
             }

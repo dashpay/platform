@@ -2,8 +2,8 @@ use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0S
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::{Group, GroupName};
 use crate::data_contract::TokenContractPosition;
-use std::collections::BTreeMap;
 use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 pub trait DataContractV1Getters: DataContractV0Getters {
     /// Returns a reference to the groups map.
@@ -17,7 +17,7 @@ pub trait DataContractV1Getters: DataContractV0Getters {
 
     /// Returns a mutable reference to the tokens map.
     fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>>;
-    
+
     /// Returns the token id at a certain position
     fn token_id(&self, position: TokenContractPosition) -> Option<Identifier>;
 }

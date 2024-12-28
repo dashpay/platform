@@ -572,11 +572,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             .into()
         }
         BasicError::DataContractTokenConfigurationUpdateError(e) => {
-            generic_consensus_error!(
-                DataContractTokenConfigurationUpdateError,
-                e
-            )
-                .into()
+            generic_consensus_error!(DataContractTokenConfigurationUpdateError, e).into()
         }
     }
 }

@@ -16,14 +16,14 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
+use crate::error::contract::DataContractError;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
-use crate::drive::tokens::{TOKEN_BALANCES_KEY, token_path, tokens_root_path};
-use crate::error::contract::DataContractError;
 
 impl Drive {
     /// Updates a data contract.
@@ -213,12 +213,33 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut batch_operations: Vec<LowLevelDriveOperation> = self.update_contract_operations_v0(contract_element, contract, original_contract, block_info, estimated_costs_only_with_layer_info, transaction, platform_version)?;
+        let mut batch_operations: Vec<LowLevelDriveOperation> = self
+            .update_contract_operations_v0(
+                contract_element,
+                contract,
+                original_contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?;
 
         for token_pos in contract.tokens().keys() {
-            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(DataContractError::CorruptedDataContract(format!("data contract has a token at position {}, but can not find it", token_pos))))?;
+            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
+                DataContractError::CorruptedDataContract(format!(
+                    "data contract has a token at position {}, but can not find it",
+                    token_pos
+                )),
+            ))?;
 
-            batch_operations.extend(self.create_token_trees_operations(token_id.to_buffer(), true, &mut None, estimated_costs_only_with_layer_info, transaction, platform_version)?);
+            batch_operations.extend(self.create_token_trees_operations(
+                token_id.to_buffer(),
+                true,
+                &mut None,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
         }
         Ok(batch_operations)
     }

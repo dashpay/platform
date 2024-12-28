@@ -9,17 +9,17 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use crate::drive::balances::total_tokens_root_supply_path;
+use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
 use crate::error::contract::DataContractError;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DriveKeyInfo;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
-use crate::drive::balances::total_tokens_root_supply_path;
-use crate::drive::tokens::{TOKEN_BALANCES_KEY, token_path, tokens_root_path};
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::DriveKeyInfo;
 
 impl Drive {
     /// Insert a contract.
@@ -152,10 +152,22 @@ impl Drive {
         >,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut batch_operations: Vec<LowLevelDriveOperation> = self.insert_contract_operations_v0(contract_element, contract, block_info, estimated_costs_only_with_layer_info, platform_version)?;
-        
+        let mut batch_operations: Vec<LowLevelDriveOperation> = self
+            .insert_contract_operations_v0(
+                contract_element,
+                contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            )?;
+
         for token_pos in contract.tokens().keys() {
-            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(DataContractError::CorruptedDataContract(format!("data contract has a token at position {}, but can not find it", token_pos))))?;
+            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
+                DataContractError::CorruptedDataContract(format!(
+                    "data contract has a token at position {}, but can not find it",
+                    token_pos
+                )),
+            ))?;
 
             self.batch_insert_empty_tree(
                 tokens_root_path(),
@@ -181,7 +193,7 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
-        
+
         Ok(batch_operations)
     }
 }

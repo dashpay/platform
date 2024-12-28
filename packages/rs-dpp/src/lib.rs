@@ -88,6 +88,15 @@ pub mod prelude {
     pub type Revision = u64;
     pub type IdentityNonce = u64;
 
+    pub type SenderKeyIndex = u32;
+    pub type RecipientKeyIndex = u32;
+
+    /// The index of the user's key that is used to derive keys that will be used to encrypt the contact's user id in encToUserId and the private data.
+    pub type RootEncryptionKeyIndex = u32;
+
+    /// The index at which to derive the root encryption key.
+    pub type DerivationEncryptionKeyIndex = u32;
+
     /// UserFeeIncrease is the additional percentage of the processing fee.
     /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
     pub type UserFeeIncrease = u16;

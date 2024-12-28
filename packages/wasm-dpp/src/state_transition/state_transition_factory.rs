@@ -1,5 +1,5 @@
-use crate::data_contract::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm};
 use crate::batch_transition::BatchTransitionWasm;
+use crate::data_contract::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm};
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::{
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,

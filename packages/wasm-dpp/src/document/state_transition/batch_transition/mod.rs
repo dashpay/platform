@@ -31,12 +31,12 @@ use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
-use dpp::state_transition::StateTransitionIdentitySigned;
 use crate::batch_transition::batched_transition::BatchedTransitionWasm;
+use dpp::state_transition::StateTransitionIdentitySigned;
 
+mod batched_transition;
 pub mod document_transition;
 mod token_transition;
-mod batched_transition;
 // pub mod validation;
 
 #[derive(Clone, Debug)]

@@ -24,13 +24,22 @@ pub struct TokenIssuanceTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
-
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "issuedToIdentityId")
+    )]
     /// Who should we issue the token to? If this is not set then we issue to the identity set in
     /// contract settings. If such an operation is allowed.
     pub issued_to_identity_id: Option<Identifier>,
 
     /// How much should we issue
     pub amount: u64,
+    /// The public note
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "publicNote")
+    )]
+    pub public_note: Option<String>,
 }
 
 impl fmt::Display for TokenIssuanceTransitionV0 {

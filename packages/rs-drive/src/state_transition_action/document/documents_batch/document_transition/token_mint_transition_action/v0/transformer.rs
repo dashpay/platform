@@ -30,6 +30,7 @@ impl TokenIssuanceTransitionActionV0 {
             base,
             issued_to_identity_id,
             amount,
+            public_note,
         } = value;
 
         let position = base.token_contract_position();
@@ -56,8 +57,9 @@ impl TokenIssuanceTransitionActionV0 {
 
         Ok(TokenIssuanceTransitionActionV0 {
             base: base_action,
-            issuance_amount: amount,
+            mint_amount: amount,
             identity_balance_holder_id,
+            public_note,
         })
     }
 
@@ -79,6 +81,7 @@ impl TokenIssuanceTransitionActionV0 {
             base,
             issued_to_identity_id,
             amount,
+            public_note,
         } = value;
 
         let base_action =
@@ -104,8 +107,9 @@ impl TokenIssuanceTransitionActionV0 {
 
         Ok(TokenIssuanceTransitionActionV0 {
             base: base_action,
-            issuance_amount: *amount,
+            mint_amount: *amount,
             identity_balance_holder_id,
+            public_note: public_note.clone(),
         })
     }
 }

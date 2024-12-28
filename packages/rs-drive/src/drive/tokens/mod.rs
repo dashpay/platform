@@ -1,6 +1,6 @@
 use crate::drive::RootTree;
 
-mod add_transaction_history;
+mod add_transaction_history_operations;
 pub mod balance;
 pub mod burn;
 pub mod estimated_costs;
@@ -26,10 +26,7 @@ pub(crate) fn tokens_root_path_vec() -> Vec<Vec<u8>> {
 /// The path for the token tree
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn token_path(token_id: &[u8; 32]) -> [&[u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::Tokens),
-        token_id,
-    ]
+    [Into::<&[u8; 1]>::into(RootTree::Tokens), token_id]
 }
 
 /// The path for the token tree

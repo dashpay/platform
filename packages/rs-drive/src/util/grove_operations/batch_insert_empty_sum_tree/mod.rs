@@ -34,8 +34,14 @@ impl Drive {
         P: IntoIterator<Item = &'c [u8]>,
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
-        match drive_version.grove_methods.batch.batch_insert_empty_sum_tree {
-            0 => self.batch_insert_empty_sum_tree_v0(path, key_info, storage_flags, drive_operations),
+        match drive_version
+            .grove_methods
+            .batch
+            .batch_insert_empty_sum_tree
+        {
+            0 => {
+                self.batch_insert_empty_sum_tree_v0(path, key_info, storage_flags, drive_operations)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_insert_empty_sum_tree".to_string(),
                 known_versions: vec![0],

@@ -30,11 +30,13 @@ impl Drive {
                 Ok(())
             }
             KeySize(key) => {
-                drive_operations.push(LowLevelDriveOperation::for_estimated_path_key_empty_sum_tree(
-                    KeyInfoPath::from_known_path(path),
-                    key,
-                    storage_flags,
-                ));
+                drive_operations.push(
+                    LowLevelDriveOperation::for_estimated_path_key_empty_sum_tree(
+                        KeyInfoPath::from_known_path(path),
+                        key,
+                        storage_flags,
+                    ),
+                );
                 Ok(())
             }
             Key(key) => {

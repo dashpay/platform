@@ -1,8 +1,8 @@
 mod v0;
 
-use std::collections::BTreeMap;
-use dpp::balances::credits::TokenAmount;
 use crate::drive::Drive;
+use dpp::balances::credits::TokenAmount;
+use std::collections::BTreeMap;
 
 use crate::error::drive::DriveError;
 
@@ -16,7 +16,7 @@ impl Drive {
     /// Verifies the token balances for a set of identity IDs.
     ///
     /// This function checks the token balances of multiple identities by verifying the provided
-    /// proof against the specified token ID and identity IDs. It also supports verifying a subset 
+    /// proof against the specified token ID and identity IDs. It also supports verifying a subset
     /// of a larger proof if necessary.
     ///
     /// # Parameters
@@ -27,7 +27,7 @@ impl Drive {
     ///   is being verified.
     /// - `identity_ids`: A slice of 32-byte arrays, each representing a unique identity ID. These
     ///   are the identities whose token balances are being verified.
-    /// - `verify_subset_of_proof`: A boolean flag indicating whether the proof being verified is a 
+    /// - `verify_subset_of_proof`: A boolean flag indicating whether the proof being verified is a
     ///   subset of a larger proof. If `true`, the verification will consider only a part of the proof.
     /// - `platform_version`: The version of the platform against which the identity token balances are
     ///   being verified. This ensures compatibility with the correct API version.
@@ -52,7 +52,7 @@ impl Drive {
         I: From<[u8; 32]>,
     >(
         proof: &[u8],
-        token_id: [u8;32],
+        token_id: [u8; 32],
         identity_ids: &[[u8; 32]],
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,

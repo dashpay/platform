@@ -1,4 +1,9 @@
-use crate::version::drive_versions::drive_verify_method_versions::{DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions};
+use crate::version::drive_versions::drive_verify_method_versions::{
+    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
+};
 
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
     contract: DriveVerifyContractMethodVersions {

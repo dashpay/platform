@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::wasm_bindgen;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenTransition)]
 #[derive(Debug, Clone)]

@@ -9,9 +9,9 @@ pub use feature_flags_contract;
 pub use masternode_reward_shares_contract;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+pub use token_history_contract;
 pub use wallet_utils_contract;
 pub use withdrawals_contract;
-pub use token_history_contract;
 
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Ord, PartialOrd, Hash)]
