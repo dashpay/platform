@@ -1,11 +1,25 @@
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use crate::ProtocolError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[platform_serialize(unversioned)]
 pub struct GroupV0 {
     pub members: BTreeMap<Identifier, GroupMemberPower>,
     pub required_power: GroupRequiredPower,

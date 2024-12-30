@@ -40,6 +40,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert_empty_tree: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists_check_existing_operations: FeatureVersion,
+    pub batch_insert_sum_item_if_not_exists: FeatureVersion,
     pub batch_insert_sum_item_or_add_to_if_already_exists: FeatureVersion,
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,

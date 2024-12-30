@@ -2,9 +2,9 @@ use derive_more::{Display, From};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use bincode::{Encode, Decode};
 use crate::prelude::IdentityNonce;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenIssuanceTransition, TokenTransferTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenMintTransition, TokenTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -21,7 +21,7 @@ pub enum TokenTransition {
     Burn(TokenBurnTransition),
 
     #[display("TokenIssuanceTransition({})", "_0")]
-    Mint(TokenIssuanceTransition),
+    Mint(TokenMintTransition),
 
     #[display("TokenTransferTransition({})", "_0")]
     Transfer(TokenTransferTransition),
@@ -54,7 +54,7 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
-    fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition> {
+    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
         if let Self::Mint(ref t) = self {
             Some(t)
         } else {

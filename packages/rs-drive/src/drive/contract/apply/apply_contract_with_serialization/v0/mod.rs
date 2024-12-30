@@ -208,6 +208,7 @@ impl Drive {
                 block_info,
                 estimated_costs_only_with_layer_info,
                 &mut drive_operations,
+                transaction,
                 platform_version,
             )?;
         }

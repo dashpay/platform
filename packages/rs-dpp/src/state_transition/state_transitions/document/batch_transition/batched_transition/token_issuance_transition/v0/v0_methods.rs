@@ -1,9 +1,12 @@
 use platform_value::Identifier;
+use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_issuance_transition::TokenIssuanceTransitionV0;
+use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::batch_transition::token_issuance_transition::TokenMintTransitionV0;
+use crate::util::hash::hash_double;
 
-impl TokenBaseTransitionAccessors for TokenIssuanceTransitionV0 {
+impl TokenBaseTransitionAccessors for TokenMintTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
         &self.base
     }
@@ -17,7 +20,9 @@ impl TokenBaseTransitionAccessors for TokenIssuanceTransitionV0 {
     }
 }
 
-pub trait TokenIssuanceTransitionV0Methods: TokenBaseTransitionAccessors {
+pub trait TokenMintTransitionV0Methods:
+    TokenBaseTransitionAccessors + AllowedAsMultiPartyAction
+{
     fn amount(&self) -> u64;
 
     fn set_amount(&mut self, amount: u64);
@@ -38,7 +43,7 @@ pub trait TokenIssuanceTransitionV0Methods: TokenBaseTransitionAccessors {
     fn set_issued_to_identity_id(&mut self, issued_to_identity_id: Option<Identifier>);
 }
 
-impl TokenIssuanceTransitionV0Methods for TokenIssuanceTransitionV0 {
+impl TokenMintTransitionV0Methods for TokenMintTransitionV0 {
     fn amount(&self) -> u64 {
         self.amount
     }
@@ -64,5 +69,19 @@ impl TokenIssuanceTransitionV0Methods for TokenIssuanceTransitionV0 {
     }
     fn set_issued_to_identity_id(&mut self, issued_to_identity_id: Option<Identifier>) {
         self.issued_to_identity_id = issued_to_identity_id;
+    }
+}
+
+impl AllowedAsMultiPartyAction for TokenMintTransitionV0 {
+    fn action_id(&self, owner_id: Identifier) -> Identifier {
+        let TokenMintTransitionV0 { base, amount, .. } = self;
+
+        let mut bytes = b"action_mint".to_vec();
+        bytes.extend_from_slice(base.token_id().as_bytes());
+        bytes.extend_from_slice(owner_id.as_bytes());
+        bytes.extend_from_slice(&base.identity_contract_nonce().to_be_bytes());
+        bytes.extend_from_slice(&amount.to_be_bytes());
+
+        hash_double(bytes).into()
     }
 }

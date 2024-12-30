@@ -4,7 +4,7 @@ use crate::data_contract::change_control_rules::authorized_action_takers::Author
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::group::RequiredSigners;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

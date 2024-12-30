@@ -1,7 +1,7 @@
 use crate::data_contract::group::accessors::v0::GroupV0Getters;
 use crate::data_contract::group::{Group, GroupMemberPower};
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::multi_identity_events::ActionTaker;
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 

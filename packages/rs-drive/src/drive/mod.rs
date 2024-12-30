@@ -48,6 +48,7 @@ pub(crate) mod prefunded_specialized_balances;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
+pub mod group;
 #[cfg(feature = "server")]
 mod shared;
 mod tokens;
@@ -79,10 +80,10 @@ pub struct Drive {
 //                                                                                DataContract_Documents 64
 //                                 /                                                                                                       \
 //                       Identities 32                                                                                                 Balances 96
-//             /                            \                                                                   /                                                       \
-//   Token_Balances 16                    Pools 48                                                 WithdrawalTransactions 80                                                Votes  112
-//       /      \                           /                     \                                            /                                               /                          \
-//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)           SpentAssetLockTransactions 72                             Misc 104                          Versions 120
+//             /                            \                                                                        /                                                       \
+//   Token_Balances 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+//       /      \                           /                     \                                         /                           \                            /                          \
+//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -119,6 +120,8 @@ pub enum RootTree {
     Versions = 120,
     /// Registered votes
     Votes = 112,
+    /// Group actions
+    GroupActions = 88,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -141,6 +144,7 @@ impl fmt::Display for RootTree {
             RootTree::Tokens => "TokenBalances",
             RootTree::Versions => "Versions",
             RootTree::Votes => "Votes",
+            RootTree::GroupActions => "GroupActions",
         };
         write!(f, "{}", variant_name)
     }
@@ -209,6 +213,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],
+            RootTree::GroupActions => &[88],
         }
     }
 }

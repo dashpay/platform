@@ -1,7 +1,9 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use crate::data_contract::{DocumentName, TokenContractPosition, EMPTY_GROUPS, EMPTY_TOKENS};
+use crate::data_contract::{
+    DocumentName, GroupContractPosition, TokenContractPosition, EMPTY_GROUPS, EMPTY_TOKENS,
+};
 use crate::metadata::Metadata;
 use crate::prelude::DataContract;
 
@@ -10,7 +12,7 @@ use platform_value::Identifier;
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::group::{Group, GroupName};
+use crate::data_contract::group::Group;
 use std::collections::BTreeMap;
 
 pub mod v0;
@@ -187,7 +189,7 @@ impl DataContractV0Setters for DataContract {
 /// Implementing DataContractV1Getters for DataContract
 impl DataContractV1Getters for DataContract {
     /// Returns a reference to the groups map.
-    fn groups(&self) -> &BTreeMap<GroupName, Group> {
+    fn groups(&self) -> &BTreeMap<GroupContractPosition, Group> {
         match self {
             DataContract::V0(_) => &EMPTY_GROUPS,
             DataContract::V1(v1) => &v1.groups,
@@ -196,7 +198,7 @@ impl DataContractV1Getters for DataContract {
 
     /// Returns a mutable reference to the groups map.
     /// Returns `None` for V0 since it doesn't have groups.
-    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupName, Group>> {
+    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupContractPosition, Group>> {
         match self {
             DataContract::V0(_) => None,
             DataContract::V1(v1) => Some(&mut v1.groups),
@@ -230,7 +232,7 @@ impl DataContractV1Getters for DataContract {
 
 impl DataContractV1Setters for DataContract {
     /// Sets the groups map for the data contract.
-    fn set_groups(&mut self, groups: BTreeMap<GroupName, Group>) {
+    fn set_groups(&mut self, groups: BTreeMap<GroupContractPosition, Group>) {
         match self {
             DataContract::V0(_) => {}
             DataContract::V1(v1) => {
@@ -250,11 +252,11 @@ impl DataContractV1Setters for DataContract {
     }
 
     /// Adds or updates a single group in the groups map.
-    fn add_group(&mut self, name: GroupName, group: Group) {
+    fn add_group(&mut self, position: GroupContractPosition, group: Group) {
         match self {
             DataContract::V0(_) => {}
             DataContract::V1(v1) => {
-                v1.groups.insert(name, group);
+                v1.groups.insert(position, group);
             }
         }
     }

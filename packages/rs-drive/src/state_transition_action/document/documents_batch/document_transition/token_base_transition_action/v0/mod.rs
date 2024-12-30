@@ -3,6 +3,8 @@ use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+use dpp::data_contract::GroupContractPosition;
+use dpp::group::GroupStateTransitionInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
@@ -22,6 +24,13 @@ pub struct TokenBaseTransitionActionV0 {
     pub token_contract_position: u16,
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
+    /// Using group multi party rules for authentication
+    /// If this is set we should store in group
+    pub store_in_group: Option<GroupStateTransitionInfo>,
+    /// Should the action be performed.
+    /// This is true if we don't store in group.
+    /// And also true if we store in group and with this have enough signatures to perform the action
+    pub perform_action: bool,
 }
 
 /// Token base transition action accessors v0
@@ -46,6 +55,12 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
 
     /// Gets the token configuration associated to the action
     fn token_configuration(&self) -> Result<&TokenConfiguration, Error>;
+
+    /// Gets the store_in_group field (optional)
+    fn store_in_group(&self) -> Option<Identifier>;
+
+    /// Gets the perform_action field
+    fn perform_action(&self) -> bool;
 }
 
 impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
@@ -85,5 +100,13 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
                     self.token_contract_position
                 ),
             )))
+    }
+
+    fn store_in_group(&self) -> Option<GroupStateTransitionInfo> {
+        self.store_in_group
+    }
+
+    fn perform_action(&self) -> bool {
+        self.perform_action
     }
 }

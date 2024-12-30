@@ -1,13 +1,14 @@
-use std::sync::Arc;
-
 use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
+use grovedb::TransactionArg;
+use std::sync::Arc;
 
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{
     TokenBurnTransitionAction, TokenBurnTransitionActionV0,
 };
 use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransition;
+use crate::drive::Drive;
 
 /// Implement methods to transform a `TokenBurnTransition` into a `TokenBurnTransitionAction`.
 impl TokenBurnTransitionAction {
@@ -22,6 +23,8 @@ impl TokenBurnTransitionAction {
     ///
     /// * `Result<TokenBurnTransitionAction, ProtocolError>` - A `TokenBurnTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_token_burn_transition_with_contract_lookup(
+        drive: &Drive,
+        transaction: TransactionArg,
         value: TokenBurnTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -29,6 +32,8 @@ impl TokenBurnTransitionAction {
             TokenBurnTransition::V0(v0) => {
                 let v0_action =
                     TokenBurnTransitionActionV0::try_from_token_burn_transition_with_contract_lookup(
+                        drive,
+                        transaction,
                         v0,
                         get_data_contract,
                     )?;
@@ -48,12 +53,16 @@ impl TokenBurnTransitionAction {
     ///
     /// * `Result<TokenBurnTransitionAction, ProtocolError>` - A `TokenBurnTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_borrowed_token_burn_transition_with_contract_lookup(
+        drive: &Drive,
+        transaction: TransactionArg,
         value: &TokenBurnTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         match value {
             TokenBurnTransition::V0(v0) => {
                 let v0_action = TokenBurnTransitionActionV0::try_from_borrowed_token_burn_transition_with_contract_lookup(
+                    drive,
+                    transaction,
                     v0,
                     get_data_contract,
                 )?;

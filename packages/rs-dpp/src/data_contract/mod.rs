@@ -38,7 +38,7 @@ pub mod accessors;
 pub mod associated_token;
 pub mod change_control_rules;
 pub mod config;
-mod group;
+pub mod group;
 pub mod storage_requirements;
 
 use crate::data_contract::serialized_version::{
@@ -51,7 +51,7 @@ use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::group::{Group, GroupName};
+use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
@@ -62,13 +62,14 @@ type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;
 pub type TokenName = String;
+pub type GroupContractPosition = u16;
 pub type TokenContractPosition = u16;
 type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 
 // Define static empty BTreeMaps
-static EMPTY_GROUPS: Lazy<BTreeMap<GroupName, Group>> = Lazy::new(|| BTreeMap::new());
+static EMPTY_GROUPS: Lazy<BTreeMap<GroupContractPosition, Group>> = Lazy::new(|| BTreeMap::new());
 static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
     Lazy::new(|| BTreeMap::new());
 

@@ -12,7 +12,6 @@ use dpp::fee::fee_result::FeeResult;
 use crate::drive::balances::total_tokens_root_supply_path;
 use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
 use crate::error::contract::DataContractError;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::DriveKeyInfo;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -102,6 +101,7 @@ impl Drive {
             contract,
             block_info,
             &mut estimated_costs_only_with_layer_info,
+            transaction,
             platform_version,
         )?;
         self.apply_batch_low_level_drive_operations(
@@ -126,6 +126,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let batch_operations = self.insert_contract_operations_v1(
@@ -133,6 +134,7 @@ impl Drive {
             contract,
             block_info,
             estimated_costs_only_with_layer_info,
+            transaction,
             platform_version,
         )?;
         drive_operations.extend(batch_operations);
@@ -150,6 +152,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = self
@@ -192,6 +195,16 @@ impl Drive {
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
+        }
+
+        if !contract.groups().is_empty() {
+            batch_operations.extend(self.add_new_groups_operations(
+                contract.id(),
+                contract.groups(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
         }
 
         Ok(batch_operations)

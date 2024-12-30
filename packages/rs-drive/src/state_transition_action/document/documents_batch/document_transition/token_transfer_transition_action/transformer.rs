@@ -1,9 +1,10 @@
 use std::sync::Arc;
-
+use grovedb::TransactionArg;
 use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::TokenTransferTransition;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::Drive;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionV0;
 
@@ -20,6 +21,8 @@ impl TokenTransferTransitionAction {
     ///
     /// * `Result<TokenTransferTransitionAction, ProtocolError>` - A `TokenTransferTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn from_token_transfer_transition_with_contract_lookup(
+        drive: &Drive,
+        transaction: TransactionArg,
         value: TokenTransferTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -27,6 +30,8 @@ impl TokenTransferTransitionAction {
             TokenTransferTransition::V0(v0) => {
                 let v0_action =
                     TokenTransferTransitionActionV0::try_from_token_transfer_transition_with_contract_lookup(
+                        drive,
+                        transaction,
                         v0,
                         get_data_contract,
                     )?;
@@ -46,12 +51,16 @@ impl TokenTransferTransitionAction {
     ///
     /// * `Result<TokenTransferTransitionAction, ProtocolError>` - A `TokenTransferTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_borrowed_token_transfer_transition_with_contract_lookup(
+        drive: &Drive,
+        transaction: TransactionArg,
         value: &TokenTransferTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         match value {
             TokenTransferTransition::V0(v0) => {
                 let v0_action = TokenTransferTransitionActionV0::try_from_borrowed_token_transfer_transition_with_contract_lookup(
+                    drive,
+                    transaction,
                     v0,
                     get_data_contract,
                 )?;

@@ -3,11 +3,13 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::group::{Group, GroupName};
+use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
-use crate::data_contract::{DataContract, DefinitionName, DocumentName, TokenContractPosition};
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use crate::data_contract::{
+    DataContract, DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
+};
+use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -35,7 +37,7 @@ pub struct DataContractInSerializationFormatV1 {
     pub document_schemas: BTreeMap<DocumentName, Value>,
 
     /// Groups that allow for specific multiparty actions on the contract
-    pub groups: BTreeMap<GroupName, Group>,
+    pub groups: BTreeMap<GroupContractPosition, Group>,
 
     /// The tokens on the contract.
     pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,

@@ -4,13 +4,13 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
 use crate::data_contract::v1::DataContractV1;
-use crate::data_contract::{DocumentName, TokenContractPosition};
+use crate::data_contract::{DocumentName, GroupContractPosition, TokenContractPosition};
 use crate::metadata::Metadata;
 
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::group::{Group, GroupName};
+use crate::data_contract::group::Group;
 use crate::util::hash::hash_double;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -144,11 +144,11 @@ impl DataContractV0Setters for DataContractV1 {
 }
 
 impl DataContractV1Getters for DataContractV1 {
-    fn groups(&self) -> &BTreeMap<GroupName, Group> {
+    fn groups(&self) -> &BTreeMap<GroupContractPosition, Group> {
         &self.groups
     }
 
-    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupName, Group>> {
+    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupContractPosition, Group>> {
         Some(&mut self.groups)
     }
 
@@ -172,7 +172,7 @@ impl DataContractV1Getters for DataContractV1 {
 }
 
 impl DataContractV1Setters for DataContractV1 {
-    fn set_groups(&mut self, groups: BTreeMap<GroupName, Group>) {
+    fn set_groups(&mut self, groups: BTreeMap<GroupContractPosition, Group>) {
         self.groups = groups;
     }
 
@@ -180,8 +180,8 @@ impl DataContractV1Setters for DataContractV1 {
         self.tokens = tokens;
     }
 
-    fn add_group(&mut self, name: GroupName, group: Group) {
-        self.groups.insert(name, group);
+    fn add_group(&mut self, group_position: GroupContractPosition, group: Group) {
+        self.groups.insert(group_position, group);
     }
 
     fn add_token(&mut self, name: TokenContractPosition, token: TokenConfiguration) {

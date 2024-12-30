@@ -13,7 +13,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 #[derive(Debug, Clone, From)]
 pub enum TokenMintTransitionAction {
     /// v0
-    V0(TokenIssuanceTransitionActionV0),
+    V0(TokenMintTransitionActionV0),
 }
 
 impl TokenMintTransitionActionAccessorsV0 for TokenMintTransitionAction {

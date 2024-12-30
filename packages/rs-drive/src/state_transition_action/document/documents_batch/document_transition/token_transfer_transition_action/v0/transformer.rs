@@ -1,16 +1,19 @@
-use std::sync::Arc;
-
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
 use dpp::ProtocolError;
+use grovedb::TransactionArg;
+use std::sync::Arc;
 
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::Drive;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionActionV0;
 
 impl TokenTransferTransitionActionV0 {
     /// Convert a `TokenTransferTransitionV0` into a `TokenTransferTransitionActionV0` using contract lookup
     pub fn try_from_token_transfer_transition_with_contract_lookup(
+        drive: &Drive,
+        transaction: TransactionArg,
         value: TokenTransferTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -24,6 +27,8 @@ impl TokenTransferTransitionActionV0 {
         } = value;
 
         let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
+            drive,
+            transaction,
             base,
             get_data_contract,
         )?;
@@ -40,6 +45,8 @@ impl TokenTransferTransitionActionV0 {
 
     /// Convert a borrowed `TokenTransferTransitionV0` into a `TokenTransferTransitionActionV0` using contract lookup
     pub fn try_from_borrowed_token_transfer_transition_with_contract_lookup(
+        drive: &Drive,
+        transaction: TransactionArg,
         value: &TokenTransferTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -54,6 +61,8 @@ impl TokenTransferTransitionActionV0 {
 
         let base_action =
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
+                drive,
+                transaction,
                 &base,
                 get_data_contract,
             )?;

@@ -236,57 +236,126 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn should_prove_multiple_identity_single_token_balances() {
-    //     let drive = setup_drive_with_initial_state_structure(None);
-    //     let platform_version = PlatformVersion::latest();
-    //     let identities: BTreeMap<[u8; 32], Identity> =
-    //         Identity::random_identities(10, 3, Some(14), platform_version)
-    //             .expect("expected to get random identities")
-    //             .into_iter()
-    //             .map(|identity| (identity.id().to_buffer(), identity))
-    //             .collect();
-    //
-    //     let mut rng = StdRng::seed_from_u64(293);
-    //
-    //     let token_id: [u8; 32] = rng.gen();
-    //
-    //     drive.add_new_token(token_id);
-    //
-    //     for identity in identities.values() {
-    //         drive
-    //             .add_new_identity(
-    //                 identity.clone(),
-    //                 false,
-    //                 &BlockInfo::default(),
-    //                 true,
-    //                 None,
-    //                 platform_version,
-    //             )
-    //             .expect("expected to add an identity");
-    //     }
-    //     let identity_ids = identities.keys().copied().collect::<Vec<[u8; 32]>>();
-    //     let identity_balances = identities
-    //         .into_iter()
-    //         .map(|(id, identity)| (id, Some(identity.balance())))
-    //         .collect::<BTreeMap<[u8; 32], Option<Credits>>>();
-    //     let proof = drive
-    //         .prove_many_identity_token_balances(
-    //             identity_ids.as_slice(),
-    //             None,
-    //             &platform_version.drive,
-    //         )
-    //         .expect("should not error when proving an identity");
-    //
-    //     let (_, proved_identity_balances): ([u8; 32], BTreeMap<[u8; 32], Option<Credits>>) =
-    //         Drive::verify_identity_balances_for_identity_ids(
-    //             proof.as_slice(),
-    //             false,
-    //             identity_ids.as_slice(),
-    //             platform_version,
-    //         )
-    //             .expect("expect that this be verified");
-    //
-    //     assert_eq!(proved_identity_balances, identity_balances);
-    // }
+    #[test]
+    fn should_prove_multiple_identity_single_token_balances_after_transfer() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let identity_1 = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a platform identity");
+
+        let identity_1_id = identity_1.id().to_buffer();
+
+        let identity_2 = Identity::random_identity(3, Some(15), platform_version)
+            .expect("expected a platform identity");
+
+        let identity_2_id = identity_2.id().to_buffer();
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Default::default(),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            metadata: None,
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]),
+        });
+        let token_id = contract.token_id(0).expect("expected token at position 0");
+        drive
+            .add_new_identity(
+                identity_1.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        drive
+            .add_new_identity(
+                identity_2.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        drive
+            .token_mint(
+                token_id.to_buffer(),
+                identity_1.id().to_buffer(),
+                100000,
+                true,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to mint token");
+
+        drive
+            .token_transfer(
+                token_id.to_buffer(),
+                identity_1.id().to_buffer(),
+                identity_2.id().to_buffer(),
+                30000,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to transfer token");
+        let proof = drive
+            .prove_identities_token_balances_v0(
+                token_id.to_buffer(),
+                &vec![identity_1.id().to_buffer(), identity_2.id().to_buffer()],
+                None,
+                platform_version,
+            )
+            .expect("should not error when proving an identity");
+
+        let proved_identity_balance: BTreeMap<[u8; 32], Option<TokenAmount>> =
+            Drive::verify_token_balances_for_identity_ids(
+                proof.as_slice(),
+                token_id.to_buffer(),
+                &vec![identity_1.id().to_buffer(), identity_2.id().to_buffer()],
+                false,
+                platform_version,
+            )
+            .expect("expect that this be verified")
+            .1;
+
+        assert_eq!(
+            proved_identity_balance,
+            BTreeMap::from([(identity_1_id, Some(70000)), (identity_2_id, Some(30000))])
+        );
+    }
 }

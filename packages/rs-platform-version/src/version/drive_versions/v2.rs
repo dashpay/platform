@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
@@ -96,6 +97,7 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
             deduct_from_prefunded_specialized_balance_operations: 0,
             estimated_cost_for_prefunded_specialized_balance_update: 0,
         },
+        group: DRIVE_GROUP_METHOD_VERSIONS_V1,
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
     grove_version: GROVE_V1,

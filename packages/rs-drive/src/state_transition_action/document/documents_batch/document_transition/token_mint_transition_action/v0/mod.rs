@@ -7,7 +7,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 
 /// Token issuance transition action v0
 #[derive(Debug, Clone)]
-pub struct TokenIssuanceTransitionActionV0 {
+pub struct TokenMintTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
     /// The amount of tokens to create
@@ -73,7 +73,7 @@ pub trait TokenMintTransitionActionAccessorsV0 {
     fn set_public_note(&mut self, public_note: Option<String>);
 }
 
-impl TokenMintTransitionActionAccessorsV0 for TokenIssuanceTransitionActionV0 {
+impl TokenMintTransitionActionAccessorsV0 for TokenMintTransitionActionV0 {
     fn base(&self) -> &TokenBaseTransitionAction {
         &self.base
     }

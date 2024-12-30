@@ -1,19 +1,31 @@
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use crate::data_contract::group::v0::GroupV0;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use crate::errors::ProtocolError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub mod accessors;
 mod v0;
-
-pub type GroupName = String;
 pub type RequiredSigners = u8;
 
 pub type GroupMemberPower = u32;
 pub type GroupRequiredPower = u32;
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[platform_serialize(unversioned)]
 pub enum Group {
     V0(GroupV0),
 }

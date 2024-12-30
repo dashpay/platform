@@ -5,7 +5,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

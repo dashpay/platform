@@ -1,5 +1,7 @@
 use derive_more::From;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+use dpp::data_contract::GroupContractPosition;
+use dpp::group::GroupStateTransitionInfo;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
 use std::sync::Arc;
@@ -60,6 +62,18 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
     fn identity_contract_nonce(&self) -> IdentityNonce {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.identity_contract_nonce(),
+        }
+    }
+
+    fn store_in_group(&self) -> Option<GroupStateTransitionInfo> {
+        match self {
+            TokenBaseTransitionAction::V0(v0) => v0.store_in_group(),
+        }
+    }
+
+    fn perform_action(&self) -> bool {
+        match self {
+            TokenBaseTransitionAction::V0(v0) => v0.perform_action(),
         }
     }
 }

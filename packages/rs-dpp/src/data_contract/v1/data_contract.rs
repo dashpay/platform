@@ -6,8 +6,10 @@ use platform_value::Value;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::group::{Group, GroupName};
-use crate::data_contract::{DefinitionName, DocumentName, TokenContractPosition};
+use crate::data_contract::group::Group;
+use crate::data_contract::{
+    DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
+};
 use crate::metadata::Metadata;
 
 /// `DataContractV1` represents a data contract in a decentralized platform.
@@ -24,7 +26,7 @@ use crate::metadata::Metadata;
 /// In `DataContractV1`, two significant features were introduced to enhance contract governance
 /// and support token-related operations:
 ///
-/// 1. **Groups** (`groups: BTreeMap<GroupName, Group>`)  
+/// 1. **Groups** (`groups: BTreeMap<GroupContractPosition, Group>`)
 ///    - Groups allow for specific multiparty actions on the contract. Each group is defined with a
 ///      set of members (`Identifier`) and their corresponding member power (`u32`).  
 ///    - Groups facilitate fine-grained access control and decision-making processes by enabling
@@ -66,7 +68,7 @@ pub struct DataContractV1 {
     pub schema_defs: Option<BTreeMap<DefinitionName, Value>>,
 
     /// Groups that allow for specific multiparty actions on the contract
-    pub groups: BTreeMap<GroupName, Group>,
+    pub groups: BTreeMap<GroupContractPosition, Group>,
 
     /// The tokens on the contract.
     pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,

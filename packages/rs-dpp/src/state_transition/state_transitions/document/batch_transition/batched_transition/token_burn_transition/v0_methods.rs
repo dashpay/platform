@@ -1,3 +1,5 @@
+use platform_value::Identifier;
+use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransition;
@@ -51,6 +53,14 @@ impl TokenBurnTransitionV0Methods for TokenBurnTransition {
     fn set_public_note(&mut self, public_note: Option<String>) {
         match self {
             TokenBurnTransition::V0(v0) => v0.set_public_note(public_note),
+        }
+    }
+}
+
+impl AllowedAsMultiPartyAction for TokenBurnTransition {
+    fn action_id(&self, owner_id: Identifier) -> Identifier {
+        match self {
+            TokenBurnTransition::V0(v0) => v0.action_id(owner_id),
         }
     }
 }

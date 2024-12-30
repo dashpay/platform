@@ -31,6 +31,7 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         batch_insert_empty_tree: 0,
         batch_insert_empty_tree_if_not_exists: 0,
         batch_insert_empty_tree_if_not_exists_check_existing_operations: 0,
+        batch_insert_sum_item_if_not_exists: 0,
         batch_insert_sum_item_or_add_to_if_already_exists: 0,
         batch_insert: 0,
         batch_insert_if_not_exists: 0,

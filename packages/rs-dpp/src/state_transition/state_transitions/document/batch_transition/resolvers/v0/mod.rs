@@ -3,7 +3,7 @@ use crate::state_transition::batch_transition::batched_transition::{
 };
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenIssuanceTransition, TokenTransferTransition,
+    TokenBurnTransition, TokenMintTransition, TokenTransferTransition,
 };
 
 pub trait BatchTransitionResolversV0 {
@@ -13,6 +13,6 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_transfer(&self) -> Option<&DocumentTransferTransition>;
     fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition>;
     fn as_transition_token_burn(&self) -> Option<&TokenBurnTransition>;
-    fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition>;
+    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition>;
     fn as_transition_token_transfer(&self) -> Option<&TokenTransferTransition>;
 }

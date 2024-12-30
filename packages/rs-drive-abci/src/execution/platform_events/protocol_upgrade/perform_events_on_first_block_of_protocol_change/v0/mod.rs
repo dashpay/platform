@@ -17,7 +17,9 @@ use drive::drive::identity::withdrawals::paths::{
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::system::misc_path;
+use drive::drive::RootTree;
 use drive::grovedb::{Element, Transaction};
+use drive::grovedb_path::SubtreePath;
 
 impl<C> Platform<C> {
     /// Executes protocol-specific events on the first block after a protocol version change.
@@ -102,6 +104,15 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        self.drive.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::GroupActions as u8],
+            Some(transaction),
+            None,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
         let path = misc_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),

@@ -15,10 +15,15 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::data_contract::accessors::v1::DataContractV1Getters;
+use crate::group::GroupStateTransitionInfo;
 use crate::identifier::Identifier;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::batch_transition::token_base_transition::property_names;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::tokens::errors::TokenError;
 #[cfg(any(
     feature = "state-transition-json-conversion",
     feature = "state-transition-value-conversion"
@@ -61,6 +66,9 @@ pub struct TokenBaseTransitionV0 {
         serde(rename = "$tokenId")
     )]
     pub token_id: Identifier,
+    /// Using group multi party rules for authentication
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    pub using_group: Option<GroupStateTransitionInfo>,
 }
 
 impl TokenBaseTransitionV0 {
@@ -70,21 +78,37 @@ impl TokenBaseTransitionV0 {
         data_contract: DataContract,
         identity_contract_nonce: IdentityNonce,
     ) -> Result<TokenBaseTransitionV0, ProtocolError> {
+        let token_contract_position = map
+            .remove_integer(property_names::TOKEN_CONTRACT_POSITION)
+            .map_err(ProtocolError::ValueError)?;
         Ok(TokenBaseTransitionV0 {
             identity_contract_nonce,
-            token_contract_position: map
-                .remove_integer(property_names::TOKEN_CONTRACT_POSITION)
-                .map_err(ProtocolError::ValueError)?,
+            token_contract_position,
             data_contract_id: Identifier::new(
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
                     .map_err(ProtocolError::ValueError)?
                     .unwrap_or(data_contract.id().to_buffer()),
             ),
-            token_id: Identifier::new(
-                map.remove_optional_hash256_bytes(property_names::TOKEN_ID)
-                    .map_err(ProtocolError::ValueError)?
-                    .unwrap_or(data_contract.id().to_buffer()),
-            ),
+            token_id: map
+                .remove_optional_hash256_bytes(property_names::TOKEN_ID)
+                .map_err(ProtocolError::ValueError)?
+                .map(Identifier::new)
+                .unwrap_or(data_contract.token_id(token_contract_position).ok_or(
+                    ProtocolError::Token(TokenError::TokenNotFoundAtPositionError.into()),
+                )?),
+            using_group: map
+                .remove_optional_integer(property_names::GROUP_CONTRACT_POSITION)
+                .map_err(ProtocolError::ValueError)?
+                .map(|group_contract_position| {
+                    Ok::<GroupStateTransitionInfo, ProtocolError>(GroupStateTransitionInfo {
+                        group_contract_position,
+                        action_id: map
+                            .remove_hash256_bytes(property_names::GROUP_ACTION_ID)
+                            .map_err(ProtocolError::ValueError)?
+                            .into(),
+                    })
+                })
+                .transpose()?,
         })
     }
 }

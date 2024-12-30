@@ -1,16 +1,16 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::group::{Group, GroupName};
-use crate::data_contract::TokenContractPosition;
+use crate::data_contract::group::Group;
+use crate::data_contract::{GroupContractPosition, TokenContractPosition};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 pub trait DataContractV1Getters: DataContractV0Getters {
     /// Returns a reference to the groups map.
-    fn groups(&self) -> &BTreeMap<GroupName, Group>;
+    fn groups(&self) -> &BTreeMap<GroupContractPosition, Group>;
 
     /// Returns a mutable reference to the groups map.
-    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupName, Group>>;
+    fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupContractPosition, Group>>;
 
     /// Returns a reference to the tokens map.
     fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration>;
@@ -24,13 +24,13 @@ pub trait DataContractV1Getters: DataContractV0Getters {
 
 pub trait DataContractV1Setters: DataContractV0Setters {
     /// Sets the groups map for the data contract.
-    fn set_groups(&mut self, groups: BTreeMap<GroupName, Group>);
+    fn set_groups(&mut self, groups: BTreeMap<GroupContractPosition, Group>);
 
     /// Sets the tokens map for the data contract.
     fn set_tokens(&mut self, tokens: BTreeMap<TokenContractPosition, TokenConfiguration>);
 
     /// Adds or updates a single group in the groups map.
-    fn add_group(&mut self, name: GroupName, group: Group);
+    fn add_group(&mut self, pos: GroupContractPosition, group: Group);
 
     /// Adds or updates a single token configuration in the tokens map.
     fn add_token(&mut self, pos: TokenContractPosition, token: TokenConfiguration);

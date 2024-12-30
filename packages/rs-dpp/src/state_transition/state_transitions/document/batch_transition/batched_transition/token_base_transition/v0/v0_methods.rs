@@ -1,3 +1,5 @@
+use crate::data_contract::GroupContractPosition;
+use crate::group::GroupStateTransitionInfo;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use platform_value::Identifier;
@@ -19,6 +21,11 @@ pub trait TokenBaseTransitionV0Methods {
     fn token_id_ref(&self) -> &Identifier;
 
     fn set_token_id(&mut self, token_id: Identifier);
+
+    /// Returns the group ID.
+    fn group_position(&self) -> Option<GroupContractPosition>;
+
+    fn set_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>);
 
     /// Sets the data contract ID.
     fn set_data_contract_id(&mut self, data_contract_id: Identifier);
@@ -65,5 +72,15 @@ impl TokenBaseTransitionV0Methods for TokenBaseTransitionV0 {
 
     fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce) {
         self.identity_contract_nonce = identity_contract_nonce;
+    }
+
+    fn group_position(&self) -> Option<GroupContractPosition> {
+        self.using_group
+            .as_ref()
+            .map(|info| info.group_contract_position)
+    }
+
+    fn set_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>) {
+        self.using_group = group_info;
     }
 }

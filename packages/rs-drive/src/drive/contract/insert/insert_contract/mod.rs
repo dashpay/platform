@@ -90,6 +90,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
@@ -113,6 +114,7 @@ impl Drive {
                 block_info,
                 estimated_costs_only_with_layer_info,
                 drive_operations,
+                transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

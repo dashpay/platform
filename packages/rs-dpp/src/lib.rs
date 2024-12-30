@@ -60,6 +60,7 @@ pub mod voting;
 #[cfg(feature = "core-types")]
 pub mod core_types;
 
+pub mod group;
 pub mod withdrawal;
 
 pub use async_trait;

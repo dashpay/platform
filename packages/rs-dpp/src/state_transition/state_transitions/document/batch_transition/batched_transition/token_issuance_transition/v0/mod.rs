@@ -20,7 +20,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct TokenIssuanceTransitionV0 {
+pub struct TokenMintTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
@@ -42,7 +42,7 @@ pub struct TokenIssuanceTransitionV0 {
     pub public_note: Option<String>,
 }
 
-impl fmt::Display for TokenIssuanceTransitionV0 {
+impl fmt::Display for TokenMintTransitionV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Format the base transition (assuming `TokenBaseTransition` implements Display)
         write!(

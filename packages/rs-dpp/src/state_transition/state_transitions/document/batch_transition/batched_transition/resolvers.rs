@@ -4,7 +4,7 @@ use crate::state_transition::batch_transition::batched_transition::{
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenIssuanceTransition, TokenTransferTransition,
+    TokenBurnTransition, TokenMintTransition, TokenTransferTransition,
 };
 
 impl BatchTransitionResolversV0 for BatchedTransition {
@@ -50,7 +50,7 @@ impl BatchTransitionResolversV0 for BatchedTransition {
         }
     }
 
-    fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition> {
+    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
         match self {
             BatchedTransition::Document(_) => None,
             BatchedTransition::Token(token) => token.as_transition_token_issuance(),
@@ -108,7 +108,7 @@ impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
         }
     }
 
-    fn as_transition_token_issuance(&self) -> Option<&TokenIssuanceTransition> {
+    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
         match self {
             BatchedTransitionRef::Document(_) => None,
             BatchedTransitionRef::Token(token) => token.as_transition_token_issuance(),

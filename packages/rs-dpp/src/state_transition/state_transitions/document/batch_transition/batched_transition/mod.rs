@@ -12,6 +12,7 @@ pub mod document_transfer_transition;
 pub mod document_transition;
 pub mod document_transition_action_type;
 pub mod document_update_price_transition;
+pub mod multi_party_action;
 mod resolvers;
 pub mod token_base_transition;
 pub mod token_burn_transition;

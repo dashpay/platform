@@ -4,7 +4,7 @@ use crate::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::system::misc_path_vec;
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
@@ -14,6 +14,7 @@ use crate::drive::identity::withdrawals::paths::{
 };
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Creates the initial state structure.
@@ -24,6 +25,15 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
         self.create_initial_state_structure_top_level_0(transaction, platform_version)?;
+
+        self.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::GroupActions as u8],
+            transaction,
+            None,
+            &mut vec![],
+            drive_version,
+        )?;
 
         // On lower layers we can use batching
 
@@ -47,21 +57,6 @@ impl Drive {
         batch.add_insert(
             misc_path_vec(),
             TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.to_vec(),
-            Element::empty_tree(),
-        );
-
-        // We are adding the withdrawal transactions sum amount tree
-        let path = get_withdrawal_root_path_vec();
-
-        batch.add_insert(
-            path.clone(),
-            WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY.to_vec(),
-            Element::empty_sum_tree(),
-        );
-
-        batch.add_insert(
-            path,
-            WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY.to_vec(),
             Element::empty_tree(),
         );
 

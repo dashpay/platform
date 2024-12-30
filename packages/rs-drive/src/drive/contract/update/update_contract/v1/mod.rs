@@ -1,29 +1,23 @@
-use crate::drive::{contract_documents_path, Drive};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::DriveKeyInfo::KeyRef;
-use crate::util::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
-use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates a data contract.
@@ -241,6 +235,17 @@ impl Drive {
                 platform_version,
             )?);
         }
+
+        if !contract.groups().is_empty() {
+            batch_operations.extend(self.add_new_groups_operations(
+                contract.id(),
+                contract.groups(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
         Ok(batch_operations)
     }
 }
