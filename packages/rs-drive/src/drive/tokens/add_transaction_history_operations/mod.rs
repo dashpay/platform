@@ -3,7 +3,6 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::token_event::TokenEvent;

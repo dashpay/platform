@@ -12,6 +12,7 @@ mod v0;
 pub type RequiredSigners = u8;
 
 pub type GroupMemberPower = u32;
+pub type GroupSumPower = u32;
 pub type GroupRequiredPower = u32;
 #[derive(
     Serialize,
@@ -31,6 +32,11 @@ pub enum Group {
 }
 
 impl GroupV0Getters for Group {
+    fn member_power(&self, member_id: Identifier) -> Result<u32, ProtocolError> {
+        match self {
+            Group::V0(group_v0) => group_v0.member_power(member_id),
+        }
+    }
     fn members(&self) -> &BTreeMap<Identifier, u32> {
         match self {
             Group::V0(group_v0) => group_v0.members(),

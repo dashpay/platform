@@ -1,9 +1,12 @@
 use crate::data_contract::group::GroupRequiredPower;
+use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 /// Getters for GroupV0
 pub trait GroupV0Getters {
+    /// Returns the member power
+    fn member_power(&self, member_id: Identifier) -> Result<u32, ProtocolError>;
     /// Returns the members map of the group
     fn members(&self) -> &BTreeMap<Identifier, u32>;
 

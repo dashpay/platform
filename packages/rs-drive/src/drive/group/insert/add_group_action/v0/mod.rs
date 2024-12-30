@@ -77,7 +77,7 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let batch_operations = self.add_new_group_action_operations(
+        let batch_operations = self.add_group_action_operations(
             contract_id,
             group_contract_position,
             action_id,
@@ -160,7 +160,7 @@ impl Drive {
 
         let signers_path = group_action_signers_path_vec(
             contract_id.as_slice(),
-            *group_contract_position,
+            group_contract_position,
             action_id.as_slice(),
         );
 

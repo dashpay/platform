@@ -7,11 +7,6 @@ use crate::drive::system::misc_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-
-use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path_vec, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
-    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
-};
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use grovedb_path::SubtreePath;

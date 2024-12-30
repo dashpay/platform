@@ -26,6 +26,16 @@ pub struct GroupV0 {
 }
 
 impl GroupV0Getters for GroupV0 {
+    fn member_power(&self, member_id: Identifier) -> Result<u32, ProtocolError> {
+        self.members
+            .get(&member_id)
+            .cloned()
+            .ok_or(ProtocolError::GroupMemberNotFound(format!(
+                "Group member {} not found",
+                member_id
+            )))
+    }
+
     fn members(&self) -> &BTreeMap<Identifier, u32> {
         &self.members
     }

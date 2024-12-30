@@ -47,9 +47,7 @@ mod tests {
     use dpp::balances::credits::TokenAmount;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
-    use dpp::data_contract::associated_token::token_configuration::v0::{
-        TokenConfigurationConventionV0, TokenConfigurationV0,
-    };
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::config::v0::DataContractConfigV0;
     use dpp::data_contract::config::DataContractConfig;

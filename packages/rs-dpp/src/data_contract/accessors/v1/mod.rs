@@ -2,10 +2,13 @@ use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0S
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::{GroupContractPosition, TokenContractPosition};
+use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 pub trait DataContractV1Getters: DataContractV0Getters {
+    /// Gets a group at a certain position
+    fn group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError>;
     /// Returns a reference to the groups map.
     fn groups(&self) -> &BTreeMap<GroupContractPosition, Group>;
 

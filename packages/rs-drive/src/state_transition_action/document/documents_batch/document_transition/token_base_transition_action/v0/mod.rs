@@ -57,7 +57,7 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
     fn token_configuration(&self) -> Result<&TokenConfiguration, Error>;
 
     /// Gets the store_in_group field (optional)
-    fn store_in_group(&self) -> Option<Identifier>;
+    fn store_in_group(&self) -> Option<GroupStateTransitionInfo>;
 
     /// Gets the perform_action field
     fn perform_action(&self) -> bool;

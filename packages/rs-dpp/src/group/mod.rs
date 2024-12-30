@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod action_event;
 pub mod group_action;
 
-#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),

@@ -236,6 +236,12 @@ pub enum ProtocolError {
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
 
+    #[error("group member not found in contract: {0}")]
+    GroupMemberNotFound(String),
+
+    #[error("group not found in contract: {0}")]
+    GroupNotFound(String),
+
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
 

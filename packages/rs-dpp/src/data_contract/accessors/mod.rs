@@ -13,6 +13,7 @@ use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1S
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::group::Group;
+use crate::ProtocolError;
 use std::collections::BTreeMap;
 
 pub mod v0;
@@ -188,6 +189,16 @@ impl DataContractV0Setters for DataContract {
 
 /// Implementing DataContractV1Getters for DataContract
 impl DataContractV1Getters for DataContract {
+    /// Returns a reference to the groups map.
+    fn group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError> {
+        match self {
+            DataContract::V0(_) => Err(ProtocolError::GroupNotFound(
+                "There can not be a group in v0 data contracts".to_string(),
+            )),
+            DataContract::V1(v1) => v1.group(position),
+        }
+    }
+
     /// Returns a reference to the groups map.
     fn groups(&self) -> &BTreeMap<GroupContractPosition, Group> {
         match self {

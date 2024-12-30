@@ -1,6 +1,5 @@
 use derive_more::From;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
-use dpp::data_contract::GroupContractPosition;
 use dpp::group::GroupStateTransitionInfo;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;

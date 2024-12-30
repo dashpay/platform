@@ -1,7 +1,9 @@
 use crate::drive::RootTree;
 use dpp::data_contract::GroupContractPosition;
 
+mod fetch;
 mod insert;
+
 pub const GROUP_INFO_KEY: &[u8; 1] = b"I";
 pub const GROUP_ACTIONS_KEY: &[u8; 1] = b"M";
 pub const ACTION_INFO_KEY: &[u8; 1] = b"I";
