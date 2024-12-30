@@ -6,6 +6,7 @@ use bincode::{Encode, Decode};
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenMintTransition, TokenTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
+use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -54,7 +55,7 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
-    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
+    fn as_transition_token_mint(&self) -> Option<&TokenMintTransition> {
         if let Self::Mint(ref t) = self {
             Some(t)
         } else {
@@ -89,6 +90,8 @@ pub trait TokenTransitionV0Methods {
     fn identity_contract_nonce(&self) -> IdentityNonce;
     /// sets identity contract nonce
     fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
+
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier;
 }
 
 impl TokenTransitionV0Methods for TokenTransition {
@@ -110,6 +113,14 @@ impl TokenTransitionV0Methods for TokenTransition {
 
     fn data_contract_id(&self) -> Identifier {
         self.base().data_contract_id()
+    }
+
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+        match self {
+            TokenTransition::Burn(t) => t.calculate_action_id(owner_id),
+            TokenTransition::Mint(t) => t.calculate_action_id(owner_id),
+            TokenTransition::Transfer(t) => t.calculate_action_id(owner_id),
+        }
     }
 
     fn set_data_contract_id(&mut self, id: Identifier) {

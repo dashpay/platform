@@ -54,9 +54,15 @@ impl TokenBaseTransitionV0Methods for TokenBaseTransition {
         }
     }
 
-    fn set_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>) {
+    fn using_group_info(&self) -> Option<GroupStateTransitionInfo> {
         match self {
-            TokenBaseTransition::V0(v0) => v0.set_group_info(group_info),
+            TokenBaseTransition::V0(v0) => v0.using_group_info(),
+        }
+    }
+
+    fn set_using_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>) {
+        match self {
+            TokenBaseTransition::V0(v0) => v0.set_using_group_info(group_info),
         }
     }
 

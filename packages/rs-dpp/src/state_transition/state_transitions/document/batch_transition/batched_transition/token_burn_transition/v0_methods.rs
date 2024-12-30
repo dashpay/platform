@@ -58,9 +58,9 @@ impl TokenBurnTransitionV0Methods for TokenBurnTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenBurnTransition {
-    fn action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         match self {
-            TokenBurnTransition::V0(v0) => v0.action_id(owner_id),
+            TokenBurnTransition::V0(v0) => v0.calculate_action_id(owner_id),
         }
     }
 }

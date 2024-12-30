@@ -3,6 +3,7 @@ use crate::group::GroupStateTransitionInfo;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use platform_value::Identifier;
+use crate::util::hash::hash_double;
 
 /// A trait that contains getter and setter methods for `TokenBaseTransitionV0`
 pub trait TokenBaseTransitionV0Methods {
@@ -16,6 +17,14 @@ pub trait TokenBaseTransitionV0Methods {
     fn data_contract_id(&self) -> Identifier;
     fn data_contract_id_ref(&self) -> &Identifier;
 
+    /// Calculates the token ID.
+    fn calculate_token_id(&self) -> Identifier {
+        let mut bytes = b"token".to_vec();
+        bytes.extend_from_slice(self.data_contract_id().as_bytes());
+        bytes.extend_from_slice(&self.token_contract_position().to_be_bytes());
+        hash_double(bytes).into()
+    }
+
     /// Returns the token ID.
     fn token_id(&self) -> Identifier;
     fn token_id_ref(&self) -> &Identifier;
@@ -25,7 +34,9 @@ pub trait TokenBaseTransitionV0Methods {
     /// Returns the group ID.
     fn group_position(&self) -> Option<GroupContractPosition>;
 
-    fn set_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>);
+    fn using_group_info(&self) -> Option<GroupStateTransitionInfo>;
+
+    fn set_using_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>);
 
     /// Sets the data contract ID.
     fn set_data_contract_id(&mut self, data_contract_id: Identifier);
@@ -75,12 +86,16 @@ impl TokenBaseTransitionV0Methods for TokenBaseTransitionV0 {
     }
 
     fn group_position(&self) -> Option<GroupContractPosition> {
-        self.using_group
+        self.using_group_info
             .as_ref()
             .map(|info| info.group_contract_position)
     }
 
-    fn set_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>) {
-        self.using_group = group_info;
+    fn set_using_group_info(&mut self, group_info: Option<GroupStateTransitionInfo>) {
+        self.using_group_info = group_info;
+    }
+
+    fn using_group_info(&self) -> Option<GroupStateTransitionInfo> {
+        self.using_group_info
     }
 }

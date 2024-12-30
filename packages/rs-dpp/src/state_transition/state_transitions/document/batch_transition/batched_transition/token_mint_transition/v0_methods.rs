@@ -2,8 +2,8 @@ use platform_value::Identifier;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_issuance_transition::TokenMintTransition;
-use crate::state_transition::batch_transition::token_issuance_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransition;
+use crate::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 
 impl TokenBaseTransitionAccessors for TokenMintTransition {
     fn base(&self) -> &TokenBaseTransition {
@@ -70,9 +70,9 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenMintTransition {
-    fn action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         match self {
-            TokenMintTransition::V0(v0) => v0.action_id(owner_id),
+            TokenMintTransition::V0(v0) => v0.calculate_action_id(owner_id),
         }
     }
 }

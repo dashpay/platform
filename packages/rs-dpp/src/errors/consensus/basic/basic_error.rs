@@ -72,6 +72,7 @@ use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
+use crate::consensus::basic::token::{InvalidActionIdError, InvalidGroupPositionError, InvalidTokenIdError, InvalidTokenPositionError};
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 
@@ -406,6 +407,18 @@ pub enum BasicError {
 
     #[error(transparent)]
     ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
+
+    #[error(transparent)]
+    InvalidTokenIdError(InvalidTokenIdError),
+
+    #[error(transparent)]
+    InvalidTokenPositionError(InvalidTokenPositionError),
+
+    #[error(transparent)]
+    InvalidGroupPositionError(InvalidGroupPositionError),
+
+    #[error(transparent)]
+    InvalidActionIdError(InvalidActionIdError),
 }
 
 impl From<BasicError> for ConsensusError {

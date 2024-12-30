@@ -86,7 +86,7 @@ impl BatchTransitionResolversV0 for DocumentTransition {
         None
     }
 
-    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
+    fn as_transition_token_mint(&self) -> Option<&TokenMintTransition> {
         None
     }
 

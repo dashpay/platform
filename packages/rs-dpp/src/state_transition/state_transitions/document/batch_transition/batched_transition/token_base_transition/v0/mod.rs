@@ -68,7 +68,7 @@ pub struct TokenBaseTransitionV0 {
     pub token_id: Identifier,
     /// Using group multi party rules for authentication
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
-    pub using_group: Option<GroupStateTransitionInfo>,
+    pub using_group_info: Option<GroupStateTransitionInfo>,
 }
 
 impl TokenBaseTransitionV0 {
@@ -96,7 +96,7 @@ impl TokenBaseTransitionV0 {
                 .unwrap_or(data_contract.token_id(token_contract_position).ok_or(
                     ProtocolError::Token(TokenError::TokenNotFoundAtPositionError.into()),
                 )?),
-            using_group: map
+            using_group_info: map
                 .remove_optional_integer(property_names::GROUP_CONTRACT_POSITION)
                 .map_err(ProtocolError::ValueError)?
                 .map(|group_contract_position| {

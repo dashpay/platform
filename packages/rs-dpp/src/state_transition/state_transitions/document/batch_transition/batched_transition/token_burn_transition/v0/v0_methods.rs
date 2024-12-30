@@ -60,12 +60,12 @@ impl TokenBurnTransitionV0Methods for TokenBurnTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenBurnTransitionV0 {
-    fn action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         let TokenBurnTransitionV0 {
             base, burn_amount, ..
         } = self;
 
-        let mut bytes = b"action_burn".to_vec();
+        let mut bytes = b"action_token_burn".to_vec();
         bytes.extend_from_slice(base.token_id().as_bytes());
         bytes.extend_from_slice(owner_id.as_bytes());
         bytes.extend_from_slice(&base.identity_contract_nonce().to_be_bytes());

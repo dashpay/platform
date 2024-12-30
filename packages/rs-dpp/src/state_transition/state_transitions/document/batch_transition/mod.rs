@@ -16,8 +16,8 @@ pub use self::batched_transition::{
     document_create_transition::DocumentCreateTransition, document_delete_transition,
     document_delete_transition::DocumentDeleteTransition, document_replace_transition,
     document_replace_transition::DocumentReplaceTransition, token_base_transition,
-    token_burn_transition, token_burn_transition::TokenBurnTransition, token_issuance_transition,
-    token_issuance_transition::TokenMintTransition, token_transfer_transition,
+    token_burn_transition, token_burn_transition::TokenBurnTransition, token_mint_transition,
+    token_mint_transition::TokenMintTransition, token_transfer_transition,
     token_transfer_transition::TokenTransferTransition,
 };
 

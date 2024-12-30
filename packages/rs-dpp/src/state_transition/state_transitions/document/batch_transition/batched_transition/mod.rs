@@ -16,7 +16,7 @@ pub mod multi_party_action;
 mod resolvers;
 pub mod token_base_transition;
 pub mod token_burn_transition;
-pub mod token_issuance_transition;
+pub mod token_mint_transition;
 pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;

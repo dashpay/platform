@@ -22,7 +22,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
         let path_query = Self::token_balances_for_identity_ids_query(token_id, identity_ids);
-        let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
+        let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
                 proof,
                 &path_query,

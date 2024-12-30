@@ -15,9 +15,12 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
+use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use crate::state_transition::StateTransitionLike;
 
 impl BatchTransition {
     #[inline(always)]
@@ -115,6 +118,29 @@ impl BatchTransition {
                 result.add_error(BasicError::NonceOutOfBoundsError(
                     NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                 ));
+            }
+
+            let transition_token_id = transition.base().token_id();
+            let calculated_token_id = transition.base().calculate_token_id();
+            
+            // We need to verify that the token id is correct
+            if transition_token_id != calculated_token_id {
+                result.add_error(BasicError::InvalidTokenIdError(
+                    InvalidTokenIdError::new(calculated_token_id, transition_token_id),
+                ));
+            }
+            
+            // We need to verify that the action id given matches the expected action id
+            // But only if we are the proposer
+            if let Some(group_state_transition_info) = transition.base().using_group_info() {
+                if group_state_transition_info.action_is_proposer {
+                    let calculated_action_id = transition.calculate_action_id(self.owner_id());
+                    if group_state_transition_info.action_id != calculated_action_id {
+                        result.add_error(BasicError::InvalidActionIdError(
+                            InvalidActionIdError::new(calculated_action_id, group_state_transition_info.action_id),
+                        ));
+                    }
+                }
             }
         }
 

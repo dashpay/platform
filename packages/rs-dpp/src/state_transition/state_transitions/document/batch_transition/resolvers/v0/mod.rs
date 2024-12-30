@@ -13,6 +13,6 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_transfer(&self) -> Option<&DocumentTransferTransition>;
     fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition>;
     fn as_transition_token_burn(&self) -> Option<&TokenBurnTransition>;
-    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition>;
+    fn as_transition_token_mint(&self) -> Option<&TokenMintTransition>;
     fn as_transition_token_transfer(&self) -> Option<&TokenTransferTransition>;
 }

@@ -26,4 +26,10 @@ pub struct GroupStateTransitionInfo {
         serde(rename = "$groupActionId")
     )]
     pub action_id: Identifier,
+    /// This is true if we are the proposer, otherwise we are just voting on a previous action.
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$groupActionIsProposer")
+    )]
+    pub action_is_proposer: bool,
 }

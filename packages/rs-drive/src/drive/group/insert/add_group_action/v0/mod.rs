@@ -142,7 +142,7 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        if !inserted_root_action {
+        if inserted_root_action {
             let group_action_path = group_action_path(
                 contract_id.as_slice(),
                 group_contract_position_bytes.as_slice(),

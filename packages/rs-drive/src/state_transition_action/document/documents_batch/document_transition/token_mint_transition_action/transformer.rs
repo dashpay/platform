@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionActionV0, TokenMintTransitionAction};
-use dpp::state_transition::batch_transition::token_issuance_transition::TokenMintTransition;
+use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransition;
 use crate::drive::Drive;
 
 /// Implement methods to transform a `TokenMintTransition` into a `TokenMintTransitionAction`.

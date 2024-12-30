@@ -50,10 +50,10 @@ impl BatchTransitionResolversV0 for BatchedTransition {
         }
     }
 
-    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
+    fn as_transition_token_mint(&self) -> Option<&TokenMintTransition> {
         match self {
             BatchedTransition::Document(_) => None,
-            BatchedTransition::Token(token) => token.as_transition_token_issuance(),
+            BatchedTransition::Token(token) => token.as_transition_token_mint(),
         }
     }
 
@@ -108,10 +108,10 @@ impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
         }
     }
 
-    fn as_transition_token_issuance(&self) -> Option<&TokenMintTransition> {
+    fn as_transition_token_mint(&self) -> Option<&TokenMintTransition> {
         match self {
             BatchedTransitionRef::Document(_) => None,
-            BatchedTransitionRef::Token(token) => token.as_transition_token_issuance(),
+            BatchedTransitionRef::Token(token) => token.as_transition_token_mint(),
         }
     }
 

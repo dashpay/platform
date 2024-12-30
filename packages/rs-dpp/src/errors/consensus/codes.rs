@@ -100,7 +100,7 @@ impl ErrorWithCode for BasicError {
             Self::ContestedUniqueIndexWithUniqueIndexError(_) => 10249,
             Self::DataContractTokenConfigurationUpdateError { .. } => 10250,
 
-            // Document Errors: 10400-10499
+            // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
             Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 10402,
@@ -120,6 +120,12 @@ impl ErrorWithCode for BasicError {
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
+
+            // Token Errors: 10450-10499
+            Self::InvalidTokenIdError(_) => 10450,
+            Self::InvalidTokenPositionError(_) => 10451,
+            Self::InvalidGroupPositionError(_) => 10452,
+            Self::InvalidActionIdError(_) => 10453,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
