@@ -82,13 +82,25 @@ impl From<DapiClientError> for Error {
                 .metadata()
                 .get_bin("dash-serialized-consensus-error-bin")
             {
-                return ConsensusError::deserialize_from_bytes(
-                    consensus_error_value.as_encoded_bytes(),
-                )
-                .map(|consensus_error| {
-                    Self::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)))
-                })
-                .unwrap_or_else(Self::Protocol);
+                return consensus_error_value
+                    .to_bytes()
+                    .map(|bytes| {
+                        ConsensusError::deserialize_from_bytes(&bytes)
+                            .map(|consensus_error| {
+                                Self::Protocol(ProtocolError::ConsensusError(Box::new(
+                                    consensus_error,
+                                )))
+                            })
+                            .unwrap_or_else(|e| {
+                                tracing::debug!("Failed to deserialize consensus error: {}", e);
+                                Self::Protocol(e)
+                            })
+                    })
+                    .unwrap_or_else(|e| {
+                        tracing::debug!("Failed to deserialize consensus error: {}", e);
+                        // TODO: Introduce a specific error for this case
+                        Self::Generic(format!("Invalid consensus error encoding: {e}"))
+                    });
             }
         }
 
