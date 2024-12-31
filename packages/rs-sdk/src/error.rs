@@ -91,7 +91,7 @@ impl From<DapiClientError> for Error {
                 return consensus_error_value
                     .to_bytes()
                     .map(|bytes| {
-                        ConsensusError::deserialize_from_bytes(&*bytes)
+                        ConsensusError::deserialize_from_bytes(&bytes)
                             .map(|consensus_error| {
                                 Self::Protocol(ProtocolError::ConsensusError(Box::new(
                                     consensus_error,
