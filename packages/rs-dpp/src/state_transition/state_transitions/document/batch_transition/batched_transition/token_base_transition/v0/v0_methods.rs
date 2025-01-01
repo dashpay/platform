@@ -2,8 +2,8 @@ use crate::data_contract::GroupContractPosition;
 use crate::group::GroupStateTransitionInfo;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
-use platform_value::Identifier;
 use crate::util::hash::hash_double;
+use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `TokenBaseTransitionV0`
 pub trait TokenBaseTransitionV0Methods {

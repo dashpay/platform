@@ -3,8 +3,8 @@ use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
-use dpp::data_contract::GroupContractPosition;
-use dpp::group::GroupStateTransitionInfo;
+use dpp::data_contract::{GroupContractPosition, TokenContractPosition};
+use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
@@ -26,7 +26,7 @@ pub struct TokenBaseTransitionActionV0 {
     pub data_contract: Arc<DataContractFetchInfo>,
     /// Using group multi party rules for authentication
     /// If this is set we should store in group
-    pub store_in_group: Option<GroupStateTransitionInfo>,
+    pub store_in_group: Option<GroupStateTransitionResolvedInfo>,
     /// Should the action be performed.
     /// This is true if we don't store in group.
     /// And also true if we store in group and with this have enough signatures to perform the action
@@ -36,7 +36,7 @@ pub struct TokenBaseTransitionActionV0 {
 /// Token base transition action accessors v0
 pub trait TokenBaseTransitionActionAccessorsV0 {
     /// The token position within the data contract
-    fn token_position(&self) -> u16;
+    fn token_position(&self) -> TokenContractPosition;
 
     /// The token id
     fn token_id(&self) -> Identifier;
@@ -57,7 +57,7 @@ pub trait TokenBaseTransitionActionAccessorsV0 {
     fn token_configuration(&self) -> Result<&TokenConfiguration, Error>;
 
     /// Gets the store_in_group field (optional)
-    fn store_in_group(&self) -> Option<GroupStateTransitionInfo>;
+    fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo>;
 
     /// Gets the perform_action field
     fn perform_action(&self) -> bool;
@@ -102,8 +102,8 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
             )))
     }
 
-    fn store_in_group(&self) -> Option<GroupStateTransitionInfo> {
-        self.store_in_group
+    fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo> {
+        self.store_in_group.as_ref()
     }
 
     fn perform_action(&self) -> bool {

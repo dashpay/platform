@@ -1,5 +1,9 @@
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::group::action_event::GroupActionEvent;
+use dpp::group::group_action::GroupAction;
+use dpp::group::group_action::v0::GroupActionV0;
+use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
 use dpp::identifier::Identifier;
 use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
@@ -9,8 +13,8 @@ use crate::state_transition_action::action_convert_to_operations::document::Driv
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
-use crate::util::batch::drive_op_batch::TokenOperationType;
-use crate::util::batch::DriveOperation::{IdentityOperation, TokenOperation};
+use crate::util::batch::drive_op_batch::{GroupOperationType, TokenOperationType};
+use crate::util::batch::DriveOperation::{GroupOperation, IdentityOperation, TokenOperation};
 
 impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
@@ -39,19 +43,47 @@ impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
                     },
                 )];
 
-                ops.push(TokenOperation(TokenOperationType::TokenBurn {
-                    token_id: self.token_id(),
-                    identity_balance_holder_id: owner_id,
-                    burn_amount: self.burn_amount(),
-                }));
-
-                let token_configuration = self.base().token_configuration()?;
-                if token_configuration.keeps_history() {
-                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                if self.base().perform_action() {
+                    ops.push(TokenOperation(TokenOperationType::TokenBurn {
                         token_id: self.token_id(),
-                        owner_id,
-                        nonce: identity_contract_nonce,
-                        event: TokenEvent::Burn(self.burn_amount(), self.public_note_owned()),
+                        identity_balance_holder_id: owner_id,
+                        burn_amount: self.burn_amount(),
+                    }));
+
+                    let token_configuration = self.base().token_configuration()?;
+                    if token_configuration.keeps_history() {
+                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                            token_id: self.token_id(),
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event: TokenEvent::Burn(self.burn_amount(), self.public_note_owned()),
+                        }));
+                    }
+                } else if let Some(GroupStateTransitionResolvedInfo {
+                    group_contract_position,
+                    action_id,
+                    action_is_proposer,
+                    signer_power,
+                    ..
+                }) = self.base().store_in_group()
+                {
+                    let event = TokenEvent::Burn(self.burn_amount(), self.public_note_owned());
+
+                    let initialize_with_insert_action_info = if action_is_proposer {
+                        Some(GroupAction::V0(GroupActionV0 {
+                            event: GroupActionEvent::TokenEvent(event),
+                        }))
+                    } else {
+                        None
+                    };
+
+                    ops.push(GroupOperation(GroupOperationType::AddGroupAction {
+                        contract_id: data_contract_id,
+                        group_contract_position: *group_contract_position,
+                        initialize_with_insert_action_info,
+                        action_id: *action_id,
+                        signer_identity_id: owner_id,
+                        signer_power: *signer_power,
                     }));
                 }
 

@@ -129,7 +129,7 @@ pub mod grove_get_proved_path_query_with_conditional;
 /// Inserts an element if it does not exist and returns the existing element if it does in GroveDB.
 pub mod grove_insert_if_not_exists_return_existing_element;
 
-/// Batch inserts sum items if not already existing
+/// Batch inserts sum item if not already existing
 pub mod batch_insert_sum_item_if_not_exists;
 /// Moved items that are found in a path query to a new path.
 pub mod batch_move_items_in_path_query;

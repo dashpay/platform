@@ -1,14 +1,18 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::ProtocolError;
 use crate::prelude::Identifier;
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Invalid action id {}, expected {}", invalid_action_id, expected_action_id)]
+#[error(
+    "Invalid action id {}, expected {}",
+    invalid_action_id,
+    expected_action_id
+)]
 #[platform_serialize(unversioned)]
 pub struct InvalidActionIdError {
     expected_action_id: Identifier,

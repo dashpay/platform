@@ -22,7 +22,9 @@ impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {
     }
 }
 
-pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors + AllowedAsMultiPartyAction {
+pub trait TokenTransferTransitionV0Methods:
+    TokenBaseTransitionAccessors + AllowedAsMultiPartyAction
+{
     /// Returns the `amount` field of the `TokenTransferTransitionV0`.
     fn amount(&self) -> u64;
 
@@ -200,7 +202,12 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
 
 impl AllowedAsMultiPartyAction for TokenTransferTransitionV0 {
     fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
-        let TokenTransferTransitionV0 { base, amount, recipient_owner_id, .. } = self;
+        let TokenTransferTransitionV0 {
+            base,
+            amount,
+            recipient_owner_id,
+            ..
+        } = self;
 
         let mut bytes = b"action_token_transfer".to_vec();
         bytes.extend_from_slice(base.token_id().as_bytes());

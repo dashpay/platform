@@ -27,6 +27,7 @@ impl TokenBurnTransitionActionStructureValidationV0 for TokenBurnTransitionActio
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        self.base().validate_structure();
         let token_configuration = self.base().token_configuration()?;
 
         Ok(SimpleConsensusValidationResult::default())

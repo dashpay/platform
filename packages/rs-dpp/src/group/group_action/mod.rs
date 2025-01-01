@@ -1,4 +1,4 @@
-mod v0;
+pub mod v0;
 
 use crate::group::group_action::v0::GroupActionV0;
 use crate::ProtocolError;

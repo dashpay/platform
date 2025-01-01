@@ -2,6 +2,7 @@ mod contract;
 mod document;
 mod drive_methods;
 mod finalize_task;
+mod group;
 mod identity;
 mod prefunded_specialized_balance;
 mod system;
@@ -20,6 +21,7 @@ pub use document::DocumentOperation;
 pub use document::DocumentOperationType;
 pub use document::DocumentOperationsForContractDocumentType;
 pub use document::UpdateOperationInfo;
+pub use group::GroupOperationType;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use system::SystemOperationType;
@@ -81,6 +83,8 @@ pub enum DriveOperation<'a> {
     PrefundedSpecializedBalanceOperation(PrefundedSpecializedBalanceOperationType),
     /// A system operation
     SystemOperation(SystemOperationType),
+    /// A group operation
+    GroupOperation(GroupOperationType),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations

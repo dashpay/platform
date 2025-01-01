@@ -1,14 +1,18 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::ProtocolError;
 use crate::prelude::Identifier;
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Invalid token id {}, expected {}", invalid_token_id, expected_token_id)]
+#[error(
+    "Invalid token id {}, expected {}",
+    invalid_token_id,
+    expected_token_id
+)]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenIdError {
     expected_token_id: Identifier,

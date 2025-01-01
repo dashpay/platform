@@ -1,5 +1,6 @@
 use crate::drive::group::{
-    group_action_path, group_action_root_path, group_action_signers_path_vec, ACTION_SIGNERS_KEY,
+    group_action_path, group_action_path_vec, group_action_root_path,
+    group_action_signers_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -11,6 +12,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::fee::fee_result::FeeResult;
+use dpp::group::group_action::GroupAction;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
@@ -25,6 +27,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        initialize_with_insert_action_info: Option<GroupAction>,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -37,6 +40,7 @@ impl Drive {
         self.add_group_action_add_to_operations_v0(
             contract_id,
             group_contract_position,
+            initialize_with_insert_action_info,
             action_id,
             signer_identity_id,
             signer_power,
@@ -62,6 +66,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        initialize_with_insert_action_info: Option<GroupAction>,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -80,6 +85,7 @@ impl Drive {
         let batch_operations = self.add_group_action_operations(
             contract_id,
             group_contract_position,
+            initialize_with_insert_action_info,
             action_id,
             signer_identity_id,
             signer_power,
@@ -103,6 +109,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        initialize_with_insert_action_info: Option<GroupAction>,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -130,32 +137,61 @@ impl Drive {
             }
         };
 
-        // We insert the contract root into the group tree
-        let inserted_root_action = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKeyRef((group_action_root_path, action_id.as_slice())),
-            false,
-            None,
-            apply_type,
-            transaction,
-            &mut None,
-            &mut batch_operations,
-            &platform_version.drive,
-        )?;
+        let storage_flags = Some(StorageFlags::new_single_epoch(
+            block_info.epoch.index,
+            Some(signer_identity_id.to_buffer()),
+        ));
 
-        if inserted_root_action {
-            let group_action_path = group_action_path(
-                contract_id.as_slice(),
-                group_contract_position_bytes.as_slice(),
-                action_id.as_slice(),
-            );
+        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags.as_ref());
 
-            self.batch_insert_empty_sum_tree(
-                group_action_path,
-                DriveKeyInfo::KeyRef(ACTION_SIGNERS_KEY),
+        let mut inserted_root_action = false;
+
+        if let Some(initialize_with_insert_action_info) = initialize_with_insert_action_info {
+            // We insert the contract root into the group tree
+            inserted_root_action = self.batch_insert_empty_tree_if_not_exists(
+                PathFixedSizeKeyRef((group_action_root_path, action_id.as_slice())),
+                false,
                 None,
+                apply_type,
+                transaction,
+                &mut None,
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
+
+            if inserted_root_action {
+                let group_action_path = group_action_path(
+                    contract_id.as_slice(),
+                    group_contract_position_bytes.as_slice(),
+                    action_id.as_slice(),
+                );
+
+                self.batch_insert_empty_sum_tree(
+                    group_action_path,
+                    DriveKeyInfo::KeyRef(ACTION_SIGNERS_KEY),
+                    None,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                let group_action_path_vec = group_action_path_vec(
+                    contract_id.as_slice(),
+                    group_contract_position,
+                    action_id.as_slice(),
+                );
+
+                let serialized = initialize_with_insert_action_info.serialize_consume_to_bytes()?;
+
+                self.batch_insert(
+                    PathKeyElementInfo::PathKeyRefElement((
+                        group_action_path_vec,
+                        ACTION_INFO_KEY,
+                        Element::Item(serialized, element_flags.clone()),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
         }
 
         let signers_path = group_action_signers_path_vec(
@@ -163,11 +199,6 @@ impl Drive {
             group_contract_position,
             action_id.as_slice(),
         );
-
-        let storage_flags = Some(StorageFlags::new_single_epoch(
-            block_info.epoch.index,
-            Some(signer_identity_id.to_buffer()),
-        ));
 
         let signer_apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertApplyType::StatefulBatchInsert
@@ -178,21 +209,31 @@ impl Drive {
             }
         };
 
-        self.batch_insert_sum_item_if_not_exists(
-            PathKeyElementInfo::PathKeyElement((
-                signers_path,
-                signer_identity_id.to_vec(),
-                Element::SumItem(
-                    signer_power as SumValue,
-                    StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-                ),
-            )),
-            true,
-            signer_apply_type,
-            transaction,
-            &mut batch_operations,
-            &platform_version.drive,
-        )?;
+        if inserted_root_action {
+            self.batch_insert(
+                PathKeyElementInfo::PathKeyElement((
+                    signers_path,
+                    signer_identity_id.to_vec(),
+                    Element::SumItem(signer_power as SumValue, element_flags),
+                )),
+                &mut batch_operations,
+                &platform_version.drive,
+            )?;
+        } else {
+            // we should verify it doesn't yet exist
+            self.batch_insert_sum_item_if_not_exists(
+                PathKeyElementInfo::PathKeyElement((
+                    signers_path,
+                    signer_identity_id.to_vec(),
+                    Element::SumItem(signer_power as SumValue, element_flags),
+                )),
+                true,
+                signer_apply_type,
+                transaction,
+                &mut batch_operations,
+                &platform_version.drive,
+            )?;
+        }
 
         Ok(batch_operations)
     }

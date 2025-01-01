@@ -7,9 +7,9 @@ pub use unsupported_version_error::*;
 pub mod data_contract;
 pub mod decode;
 pub mod document;
-pub mod token;
 pub mod identity;
 pub mod incompatible_protocol_version_error;
+pub mod token;
 pub mod unsupported_protocol_version_error;
 
 pub mod basic_error;

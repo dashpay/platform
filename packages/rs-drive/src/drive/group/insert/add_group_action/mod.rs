@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 
 use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
+use dpp::group::group_action::GroupAction;
 use dpp::prelude::Identifier;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -21,6 +22,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        initialize_with_insert_action_info: Option<GroupAction>,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -33,6 +35,7 @@ impl Drive {
             0 => self.add_group_action_v0(
                 contract_id,
                 group_contract_position,
+                initialize_with_insert_action_info,
                 action_id,
                 signer_identity_id,
                 signer_power,
@@ -54,6 +57,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        initialize_with_insert_action_info: Option<GroupAction>,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -67,6 +71,7 @@ impl Drive {
             0 => self.add_group_action_add_to_operations_v0(
                 contract_id,
                 group_contract_position,
+                initialize_with_insert_action_info,
                 action_id,
                 signer_identity_id,
                 signer_power,
@@ -89,6 +94,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        initialize_with_insert_action_info: Option<GroupAction>,
         action_id: Identifier,
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
@@ -103,6 +109,7 @@ impl Drive {
             0 => self.add_group_action_operations_v0(
                 contract_id,
                 group_contract_position,
+                initialize_with_insert_action_info,
                 action_id,
                 signer_identity_id,
                 signer_power,

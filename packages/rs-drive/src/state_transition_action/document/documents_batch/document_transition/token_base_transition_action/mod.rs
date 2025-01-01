@@ -1,6 +1,7 @@
 use derive_more::From;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
-use dpp::group::GroupStateTransitionInfo;
+use dpp::data_contract::TokenContractPosition;
+use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ pub enum TokenBaseTransitionAction {
 }
 
 impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
-    fn token_position(&self) -> u16 {
+    fn token_position(&self) -> TokenContractPosition {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.token_contract_position,
         }
@@ -64,7 +65,7 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
         }
     }
 
-    fn store_in_group(&self) -> Option<GroupStateTransitionInfo> {
+    fn store_in_group(&self) -> Option<&GroupStateTransitionResolvedInfo> {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.store_in_group(),
         }

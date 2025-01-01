@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use dpp::group::GroupStateTransitionInfo;
+use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
 use dpp::platform_value::Identifier;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::sync::Arc;
@@ -34,30 +34,39 @@ impl TokenBaseTransitionActionV0 {
             data_contract_id,
             identity_contract_nonce,
             token_id,
-            using_group_info: using_group,
+            using_group_info,
         } = value;
 
         let data_contract = get_data_contract(data_contract_id)?;
 
-        let perform_action = match &using_group {
-            None => true,
+        let (perform_action, store_in_group) = match using_group_info {
+            None => (true, None),
             Some(GroupStateTransitionInfo {
                 group_contract_position,
                 action_id,
+                action_is_proposer,
             }) => {
                 let group = data_contract.contract.group(*group_contract_position)?;
                 let signer_power = group.member_power(owner_id)?;
                 let required_power = group.required_power();
                 let current_power = drive.fetch_action_id_signers_power_and_add_operations(
                     data_contract_id,
-                    *group_contract_position,
-                    *action_id,
+                    group_contract_position,
+                    action_id,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     drive_operations,
                     platform_version,
                 )?;
-                current_power + signer_power >= required_power
+                let perform_action = current_power + signer_power >= required_power;
+                let store_in_group = GroupStateTransitionResolvedInfo {
+                    group_contract_position,
+                    group: group.clone(),
+                    action_id,
+                    action_is_proposer,
+                    signer_power,
+                };
+                (perform_action, Some(store_in_group))
             }
         };
         Ok(TokenBaseTransitionActionV0 {
@@ -65,7 +74,7 @@ impl TokenBaseTransitionActionV0 {
             identity_contract_nonce,
             token_contract_position,
             data_contract,
-            store_in_group: using_group,
+            store_in_group,
             perform_action,
         })
     }
@@ -88,17 +97,18 @@ impl TokenBaseTransitionActionV0 {
             data_contract_id,
             identity_contract_nonce,
             token_id,
-            using_group_info: using_group,
+            using_group_info,
         } = value;
 
         let data_contract = get_data_contract(*data_contract_id)?;
 
-        let perform_action = match &using_group {
-            None => true,
+        let (perform_action, store_in_group) = match using_group_info {
+            None => (true, None),
             Some(GroupStateTransitionInfo {
-                     group_contract_position,
-                     action_id,
-                 }) => {
+                group_contract_position,
+                action_id,
+                action_is_proposer,
+            }) => {
                 let group = data_contract.contract.group(*group_contract_position)?;
                 let signer_power = group.member_power(owner_id)?;
                 let required_power = group.required_power();
@@ -111,7 +121,15 @@ impl TokenBaseTransitionActionV0 {
                     drive_operations,
                     platform_version,
                 )?;
-                current_power + signer_power >= required_power
+                let perform_action = current_power + signer_power >= required_power;
+                let store_in_group = GroupStateTransitionResolvedInfo {
+                    group_contract_position: *group_contract_position,
+                    group: group.clone(),
+                    action_id: *action_id,
+                    action_is_proposer: *action_is_proposer,
+                    signer_power,
+                };
+                (perform_action, Some(store_in_group))
             }
         };
         Ok(TokenBaseTransitionActionV0 {
@@ -119,7 +137,7 @@ impl TokenBaseTransitionActionV0 {
             identity_contract_nonce: *identity_contract_nonce,
             token_contract_position: *token_contract_position,
             data_contract,
-            store_in_group: *using_group,
+            store_in_group,
             perform_action,
         })
     }

@@ -122,14 +122,15 @@ impl BatchTransition {
 
             let transition_token_id = transition.base().token_id();
             let calculated_token_id = transition.base().calculate_token_id();
-            
+
             // We need to verify that the token id is correct
             if transition_token_id != calculated_token_id {
-                result.add_error(BasicError::InvalidTokenIdError(
-                    InvalidTokenIdError::new(calculated_token_id, transition_token_id),
-                ));
+                result.add_error(BasicError::InvalidTokenIdError(InvalidTokenIdError::new(
+                    calculated_token_id,
+                    transition_token_id,
+                )));
             }
-            
+
             // We need to verify that the action id given matches the expected action id
             // But only if we are the proposer
             if let Some(group_state_transition_info) = transition.base().using_group_info() {
@@ -137,7 +138,10 @@ impl BatchTransition {
                     let calculated_action_id = transition.calculate_action_id(self.owner_id());
                     if group_state_transition_info.action_id != calculated_action_id {
                         result.add_error(BasicError::InvalidActionIdError(
-                            InvalidActionIdError::new(calculated_action_id, group_state_transition_info.action_id),
+                            InvalidActionIdError::new(
+                                calculated_action_id,
+                                group_state_transition_info.action_id,
+                            ),
                         ));
                     }
                 }

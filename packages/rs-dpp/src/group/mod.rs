@@ -1,3 +1,4 @@
+use crate::data_contract::group::{Group, GroupMemberPower};
 use crate::data_contract::GroupContractPosition;
 use bincode::{Decode, Encode};
 use derive_more::Display;
@@ -32,4 +33,14 @@ pub struct GroupStateTransitionInfo {
         serde(rename = "$groupActionIsProposer")
     )]
     pub action_is_proposer: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupStateTransitionResolvedInfo {
+    pub group_contract_position: GroupContractPosition,
+    pub group: Group,
+    pub action_id: Identifier,
+    /// This is true if we are the proposer, otherwise we are just voting on a previous action.
+    pub action_is_proposer: bool,
+    pub signer_power: GroupMemberPower,
 }
