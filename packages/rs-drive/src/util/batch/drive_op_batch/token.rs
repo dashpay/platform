@@ -12,7 +12,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
-/// Operations on Documents
+/// Operations on Tokens
 #[derive(Clone, Debug)]
 pub enum TokenOperationType {
     /// Burns token from the account issuing the .

@@ -38,8 +38,8 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl ValidationMode {
-    /// Returns a bool on whether we should validate that documents are valid against the state
-    pub fn should_validate_document_valid_against_state(&self) -> bool {
+    /// Returns a bool on whether we should validate that batched transitions are valid against the state
+    pub fn should_validate_batch_valid_against_state(&self) -> bool {
         match self {
             ValidationMode::CheckTx => false,
             ValidationMode::RecheckTx => false,

@@ -5,7 +5,6 @@ use crate::state_transition::batch_transition::batched_transition::token_transfe
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use crate::util::hash::hash_double;
 
 impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {

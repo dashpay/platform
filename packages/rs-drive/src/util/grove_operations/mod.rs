@@ -21,6 +21,9 @@ pub mod grove_delete;
 /// Fetch raw grove data
 pub mod grove_get_raw;
 
+/// Fetch raw grove data and match that is item
+pub mod grove_get_raw_item;
+
 /// Fetch raw grove data if it exists
 pub mod grove_get_raw_optional;
 

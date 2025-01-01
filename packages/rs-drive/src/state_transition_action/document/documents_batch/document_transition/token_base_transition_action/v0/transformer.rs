@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
 use dpp::platform_value::Identifier;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use std::sync::Arc;
-use grovedb::batch::KeyInfoPath;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::ProtocolError;
@@ -21,9 +19,7 @@ impl TokenBaseTransitionActionV0 {
         drive: &Drive,
         owner_id: Identifier,
         value: TokenBaseTransitionV0,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -46,19 +42,24 @@ impl TokenBaseTransitionActionV0 {
                 action_id,
                 action_is_proposer,
             }) => {
-                let group = data_contract.contract.group(*group_contract_position)?;
+                let group = data_contract.contract.group(group_contract_position)?;
                 let signer_power = group.member_power(owner_id)?;
                 let required_power = group.required_power();
                 let current_power = drive.fetch_action_id_signers_power_and_add_operations(
                     data_contract_id,
                     group_contract_position,
                     action_id,
-                    estimated_costs_only_with_layer_info,
+                    approximate_without_state_for_costs,
                     transaction,
                     drive_operations,
                     platform_version,
                 )?;
-                let perform_action = current_power + signer_power >= required_power;
+                let perform_action = if approximate_without_state_for_costs {
+                    // most expensive case is that we perform action
+                    true
+                } else {
+                    current_power + signer_power >= required_power
+                };
                 let store_in_group = GroupStateTransitionResolvedInfo {
                     group_contract_position,
                     group: group.clone(),
@@ -84,9 +85,7 @@ impl TokenBaseTransitionActionV0 {
         drive: &Drive,
         owner_id: Identifier,
         value: &TokenBaseTransitionV0,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -116,12 +115,17 @@ impl TokenBaseTransitionActionV0 {
                     *data_contract_id,
                     *group_contract_position,
                     *action_id,
-                    estimated_costs_only_with_layer_info,
+                    approximate_without_state_for_costs,
                     transaction,
                     drive_operations,
                     platform_version,
                 )?;
-                let perform_action = current_power + signer_power >= required_power;
+                let perform_action = if approximate_without_state_for_costs {
+                    // most expensive case is that we perform action
+                    true
+                } else {
+                    current_power + signer_power >= required_power
+                };
                 let store_in_group = GroupStateTransitionResolvedInfo {
                     group_contract_position: *group_contract_position,
                     group: group.clone(),

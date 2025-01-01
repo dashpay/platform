@@ -12,7 +12,7 @@ use thiserror::Error;
 #[error(
     "Invalid token position {}, max {}",
     invalid_token_position,
-    expected_token_position
+    max_token_position
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenPositionError {

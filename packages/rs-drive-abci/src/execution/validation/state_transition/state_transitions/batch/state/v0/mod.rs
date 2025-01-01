@@ -248,7 +248,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         let validation_result = self.try_into_action_v0(
             platform,
             block_info,
-            validation_mode.should_validate_document_valid_against_state(),
+            validation_mode.should_validate_batch_valid_against_state(),
             tx,
             &mut execution_context,
         )?;

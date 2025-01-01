@@ -3,7 +3,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action::v0::GroupActionV0;
-use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
+use dpp::group::GroupStateTransitionResolvedInfo;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
@@ -67,9 +67,9 @@ impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
                     ..
                 }) = self.base().store_in_group()
                 {
-                    let event = TokenEvent::Burn(self.burn_amount(), self.public_note_owned());
+                    let event = TokenEvent::Burn(self.burn_amount(), self.public_note().cloned());
 
-                    let initialize_with_insert_action_info = if action_is_proposer {
+                    let initialize_with_insert_action_info = if *action_is_proposer {
                         Some(GroupAction::V0(GroupActionV0 {
                             event: GroupActionEvent::TokenEvent(event),
                         }))

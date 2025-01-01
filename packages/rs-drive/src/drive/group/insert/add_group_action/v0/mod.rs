@@ -174,17 +174,11 @@ impl Drive {
                     &platform_version.drive,
                 )?;
 
-                let group_action_path_vec = group_action_path_vec(
-                    contract_id.as_slice(),
-                    group_contract_position,
-                    action_id.as_slice(),
-                );
-
                 let serialized = initialize_with_insert_action_info.serialize_consume_to_bytes()?;
 
                 self.batch_insert(
-                    PathKeyElementInfo::PathKeyRefElement((
-                        group_action_path_vec,
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement::<5>((
+                        group_action_path,
                         ACTION_INFO_KEY,
                         Element::Item(serialized, element_flags.clone()),
                     )),
@@ -211,7 +205,7 @@ impl Drive {
 
         if inserted_root_action {
             self.batch_insert(
-                PathKeyElementInfo::PathKeyElement((
+                PathKeyElementInfo::PathKeyElement::<0>((
                     signers_path,
                     signer_identity_id.to_vec(),
                     Element::SumItem(signer_power as SumValue, element_flags),
@@ -222,7 +216,7 @@ impl Drive {
         } else {
             // we should verify it doesn't yet exist
             self.batch_insert_sum_item_if_not_exists(
-                PathKeyElementInfo::PathKeyElement((
+                PathKeyElementInfo::PathKeyElement::<0>((
                     signers_path,
                     signer_identity_id.to_vec(),
                     Element::SumItem(signer_power as SumValue, element_flags),

@@ -126,6 +126,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenPositionError(_) => 10451,
             Self::InvalidGroupPositionError(_) => 10452,
             Self::InvalidActionIdError(_) => 10453,
+            Self::ContractHasNoTokensError(_) => 10454,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,

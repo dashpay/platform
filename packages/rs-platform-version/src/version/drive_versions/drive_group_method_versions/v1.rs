@@ -6,6 +6,8 @@ use crate::version::drive_versions::drive_group_method_versions::{
 pub const DRIVE_GROUP_METHOD_VERSIONS_V1: DriveGroupMethodVersions = DriveGroupMethodVersions {
     fetch: DriveGroupFetchMethodVersions {
         fetch_action_id_signers_power: 0,
+        fetch_action_id_info: 0,
+        fetch_action_id_info_keep_serialized: 0,
     },
     prove: DriveGroupProveMethodVersions {},
     insert: DriveGroupInsertMethodVersions {

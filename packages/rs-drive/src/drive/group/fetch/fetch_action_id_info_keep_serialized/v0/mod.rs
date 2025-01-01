@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-use crate::drive::group::{group_action_path, ACTION_SIGNERS_KEY};
+use crate::drive::group::{group_action_path, ACTION_INFO_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -37,14 +36,14 @@ impl Drive {
     /// * `Error::Drive(DriveError::CorruptedContractPath)` if the fetched path does not refer to a valid sum item.
     /// * `Error::Drive(DriveError::CorruptedCodeExecution)` if the element type is unexpected.
     /// * `Error::GroveDB` for any underlying GroveDB errors.
-    pub(super) fn fetch_action_id_signers_power_v0(
+    pub(super) fn fetch_action_id_info_keep_serialized_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         action_id: Identifier,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupSumPower, Error> {
+    ) -> Result<Vec<u8>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
         let path = group_action_path(
@@ -53,16 +52,16 @@ impl Drive {
             action_id.as_ref(),
         );
 
-        let value = self.grove_get_sum_tree_total_value(
+        let value = self.grove_get_raw_item(
             (&path).into(),
-            ACTION_SIGNERS_KEY,
+            ACTION_INFO_KEY,
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut vec![],
             &platform_version.drive,
         )?;
 
-        Ok(value as GroupSumPower)
+        Ok(value)
     }
 
     /// v0 implementation of fetching the signers' power for a given action ID within a group contract and adding related operations.
@@ -89,16 +88,18 @@ impl Drive {
     /// * `Error::Drive(DriveError::CorruptedCodeExecution)` if the element type is unexpected.
     /// * `Error::Drive(DriveError::NotSupportedPrivate)` if stateful batch insertions are attempted.
     /// * `Error::GroveDB` for any underlying GroveDB errors.
-    pub(super) fn fetch_action_id_signers_power_and_add_operations_v0(
+    pub(super) fn fetch_action_id_info_keep_serialized_and_add_operations_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         action_id: Identifier,
-        estimate_costs_only: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupSumPower, Error> {
+    ) -> Result<Vec<u8>, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
         let path = group_action_path(
@@ -108,24 +109,24 @@ impl Drive {
         );
 
         // no estimated_costs_only_with_layer_info, means we want to apply to state
-        let direct_query_type = if estimate_costs_only {
+        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
+            DirectQueryType::StatefulDirectQuery
+        } else {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums: false,
                 query_target: QueryTargetValue(8),
             }
-        } else {
-            DirectQueryType::StatefulDirectQuery
         };
 
-        let value = self.grove_get_sum_tree_total_value(
+        let value = self.grove_get_raw_item(
             (&path).into(),
-            ACTION_SIGNERS_KEY,
+            ACTION_INFO_KEY,
             direct_query_type,
             transaction,
             drive_operations,
             &platform_version.drive,
         )?;
 
-        Ok(value as GroupSumPower)
+        Ok(value)
     }
 }

@@ -6,7 +6,10 @@ use std::sync::Arc;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionActionV0, TokenMintTransitionAction};
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransition;
+use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
 
 /// Implement methods to transform a `TokenMintTransition` into a `TokenMintTransitionAction`.
 impl TokenMintTransitionAction {
@@ -14,26 +17,40 @@ impl TokenMintTransitionAction {
     ///
     /// # Arguments
     ///
+    /// * `drive` - A reference to the `Drive` instance used for accessing the system.
+    /// * `owner_id` - The identifier of the owner initiating the mint transition.
+    /// * `transaction` - The transaction argument used for state changes.
     /// * `value` - A `TokenMintTransition` instance.
-    /// * `get_data_contract` - A closure that fetches the DataContractFetchInfo given a contract ID.
+    /// * `approximate_without_state_for_costs` - A flag indicating whether to approximate state costs without full state.
+    /// * `drive_operations` - A mutable reference to the vector of low-level operations that need to be performed.
+    /// * `get_data_contract` - A closure that fetches the `DataContractFetchInfo` given a contract ID.
+    /// * `platform_version` - The platform version for the context in which the transition is being executed.
     ///
     /// # Returns
     ///
     /// * `Result<TokenMintTransitionAction, ProtocolError>` - A `TokenMintTransitionAction` if successful, otherwise `ProtocolError`.
-    pub fn from_token_mint_transition_with_contract_lookup(
+    pub fn try_from_token_mint_transition_with_contract_lookup(
         drive: &Drive,
-        transaction: TransactionArg,
+        owner_id: Identifier,
         value: TokenMintTransition,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         match value {
             TokenMintTransition::V0(v0) => {
                 let v0_action =
                     TokenMintTransitionActionV0::try_from_token_mint_transition_with_contract_lookup(
                         drive,
-                        transaction,
+                        owner_id,
                         v0,
+                        approximate_without_state_for_costs,
+                        transaction,
+                        drive_operations,
                         get_data_contract,
+                        platform_version,
                     )?;
                 Ok(v0_action.into())
             }
@@ -44,25 +61,39 @@ impl TokenMintTransitionAction {
     ///
     /// # Arguments
     ///
+    /// * `drive` - A reference to the `Drive` instance used for accessing the system.
+    /// * `owner_id` - The identifier of the owner initiating the mint transition.
+    /// * `transaction` - The transaction argument used for state changes.
     /// * `value` - A reference to a `TokenMintTransition`.
-    /// * `get_data_contract` - A closure that fetches the DataContractFetchInfo given a contract ID.
+    /// * `approximate_without_state_for_costs` - A flag indicating whether to approximate state costs without full state.
+    /// * `drive_operations` - A mutable reference to the vector of low-level operations that need to be performed.
+    /// * `get_data_contract` - A closure that fetches the `DataContractFetchInfo` given a contract ID.
+    /// * `platform_version` - The platform version for the context in which the transition is being executed.
     ///
     /// # Returns
     ///
     /// * `Result<TokenMintTransitionAction, ProtocolError>` - A `TokenMintTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_borrowed_token_mint_transition_with_contract_lookup(
         drive: &Drive,
-        transaction: TransactionArg,
+        owner_id: Identifier,
         value: &TokenMintTransition,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         match value {
             TokenMintTransition::V0(v0) => {
                 let v0_action = TokenMintTransitionActionV0::try_from_borrowed_token_mint_transition_with_contract_lookup(
                     drive,
-                    transaction,
+                    owner_id,
                     v0,
+                    approximate_without_state_for_costs,
+                    transaction,
+                    drive_operations,
                     get_data_contract,
+                    platform_version,
                 )?;
                 Ok(v0_action.into())
             }
