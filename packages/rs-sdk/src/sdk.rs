@@ -37,6 +37,7 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -828,10 +829,19 @@ impl SdkBuilder {
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
+    ///
+    /// ## Panics
+    ///
+    /// This method panics if the mainnet configuration cannot be loaded.
+    ///
+    /// ## Unstable
+    ///
+    /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
-        unimplemented!(
-            "Mainnet address list not implemented yet. Use new() and provide address list."
-        )
+        // TODO this is just some test mainnet node, we need to implement proper lookup of nodes
+        let addresses = AddressList::from_str("https://34.223.102.43:443")
+            .expect("hardcoded mainnet addresses must be valid");
+        Self::new(addresses).with_network(Network::Dash)
     }
 
     /// Configure network type.

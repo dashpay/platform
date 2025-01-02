@@ -211,7 +211,8 @@ impl DocumentWasm {
     }
 }
 
-struct WasmContext {}
+#[wasm_bindgen]
+pub struct WasmContext {}
 
 impl ContextProvider for WasmContext {
     fn get_quorum_public_key(

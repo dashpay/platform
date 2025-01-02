@@ -1,6 +1,6 @@
 //! Listing of gRPC requests used in DAPI.
 
-use std::thread::sleep;
+use std::future::Future;
 use std::time::Duration;
 
 use super::TransportError;
@@ -8,60 +8,107 @@ use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
 
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
-use dapi_grpc::tonic::{self as tonic};
-use futures::FutureExt;
-// use tonic_web_wasm_client::Client as WasmClient;
-
-#[derive(Clone, Debug)]
-// TODO impleent WasmClient using `tonic_web_wasm_client::Client`
-pub struct WasmClient;
-
-impl tonic::client::GrpcService<tonic::body::BoxBody> for WasmClient {
-    type ResponseBody = tonic::body::BoxBody;
-    fn call(&mut self, request: http::Request<tonic::body::BoxBody>) -> Self::Future {
-        unimplemented!()
-    }
-    fn poll_ready(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        unimplemented!()
-    }
-    type Error = tonic::Status;
-    type Future = std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<http::Response<tonic::body::BoxBody>, Self::Error>,
-                > + Send,
-        >,
-    >;
-}
+use dapi_grpc::tonic::{self as tonic, Status};
+use futures::channel::oneshot;
+use futures::future::BoxFuture;
+use futures::{FutureExt, TryFutureExt};
+use http::Response;
+use tonic_web_wasm_client::Client;
+use wasm_bindgen_futures::spawn_local;
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<WasmClient>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<WasmClient>;
 
-type S = futures::future::BoxFuture<'static, ()>;
-/// backon::Sleeper
-#[derive(Default, Clone, Debug)]
-pub struct BackonSleeper {}
-// TODO move somewhere else
-impl backon::Sleeper for BackonSleeper {
-    type Sleep = S;
-    fn sleep(&self, dur: Duration) -> Self::Sleep {
-        // TODO: blocking sleep is not the best solution
-        sleep(dur);
-        async {}.boxed()
+/// Create a channel that will be used to communicate with the DAPI.
+pub(super) fn create_channel(
+    uri: Uri,
+    _settings: Option<&AppliedRequestSettings>,
+) -> Result<WasmClient, TransportError> {
+    WasmClient::new(&uri.to_string())
+}
+
+/// Transport client used in wasm32 target (eg. Javascript family)
+#[derive(Clone, Debug)]
+pub struct WasmClient {
+    client: Client,
+}
+
+impl WasmClient {
+    /// Create a new instance of the client, connecting to provided uri.
+    pub fn new(uri: &str) -> Result<Self, TransportError> {
+        let client = tonic_web_wasm_client::Client::new(uri.to_string());
+        Ok(Self { client })
     }
 }
 
-pub(super) fn create_channel(
-    uri: Uri,
-    settings: Option<&AppliedRequestSettings>,
-) -> Result<WasmClient, TransportError> {
-    // let host = uri.host().expect("Failed to get host from URI").to_string();
-    // let client = tonic_web_wasm_client::Client::new(uri.to_string());
+impl tonic::client::GrpcService<tonic::body::BoxBody> for WasmClient {
+    type Future = BoxFuture<'static, Result<http::Response<Self::ResponseBody>, Self::Error>>;
+    type ResponseBody = tonic::body::BoxBody;
+    type Error = Status;
 
-    Ok(WasmClient {})
+    fn call(&mut self, request: http::Request<tonic::body::BoxBody>) -> Self::Future {
+        let mut client = self.client.clone();
+        let fut = client.call(request).map(|res| match res {
+            Ok(resp) => {
+                let body = tonic::body::boxed(resp.into_body());
+                Ok(Response::new(body))
+            }
+            Err(e) => Err(wasm_client_error_to_status(e)),
+        });
+
+        into_send(fut)
+    }
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.client
+            .poll_ready(cx)
+            .map_err(wasm_client_error_to_status)
+    }
+}
+
+/// Map [`tonic_web_wasm_client::Error`] to [`tonic::Status`].
+///
+/// TODO: Add more error handling.
+fn wasm_client_error_to_status(e: tonic_web_wasm_client::Error) -> Status {
+    match e {
+        tonic_web_wasm_client::Error::TonicStatusError(status) => status,
+        _ => Status::internal(format!("Failed to call gRPC service: {}", e)),
+    }
+}
+
+/// backon::Sleeper implementation for Wasm.
+///
+/// ## Note
+///
+/// It is already implemented in [::backon] crate, but it is not Send, so it cannot be used in our context.
+/// We reimplement it here to make it Send.
+// TODO: Consider moving it to different module.
+#[derive(Default, Clone, Debug)]
+pub struct BackonSleeper {}
+impl backon::Sleeper for BackonSleeper {
+    type Sleep = BoxFuture<'static, ()>;
+    fn sleep(&self, dur: Duration) -> Self::Sleep {
+        into_send(gloo_timers::future::sleep(dur)).boxed()
+    }
+}
+
+/// Convert a future into a boxed future that can be sent between threads.
+///
+/// This is a workaround using oneshot channel to synchronize.
+/// It spawns a local task that sends the result of the future to the channel.
+fn into_send<'a, F: Future + 'static>(f: F) -> BoxFuture<'a, F::Output>
+where
+    F::Output: Send,
+{
+    let (tx, rx) = oneshot::channel::<F::Output>();
+    spawn_local(async move {
+        tx.send(f.await).ok();
+    });
+    rx.unwrap_or_else(|e| panic!("Failed to receive result: {:?}", e))
+        .boxed()
 }

@@ -5,10 +5,13 @@ use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{Fetch, Identifier, Identity};
-use dash_sdk::{Sdk, SdkBuilder};
+use dash_sdk::{sdk, Sdk, SdkBuilder};
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::prelude::wasm_bindgen;
+
+use crate::error::WasmError;
+use crate::verify::WasmContext;
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -19,8 +22,22 @@ impl std::ops::Deref for WasmSdk {
         &self.0
     }
 }
+
+impl AsRef<Sdk> for WasmSdk {
+    fn as_ref(&self) -> &Sdk {
+        &self.0
+    }
+}
+
+impl From<Sdk> for WasmSdk {
+    fn from(sdk: Sdk) -> Self {
+        WasmSdk(sdk)
+    }
+}
+
 #[wasm_bindgen]
 pub struct WasmSdkBuilder(SdkBuilder);
+
 impl Deref for WasmSdkBuilder {
     type Target = SdkBuilder;
     fn deref(&self) -> &Self::Target {
@@ -31,6 +48,28 @@ impl Deref for WasmSdkBuilder {
 impl DerefMut for WasmSdkBuilder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdkBuilder {
+    pub fn new_mainnet() -> Self {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        WasmSdkBuilder(SdkBuilder::new_mainnet())
+    }
+
+    pub fn new_testnet() -> Self {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        WasmSdkBuilder(SdkBuilder::new_testnet())
+    }
+
+    pub fn build(self) -> Result<WasmSdk, WasmError> {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        Ok(WasmSdk(self.0.build()?))
+    }
+
+    pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
+        WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
 }
 

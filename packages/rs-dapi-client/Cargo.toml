@@ -5,7 +5,13 @@ edition = "2021"
 
 [features]
 # TODO we should not enable deps features in default
-default = ["mocks", "offline-testing", "dapi-grpc/client", "backon/tokio-sleep"]
+default = [
+    "mocks",
+    "offline-testing",
+    "dapi-grpc/client",
+    "backon/tokio-sleep",
+    "wasm",               # TODO: remove
+]
 mocks = [
     "dep:sha2",
     "dep:hex",
@@ -22,22 +28,21 @@ wasm = [
     "dapi-grpc/wasm",
     "dapi-grpc/platform",
     "dapi-grpc/core",
-    # "backon/gloo-timers-sleep",
-    # "backon/std-blocking-sleep",
-    "dep:async-std",
     "dep:tonic-web-wasm-client",
     "dep:http",
+    "dep:wasm-bindgen-futures",
+    "dep:gloo-timers",
     "getrandom/js",
 ]
 
 [dependencies]
 backon = { version = "1.3", default-features = false }
-
+gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
 dapi-grpc = { path = "../dapi-grpc", features = [
     "core",
     "platform",
 ], default-features = false }
-futures = "0.3.28"
+futures = { version = "0.3.28" }
 http = { version = "1.1.0", default-features = false, optional = true }
 http-serde = { version = "2.1", optional = true }
 getrandom = { version = "0.2", optional = true }
@@ -55,6 +60,7 @@ lru = { version = "0.12.3" }
 serde = { version = "1.0.197", optional = true, features = ["derive"] }
 serde_json = { version = "1.0.120", optional = true }
 chrono = { version = "0.4.38", features = ["serde"] }
-async-std = { version = "1.13", optional = true }
+wasm-bindgen-futures = { version = "0.4.49", optional = true }
+
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros"] }

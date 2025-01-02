@@ -8,8 +8,15 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+console_error_panic_hook = "0.1.6"
+thiserror = { version = "2.0.9" }
 web-sys = { version = "0.3.4", features = [
     'console',
+    'Document',
+    'Element',
+    'HtmlElement',
+    'Node',
+    'Window',
 ] }
 wasm-bindgen = { version = "=0.2.99" }
 wasm-bindgen-futures = { version = "0.4.49" }
