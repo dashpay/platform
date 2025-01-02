@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
 pub struct ChangeControlRulesV0 {
     /// This is who is authorized to make such a change
     pub authorized_to_make_change: AuthorizedActionTakers,

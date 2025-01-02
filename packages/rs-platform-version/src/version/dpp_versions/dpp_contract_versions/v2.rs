@@ -10,9 +10,9 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
     contract_serialization_version: FeatureVersionBounds {
         min_version: 0,
         max_version: 1,
-        default_current_version: 1,
+        default_current_version: 1, //changed
     },
-    contract_structure_version: 1,
+    contract_structure_version: 1, //changed
     created_data_contract_structure: 0,
     config: 0,
     methods: DataContractMethodVersions {
@@ -26,7 +26,7 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
         },
         class_method_versions: DocumentTypeClassMethodVersions {
             try_from_schema: 0,
-            create_document_types_from_document_schemas: 0,
+            create_document_types_from_document_schemas: 1, //changed to allow contracts with only tokens
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {

@@ -27,6 +27,7 @@ mod masternodes;
 mod patch_platform_tests;
 mod query;
 mod strategy;
+mod token_tests;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
 mod voting_tests;

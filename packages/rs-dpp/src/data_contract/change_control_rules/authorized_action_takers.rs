@@ -5,8 +5,9 @@ use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
 pub enum AuthorizedActionTakers {
+    #[default]
     NoOne,
     ContractOwner,
     MainGroup,

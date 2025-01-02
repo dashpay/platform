@@ -18,11 +18,18 @@ pub struct TokenConfigurationLocalizationsV0 {
     pub plural_form: String,
 }
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationConventionV0 {
+    #[serde(default)]
     pub localizations: BTreeMap<String, TokenConfigurationLocalizationsV0>,
+    #[serde(default = "default_decimals")]
     pub decimals: u16,
+}
+
+// Default function for `decimals`
+fn default_decimals() -> u16 {
+    8 // Default value for decimals
 }
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
@@ -32,20 +39,45 @@ pub struct TokenConfigurationV0 {
     /// The supply at the creation of the token
     pub base_supply: u64,
     /// The maximum supply the token can ever have
+    #[serde(default)]
     pub max_supply: Option<u64>,
     /// Do we keep history, default is true.
+    #[serde(default = "default_keeps_history")]
     pub keeps_history: bool,
     /// Who can change the max supply
     /// Even if set no one can ever change this under the base supply
+    #[serde(default = "default_change_control_rules")]
     pub max_supply_change_rules: ChangeControlRules,
+    #[serde(default)]
     pub new_tokens_destination_identity: Option<Identifier>,
+    #[serde(default = "default_change_control_rules")]
     pub new_tokens_destination_identity_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
     pub manual_minting_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
     pub manual_burning_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
     pub freeze_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
     pub unfreeze_rules: ChangeControlRules,
+    #[serde(default)]
     pub main_control_group: Option<(BTreeSet<Identifier>, RequiredSigners)>,
+    #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
+}
+
+// Default function for `keeps_history`
+fn default_keeps_history() -> bool {
+    true // Default to `true` for keeps_history
+}
+
+fn default_change_control_rules() -> ChangeControlRules {
+    ChangeControlRules::V0(ChangeControlRulesV0 {
+        authorized_to_make_change: AuthorizedActionTakers::NoOne,
+        authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+        changing_authorized_action_takers_to_no_one_allowed: false,
+        changing_authorized_action_takers_to_contract_owner_allowed: false,
+    })
 }
 
 impl fmt::Display for TokenConfigurationV0 {

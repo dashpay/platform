@@ -37,10 +37,43 @@ pub struct DataContractInSerializationFormatV1 {
     pub document_schemas: BTreeMap<DocumentName, Value>,
 
     /// Groups that allow for specific multiparty actions on the contract
+    #[serde(default, deserialize_with = "deserialize_u16_group_map")]
     pub groups: BTreeMap<GroupContractPosition, Group>,
 
     /// The tokens on the contract.
+    #[serde(default, deserialize_with = "deserialize_u16_token_configuration_map")]
     pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,
+}
+
+fn deserialize_u16_group_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<GroupContractPosition, Group>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let map: BTreeMap<String, Group> = BTreeMap::deserialize(deserializer)?;
+    map.into_iter()
+        .map(|(k, v)| {
+            k.parse::<GroupContractPosition>()
+                .map_err(serde::de::Error::custom)
+                .map(|key| (key, v))
+        })
+        .collect()
+}
+fn deserialize_u16_token_configuration_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<TokenContractPosition, TokenConfiguration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let map: BTreeMap<String, TokenConfiguration> = BTreeMap::deserialize(deserializer)?;
+    map.into_iter()
+        .map(|(k, v)| {
+            k.parse::<TokenContractPosition>()
+                .map_err(serde::de::Error::custom)
+                .map(|key| (key, v))
+        })
+        .collect()
 }
 
 impl From<DataContract> for DataContractInSerializationFormatV1 {

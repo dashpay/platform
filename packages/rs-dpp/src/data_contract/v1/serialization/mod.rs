@@ -94,6 +94,7 @@ impl DataContractV1 {
             config.documents_mutable_contract_default(),
             config.documents_can_be_deleted_contract_default(),
             full_validation,
+            false,
             validation_operations,
             platform_version,
         )?;
@@ -138,6 +139,7 @@ impl DataContractV1 {
             config.documents_mutable_contract_default(),
             config.documents_can_be_deleted_contract_default(),
             full_validation,
+            !tokens.is_empty(),
             validation_operations,
             platform_version,
         )?;

@@ -26,6 +26,7 @@ impl DataContractSchemaMethodsV0 for DataContractV1 {
             self.config.documents_mutable_contract_default(),
             self.config.documents_can_be_deleted_contract_default(),
             full_validation,
+            !self.tokens.is_empty(),
             validation_operations,
             platform_version,
         )?;
