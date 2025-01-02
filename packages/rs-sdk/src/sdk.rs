@@ -275,6 +275,7 @@ impl Sdk {
         Ok(())
     }
 
+    // TODO: Changed to public for tests
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -540,11 +541,14 @@ impl Sdk {
         }
     }
 
+    // TODO: Move to settings
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
         self.proofs
     }
 
+    // TODO: If we remove this setter we don't need to use ArcSwap.
+    //   It's good enough to set Context once when you initialize the SDK.
     /// Set the [ContextProvider] to use.
     ///
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.

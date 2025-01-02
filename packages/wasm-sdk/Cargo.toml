@@ -9,11 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 web-sys = { version = "0.3.4", features = [
-    'Document',
-    'Element',
-    'HtmlElement',
-    'Node',
-    'Window',
     'console',
 ] }
 wasm-bindgen = { version = "=0.2.99" }
@@ -22,6 +17,7 @@ wasm-bindgen-futures = { version = "0.4.49" }
 #     "client",
 # ] }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["wasm"] }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # tonic = { version = "*", features = ["transport"], default-features = false }
 # client = [
 #   "tonic/channel", FAIL
@@ -31,3 +27,14 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = ["wasm"] }
 #   "tonic/tls-webpki-roots",
 #   "platform",
 # ]
+wee_alloc = "0.4"
+
+[profile.release]
+lto = "fat"
+opt-level = "z"
+panic = "abort"
+debug = false
+
+#[package.metadata.wasm-pack.profile.release]
+#wasm-opt = ['-g', '-O'] # -g for profiling
+#  -Oz -Oz -g
