@@ -15,7 +15,7 @@ use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
     AmountRange, DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp,
-    OperationType,
+    OperationType, TokenOp,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -31,6 +31,7 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::util::storage_flags::StorageFlags::SingleEpoch;
 
+use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use dpp::dashcore::hashes::Hash;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -46,17 +47,23 @@ use dpp::state_transition::batch_transition::batched_transition::document_delete
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::{
-    DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition,
+    BatchedTransition, DocumentDeleteTransition, DocumentReplaceTransition,
+    DocumentTransferTransition,
 };
 use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::batch_transition::document_create_transition::{
     DocumentCreateTransition, DocumentCreateTransitionV0,
 };
-use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use dpp::state_transition::batch_transition::{
+    BatchTransition, BatchTransitionV0, BatchTransitionV1, TokenMintTransition,
+};
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::tokens::token_event::TokenEvent;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
@@ -76,6 +83,7 @@ use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::Unsigne
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
+use simple_signer::signer::SimpleSigner;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
@@ -86,9 +94,6 @@ use strategy_tests::transitions::{
 };
 use strategy_tests::Strategy;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
-
-use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
-use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -1407,6 +1412,75 @@ impl NetworkStrategy {
 
                             operations.push(state_transition);
                         }
+                    }
+                    OperationType::Token(TokenOp {
+                        contract,
+                        token_id,
+                        action: TokenEvent::Mint(amount, note),
+                    }) if current_identities.len() > 1 => {
+                        let random_index = rng.gen_range(0..current_identities.len());
+                        let random_identity_id = current_identities[random_index].id();
+
+                        let request = IdentityKeysRequest {
+                            identity_id: random_identity_id.to_buffer(),
+                            request_type: KeyRequestType::SpecificKeys(vec![1]),
+                            limit: Some(1),
+                            offset: None,
+                        };
+                        let identity = platform
+                            .drive
+                            .fetch_identity_balance_with_keys(request, None, platform_version)
+                            .expect("expected to be able to get identity")
+                            .expect("expected to get an identity");
+                        let identity_contract_nonce = contract_nonce_counter
+                            .entry((random_identity_id, contract.id()))
+                            .or_default();
+                        *identity_contract_nonce += 1;
+                        let token_mint_transition: TokenMintTransition = TokenMintTransitionV0 {
+                            base: TokenBaseTransitionV0 {
+                                identity_contract_nonce: *identity_contract_nonce,
+                                token_contract_position: 0,
+                                data_contract_id: contract.id(),
+                                token_id: *token_id,
+                                using_group_info: None,
+                            }
+                            .into(),
+                            issued_to_identity_id: Some(random_identity_id),
+                            amount: *amount,
+                            public_note: note.clone(),
+                        }
+                        .into();
+
+                        let batch_transition: BatchTransition = BatchTransitionV1 {
+                            owner_id: identity.id,
+                            transitions: vec![BatchedTransition::Token(
+                                token_mint_transition.into(),
+                            )],
+                            user_fee_increase: 0,
+                            signature_public_key_id: 0,
+                            signature: BinaryData::default(),
+                        }
+                        .into();
+
+                        let mut batch_transition: StateTransition = batch_transition.into();
+
+                        let identity_public_key = identity
+                            .loaded_public_keys
+                            .values()
+                            .next()
+                            .expect("expected a key");
+
+                        batch_transition
+                            .sign_external(
+                                identity_public_key,
+                                signer,
+                                Some(|_data_contract_id, _document_type_name| {
+                                    Ok(SecurityLevel::HIGH)
+                                }),
+                            )
+                            .expect("expected to sign");
+
+                        operations.push(batch_transition);
                     }
                     _ => {}
                 }
