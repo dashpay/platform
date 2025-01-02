@@ -1,4 +1,7 @@
-use crate::drive::balances::{total_token_supply_path, total_token_supply_path_vec};
+use crate::drive::balances::{
+    total_token_supply_path, total_token_supply_path_vec, total_tokens_root_supply_path,
+    total_tokens_root_supply_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -98,7 +101,7 @@ impl Drive {
             )?;
         }
 
-        let path_holding_total_token_supply = total_token_supply_path(&token_id);
+        let path_holding_total_token_supply = total_tokens_root_supply_path();
         let total_token_supply_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
                 (&path_holding_total_token_supply).into(),
@@ -116,7 +119,7 @@ impl Drive {
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "trying to subtract an amount that would underflow total supply",
             )))?;
-        let path_holding_total_token_supply_vec = total_token_supply_path_vec(token_id);
+        let path_holding_total_token_supply_vec = total_tokens_root_supply_path_vec();
         let replace_op = QualifiedGroveDbOp::replace_op(
             path_holding_total_token_supply_vec,
             token_id.to_vec(),

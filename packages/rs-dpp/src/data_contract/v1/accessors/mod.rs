@@ -11,6 +11,7 @@ use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1S
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::group::Group;
+use crate::tokens::calculate_token_id;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -173,12 +174,9 @@ impl DataContractV1Getters for DataContractV1 {
 
     /// Returns the token id if a token exists at that position
     fn token_id(&self, position: TokenContractPosition) -> Option<Identifier> {
-        self.tokens.get(&position).map(|_| {
-            let mut bytes = b"dash_token".to_vec();
-            bytes.extend_from_slice(self.id().as_bytes());
-            bytes.extend_from_slice(&position.to_be_bytes());
-            hash_double(bytes).into()
-        })
+        self.tokens
+            .get(&position)
+            .map(|_| calculate_token_id(self.id.as_bytes(), position).into())
     }
 }
 

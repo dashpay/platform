@@ -2,6 +2,7 @@ use crate::data_contract::GroupContractPosition;
 use crate::group::GroupStateTransitionInfo;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use crate::tokens::calculate_token_id;
 use crate::util::hash::hash_double;
 use platform_value::Identifier;
 
@@ -19,10 +20,11 @@ pub trait TokenBaseTransitionV0Methods {
 
     /// Calculates the token ID.
     fn calculate_token_id(&self) -> Identifier {
-        let mut bytes = b"token".to_vec();
-        bytes.extend_from_slice(self.data_contract_id().as_bytes());
-        bytes.extend_from_slice(&self.token_contract_position().to_be_bytes());
-        hash_double(bytes).into()
+        calculate_token_id(
+            self.data_contract_id().as_bytes(),
+            self.token_contract_position(),
+        )
+        .into()
     }
 
     /// Returns the token ID.

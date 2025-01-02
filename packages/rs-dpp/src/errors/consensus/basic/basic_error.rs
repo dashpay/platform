@@ -15,10 +15,12 @@ use crate::consensus::basic::data_contract::{
     IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
     InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
+    NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -198,6 +200,15 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractHaveNewUniqueIndexError(DataContractHaveNewUniqueIndexError),
+
+    #[error(transparent)]
+    NonContiguousContractTokenPositionsError(NonContiguousContractTokenPositionsError),
+
+    #[error(transparent)]
+    NonContiguousContractGroupPositionsError(NonContiguousContractGroupPositionsError),
+
+    #[error(transparent)]
+    InvalidTokenBaseSupplyError(InvalidTokenBaseSupplyError),
 
     // Document
     #[error(transparent)]

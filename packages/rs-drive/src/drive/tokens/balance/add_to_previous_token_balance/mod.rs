@@ -8,6 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
+use dpp::balances::credits::TokenAmount;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -86,7 +87,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
-        balance_to_add: Credits,
+        balance_to_add: TokenAmount,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,

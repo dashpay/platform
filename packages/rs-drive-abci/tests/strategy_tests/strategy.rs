@@ -63,6 +63,7 @@ use dpp::state_transition::data_contract_create_transition::methods::v0::DataCon
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::tokens::calculate_token_id;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::VotePoll;
@@ -494,6 +495,15 @@ impl NetworkStrategy {
                                 .document_type_for_name(document_op.document_type.name())
                                 .expect("document type must exist")
                                 .to_owned_document_type();
+                        }
+                    } else if let OperationType::Token(token_op) = &mut operation.op_type {
+                        if token_op.contract.id() == old_id {
+                            token_op.contract.set_id(contract.id());
+                            token_op.token_id = calculate_token_id(
+                                contract.id_ref().as_bytes(),
+                                token_op.token_pos,
+                            )
+                            .into();
                         }
                     }
                 });
@@ -1416,6 +1426,7 @@ impl NetworkStrategy {
                     OperationType::Token(TokenOp {
                         contract,
                         token_id,
+                        token_pos,
                         action: TokenEvent::Mint(amount, note),
                     }) if current_identities.len() > 1 => {
                         let random_index = rng.gen_range(0..current_identities.len());

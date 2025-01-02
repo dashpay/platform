@@ -8,7 +8,7 @@ use dpp::data_contract::document_type::random_document::{
 use dpp::data_contract::document_type::v0::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-use dpp::data_contract::{DataContract as Contract, DataContract};
+use dpp::data_contract::{DataContract as Contract, DataContract, TokenContractPosition};
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
@@ -34,6 +34,7 @@ use std::ops::{Range, RangeInclusive};
 pub struct TokenOp {
     pub contract: Contract,
     pub token_id: Identifier,
+    pub token_pos: TokenContractPosition,
     pub action: TokenEvent,
 }
 
@@ -41,6 +42,7 @@ pub struct TokenOp {
 pub struct TokenOpInSerializationFormat {
     pub contract: DataContractInSerializationFormat,
     pub token_id: Identifier,
+    pub token_pos: TokenContractPosition,
     pub action: TokenEvent,
 }
 
@@ -62,6 +64,7 @@ impl PlatformSerializableWithPlatformVersion for TokenOp {
         let TokenOp {
             contract,
             token_id,
+            token_pos,
             action,
         } = self;
         let data_contract_serialization_format: DataContractInSerializationFormat =
@@ -70,6 +73,7 @@ impl PlatformSerializableWithPlatformVersion for TokenOp {
         let document_op = TokenOpInSerializationFormat {
             contract: data_contract_serialization_format,
             token_id,
+            token_pos,
             action,
         };
         let config = bincode::config::standard()
@@ -102,6 +106,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Tok
         let TokenOpInSerializationFormat {
             contract,
             token_id,
+            token_pos,
             action,
         } = token_op_in_serialization_format;
         let data_contract = DataContract::try_from_platform_versioned(
@@ -113,6 +118,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Tok
         Ok(TokenOp {
             contract: data_contract,
             token_id,
+            token_pos,
             action,
         })
     }

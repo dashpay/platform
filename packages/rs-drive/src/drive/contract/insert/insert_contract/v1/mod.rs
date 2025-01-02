@@ -9,15 +9,22 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use crate::drive::balances::total_tokens_root_supply_path;
-use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
+use crate::drive::balances::total_tokens_root_supply_path_vec;
+use crate::drive::tokens::{
+    token_balances_path_vec, token_path, tokens_root_path, TOKEN_BALANCES_KEY,
+};
 use crate::error::contract::DataContractError;
 use crate::util::object_size_info::DriveKeyInfo;
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
+use grovedb::Element::Item;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
@@ -164,7 +171,7 @@ impl Drive {
                 platform_version,
             )?;
 
-        for token_pos in contract.tokens().keys() {
+        for (token_pos, token_config) in contract.tokens() {
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
                     "data contract has a token at position {}, but can not find it",
@@ -172,29 +179,85 @@ impl Drive {
                 )),
             ))?;
 
+            let token_id_bytes = token_id.to_buffer();
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Drive::add_estimation_costs_for_token_balances(
+                    token_id_bytes,
+                    false,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+                Drive::add_estimation_costs_for_token_total_supply(
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+
             self.batch_insert_empty_tree(
                 tokens_root_path(),
-                DriveKeyInfo::KeyRef(token_id.as_bytes()),
+                DriveKeyInfo::KeyRef(&token_id_bytes),
                 None,
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
 
             self.batch_insert_empty_tree(
-                token_path(token_id.as_bytes()),
+                token_path(&token_id_bytes),
                 DriveKeyInfo::Key(vec![TOKEN_BALANCES_KEY]),
                 None,
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
 
-            self.batch_insert_empty_tree(
-                total_tokens_root_supply_path(),
-                DriveKeyInfo::KeyRef(token_id.as_bytes()),
-                None,
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
+            let path_holding_total_token_supply = total_tokens_root_supply_path_vec();
+
+            if token_config.base_supply() > 0 {
+                // We have a base supply that needs to be distributed on contract creation
+                let destination_identity_id = token_config
+                    .new_tokens_destination_identity()
+                    .unwrap_or(contract.owner_id());
+                let token_balance_path = token_balances_path_vec(token_id_bytes);
+
+                if token_config.base_supply() > i64::MAX as u64 {
+                    return Err(
+                        ProtocolError::CriticalCorruptedCreditsCodeExecution(format!(
+                            "Token base supply over i64 max, is {}",
+                            token_config.base_supply()
+                        ))
+                        .into(),
+                    );
+                }
+                self.batch_insert::<0>(
+                    PathKeyElement((
+                        token_balance_path,
+                        destination_identity_id.to_vec(),
+                        Element::new_sum_item(token_config.base_supply() as i64),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+                self.batch_insert::<0>(
+                    PathKeyElement((
+                        path_holding_total_token_supply,
+                        token_id.to_vec(),
+                        Item(token_config.base_supply().encode_var_vec(), None),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            } else {
+                self.batch_insert::<0>(
+                    PathKeyElement((
+                        path_holding_total_token_supply,
+                        token_id.to_vec(),
+                        Item(0u64.encode_var_vec(), None),
+                    )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
         }
 
         if !contract.groups().is_empty() {

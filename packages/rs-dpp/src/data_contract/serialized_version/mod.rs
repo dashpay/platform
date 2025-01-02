@@ -1,8 +1,13 @@
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
-use crate::data_contract::{DataContract, DefinitionName, DocumentName};
+use crate::data_contract::{
+    DataContract, DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
+    EMPTY_GROUPS, EMPTY_TOKENS,
+};
 use crate::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
@@ -76,6 +81,19 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.version,
             DataContractInSerializationFormat::V1(v1) => v1.version,
+        }
+    }
+
+    pub fn groups(&self) -> &BTreeMap<GroupContractPosition, Group> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &EMPTY_GROUPS,
+            DataContractInSerializationFormat::V1(v1) => &v1.groups,
+        }
+    }
+    pub fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &EMPTY_TOKENS,
+            DataContractInSerializationFormat::V1(v1) => &v1.tokens,
         }
     }
 }
