@@ -1,7 +1,7 @@
 use derive_more::From;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::TokenContractPosition;
-use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
+use dpp::group::GroupStateTransitionResolvedInfo;
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityNonce;
 use std::sync::Arc;

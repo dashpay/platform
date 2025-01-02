@@ -3,11 +3,9 @@ use derive_more::From;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::{
     TokenTransferTransitionActionV0, TokenTransferTransitionActionAccessorsV0,
 };
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use dpp::identifier::Identifier;
-use dpp::prelude::{DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
-use std::sync::Arc;
-use crate::drive::contract::DataContractFetchInfo;
+use dpp::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
 
 /// transformer module
 pub mod transformer;

@@ -15,6 +15,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
+use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;
 
 pub(super) trait TokenBurnTransitionActionStructureValidationV0 {
     fn validate_structure_v0(
@@ -27,7 +28,7 @@ impl TokenBurnTransitionActionStructureValidationV0 for TokenBurnTransitionActio
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        self.base().validate_structure();
+        self.base().validate_structure(platform_version)?;
         let token_configuration = self.base().token_configuration()?;
 
         Ok(SimpleConsensusValidationResult::default())

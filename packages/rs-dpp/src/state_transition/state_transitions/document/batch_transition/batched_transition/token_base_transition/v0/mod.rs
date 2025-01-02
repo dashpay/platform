@@ -106,6 +106,9 @@ impl TokenBaseTransitionV0 {
                             .remove_hash256_bytes(property_names::GROUP_ACTION_ID)
                             .map_err(ProtocolError::ValueError)?
                             .into(),
+                        action_is_proposer: map
+                            .remove_bool(property_names::GROUP_ACTION_IS_PROPOSER)
+                            .map_err(ProtocolError::ValueError)?,
                     })
                 })
                 .transpose()?,

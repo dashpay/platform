@@ -1,9 +1,4 @@
 use derive_more::From;
-use std::sync::Arc;
-
-use crate::drive::contract::DataContractFetchInfo;
-use dpp::identifier::Identifier;
-use dpp::prelude::IdentityNonce;
 
 /// transformer module for token burn transition action
 pub mod transformer;
@@ -11,9 +6,7 @@ mod v0;
 
 pub use v0::*; // re-export the v0 module items (including TokenBurnTransitionActionV0)
 
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{
-    TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
-};
+use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 
 /// Token burn transition action
 #[derive(Debug, Clone, From)]

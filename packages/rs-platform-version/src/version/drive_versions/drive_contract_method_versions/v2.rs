@@ -12,7 +12,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V2: DriveContractMethodVersions =
             prove_contracts: 0,
         },
         apply: DriveContractApplyMethodVersions {
-            apply_contract: 1, // <--- changed to v1 for inserting groups
+            apply_contract: 0,
             apply_contract_with_serialization: 0,
         },
         insert: DriveContractInsertMethodVersions {

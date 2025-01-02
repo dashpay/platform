@@ -20,6 +20,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+use crate::data_contract::v1::DataContractV1;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
 use crate::{errors::ProtocolError, prelude::Identifier};
@@ -117,9 +118,15 @@ impl DataContractFactoryV0 {
                 platform_version,
             )?
             .into()),
+            1 => Ok(DataContractV1::from_value(
+                data_contract_object,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

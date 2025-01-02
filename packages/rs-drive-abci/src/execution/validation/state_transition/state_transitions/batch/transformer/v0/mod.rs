@@ -100,18 +100,25 @@ trait BatchTransitionInternalTransformerV0 {
     fn transform_token_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
+        block_info: &BlockInfo,
         validate_against_state: bool,
+        owner_id: Identifier,
         token_transitions: &Vec<&TokenTransition>,
         transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
     /// Transfer token transition
     fn transform_token_transition_v0(
         drive: &Drive,
         transaction: TransactionArg,
-        full_validation: bool,
+        block_info: &BlockInfo,
+        validate_against_state: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &TokenTransition,
+        owner_id: Identifier,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
     /// The data contract can be of multiple difference versions
     fn transform_document_transition_v0(
@@ -203,7 +210,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             }
         }
 
-        let validation_result = document_transitions_by_contracts_and_types
+        let validation_result_documents = document_transitions_by_contracts_and_types
             .iter()
             .map(
                 |(data_contract_id, document_transitions_by_document_type)| {
@@ -220,21 +227,32 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                     )
                 },
             )
-            .chain(token_transitions_by_contracts.iter().map(
-                |(data_contract_id, token_transitions)| {
-                    Self::transform_token_transitions_within_contract_v0(
-                        platform,
-                        data_contract_id,
-                        validate_against_state,
-                        token_transitions,
-                        transaction,
-                        platform_version,
-                    )
-                },
-            ))
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
-        let validation_result = ConsensusValidationResult::flatten(validation_result);
+
+        let mut validation_result_tokens = token_transitions_by_contracts
+            .iter()
+            .map(|(data_contract_id, token_transitions)| {
+                Self::transform_token_transitions_within_contract_v0(
+                    platform,
+                    data_contract_id,
+                    block_info,
+                    validate_against_state,
+                    owner_id,
+                    token_transitions,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )
+            })
+            .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
+            )?;
+
+        let mut validation_results = validation_result_documents;
+
+        validation_results.append(&mut validation_result_tokens);
+
+        let validation_result = ConsensusValidationResult::flatten(validation_results);
 
         if validation_result.has_data() {
             let (transitions, errors) = validation_result.into_data_and_errors()?;
@@ -260,9 +278,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
     fn transform_token_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
+        block_info: &BlockInfo,
         validate_against_state: bool,
+        owner_id: Identifier,
         token_transitions: &Vec<&TokenTransition>,
         transaction: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error> {
         let drive = platform.drive;
@@ -291,9 +312,13 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Self::transform_token_transition_v0(
                     platform.drive,
                     transaction,
+                    block_info,
                     validate_against_state,
                     data_contract_fetch_info.clone(),
                     token_transition,
+                    owner_id,
+                    execution_context,
+                    platform_version,
                 )
             })
             .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>()?;
@@ -458,55 +483,54 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
     fn transform_token_transition_v0(
         drive: &Drive,
         transaction: TransactionArg,
+        block_info: &BlockInfo,
         validate_against_state: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &TokenTransition,
+        owner_id: Identifier,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
+        let approximate_for_costs = !validate_against_state;
         match transition {
             TokenTransition::Burn(token_burn_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-                let token_burn_action = TokenBurnTransitionAction::try_from_borrowed_token_burn_transition_with_contract_lookup(drive, transaction, token_burn_transition, |_identifier| {
+                let (token_burn_action, fee_result) = TokenBurnTransitionAction::try_from_borrowed_token_burn_transition_with_contract_lookup(drive, owner_id, token_burn_transition, approximate_for_costs, transaction, block_info, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
-                })?;
+                }, platform_version)?;
 
-                if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::TokenAction(
-                        TokenTransitionAction::BurnAction(token_burn_action),
-                    );
-                    Ok(batched_action.into())
-                } else {
-                    Ok(result)
-                }
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                let batched_action = BatchedTransitionAction::TokenAction(
+                    TokenTransitionAction::BurnAction(token_burn_action),
+                );
+                Ok(batched_action.into())
             }
             TokenTransition::Mint(token_mint_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-                let token_mint_action = TokenMintTransitionAction::try_from_borrowed_token_mint_transition_with_contract_lookup(drive, transaction, token_mint_transition, |_identifier| {
+                let (token_mint_action, fee_result) = TokenMintTransitionAction::try_from_borrowed_token_mint_transition_with_contract_lookup(drive, owner_id, token_mint_transition, approximate_for_costs, transaction, block_info, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
-                })?;
+                }, platform_version)?;
 
-                if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::TokenAction(
-                        TokenTransitionAction::MintAction(token_mint_action),
-                    );
-                    Ok(batched_action.into())
-                } else {
-                    Ok(result)
-                }
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                let batched_action = BatchedTransitionAction::TokenAction(
+                    TokenTransitionAction::MintAction(token_mint_action),
+                );
+                Ok(batched_action.into())
             }
             TokenTransition::Transfer(token_transfer_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-                let token_transfer_action = TokenTransferTransitionAction::try_from_borrowed_token_transfer_transition_with_contract_lookup(drive, transaction, token_transfer_transition, |_identifier| {
+                let (token_transfer_action, fee_result) = TokenTransferTransitionAction::try_from_borrowed_token_transfer_transition_with_contract_lookup(drive, owner_id, token_transfer_transition, approximate_for_costs, transaction, block_info, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
-                })?;
+                }, platform_version)?;
 
-                if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::TokenAction(
-                        TokenTransitionAction::TransferAction(token_transfer_action),
-                    );
-                    Ok(batched_action.into())
-                } else {
-                    Ok(result)
-                }
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                let batched_action = BatchedTransitionAction::TokenAction(
+                    TokenTransitionAction::TransferAction(token_transfer_action),
+                );
+                Ok(batched_action.into())
             }
         }
     }
@@ -526,8 +550,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
         match transition {
             DocumentTransition::Create(document_create_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let (document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
                     drive, transaction,
                     document_create_transition, block_info, |_identifier| {
@@ -537,14 +559,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::CreateAction(document_create_action),
-                    );
-                    Ok(batched_action.into())
-                } else {
-                    Ok(result)
-                }
+                let batched_action = BatchedTransitionAction::DocumentAction(
+                    DocumentTransitionAction::CreateAction(document_create_action),
+                );
+                Ok(batched_action.into())
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();

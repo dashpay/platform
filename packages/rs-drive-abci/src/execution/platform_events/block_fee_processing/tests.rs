@@ -272,6 +272,7 @@ mod refund_tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
             None,
+            None,
         );
 
         let profile = dashpay_contract_no_indexes
@@ -366,6 +367,7 @@ mod refund_tests {
         let dashpay_contract_no_indexes = setup_contract(
             &platform.drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
+            None,
             None,
             None,
         );
@@ -467,6 +469,7 @@ mod refund_tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
             None,
+            None,
         );
 
         let profile = dashpay_contract_no_indexes
@@ -560,6 +563,7 @@ mod refund_tests {
         let dashpay_contract_no_indexes = setup_contract(
             &platform.drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
+            None,
             None,
             None,
         );
@@ -657,6 +661,7 @@ mod refund_tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
             None,
+            None,
         );
 
         let profile = dashpay_contract_no_indexes
@@ -751,6 +756,7 @@ mod refund_tests {
         let dashpay_contract_no_indexes = setup_contract(
             &platform.drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
+            None,
             None,
             None,
         );

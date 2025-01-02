@@ -685,6 +685,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -774,6 +775,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -865,7 +867,7 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, transaction.as_ref());
+        let contract = setup_contract(&drive, path, None, transaction.as_ref(), None);
 
         let id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -1160,7 +1162,7 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, transaction.as_ref());
+        let contract = setup_contract(&drive, path, None, transaction.as_ref(), None);
 
         let id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -1359,7 +1361,7 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, transaction.as_ref());
+        let contract = setup_contract(&drive, path, None, transaction.as_ref(), None);
 
         let id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -1694,7 +1696,7 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, transaction.as_ref());
+        let contract = setup_contract(&drive, path, None, transaction.as_ref(), None);
 
         let person_0_original = Person {
             id: Identifier::from([0u8; 32]),

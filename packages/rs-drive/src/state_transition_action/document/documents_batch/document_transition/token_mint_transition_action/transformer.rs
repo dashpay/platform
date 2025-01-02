@@ -2,14 +2,14 @@ use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use std::sync::Arc;
-
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionActionV0, TokenMintTransitionAction};
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
 
 /// Implement methods to transform a `TokenMintTransition` into a `TokenMintTransitionAction`.
 impl TokenMintTransitionAction {
@@ -35,24 +35,24 @@ impl TokenMintTransitionAction {
         value: TokenMintTransition,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<(Self, FeeResult), Error> {
         match value {
             TokenMintTransition::V0(v0) => {
-                let v0_action =
+                let (v0, fee) =
                     TokenMintTransitionActionV0::try_from_token_mint_transition_with_contract_lookup(
                         drive,
                         owner_id,
                         v0,
                         approximate_without_state_for_costs,
                         transaction,
-                        drive_operations,
+                        block_info,
                         get_data_contract,
                         platform_version,
                     )?;
-                Ok(v0_action.into())
+                Ok((v0.into(), fee))
             }
         }
     }
@@ -79,23 +79,23 @@ impl TokenMintTransitionAction {
         value: &TokenMintTransition,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<(Self, FeeResult), Error> {
         match value {
             TokenMintTransition::V0(v0) => {
-                let v0_action = TokenMintTransitionActionV0::try_from_borrowed_token_mint_transition_with_contract_lookup(
+                let (v0, fee) = TokenMintTransitionActionV0::try_from_borrowed_token_mint_transition_with_contract_lookup(
                     drive,
                     owner_id,
                     v0,
                     approximate_without_state_for_costs,
                     transaction,
-                    drive_operations,
+                    block_info,
                     get_data_contract,
                     platform_version,
                 )?;
-                Ok(v0_action.into())
+                Ok((v0.into(), fee))
             }
         }
     }

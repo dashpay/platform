@@ -48,6 +48,7 @@ pub(crate) mod prefunded_specialized_balances;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
+/// Group module
 pub mod group;
 #[cfg(feature = "server")]
 mod shared;

@@ -894,11 +894,13 @@ pub(in crate::execution) mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             None,
             None,
+            None,
         );
 
         let card_game = setup_contract(
             &platform.drive,
             "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
+            None,
             None,
             None,
         );
@@ -1243,6 +1245,7 @@ pub(in crate::execution) mod tests {
         let dpns_contract = setup_contract(
             &platform.drive,
             "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id.json",
+            None,
             None,
             None,
         );

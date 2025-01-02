@@ -112,6 +112,7 @@ mod test {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
     use dpp::errors::consensus::state::data_trigger::DataTriggerError;
+    use dpp::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
     use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_batched_transitions_fixture, get_identity_fixture};
     use dpp::version::DefaultForPlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;

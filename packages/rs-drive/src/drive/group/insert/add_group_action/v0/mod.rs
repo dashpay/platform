@@ -1,6 +1,6 @@
 use crate::drive::group::{
-    group_action_path, group_action_path_vec, group_action_root_path,
-    group_action_signers_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY,
+    group_action_path, group_action_root_path, group_action_signers_path_vec, ACTION_INFO_KEY,
+    ACTION_SIGNERS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::Error;

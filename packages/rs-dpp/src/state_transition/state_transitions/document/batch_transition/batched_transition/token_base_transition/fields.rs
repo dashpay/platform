@@ -4,6 +4,7 @@ pub(in crate::state_transition::state_transitions::document::batch_transition) m
     pub const TOKEN_ID: &str = "$tokenId";
     pub const GROUP_CONTRACT_POSITION: &str = "$groupContractPosition";
     pub const GROUP_ACTION_ID: &str = "$groupActionId";
+    pub const GROUP_ACTION_IS_PROPOSER: &str = "$groupActionIsProposer";
     pub const ACTION: &str = "$action";
     pub const IDENTITY_CONTRACT_NONCE: &str = "$identityContractNonce";
 }

@@ -4,9 +4,16 @@ use dpp::data_contract::GroupContractPosition;
 mod fetch;
 mod insert;
 
+/// The key used to identify the group information in storage.
 pub const GROUP_INFO_KEY: &[u8; 1] = b"I";
+
+/// The key used to identify the group actions in storage.
 pub const GROUP_ACTIONS_KEY: &[u8; 1] = b"M";
+
+/// The key used to identify the action information in storage.
 pub const ACTION_INFO_KEY: &[u8; 1] = b"I";
+
+/// The key used to identify the action signers in storage.
 pub const ACTION_SIGNERS_KEY: &[u8; 1] = b"S";
 
 /// Group root path

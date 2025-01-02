@@ -604,6 +604,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -715,6 +716,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -932,6 +934,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract

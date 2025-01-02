@@ -567,6 +567,7 @@ mod tests {
                 "tests/supporting_files/contract/dashpay/dashpay-contract-no-max-length.json",
                 None,
                 None,
+                None,
             );
 
             let dashpay_contract = dashpay_contract_no_max_length.clone();
@@ -8391,6 +8392,7 @@ mod tests {
                 "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
                 None,
                 None,
+                None,
             );
 
             let card_game = setup_contract(
@@ -8398,11 +8400,13 @@ mod tests {
                 "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
                 None,
                 None,
+                None,
             );
 
             let dpns_contract = setup_contract(
                 &platform.drive,
                 "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id.json",
+                None,
                 None,
                 None,
             );
@@ -8840,6 +8844,7 @@ mod tests {
                 "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
                 None,
                 None,
+                None,
             );
 
             let card_game = setup_contract(
@@ -8847,11 +8852,13 @@ mod tests {
                 "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
                 None,
                 None,
+                None,
             );
 
             let dpns_contract = setup_contract(
                 &platform.drive,
                 "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id-null-searchable-true.json",
+                None,
                 None,
                 None,
             );

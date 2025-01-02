@@ -3,11 +3,12 @@ use dpp::state_transition::batch_transition::token_burn_transition::v0::TokenBur
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use std::sync::Arc;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::v0::TokenBurnTransitionActionV0;
 
@@ -25,7 +26,7 @@ impl TokenBurnTransitionActionV0 {
     /// - `value`: The `TokenBurnTransitionV0` containing the details for the token burn.
     /// - `approximate_without_state_for_costs`: A flag indicating whether to approximate state costs.
     /// - `transaction`: The transaction argument used for state changes.
-    /// - `drive_operations`: A mutable reference to the vector of low-level operations that need to be performed.
+    /// - `block_info`: Information about the current block to calculate fees.
     /// - `get_data_contract`: A closure function that looks up the data contract for a given identifier.
     /// - `platform_version`: The platform version for the context in which the transition is being executed.
     ///
@@ -41,15 +42,17 @@ impl TokenBurnTransitionActionV0 {
         value: TokenBurnTransitionV0,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<(Self, FeeResult), Error> {
         let TokenBurnTransitionV0 {
             base,
             burn_amount,
             public_note,
         } = value;
+
+        let mut drive_operations = vec![];
 
         let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
             drive,
@@ -57,16 +60,28 @@ impl TokenBurnTransitionActionV0 {
             base,
             approximate_without_state_for_costs,
             transaction,
-            drive_operations,
+            &mut drive_operations,
             get_data_contract,
             platform_version,
         )?;
 
-        Ok(TokenBurnTransitionActionV0 {
-            base: base_action,
-            burn_amount,
-            public_note,
-        })
+        let fee_result = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+
+        Ok((
+            TokenBurnTransitionActionV0 {
+                base: base_action,
+                burn_amount,
+                public_note,
+            },
+            fee_result,
+        ))
     }
 
     /// Attempts to create a `TokenBurnTransitionActionV0` from the borrowed `TokenBurnTransitionV0` value.
@@ -82,7 +97,7 @@ impl TokenBurnTransitionActionV0 {
     /// - `value`: A borrowed reference to the `TokenBurnTransitionV0` containing the details for the token burn.
     /// - `approximate_without_state_for_costs`: A flag indicating whether to approximate state costs.
     /// - `transaction`: The transaction argument used for state changes.
-    /// - `drive_operations`: A mutable reference to the vector of low-level operations that need to be performed.
+    /// - `block_info`: Information about the current block to calculate fees.
     /// - `get_data_contract`: A closure function that looks up the data contract for a given identifier.
     /// - `platform_version`: The platform version for the context in which the transition is being executed.
     ///
@@ -98,15 +113,17 @@ impl TokenBurnTransitionActionV0 {
         value: &TokenBurnTransitionV0,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<(Self, FeeResult), Error> {
         let TokenBurnTransitionV0 {
             base,
             burn_amount,
             public_note,
         } = value;
+
+        let mut drive_operations = vec![];
 
         let base_action =
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
@@ -115,15 +132,27 @@ impl TokenBurnTransitionActionV0 {
                 base,
                 approximate_without_state_for_costs,
                 transaction,
-                drive_operations,
+                &mut drive_operations,
                 get_data_contract,
                 platform_version,
             )?;
 
-        Ok(TokenBurnTransitionActionV0 {
-            base: base_action,
-            burn_amount: *burn_amount,
-            public_note: public_note.clone(),
-        })
+        let fee_result = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+
+        Ok((
+            TokenBurnTransitionActionV0 {
+                base: base_action,
+                burn_amount: *burn_amount,
+                public_note: public_note.clone(),
+            },
+            fee_result,
+        ))
     }
 }

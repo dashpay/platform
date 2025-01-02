@@ -334,7 +334,7 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The identity Id of the frozen token account",
-        "position": 2
+        "position": 1
       }
     },
     "required": [
@@ -395,7 +395,7 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The identity Id of the frozen token account",
-        "position": 2
+        "position": 1
       }
     },
     "required": [

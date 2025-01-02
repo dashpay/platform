@@ -8,7 +8,7 @@ use crate::util::grove_operations::DirectQueryType;
 
 use dpp::version::drive_versions::DriveVersion;
 
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
 
 impl Drive {

@@ -109,7 +109,7 @@ impl Drive {
                         drive_version,
                     )?;
 
-                    if let Some(Element::SumItem(existing_value, _)) = existing_element {
+                    if let Some(Element::SumItem(..)) = existing_element {
                         if error_if_exists {
                             return Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),
@@ -149,7 +149,7 @@ impl Drive {
                         drive_version,
                     )?;
 
-                    if let Some(Element::SumItem(existing_value, _)) = existing_element {
+                    if let Some(Element::SumItem(..)) = existing_element {
                         if error_if_exists {
                             return Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),

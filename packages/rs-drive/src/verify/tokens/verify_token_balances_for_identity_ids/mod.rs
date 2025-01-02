@@ -2,7 +2,6 @@ mod v0;
 
 use crate::drive::Drive;
 use dpp::balances::credits::TokenAmount;
-use std::collections::BTreeMap;
 
 use crate::error::drive::DriveError;
 

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::drive::group::{group_action_path, ACTION_SIGNERS_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
@@ -10,8 +8,7 @@ use dpp::data_contract::group::GroupSumPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// v0 implementation of fetching the signers' power for a given action ID within a group contract.

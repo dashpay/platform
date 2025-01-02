@@ -1,6 +1,7 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
 use crate::data_contract::serialized_version::{property_names, DataContractInSerializationFormat};
 use crate::data_contract::DataContractV1;
 use crate::version::PlatformVersion;
@@ -34,9 +35,20 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
                     platform_version,
                 )
             }
+            "1" => {
+                let data_contract_data: DataContractInSerializationFormatV1 =
+                    platform_value::from_value(value).map_err(ProtocolError::ValueError)?;
+
+                DataContractV1::try_from_platform_versioned(
+                    data_contract_data.into(),
+                    full_validation,
+                    &mut vec![], // this is not used in consensus code
+                    platform_version,
+                )
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractV1::from_value".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version
                     .parse()
                     .map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,

@@ -270,6 +270,30 @@ impl DataContract {
         }
     }
 
+    /// This should only ever be used in tests, as it will change
+    #[cfg(test)]
+    pub fn into_latest(self) -> Option<DataContractV1> {
+        self.into_v1()
+    }
+
+    /// This should only ever be used in tests, as it will change
+    #[cfg(test)]
+    pub fn as_latest(&self) -> Option<&DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    /// This should only ever be used in tests, as it will change
+    #[cfg(test)]
+    pub fn as_latest_mut(&mut self) -> Option<&mut DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
     pub fn check_version_is_active(
         protocol_version: u32,
         data_contract_system_version: FeatureVersion,

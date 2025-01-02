@@ -99,6 +99,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             None,
+            None,
         );
 
         let document_type = contract
@@ -193,6 +194,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -334,6 +336,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -518,6 +521,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -793,6 +797,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -893,6 +898,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract

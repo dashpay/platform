@@ -65,6 +65,8 @@ use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocument
 use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
+use dpp::consensus::basic::token::{InvalidActionIdError, InvalidGroupPositionError, InvalidTokenIdError, InvalidTokenPositionError};
+use dpp::consensus::basic::token::contract_has_no_tokens_error::ContractHasNoTokensError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
@@ -573,6 +575,25 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DataContractTokenConfigurationUpdateError(e) => {
             generic_consensus_error!(DataContractTokenConfigurationUpdateError, e).into()
+        }
+        BasicError::InvalidTokenIdError(e) => {
+            generic_consensus_error!(InvalidTokenIdError, e).into()
+        }
+
+        BasicError::InvalidTokenPositionError(e) => {
+            generic_consensus_error!(InvalidTokenPositionError, e).into()
+        }
+
+        BasicError::ContractHasNoTokensError(e) => {
+            generic_consensus_error!(ContractHasNoTokensError, e).into()
+        }
+
+        BasicError::InvalidGroupPositionError(e) => {
+            generic_consensus_error!(InvalidGroupPositionError, e).into()
+        }
+
+        BasicError::InvalidActionIdError(e) => {
+            generic_consensus_error!(InvalidActionIdError, e).into()
         }
     }
 }

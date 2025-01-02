@@ -41,8 +41,9 @@ pub fn setup_contract(
     path: &str,
     contract_id: Option<[u8; 32]>,
     transaction: TransactionArg,
+    use_platform_version: Option<&PlatformVersion>,
 ) -> DataContract {
-    let platform_version = PlatformVersion::latest();
+    let platform_version = use_platform_version.unwrap_or(PlatformVersion::latest());
     let contract = json_document_to_contract_with_ids(
         path,
         contract_id.map(Identifier::from),
