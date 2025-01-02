@@ -18,6 +18,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 
 use crate::{
@@ -77,6 +78,11 @@ impl DocumentTransitionWasm {
         let identifier = identifier_from_js_value(js_data_contract_id)?;
         self.0.set_data_contract_id(identifier);
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_contract_nonce(&self) -> JsValue {
+        match self.0.base() { DocumentBaseTransition::V0(v0) => JsValue::from(v0.identity_contract_nonce) }
     }
 
     #[wasm_bindgen(js_name=getRevision)]
