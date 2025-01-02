@@ -1595,6 +1595,7 @@ dependencies = [
  "json-schema-compatibility-validator",
  "jsonschema",
  "lazy_static",
+ "log",
  "nohash-hasher",
  "num_enum 0.7.3",
  "once_cell",
