@@ -1,3 +1,5 @@
+use crate::context_provider::WasmContext;
+use crate::error::WasmError;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::IdentityV0;
@@ -5,13 +7,12 @@ use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{Fetch, Identifier, Identity};
-use dash_sdk::{sdk, Sdk, SdkBuilder};
+use dash_sdk::{Sdk, SdkBuilder};
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Display};
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::prelude::wasm_bindgen;
-
-use crate::error::WasmError;
-use crate::verify::WasmContext;
+use web_sys::window;
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -54,17 +55,16 @@ impl DerefMut for WasmSdkBuilder {
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     pub fn new_mainnet() -> Self {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        WasmSdkBuilder(SdkBuilder::new_mainnet())
+        let sdk_builder = SdkBuilder::new_mainnet().with_context_provider(WasmContext {});
+
+        Self(sdk_builder)
     }
 
     pub fn new_testnet() -> Self {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
         WasmSdkBuilder(SdkBuilder::new_testnet())
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmError> {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
         Ok(WasmSdk(self.0.build()?))
     }
 
@@ -74,13 +74,34 @@ impl WasmSdkBuilder {
 }
 
 #[wasm_bindgen]
-pub async fn identity_fetch(sdk: &WasmSdk) {
-    let id = Identifier::from_bytes(&[0; 32]).expect("create identifier");
+// TODO: return -> wasm_dpp::IdentityWasm
+pub async fn identity_fetch(sdk: &WasmSdk, base58_id: &str) {
+    let id = Identifier::from_string(
+        base58_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )
+    .expect("parse identity id");
 
     let identity = Identity::fetch_by_identifier(sdk, id)
         .await
         .expect("fetch identity")
-        .expect("identity not found");
+        .unwrap_or_else(|| panic!("identity {} not found", id));
+
+    display_in_browser(&format!("{:?}", identity));
+    // <IdentityWasm as From<_>>::from(identity)
+}
+
+/// Helper to display results
+fn display_in_browser<D: Display>(s: &D) {
+    // Get the document object
+    let document = window().unwrap().document().unwrap();
+
+    // Create a new div element with our message
+    let div = document.create_element("div").unwrap();
+    div.set_text_content(Some(&s.to_string()));
+
+    // Append the div to the body
+    document.body().unwrap().append_child(&div).unwrap();
 }
 
 pub async fn identity_put(sdk: &WasmSdk) {
@@ -98,7 +119,7 @@ pub async fn identity_put(sdk: &WasmSdk) {
         PrivateKey::from_slice(&[0; 32], Network::Testnet).expect("create private key");
 
     let signer = MockSigner;
-    let pushed: Identity = identity
+    let _pushed: Identity = identity
         .put_to_platform(
             sdk,
             asset_lock_proof,
@@ -171,13 +192,13 @@ pub async fn identity_put(sdk: &WasmSdk) {
 #[derive(Clone, Debug)]
 struct MockSigner;
 impl Signer for MockSigner {
-    fn can_sign_with(&self, identity_public_key: &dash_sdk::platform::IdentityPublicKey) -> bool {
+    fn can_sign_with(&self, _identity_public_key: &dash_sdk::platform::IdentityPublicKey) -> bool {
         true
     }
     fn sign(
         &self,
-        identity_public_key: &dash_sdk::platform::IdentityPublicKey,
-        data: &[u8],
+        _identity_public_key: &dash_sdk::platform::IdentityPublicKey,
+        _data: &[u8],
     ) -> Result<dash_sdk::dpp::platform_value::BinaryData, dash_sdk::dpp::ProtocolError> {
         todo!()
     }

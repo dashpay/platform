@@ -1,5 +1,6 @@
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
+pub mod context_provider;
 pub mod error;
 pub mod sdk;
 pub mod state_transitions;
@@ -15,12 +16,8 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen(start)]
 pub async fn start() -> Result<(), JsValue> {
-    let dash_sdk = sdk::WasmSdkBuilder::new_mainnet();
-    let sdk = dash_sdk
-        .with_context_provider(verify::WasmContext {})
-        .build()
-        .expect("build sdk");
+    console_error_panic_hook::set_once();
+    tracing_wasm::set_as_global_default();
 
-    sdk::identity_fetch(&sdk).await;
     Ok(())
 }

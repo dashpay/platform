@@ -5,7 +5,6 @@ use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::*;
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::proto::get_identity_request::{
@@ -18,16 +17,14 @@ use dash_sdk::platform::proto::{
     GetDocumentsResponse, GetIdentityRequest, Proof, ResponseMetadata,
 };
 use dash_sdk::platform::DocumentQuery;
-use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::types::Documents;
-use drive_proof_verifier::{ContextProvider, FromProof};
-use std::sync::Arc;
+use drive_proof_verifier::FromProof;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+use crate::context_provider::WasmContext;
 
 #[wasm_bindgen]
 pub async fn verify_identity_response() -> Option<IdentityWasm> {
-    let id = Identifier::from_bytes(&[0; 32]).expect("create identifier");
-
     let request = dash_sdk::dapi_grpc::platform::v0::GetIdentityRequest {
         version: Some(GetIdentityRequestVersion::V0(GetIdentityRequestV0 {
             id: vec![],
@@ -58,7 +55,7 @@ pub async fn verify_identity_response() -> Option<IdentityWasm> {
 
     let context = WasmContext {};
 
-    let (response, metadata, proof) =
+    let (response, _metadata, _proof) =
         <Identity as FromProof<GetIdentityRequest>>::maybe_from_proof_with_metadata(
             request,
             response,
@@ -208,30 +205,5 @@ pub struct DocumentWasm(Document);
 impl DocumentWasm {
     pub fn id(&self) -> String {
         self.0.id().to_string(Encoding::Base58)
-    }
-}
-
-#[wasm_bindgen]
-pub struct WasmContext {}
-
-impl ContextProvider for WasmContext {
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        todo!()
-    }
-
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        todo!()
-    }
-
-    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        todo!()
     }
 }

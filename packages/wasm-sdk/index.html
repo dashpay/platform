@@ -15,7 +15,7 @@
         // will "boot" the module and make it ready to use. Currently browsers
         // don't support natively imported WebAssembly as an ES module, but
         // eventually the manual initialization won't be required!
-        import init, { start } from './pkg/wasm_sdk.js';
+        import init, { start, WasmSdkBuilder, identity_fetch } from './pkg/wasm_sdk.js';
 
         async function run() {
             // First up we need to actually load the Wasm file, so we use the
@@ -47,7 +47,12 @@
             await init();
 
             // And afterwards we can use all the functionality defined in wasm.
-            // await start();
+            const sdk = await WasmSdkBuilder.new_mainnet().build();
+            console.log(sdk);
+
+            const identity = await identity_fetch(sdk, "T1jY1c6ojfhYe5w8TV7eNwWXvGRhkcqHJPHfdC54RVz");
+            console.log("fetched identity");
+            console.log(identity);
         }
 
         run();
