@@ -243,7 +243,11 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -255,6 +259,7 @@ mod tests {
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::fee_result::BalanceChange;
     use dpp::fee::Credits;
+    use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::nft::TradeMode;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -269,10 +274,10 @@ mod tests {
     use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
+    use rand::Rng;
     use rand::SeedableRng;
 
     mod creation_tests {
-        use rand::Rng;
         use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
@@ -304,6 +309,7 @@ mod tests {
         use dpp::consensus::state::state_error::StateError;
         use dpp::dashcore::Network;
         use dpp::dashcore::Network::Testnet;
+        use dpp::data_contract::DataContract;
         use dpp::identity::SecurityLevel;
         use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
         use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
@@ -566,6 +572,8 @@ mod tests {
                 &platform.drive,
                 "tests/supporting_files/contract/dashpay/dashpay-contract-no-max-length.json",
                 None,
+                None,
+                None::<fn(&mut DataContract)>,
                 None,
                 None,
             );
@@ -8355,6 +8363,7 @@ mod tests {
         use dpp::data_contract::document_type::random_document::{
             DocumentFieldFillSize, DocumentFieldFillType,
         };
+        use dpp::data_contract::DataContract;
         use dpp::platform_value::Bytes32;
         use dpp::state_transition::batch_transition::BatchTransition;
         use dpp::util::hash::hash_double;
@@ -8363,7 +8372,6 @@ mod tests {
         use indexmap::IndexMap;
         use platform_version::version::PlatformVersion;
         use rand::prelude::StdRng;
-        use rand::Rng;
         use std::collections::BTreeMap;
 
         #[test]
@@ -8392,6 +8400,8 @@ mod tests {
                 "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
                 None,
                 None,
+                None::<fn(&mut DataContract)>,
+                None,
                 None,
             );
 
@@ -8400,6 +8410,8 @@ mod tests {
                 "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
                 None,
                 None,
+                None::<fn(&mut DataContract)>,
+                None,
                 None,
             );
 
@@ -8407,6 +8419,8 @@ mod tests {
                 &platform.drive,
                 "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id.json",
                 None,
+                None,
+                None::<fn(&mut DataContract)>,
                 None,
                 None,
             );
@@ -8844,6 +8858,8 @@ mod tests {
                 "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
                 None,
                 None,
+                None::<fn(&mut DataContract)>,
+                None,
                 None,
             );
 
@@ -8852,6 +8868,8 @@ mod tests {
                 "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
                 None,
                 None,
+                None::<fn(&mut DataContract)>,
+                None,
                 None,
             );
 
@@ -8859,6 +8877,8 @@ mod tests {
                 &platform.drive,
                 "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id-null-searchable-true.json",
                 None,
+                None,
+                None::<fn(&mut DataContract)>,
                 None,
                 None,
             );
@@ -9254,6 +9274,949 @@ mod tests {
                 .documents_owned();
 
             assert_eq!(documents.len(), 2);
+        }
+    }
+
+    mod token_tests {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+        mod token_mint_tests {
+            use super::*;
+
+            mod token_mint_tests_normal_scenarios {
+                use super::*;
+
+                #[test]
+                fn test_token_mint_by_owned_id_allowed_sending_to_self() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        None::<fn(&mut TokenConfiguration)>,
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(identity.id()),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(101337));
+                }
+
+                #[test]
+                fn test_token_mint_by_owned_id_allowed_sending_to_other() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (receiver, _, _) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        None::<fn(&mut TokenConfiguration)>,
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(receiver.id()),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            receiver.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(1337));
+                }
+
+                #[test]
+                fn test_token_mint_sending_to_non_existing_identity_causes_error() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let receiver = Identifier::random_with_rng(&mut rng);
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        None::<fn(&mut TokenConfiguration)>,
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(receiver),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::StateError(
+                                StateError::RecipientIdentityDoesNotExistError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            receiver.to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, None);
+                }
+
+                #[test]
+                fn test_token_mint_by_owned_id_no_destination_causes_error() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        None::<fn(&mut TokenConfiguration)>,
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            None,
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::DestinationIdentityForTokenMintingNotSetError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+                }
+            }
+
+            mod token_mint_tests_no_recipient_minting {
+                use super::*;
+
+                #[test]
+                fn test_token_mint_by_owned_id_allowed_sending_to_self() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_minting_allow_choosing_destination(false);
+                        }),
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(identity.id()),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(100000));
+                }
+
+                #[test]
+                fn test_token_mint_by_owned_id_allowed_sending_to_other() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (receiver, _, _) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_minting_allow_choosing_destination(false);
+                        }),
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(receiver.id()),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            receiver.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, None);
+                }
+
+                #[test]
+                fn test_token_mint_by_owned_id_no_destination_causes_error() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_minting_allow_choosing_destination(false);
+                        }),
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            None,
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::DestinationIdentityForTokenMintingNotSetError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+                }
+            }
+
+            mod token_mint_tests_contract_has_recipient {
+                use super::*;
+
+                #[test]
+                fn test_token_mint_by_owned_id_allowed_sending_to_self() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .set_new_tokens_destination_identity(Some(identity.id()));
+                        }),
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(identity.id()),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(100000));
+                }
+
+                #[test]
+                fn test_token_mint_by_owned_id_allowed_sending_to_other() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (receiver, _, _) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .set_new_tokens_destination_identity(Some(identity.id()));
+                        }),
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            Some(receiver.id()),
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            receiver.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, None);
+                }
+
+                #[test]
+                fn test_token_mint_by_owned_id_no_set_destination_should_use_contracts() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .set_new_tokens_destination_identity(Some(identity.id()));
+                        }),
+                        platform_version,
+                    );
+
+                    let documents_batch_create_transition =
+                        BatchTransition::new_token_mint_transition(
+                            token_id,
+                            identity.id(),
+                            contract.id(),
+                            0,
+                            1337,
+                            None,
+                            None,
+                            None,
+                            &key,
+                            2,
+                            0,
+                            &signer,
+                            platform_version,
+                            None,
+                            None,
+                            None,
+                        )
+                        .expect("expect to create documents batch transition");
+
+                    let documents_batch_create_serialized_transition =
+                        documents_batch_create_transition
+                            .serialize_to_bytes()
+                            .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![documents_batch_create_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            true,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(101337));
+                }
+            }
         }
     }
 }

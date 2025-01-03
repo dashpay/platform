@@ -114,6 +114,20 @@
             "$createdAt": "asc"
           }
         ]
+      },
+      {
+        "name": "byRecipientId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "recipientId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
       }
     ],
     "properties": {
@@ -125,22 +139,31 @@
         "description": "The token ID",
         "position": 0
       },
+      "recipientId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 1
+      },
       "amount": {
         "type": "integer",
         "minimum": 0,
         "description": "The amount that was burned",
-        "position": 1
+        "position": 2
       },
       "note": {
         "type": "string",
         "maxLength": 2048,
         "description": "An optional explanation of why this mint took place",
-        "position": 2
+        "position": 3
       }
     },
     "required": [
       "tokenId",
       "amount",
+      "recipientId",
       "$createdAt",
       "$createdAtBlockHeight",
       "$createdAtCoreBlockHeight"

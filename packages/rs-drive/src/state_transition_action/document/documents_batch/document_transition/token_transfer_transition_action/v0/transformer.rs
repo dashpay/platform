@@ -49,7 +49,7 @@ impl TokenTransferTransitionActionV0 {
         let TokenTransferTransitionV0 {
             base,
             amount,
-            recipient_owner_id,
+            recipient_id,
             public_note,
             shared_encrypted_note,
             private_encrypted_note,
@@ -83,7 +83,7 @@ impl TokenTransferTransitionActionV0 {
             TokenTransferTransitionActionV0 {
                 base: base_action,
                 amount,
-                recipient_id: recipient_owner_id,
+                recipient_id,
                 public_note,
                 shared_encrypted_note,
                 private_encrypted_note,
@@ -129,7 +129,7 @@ impl TokenTransferTransitionActionV0 {
         let TokenTransferTransitionV0 {
             base,
             amount,
-            recipient_owner_id,
+            recipient_id,
             public_note,
             shared_encrypted_note,
             private_encrypted_note,
@@ -164,7 +164,7 @@ impl TokenTransferTransitionActionV0 {
             TokenTransferTransitionActionV0 {
                 base: base_action.into(),
                 amount: *amount,
-                recipient_id: *recipient_owner_id,
+                recipient_id: *recipient_id,
                 public_note: public_note.clone(),
                 shared_encrypted_note: shared_encrypted_note.clone(),
                 private_encrypted_note: private_encrypted_note.clone(),

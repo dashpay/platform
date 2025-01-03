@@ -39,21 +39,21 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransition {
         }
     }
 
-    fn recipient_owner_id(&self) -> Identifier {
+    fn recipient_id(&self) -> Identifier {
         match self {
-            TokenTransferTransition::V0(v0) => v0.recipient_owner_id,
+            TokenTransferTransition::V0(v0) => v0.recipient_id,
         }
     }
 
-    fn recipient_owner_id_ref(&self) -> &Identifier {
+    fn recipient_id_ref(&self) -> &Identifier {
         match self {
-            TokenTransferTransition::V0(v0) => &v0.recipient_owner_id,
+            TokenTransferTransition::V0(v0) => &v0.recipient_id,
         }
     }
 
-    fn set_recipient_owner_id(&mut self, recipient_owner_id: Identifier) {
+    fn set_recipient_id(&mut self, recipient_id: Identifier) {
         match self {
-            TokenTransferTransition::V0(v0) => v0.recipient_owner_id = recipient_owner_id,
+            TokenTransferTransition::V0(v0) => v0.recipient_id = recipient_id,
         }
     }
 

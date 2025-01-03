@@ -1,20 +1,24 @@
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, DestinationIdentityForTokenMintingNotSetError};
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::TokenMintTransitionV0;
 use dpp::ProtocolError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use dpp::tokens::errors::TokenError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::v0::TokenMintTransitionActionV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::ConsensusValidationResult;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, TokenTransitionAction};
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl TokenMintTransitionActionV0 {
     /// Converts a `TokenMintTransitionV0` into a `TokenMintTransitionActionV0` using the provided contract lookup.
@@ -38,7 +42,7 @@ impl TokenMintTransitionActionV0 {
     ///
     /// # Returns
     ///
-    /// * `Result<TokenMintTransitionActionV0, Error>` - Returns the constructed `TokenMintTransitionActionV0` if successful,
+    /// * `Result<ConsensusValidationResult<TokenMintTransitionActionV0>, Error>` - Returns the constructed `TokenMintTransitionActionV0` if successful,
     ///   or an error if any issue arises, such as missing data or an invalid state transition.
     pub fn try_from_token_mint_transition_with_contract_lookup(
         drive: &Drive,
@@ -49,7 +53,13 @@ impl TokenMintTransitionActionV0 {
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let TokenMintTransitionV0 {
             base,
             issued_to_identity_id,
@@ -72,21 +82,6 @@ impl TokenMintTransitionActionV0 {
             platform_version,
         )?;
 
-        let identity_balance_holder_id = issued_to_identity_id
-            .or_else(|| {
-                base_action
-                    .data_contract_fetch_info_ref()
-                    .contract
-                    .tokens()
-                    .get(&position)
-                    .and_then(|token_configuration| {
-                        token_configuration.new_tokens_destination_identity()
-                    })
-            })
-            .ok_or(ProtocolError::Token(
-                TokenError::DestinationIdentityForMintingNotSetError.into(),
-            ))?;
-
         let fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
@@ -96,13 +91,79 @@ impl TokenMintTransitionActionV0 {
             None,
         )?;
 
+        if !base_action
+            .token_configuration()?
+            .minting_allow_choosing_destination()
+            && issued_to_identity_id.is_some()
+        {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
+                    &base_action,
+                    owner_id,
+                    0,
+                );
+            let batched_action =
+                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    batched_action.into(),
+                    vec![BasicError::ChoosingTokenMintRecipientNotAllowedError(
+                        ChoosingTokenMintRecipientNotAllowedError::new(base_action.token_id()),
+                    )
+                    .into()],
+                ),
+                fee_result,
+            ));
+        }
+
+        let identity_balance_holder_id = match issued_to_identity_id.or_else(|| {
+            base_action
+                .data_contract_fetch_info_ref()
+                .contract
+                .tokens()
+                .get(&position)
+                .and_then(|token_configuration| {
+                    token_configuration.new_tokens_destination_identity()
+                })
+        }) {
+            Some(identity_balance_holder_id) => identity_balance_holder_id,
+            None => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
+                        &base_action,
+                        owner_id,
+                        0,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action.into(),
+                        vec![BasicError::DestinationIdentityForTokenMintingNotSetError(
+                            DestinationIdentityForTokenMintingNotSetError::new(
+                                base_action.token_id(),
+                            ),
+                        )
+                        .into()],
+                    ),
+                    fee_result,
+                ));
+            }
+        };
+
         Ok((
-            TokenMintTransitionActionV0 {
-                base: base_action,
-                mint_amount: amount,
-                identity_balance_holder_id,
-                public_note,
-            },
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
+                TokenMintTransitionActionV0 {
+                    base: base_action,
+                    mint_amount: amount,
+                    identity_balance_holder_id,
+                    public_note,
+                }
+                .into(),
+            ))
+            .into(),
             fee_result,
         ))
     }
@@ -130,7 +191,7 @@ impl TokenMintTransitionActionV0 {
     ///
     //// # Returns
     ///
-    /// * `Result<(TokenMintTransitionActionV0, FeeResult), Error>` - Returns a tuple containing the constructed
+    /// * `Result<(ConsensusValidationResult<TokenMintTransitionActionV0>, FeeResult), Error>` - Returns a tuple containing the constructed
     ///   `TokenMintTransitionActionV0` and a `FeeResult` if successful. If an error occurs (e.g., missing data or
     ///   invalid state transition), it returns an `Error`.
     ///
@@ -143,7 +204,13 @@ impl TokenMintTransitionActionV0 {
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let TokenMintTransitionV0 {
             base,
             issued_to_identity_id,
@@ -165,21 +232,6 @@ impl TokenMintTransitionActionV0 {
                 platform_version,
             )?;
 
-        let identity_balance_holder_id = issued_to_identity_id
-            .or_else(|| {
-                base_action
-                    .data_contract_fetch_info_ref()
-                    .contract
-                    .tokens()
-                    .get(&base.token_contract_position())
-                    .and_then(|token_configuration| {
-                        token_configuration.new_tokens_destination_identity()
-                    })
-            })
-            .ok_or(ProtocolError::Token(
-                TokenError::DestinationIdentityForMintingNotSetError.into(),
-            ))?;
-
         let fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
@@ -189,13 +241,79 @@ impl TokenMintTransitionActionV0 {
             None,
         )?;
 
+        if !base_action
+            .token_configuration()?
+            .minting_allow_choosing_destination()
+            && issued_to_identity_id.is_some()
+        {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
+                    &base_action,
+                    owner_id,
+                    0,
+                );
+            let batched_action =
+                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    batched_action.into(),
+                    vec![BasicError::ChoosingTokenMintRecipientNotAllowedError(
+                        ChoosingTokenMintRecipientNotAllowedError::new(base_action.token_id()),
+                    )
+                    .into()],
+                ),
+                fee_result,
+            ));
+        }
+
+        let identity_balance_holder_id = match issued_to_identity_id.or_else(|| {
+            base_action
+                .data_contract_fetch_info_ref()
+                .contract
+                .tokens()
+                .get(&base.token_contract_position())
+                .and_then(|token_configuration| {
+                    token_configuration.new_tokens_destination_identity()
+                })
+        }) {
+            Some(identity_balance_holder_id) => identity_balance_holder_id,
+            None => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
+                        &base_action,
+                        owner_id,
+                        0,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action.into(),
+                        vec![BasicError::DestinationIdentityForTokenMintingNotSetError(
+                            DestinationIdentityForTokenMintingNotSetError::new(
+                                base_action.token_id(),
+                            ),
+                        )
+                        .into()],
+                    ),
+                    fee_result,
+                ));
+            }
+        };
+
         Ok((
-            TokenMintTransitionActionV0 {
-                base: base_action,
-                mint_amount: *amount,
-                identity_balance_holder_id,
-                public_note: public_note.clone(),
-            },
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
+                TokenMintTransitionActionV0 {
+                    base: base_action,
+                    mint_amount: *amount,
+                    identity_balance_holder_id,
+                    public_note: public_note.clone(),
+                }
+                .into(),
+            ))
+            .into(),
             fee_result,
         ))
     }

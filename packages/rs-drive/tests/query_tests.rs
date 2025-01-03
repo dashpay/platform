@@ -221,6 +221,8 @@ pub fn setup_family_tests(
         &drive,
         "tests/supporting_files/contract/family/family-contract.json",
         None,
+        None,
+        None,
         Some(&db_transaction),
         Some(platform_version),
     );
@@ -292,6 +294,8 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
         &drive,
         "tests/supporting_files/contract/family/family-contract-fields-optional.json",
         None,
+        None,
+        None,
         Some(&db_transaction),
         None,
     );
@@ -361,6 +365,8 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
     let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-only-first-name-index.json",
+        None,
+        None,
         None,
         Some(&db_transaction),
         None,
@@ -828,6 +834,8 @@ pub fn setup_dpns_tests_with_batches(
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
         None,
+        None,
+        None,
         Some(&db_transaction),
         Some(platform_version),
     );
@@ -876,6 +884,8 @@ pub fn setup_withdrawal_tests(
         &drive,
         "tests/supporting_files/contract/withdrawals/withdrawals-contract.json",
         None,
+        None,
+        None,
         Some(&db_transaction),
         None,
     );
@@ -920,6 +930,8 @@ pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) 
         &drive,
         "tests/supporting_files/contract/references/references_with_contract_history.json",
         None,
+        None,
+        None,
         Some(&db_transaction),
         None,
     );
@@ -956,6 +968,8 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Dat
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract-label-not-required.json",
         None,
+        None,
+        None,
         Some(&db_transaction),
         None,
     );
@@ -991,6 +1005,8 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
     let contract = setup_contract(
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
+        None,
+        None,
         None,
         Some(&db_transaction),
         None,

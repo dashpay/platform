@@ -233,6 +233,18 @@ impl DataContractV1Getters for DataContract {
         }
     }
 
+    /// Returns a mutable reference to a token configuration
+    /// Returns `None` for V0 since it doesn't have tokens.
+    fn token_configuration_mut(
+        &mut self,
+        position: TokenContractPosition,
+    ) -> Option<&mut TokenConfiguration> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.tokens.get_mut(&position),
+        }
+    }
+
     fn token_id(&self, position: TokenContractPosition) -> Option<Identifier> {
         match self {
             DataContract::V0(_) => None,

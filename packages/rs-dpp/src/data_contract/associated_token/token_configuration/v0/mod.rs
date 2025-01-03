@@ -52,6 +52,10 @@ pub struct TokenConfigurationV0 {
     pub new_tokens_destination_identity: Option<Identifier>,
     #[serde(default = "default_change_control_rules")]
     pub new_tokens_destination_identity_rules: ChangeControlRules,
+    #[serde(default = "default_minting_allow_choosing_destination")]
+    pub minting_allow_choosing_destination: bool,
+    #[serde(default = "default_change_control_rules")]
+    pub minting_allow_choosing_destination_rules: ChangeControlRules,
     #[serde(default = "default_change_control_rules")]
     pub manual_minting_rules: ChangeControlRules,
     #[serde(default = "default_change_control_rules")]
@@ -64,6 +68,11 @@ pub struct TokenConfigurationV0 {
     pub main_control_group: Option<(BTreeSet<Identifier>, RequiredSigners)>,
     #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
+}
+
+// Default function for `minting_allow_choosing_destination` to return `true`
+fn default_minting_allow_choosing_destination() -> bool {
+    true
 }
 
 // Default function for `keeps_history`
@@ -82,16 +91,17 @@ fn default_change_control_rules() -> ChangeControlRules {
 
 impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Using debug formatting for nested fields
         write!(
             f,
-            "TokenConfigurationV0 {{ conventions: {:?}, base_supply: {}, max_supply: {:?}, max_supply_change_rules: {:?}, new_tokens_destination_identity: {:?}, new_tokens_destination_identity_rules: {:?}, manual_minting_rules: {:?}, manual_burning_rules: {:?}, freeze_rules: {:?}, unfreeze_rules: {:?}, main_control_group: {:?}, main_control_group_can_be_modified: {:?} }}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
             self.base_supply,
             self.max_supply,
             self.max_supply_change_rules,
             self.new_tokens_destination_identity,
             self.new_tokens_destination_identity_rules,
+            self.minting_allow_choosing_destination,
+            self.minting_allow_choosing_destination_rules,
             self.manual_minting_rules,
             self.manual_burning_rules,
             self.freeze_rules,
@@ -121,6 +131,14 @@ impl TokenConfigurationV0 {
             .into(),
             new_tokens_destination_identity: None,
             new_tokens_destination_identity_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }
+            .into(),
+            minting_allow_choosing_destination: true,
+            minting_allow_choosing_destination_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
                 authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,

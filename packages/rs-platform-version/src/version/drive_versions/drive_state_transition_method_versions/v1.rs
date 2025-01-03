@@ -23,7 +23,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 document_transfer_transition: 0,
                 document_update_price_transition: 0,
                 token_burn_transition: 0,
-                token_issuance_transition: 0,
+                token_mint_transition: 0,
                 token_transfer_transition: 0,
                 documents_batch_transition: 0,
                 identity_create_transition: 0,

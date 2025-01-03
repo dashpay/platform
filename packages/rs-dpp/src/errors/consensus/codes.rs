@@ -130,6 +130,8 @@ impl ErrorWithCode for BasicError {
             Self::InvalidGroupPositionError(_) => 10452,
             Self::InvalidActionIdError(_) => 10453,
             Self::ContractHasNoTokensError(_) => 10454,
+            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10455,
+            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10456,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -212,7 +214,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractIsReadonlyError { .. } => 40001,
             Self::DataContractConfigUpdateError { .. } => 40002,
 
-            // Document Errors: 40100-40199
+            // Document Errors: 40100-40149
             Self::DocumentAlreadyPresentError { .. } => 40100,
             Self::DocumentNotFoundError { .. } => 40101,
             Self::DocumentOwnerIdMismatchError { .. } => 40102,
@@ -228,6 +230,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
             Self::DocumentContestNotPaidForError(_) => 40114,
+
+            // Token errors: 40150-40199
+            Self::RecipientIdentityDoesNotExistError(_) => 40150,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

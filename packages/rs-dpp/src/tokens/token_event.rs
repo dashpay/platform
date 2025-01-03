@@ -15,15 +15,17 @@ pub type TokenEventPersonalEncryptedNote = Option<(
 )>;
 use crate::ProtocolError;
 
+pub type RecipientIdentifier = Identifier;
+
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum TokenEvent {
-    Mint(TokenAmount, TokenEventPublicNote),
+    Mint(TokenAmount, RecipientIdentifier, TokenEventPublicNote),
     Burn(TokenAmount, TokenEventPublicNote),
     Transfer(
-        Identifier,
+        RecipientIdentifier,
         TokenEventPublicNote,
         TokenEventSharedEncryptedNote,
         TokenEventPersonalEncryptedNote,

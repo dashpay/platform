@@ -24,7 +24,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenMintTransitionAction {
             .methods
             .state_transitions
             .convert_to_high_level_operations
-            .token_issuance_transition
+            .token_mint_transition
         {
             0 => {
                 let data_contract_id = self.base().data_contract_id();
@@ -41,7 +41,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenMintTransitionAction {
 
                 ops.push(TokenOperation(TokenOperationType::TokenMint {
                     token_id: self.token_id(),
-                    identity_balance_holder_id: owner_id,
+                    identity_balance_holder_id: self.identity_balance_holder_id(),
                     mint_amount: self.mint_amount(),
                     allow_first_mint: false,
                 }));
@@ -52,14 +52,18 @@ impl DriveHighLevelDocumentOperationConverter for TokenMintTransitionAction {
                         token_id: self.token_id(),
                         owner_id,
                         nonce: identity_contract_nonce,
-                        event: TokenEvent::Mint(self.mint_amount(), self.public_note_owned()),
+                        event: TokenEvent::Mint(
+                            self.mint_amount(),
+                            self.identity_balance_holder_id(),
+                            self.public_note_owned(),
+                        ),
                     }));
                 }
 
                 Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "TokenIssuanceTransitionAction::into_high_level_document_drive_operations"
+                method: "TokenMintTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

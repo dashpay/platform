@@ -13,7 +13,7 @@ use crate::version::dpp_versions::dpp_state_transition_versions::v2::STATE_TRANS
 use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v4::DRIVE_ABCI_METHOD_VERSIONS_V4;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v5::DRIVE_ABCI_METHOD_VERSIONS_V5;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v4::DRIVE_ABCI_VALIDATION_VERSIONS_V4;
@@ -35,7 +35,7 @@ pub const PLATFORM_V8: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V3, // changed (for data contract insert)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V4,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V5, // changed because of the genesis state
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V4,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,

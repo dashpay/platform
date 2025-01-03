@@ -29,6 +29,10 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the new tokens destination identity rules.
     fn new_tokens_destination_identity_rules(&self) -> &ChangeControlRules;
+    /// Returns whether minting allows choosing a destination.
+    fn minting_allow_choosing_destination(&self) -> bool;
+    /// Returns the rules for minting destination selection.
+    fn minting_allow_choosing_destination_rules(&self) -> &ChangeControlRules;
 
     /// Returns the manual minting rules.
     fn manual_minting_rules(&self) -> &ChangeControlRules;
@@ -86,4 +90,8 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers);
+    /// Sets whether minting allows choosing a destination.
+    fn set_minting_allow_choosing_destination(&mut self, value: bool);
+    /// Sets the rules for minting destination selection.
+    fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules);
 }

@@ -7,11 +7,14 @@ use crate::fee::Credits;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::SecurityLevel;
-use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+use crate::prelude::{
+    DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
+    SenderKeyIndex,
+};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::{
     BatchedTransition, BatchedTransitionRef,
@@ -27,7 +30,7 @@ use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransi
 use std::iter::Map;
 use std::slice::Iter;
 
-use crate::state_transition::batch_transition::BatchTransitionV1;
+use crate::state_transition::batch_transition::{BatchTransitionV1, TokenBurnTransition, TokenMintTransition, TokenTransferTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{
     BatchTransition, DocumentDeleteTransition,
@@ -39,9 +42,17 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
+use crate::balances::credits::TokenAmount;
+use crate::group::GroupStateTransitionInfo;
 use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
+use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
     type IterType<'a> = Map<Iter<'a, BatchedTransition>, fn(&'a BatchedTransition) -> BatchedTransitionRef<'a>>
@@ -380,5 +391,165 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             )), // Overflow occurred
             _ => Ok(None),
         }
+    }
+}
+
+impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
+    fn new_token_mint_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        issued_to_identity_id: Option<Identifier>,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfo>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _delete_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let mint_transition = TokenMintTransition::V0(TokenMintTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info,
+            }),
+            issued_to_identity_id,
+            amount,
+            public_note,
+        });
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(mint_transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        state_transition.sign_external(
+            identity_public_key,
+            signer,
+            Some(|_, _| Ok(SecurityLevel::HIGH)),
+        )?;
+        Ok(state_transition)
+    }
+
+    fn new_token_burn_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfo>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _delete_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let burn_transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info,
+            }),
+            burn_amount: amount,
+            public_note,
+        });
+
+        // Wrap in a batch transition
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(burn_transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        // Create the state transition
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        state_transition.sign_external(
+            identity_public_key,
+            signer,
+            Some(|_, _| Ok(SecurityLevel::HIGH)),
+        )?;
+
+        Ok(state_transition)
+    }
+
+    fn new_token_transfer_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        recipient_id: Identifier,
+        public_note: Option<String>,
+        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        private_encrypted_note: Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+        using_group_info: Option<GroupStateTransitionInfo>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _delete_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        // Create the transfer transition for batch version 1
+        let transfer_transition = TokenTransferTransition::V0(TokenTransferTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info,
+            }),
+            recipient_id,
+            amount,
+            public_note,
+            shared_encrypted_note,
+            private_encrypted_note,
+        });
+
+        // Wrap in a batch transition
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(transfer_transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        // Create the state transition
+        let mut state_transition: StateTransition = documents_batch_transition.into();
+        state_transition.sign_external(
+            identity_public_key,
+            signer,
+            Some(|_, _| Ok(SecurityLevel::HIGH)),
+        )?;
+
+        Ok(state_transition)
     }
 }

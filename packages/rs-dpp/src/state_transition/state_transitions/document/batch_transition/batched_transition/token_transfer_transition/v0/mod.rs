@@ -39,9 +39,9 @@ pub struct TokenTransferTransitionV0 {
     pub amount: u64,
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(rename = "recipientOwnerId")
+        serde(rename = "recipientId")
     )]
-    pub recipient_owner_id: Identifier,
+    pub recipient_id: Identifier,
     /// The public note
     #[cfg_attr(
         feature = "state-transition-serde-conversion",

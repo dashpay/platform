@@ -12,7 +12,6 @@ use crate::data_contract::associated_token::token_configuration::TokenConfigurat
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::group::Group;
 use crate::tokens::calculate_token_id;
-use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -170,6 +169,13 @@ impl DataContractV1Getters for DataContractV1 {
 
     fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>> {
         Some(&mut self.tokens)
+    }
+
+    fn token_configuration_mut(
+        &mut self,
+        position: TokenContractPosition,
+    ) -> Option<&mut TokenConfiguration> {
+        self.tokens.get_mut(&position)
     }
 
     /// Returns the token id if a token exists at that position

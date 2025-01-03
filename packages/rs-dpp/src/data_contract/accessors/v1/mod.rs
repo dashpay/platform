@@ -20,6 +20,12 @@ pub trait DataContractV1Getters: DataContractV0Getters {
 
     /// Returns a mutable reference to the tokens map.
     fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>>;
+    /// Returns a mutable reference to a token configuration
+    /// Returns `None` for V0 since it doesn't have tokens.
+    fn token_configuration_mut(
+        &mut self,
+        position: TokenContractPosition,
+    ) -> Option<&mut TokenConfiguration>;
 
     /// Returns the token id at a certain position
     fn token_id(&self, position: TokenContractPosition) -> Option<Identifier>;

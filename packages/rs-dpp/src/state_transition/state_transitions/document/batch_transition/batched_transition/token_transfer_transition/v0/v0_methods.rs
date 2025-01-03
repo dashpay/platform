@@ -31,13 +31,13 @@ pub trait TokenTransferTransitionV0Methods:
     fn set_amount(&mut self, amount: u64);
 
     /// Returns the `recipient_owner_id` field of the `TokenTransferTransitionV0`.
-    fn recipient_owner_id(&self) -> Identifier;
+    fn recipient_id(&self) -> Identifier;
 
     /// Returns a reference to the `recipient_owner_id` field of the `TokenTransferTransitionV0`.
-    fn recipient_owner_id_ref(&self) -> &Identifier;
+    fn recipient_id_ref(&self) -> &Identifier;
 
     /// Sets the value of the `recipient_owner_id` field in the `TokenTransferTransitionV0`.
-    fn set_recipient_owner_id(&mut self, recipient_owner_id: Identifier);
+    fn set_recipient_id(&mut self, recipient_owner_id: Identifier);
 
     /// Returns the `public_note` field of the `TokenTransferTransitionV0`.
     fn public_note(&self) -> Option<&String>;
@@ -111,16 +111,16 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
         self.amount = amount;
     }
 
-    fn recipient_owner_id(&self) -> Identifier {
-        self.recipient_owner_id
+    fn recipient_id(&self) -> Identifier {
+        self.recipient_id
     }
 
-    fn recipient_owner_id_ref(&self) -> &Identifier {
-        &self.recipient_owner_id
+    fn recipient_id_ref(&self) -> &Identifier {
+        &self.recipient_id
     }
 
-    fn set_recipient_owner_id(&mut self, recipient_owner_id: Identifier) {
-        self.recipient_owner_id = recipient_owner_id;
+    fn set_recipient_id(&mut self, recipient_owner_id: Identifier) {
+        self.recipient_id = recipient_owner_id;
     }
     fn public_note(&self) -> Option<&String> {
         self.public_note.as_ref()
@@ -204,14 +204,14 @@ impl AllowedAsMultiPartyAction for TokenTransferTransitionV0 {
         let TokenTransferTransitionV0 {
             base,
             amount,
-            recipient_owner_id,
+            recipient_id,
             ..
         } = self;
 
         let mut bytes = b"action_token_transfer".to_vec();
         bytes.extend_from_slice(base.token_id().as_bytes());
         bytes.extend_from_slice(owner_id.as_bytes());
-        bytes.extend_from_slice(recipient_owner_id.as_bytes());
+        bytes.extend_from_slice(recipient_id.as_bytes());
         bytes.extend_from_slice(&base.identity_contract_nonce().to_be_bytes());
         bytes.extend_from_slice(&amount.to_be_bytes());
 

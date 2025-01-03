@@ -16,6 +16,7 @@ mod refund_tests {
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::DataContract;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Setters};
@@ -272,6 +273,8 @@ mod refund_tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
             None,
+            None::<fn(&mut DataContract)>,
+            None,
             None,
         );
 
@@ -368,6 +371,8 @@ mod refund_tests {
             &platform.drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );
@@ -469,6 +474,8 @@ mod refund_tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
             None,
+            None::<fn(&mut DataContract)>,
+            None,
             None,
         );
 
@@ -564,6 +571,8 @@ mod refund_tests {
             &platform.drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );
@@ -661,6 +670,8 @@ mod refund_tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
             None,
+            None::<fn(&mut DataContract)>,
+            None,
             None,
         );
 
@@ -757,6 +768,8 @@ mod refund_tests {
             &platform.drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );

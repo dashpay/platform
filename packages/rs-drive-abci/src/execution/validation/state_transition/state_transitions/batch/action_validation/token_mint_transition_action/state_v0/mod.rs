@@ -6,6 +6,7 @@ use dpp::consensus::state::document::document_contest_currently_locked_error::Do
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::RecipientIdentityDoesNotExistError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
@@ -18,7 +19,7 @@ use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::batch::state::v0::fetch_contender::fetch_contender;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
@@ -46,6 +47,29 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         // todo verify that minting would not break max supply
+
+        // We need to verify that the receiver is a valid identity
+
+        let recipient = self.identity_balance_holder_id();
+        if recipient != owner_id {
+            // We have already checked that this user exists if the recipient is the owner id
+            let balance = platform.drive.fetch_identity_balance(
+                recipient.to_buffer(),
+                transaction,
+                platform_version,
+            )?;
+            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                RetrieveIdentityInfo::only_balance(),
+            ));
+            if balance.is_none() {
+                // The identity does not exist
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::RecipientIdentityDoesNotExistError(
+                        RecipientIdentityDoesNotExistError::new(recipient),
+                    )),
+                ));
+            }
+        }
 
         Ok(SimpleConsensusValidationResult::new())
     }

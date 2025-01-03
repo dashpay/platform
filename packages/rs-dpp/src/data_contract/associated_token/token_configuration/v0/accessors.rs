@@ -52,6 +52,16 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         &self.new_tokens_destination_identity_rules
     }
 
+    /// Returns whether minting allows choosing a destination.
+    fn minting_allow_choosing_destination(&self) -> bool {
+        self.minting_allow_choosing_destination
+    }
+
+    /// Returns the rules for minting destination selection.
+    fn minting_allow_choosing_destination_rules(&self) -> &ChangeControlRules {
+        &self.minting_allow_choosing_destination_rules
+    }
+
     /// Returns the manual minting rules.
     fn manual_minting_rules(&self) -> &ChangeControlRules {
         &self.manual_minting_rules
@@ -143,5 +153,15 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         self.main_control_group_can_be_modified = action_takers;
+    }
+
+    /// Sets whether minting allows choosing a destination.
+    fn set_minting_allow_choosing_destination(&mut self, value: bool) {
+        self.minting_allow_choosing_destination = value;
+    }
+
+    /// Sets the rules for minting destination selection.
+    fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules) {
+        self.minting_allow_choosing_destination_rules = rules;
     }
 }

@@ -78,6 +78,7 @@ pub(in crate::execution) mod tests {
     use dpp::dashcore::{ProTxHash, Txid};
     use dpp::dashcore::hashes::Hash;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::DataContract;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
@@ -95,6 +96,7 @@ pub(in crate::execution) mod tests {
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
+    use dpp::tokens::calculate_token_id;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::contender_structs::{Contender, ContenderV0};
@@ -123,6 +125,7 @@ pub(in crate::execution) mod tests {
     use crate::platform_types::epoch_info::v0::EpochInfoV0;
     use crate::execution::types::block_fees::v0::BlockFeesV0;
     use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -894,6 +897,8 @@ pub(in crate::execution) mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             None,
             None,
+            None::<fn(&mut DataContract)>,
+            None,
             None,
         );
 
@@ -901,6 +906,8 @@ pub(in crate::execution) mod tests {
             &platform.drive,
             "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );
@@ -1246,6 +1253,8 @@ pub(in crate::execution) mod tests {
             &platform.drive,
             "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-contract-id.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );
@@ -2276,5 +2285,35 @@ pub(in crate::execution) mod tests {
             lock_vote_tally,
             finished_vote_info,
         )
+    }
+
+    pub(in crate::execution) fn create_token_contract_with_owner_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        token_configuration_modification: Option<impl FnOnce(&mut TokenConfiguration)>,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier) {
+        let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+        let basic_token_contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/basic-token/basic-token.json",
+            Some(data_contract_id.to_buffer()),
+            Some(identity_id.to_buffer()),
+            Some(|data_contract: &mut DataContract| {
+                if let Some(token_configuration_modification) = token_configuration_modification {
+                    let token_configuration = data_contract
+                        .token_configuration_mut(0)
+                        .expect("expected token configuration");
+                    token_configuration_modification(token_configuration);
+                }
+            }),
+            None,
+            Some(platform_version),
+        );
+
+        let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+        (basic_token_contract, token_id.into())
     }
 }

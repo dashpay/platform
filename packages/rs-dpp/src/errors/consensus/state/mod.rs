@@ -5,4 +5,5 @@ pub mod document;
 pub mod identity;
 pub mod prefunded_specialized_balances;
 pub mod state_error;
+pub mod token;
 pub mod voting;

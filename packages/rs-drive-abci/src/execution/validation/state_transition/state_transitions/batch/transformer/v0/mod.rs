@@ -23,7 +23,8 @@ use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
+use dpp::{consensus::ConsensusError, prelude::Identifier, ProtocolError, validation::ConsensusValidationResult};
+use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -507,17 +508,14 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(batched_action.into())
             }
             TokenTransition::Mint(token_mint_transition) => {
-                let (token_mint_action, fee_result) = TokenMintTransitionAction::try_from_borrowed_token_mint_transition_with_contract_lookup(drive, owner_id, token_mint_transition, approximate_for_costs, transaction, block_info, |_identifier| {
+                let (batched_action, fee_result) = TokenMintTransitionAction::try_from_borrowed_token_mint_transition_with_contract_lookup(drive, owner_id, token_mint_transition, approximate_for_costs, transaction, block_info, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                let batched_action = BatchedTransitionAction::TokenAction(
-                    TokenTransitionAction::MintAction(token_mint_action),
-                );
-                Ok(batched_action.into())
+                Ok(batched_action)
             }
             TokenTransition::Transfer(token_transfer_transition) => {
                 let (token_transfer_action, fee_result) = TokenTransferTransitionAction::try_from_borrowed_token_transfer_transition_with_contract_lookup(drive, owner_id, token_transfer_transition, approximate_for_costs, transaction, block_info, |_identifier| {

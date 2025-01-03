@@ -603,6 +603,8 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract.json",
             None,
+            None,
+            None,
             Some(&db_transaction),
             None,
         );
@@ -714,6 +716,8 @@ mod tests {
         let contract = setup_contract(
             &drive,
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
+            None,
+            None,
             None,
             Some(&db_transaction),
             None,
@@ -932,6 +936,8 @@ mod tests {
         let contract = setup_contract(
             &drive,
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
+            None,
+            None,
             None,
             Some(&db_transaction),
             None,

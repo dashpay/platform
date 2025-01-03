@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     #[inline(always)]
-    pub(super) fn create_genesis_state_v0(
+    pub(super) fn create_genesis_state_v1(
         &self,
         genesis_core_height: CoreBlockHeight,
         genesis_time: TimestampMillis,
@@ -47,7 +47,12 @@ impl<C> Platform<C> {
                 SystemDataContract::MasternodeRewards,
                 system_data_contracts.load_masternode_reward_shares(),
             ),
+            (
+                SystemDataContract::TokenHistory,
+                system_data_contracts.load_token_history(),
+            ),
         ]);
+        //todo add Wallet Utils (maybe)
 
         for data_contract in system_data_contract_types.values() {
             self.register_system_data_contract_operations(

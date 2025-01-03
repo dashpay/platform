@@ -34,7 +34,7 @@ impl Drive {
         let contract = self.cache.system_data_contracts.load_token_history();
 
         match event {
-            TokenEvent::Mint(mint_amount, public_note) => {
+            TokenEvent::Mint(mint_amount, recipient_id, public_note) => {
                 let document_type = contract.document_type_for_name("mint")?;
                 let document_id = Document::generate_document_id_v0(
                     &contract.id(),
@@ -44,6 +44,7 @@ impl Drive {
                 );
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
+                    ("recipientId".to_string(), recipient_id.into()),
                     ("amount".to_string(), mint_amount.into()),
                 ]);
                 if let Some(note) = public_note {
