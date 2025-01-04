@@ -1,9 +1,11 @@
 use crate::consensus::basic::data_contract::DataContractTokenConfigurationUpdateError;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
+use crate::data_contract::GroupContractPosition;
 use crate::multi_identity_events::ActionTaker;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 impl TokenConfiguration {
     #[inline(always)]
@@ -11,7 +13,8 @@ impl TokenConfiguration {
         &self,
         new_config: &TokenConfiguration,
         contract_owner_id: &Identifier,
-        main_group: &Group,
+        main_group: Option<&Group>,
+        groups: &BTreeMap<GroupContractPosition, Group>,
         action_taker: &ActionTaker,
     ) -> SimpleConsensusValidationResult {
         let old = self.as_cow_v0();
@@ -51,6 +54,7 @@ impl TokenConfiguration {
                 &new.max_supply_change_rules,
                 contract_owner_id,
                 main_group,
+                groups,
                 action_taker,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
@@ -74,6 +78,7 @@ impl TokenConfiguration {
                 &new.new_tokens_destination_identity_rules,
                 contract_owner_id,
                 main_group,
+                groups,
                 action_taker,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
@@ -89,12 +94,38 @@ impl TokenConfiguration {
             }
         }
 
+        // Check changes to minting_allow_choosing_destination and its rules
+        if old.minting_allow_choosing_destination != new.minting_allow_choosing_destination
+            || old.minting_allow_choosing_destination_rules
+                != new.minting_allow_choosing_destination_rules
+        {
+            if !old.minting_allow_choosing_destination_rules.can_change_to(
+                &new.minting_allow_choosing_destination_rules,
+                contract_owner_id,
+                main_group,
+                groups,
+                action_taker,
+            ) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "mintingAllowChoosingDestination or mintingAllowChoosingDestinationRules"
+                            .to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
         // Check changes to manual_minting_rules
         if old.manual_minting_rules != new.manual_minting_rules {
             if !old.manual_minting_rules.can_change_to(
                 &new.manual_minting_rules,
                 contract_owner_id,
                 main_group,
+                groups,
                 action_taker,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
@@ -115,6 +146,7 @@ impl TokenConfiguration {
                 &new.manual_burning_rules,
                 contract_owner_id,
                 main_group,
+                groups,
                 action_taker,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
@@ -129,11 +161,53 @@ impl TokenConfiguration {
             }
         }
 
+        // Check changes to freeze_rules
+        if old.freeze_rules != new.freeze_rules {
+            if !old.freeze_rules.can_change_to(
+                &new.freeze_rules,
+                contract_owner_id,
+                main_group,
+                groups,
+                action_taker,
+            ) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "freezeRules".to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        // Check changes to unfreeze_rules
+        if old.unfreeze_rules != new.unfreeze_rules {
+            if !old.unfreeze_rules.can_change_to(
+                &new.unfreeze_rules,
+                contract_owner_id,
+                main_group,
+                groups,
+                action_taker,
+            ) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "unfreezeRules".to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
         // Check changes to main_control_group
         if old.main_control_group != new.main_control_group {
             if !old
                 .main_control_group_can_be_modified
-                .allowed_for_action_taker(contract_owner_id, main_group, action_taker)
+                .allowed_for_action_taker(contract_owner_id, main_group, groups, action_taker)
             {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(

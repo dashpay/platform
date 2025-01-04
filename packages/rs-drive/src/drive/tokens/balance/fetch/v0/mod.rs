@@ -15,14 +15,13 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<TokenAmount>, Error> {
         self.fetch_identity_token_balance_operations_v0(
             token_id,
             identity_id,
-            apply,
+            true,
             transaction,
             &mut vec![],
             platform_version,

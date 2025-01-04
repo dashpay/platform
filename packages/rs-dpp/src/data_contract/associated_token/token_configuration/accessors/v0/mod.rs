@@ -2,6 +2,7 @@ use crate::data_contract::associated_token::token_configuration::v0::TokenConfig
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::group::RequiredSigners;
+use crate::data_contract::GroupContractPosition;
 use platform_value::Identifier;
 use std::collections::BTreeSet;
 
@@ -47,7 +48,7 @@ pub trait TokenConfigurationV0Getters {
     fn unfreeze_rules(&self) -> &ChangeControlRules;
 
     /// Returns the main control group.
-    fn main_control_group(&self) -> Option<&(BTreeSet<Identifier>, RequiredSigners)>;
+    fn main_control_group(&self) -> Option<GroupContractPosition>;
 
     /// Returns the main control group can be modified.
     fn main_control_group_can_be_modified(&self) -> &AuthorizedActionTakers;
@@ -86,7 +87,7 @@ pub trait TokenConfigurationV0Setters {
     fn set_unfreeze_rules(&mut self, rules: ChangeControlRules);
 
     /// Sets the main control group.
-    fn set_main_control_group(&mut self, group: Option<(BTreeSet<Identifier>, RequiredSigners)>);
+    fn set_main_control_group(&mut self, group: Option<GroupContractPosition>);
 
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers);

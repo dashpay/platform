@@ -84,7 +84,7 @@ impl Drive {
                 )?;
             }
             TokenEvent::Burn(burn_amount, public_note) => {
-                let document_type = contract.document_type_for_name("mint")?;
+                let document_type = contract.document_type_for_name("burn")?;
                 let document_id = Document::generate_document_id_v0(
                     &contract.id(),
                     &owner_id,

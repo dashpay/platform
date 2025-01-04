@@ -6,8 +6,12 @@ use dpp::consensus::state::document::document_contest_currently_locked_error::Do
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, UnauthorizedTokenActionError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::multi_identity_events::ActionTaker;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -45,7 +49,56 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // todo verify that minting would not break max supply
+        // Let's first check to see if we are authorized to perform this action
+        let contract = &self.data_contract_fetch_info_ref().contract;
+        let token_configuration = contract.expected_token_configuration(self.token_position())?;
+        let rules = token_configuration.manual_burning_rules();
+        let main_control_group = token_configuration
+            .main_control_group()
+            .map(|position| contract.expected_group(position))
+            .transpose()?;
+
+        if !rules.can_make_change(
+            &contract.owner_id(),
+            main_control_group,
+            contract.groups(),
+            &ActionTaker::SingleIdentity(owner_id),
+        ) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
+                    UnauthorizedTokenActionError::new(
+                        owner_id,
+                        "burn".to_string(),
+                        rules.authorized_to_make_change_action_takers().clone(),
+                    ),
+                )),
+            ));
+        }
+
+        // We need to verify that we have enough of the token
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                self.token_id().to_buffer(),
+                owner_id.to_buffer(),
+                transaction,
+                platform_version,
+            )?
+            .unwrap_or_default();
+        execution_context.add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
+        if balance < self.burn_amount() {
+            // The identity does not exist
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
+                    IdentityDoesNotHaveEnoughTokenBalanceError::new(
+                        owner_id,
+                        self.burn_amount(),
+                        balance,
+                        "burn".to_string(),
+                    ),
+                )),
+            ));
+        }
 
         Ok(SimpleConsensusValidationResult::new())
     }

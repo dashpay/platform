@@ -78,8 +78,8 @@ pub(in crate::execution) mod tests {
     use dpp::dashcore::{ProTxHash, Txid};
     use dpp::dashcore::hashes::Hash;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::accessors::v1::DataContractV1Getters;
-    use dpp::data_contract::DataContract;
+    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::{DataContract, GroupContractPosition};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
@@ -126,6 +126,7 @@ pub(in crate::execution) mod tests {
     use crate::execution::types::block_fees::v0::BlockFeesV0;
     use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::group::Group;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -2291,6 +2292,7 @@ pub(in crate::execution) mod tests {
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         token_configuration_modification: Option<impl FnOnce(&mut TokenConfiguration)>,
+        add_groups: Option<BTreeMap<GroupContractPosition, Group>>,
         platform_version: &PlatformVersion,
     ) -> (DataContract, Identifier) {
         let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
@@ -2306,6 +2308,9 @@ pub(in crate::execution) mod tests {
                         .token_configuration_mut(0)
                         .expect("expected token configuration");
                     token_configuration_modification(token_configuration);
+                }
+                if let Some(add_groups) = add_groups {
+                    data_contract.set_groups(add_groups);
                 }
             }),
             None,

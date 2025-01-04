@@ -12,6 +12,7 @@ use crate::data_contract::associated_token::token_configuration::TokenConfigurat
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::group::Group;
 use crate::tokens::calculate_token_id;
+use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -163,12 +164,31 @@ impl DataContractV1Getters for DataContractV1 {
         Some(&mut self.groups)
     }
 
+    fn expected_group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError> {
+        self.groups
+            .get(&position)
+            .ok_or(ProtocolError::GroupNotFound(format!(
+                "Group not found at position {} in contract {}",
+                position,
+                self.id()
+            )))
+    }
+
     fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
         &self.tokens
     }
 
     fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>> {
         Some(&mut self.tokens)
+    }
+
+    fn expected_token_configuration(
+        &self,
+        position: TokenContractPosition,
+    ) -> Result<&TokenConfiguration, ProtocolError> {
+        self.tokens.get(&position).ok_or(ProtocolError::Token(
+            TokenError::TokenNotFoundAtPositionError.into(),
+        ))
     }
 
     fn token_configuration_mut(

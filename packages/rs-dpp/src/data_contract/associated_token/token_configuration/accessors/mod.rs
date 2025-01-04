@@ -8,6 +8,7 @@ use crate::data_contract::associated_token::token_configuration::TokenConfigurat
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::group::RequiredSigners;
+use crate::data_contract::GroupContractPosition;
 use platform_value::Identifier;
 use std::collections::BTreeSet;
 
@@ -111,7 +112,7 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns the main control group.
-    fn main_control_group(&self) -> Option<&(BTreeSet<Identifier>, RequiredSigners)> {
+    fn main_control_group(&self) -> Option<GroupContractPosition> {
         match self {
             TokenConfiguration::V0(v0) => v0.main_control_group(),
         }
@@ -198,7 +199,7 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     }
 
     /// Sets the main control group.
-    fn set_main_control_group(&mut self, group: Option<(BTreeSet<Identifier>, RequiredSigners)>) {
+    fn set_main_control_group(&mut self, group: Option<GroupContractPosition>) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_main_control_group(group),
         }

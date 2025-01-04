@@ -233,6 +233,8 @@ impl ErrorWithCode for StateError {
 
             // Token errors: 40150-40199
             Self::RecipientIdentityDoesNotExistError(_) => 40150,
+            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40151,
+            Self::UnauthorizedTokenActionError(_) => 40152,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

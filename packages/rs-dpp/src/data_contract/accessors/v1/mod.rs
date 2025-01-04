@@ -1,7 +1,8 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
-use crate::data_contract::{GroupContractPosition, TokenContractPosition};
+use crate::data_contract::{DataContract, GroupContractPosition, TokenContractPosition};
+use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -14,12 +15,23 @@ pub trait DataContractV1Getters: DataContractV0Getters {
 
     /// Returns a mutable reference to the groups map.
     fn groups_mut(&mut self) -> Option<&mut BTreeMap<GroupContractPosition, Group>>;
+    /// Returns a reference to a group or an error.
+    /// Returns an Error for V0 since it doesn't have groups.
+    fn expected_group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError>;
 
     /// Returns a reference to the tokens map.
     fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration>;
 
     /// Returns a mutable reference to the tokens map.
     fn tokens_mut(&mut self) -> Option<&mut BTreeMap<TokenContractPosition, TokenConfiguration>>;
+
+    /// Returns a mutable reference to a token configuration or an error.
+    /// Returns an Error for V0 since it doesn't have tokens.
+    fn expected_token_configuration(
+        &self,
+        position: TokenContractPosition,
+    ) -> Result<&TokenConfiguration, ProtocolError>;
+
     /// Returns a mutable reference to a token configuration
     /// Returns `None` for V0 since it doesn't have tokens.
     fn token_configuration_mut(

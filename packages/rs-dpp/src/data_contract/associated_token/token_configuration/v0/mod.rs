@@ -3,11 +3,11 @@ mod accessors;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
-use crate::data_contract::group::RequiredSigners;
+use crate::data_contract::GroupContractPosition;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
@@ -56,16 +56,16 @@ pub struct TokenConfigurationV0 {
     pub minting_allow_choosing_destination: bool,
     #[serde(default = "default_change_control_rules")]
     pub minting_allow_choosing_destination_rules: ChangeControlRules,
-    #[serde(default = "default_change_control_rules")]
+    #[serde(default = "default_contract_owner_change_control_rules")]
     pub manual_minting_rules: ChangeControlRules,
-    #[serde(default = "default_change_control_rules")]
+    #[serde(default = "default_contract_owner_change_control_rules")]
     pub manual_burning_rules: ChangeControlRules,
     #[serde(default = "default_change_control_rules")]
     pub freeze_rules: ChangeControlRules,
     #[serde(default = "default_change_control_rules")]
     pub unfreeze_rules: ChangeControlRules,
     #[serde(default)]
-    pub main_control_group: Option<(BTreeSet<Identifier>, RequiredSigners)>,
+    pub main_control_group: Option<GroupContractPosition>,
     #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
 }
@@ -83,6 +83,15 @@ fn default_keeps_history() -> bool {
 fn default_change_control_rules() -> ChangeControlRules {
     ChangeControlRules::V0(ChangeControlRulesV0 {
         authorized_to_make_change: AuthorizedActionTakers::NoOne,
+        authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+        changing_authorized_action_takers_to_no_one_allowed: false,
+        changing_authorized_action_takers_to_contract_owner_allowed: false,
+    })
+}
+
+fn default_contract_owner_change_control_rules() -> ChangeControlRules {
+    ChangeControlRules::V0(ChangeControlRulesV0 {
+        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
         authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
         changing_authorized_action_takers_to_no_one_allowed: false,
         changing_authorized_action_takers_to_contract_owner_allowed: false,

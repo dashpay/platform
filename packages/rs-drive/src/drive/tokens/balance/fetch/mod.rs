@@ -30,7 +30,6 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         identity_id: [u8; 32],
-        apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<TokenAmount>, Error> {
@@ -44,7 +43,6 @@ impl Drive {
             0 => self.fetch_identity_token_balance_v0(
                 token_id,
                 identity_id,
-                apply,
                 transaction,
                 platform_version,
             ),

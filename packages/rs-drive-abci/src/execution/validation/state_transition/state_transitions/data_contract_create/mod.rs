@@ -434,13 +434,7 @@ mod tests {
 
         let token_balance = platform
             .drive
-            .fetch_identity_token_balance(
-                token_id,
-                identity_id.to_buffer(),
-                true,
-                None,
-                platform_version,
-            )
+            .fetch_identity_token_balance(token_id, identity_id.to_buffer(), None, platform_version)
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, None);
     }
@@ -526,13 +520,7 @@ mod tests {
 
         let token_balance = platform
             .drive
-            .fetch_identity_token_balance(
-                token_id,
-                identity_id.to_buffer(),
-                true,
-                None,
-                platform_version,
-            )
+            .fetch_identity_token_balance(token_id, identity_id.to_buffer(), None, platform_version)
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, Some(base_supply_start_amount));
     }
@@ -621,13 +609,7 @@ mod tests {
 
         let token_balance = platform
             .drive
-            .fetch_identity_token_balance(
-                token_id,
-                identity_id.to_buffer(),
-                true,
-                None,
-                platform_version,
-            )
+            .fetch_identity_token_balance(token_id, identity_id.to_buffer(), None, platform_version)
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, None);
     }

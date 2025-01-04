@@ -13,6 +13,7 @@ use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1S
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::group::Group;
+use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
 
@@ -216,6 +217,25 @@ impl DataContractV1Getters for DataContract {
         }
     }
 
+    /// Returns a reference to a group or an error.
+    /// Returns an Error for V0 since it doesn't have groups.
+    fn expected_group(&self, position: GroupContractPosition) -> Result<&Group, ProtocolError> {
+        match self {
+            DataContract::V0(_) => Err(ProtocolError::GroupNotFound(
+                "Group not found in contract V0".to_string(),
+            )),
+            DataContract::V1(v1) => {
+                v1.groups
+                    .get(&position)
+                    .ok_or(ProtocolError::GroupNotFound(format!(
+                        "Group not found at position {} in contract {}",
+                        position,
+                        self.id()
+                    )))
+            }
+        }
+    }
+
     /// Returns a reference to the tokens map.
     fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
         match self {
@@ -230,6 +250,22 @@ impl DataContractV1Getters for DataContract {
         match self {
             DataContract::V0(_) => None,
             DataContract::V1(v1) => Some(&mut v1.tokens),
+        }
+    }
+
+    /// Returns a mutable reference to a token configuration or an error.
+    /// Returns an Error for V0 since it doesn't have tokens.
+    fn expected_token_configuration(
+        &self,
+        position: TokenContractPosition,
+    ) -> Result<&TokenConfiguration, ProtocolError> {
+        match self {
+            DataContract::V0(_) => Err(ProtocolError::Token(
+                TokenError::TokenNotFoundOnContractVersion.into(),
+            )),
+            DataContract::V1(v1) => v1.tokens.get(&position).ok_or(ProtocolError::Token(
+                TokenError::TokenNotFoundAtPositionError.into(),
+            )),
         }
     }
 

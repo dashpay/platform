@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub mod accessors;
-mod v0;
+pub mod v0;
 pub type RequiredSigners = u8;
 
 pub type GroupMemberPower = u32;
