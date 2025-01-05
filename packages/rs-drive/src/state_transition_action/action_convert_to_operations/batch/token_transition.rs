@@ -16,13 +16,8 @@ impl DriveHighLevelDocumentOperationConverter for TokenTransitionAction {
         match self {
             TokenTransitionAction::BurnAction(token_burn_transition) => token_burn_transition
                 .into_high_level_document_drive_operations(epoch, owner_id, platform_version),
-            TokenTransitionAction::MintAction(token_issuance_transition) => {
-                token_issuance_transition.into_high_level_document_drive_operations(
-                    epoch,
-                    owner_id,
-                    platform_version,
-                )
-            }
+            TokenTransitionAction::MintAction(token_mint_transition) => token_mint_transition
+                .into_high_level_document_drive_operations(epoch, owner_id, platform_version),
             TokenTransitionAction::TransferAction(token_transfer_transition) => {
                 token_transfer_transition.into_high_level_document_drive_operations(
                     epoch,
@@ -30,6 +25,10 @@ impl DriveHighLevelDocumentOperationConverter for TokenTransitionAction {
                     platform_version,
                 )
             }
+            TokenTransitionAction::FreezeAction(token_freeze_action) => token_freeze_action
+                .into_high_level_document_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::UnfreezeAction(token_unfreeze_action) => token_unfreeze_action
+                .into_high_level_document_drive_operations(epoch, owner_id, platform_version),
         }
     }
 }

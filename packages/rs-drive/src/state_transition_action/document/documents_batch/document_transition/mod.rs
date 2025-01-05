@@ -17,10 +17,14 @@ pub mod document_update_price_transition_action;
 pub mod token_base_transition_action;
 /// token_burn_transition_action
 pub mod token_burn_transition_action;
+/// token_freeze_transition_action
+pub mod token_freeze_transition_action;
 /// token_issuance_transition_action
 pub mod token_mint_transition_action;
 /// token_transfer_transition_action
 pub mod token_transfer_transition_action;
+/// token_unfreeze_transition_action
+pub mod token_unfreeze_transition_action;
 
 pub use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 
@@ -37,6 +41,8 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_freeze_transition_action::{TokenFreezeTransitionAction, TokenFreezeTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::token_unfreeze_transition_action::{TokenUnfreezeTransitionAction, TokenUnfreezeTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
@@ -96,6 +102,10 @@ pub enum TokenTransitionAction {
     MintAction(TokenMintTransitionAction),
     /// transfer
     TransferAction(TokenTransferTransitionAction),
+    /// freeze
+    FreezeAction(TokenFreezeTransitionAction),
+    /// unfreeze
+    UnfreezeAction(TokenUnfreezeTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -105,6 +115,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnAction(action) => action.base(),
             TokenTransitionAction::MintAction(action) => action.base(),
             TokenTransitionAction::TransferAction(action) => action.base(),
+            TokenTransitionAction::FreezeAction(action) => action.base(),
+            TokenTransitionAction::UnfreezeAction(action) => action.base(),
         }
     }
 
@@ -114,6 +126,8 @@ impl TokenTransitionAction {
             TokenTransitionAction::BurnAction(action) => action.base_owned(),
             TokenTransitionAction::MintAction(action) => action.base_owned(),
             TokenTransitionAction::TransferAction(action) => action.base_owned(),
+            TokenTransitionAction::FreezeAction(action) => action.base_owned(),
+            TokenTransitionAction::UnfreezeAction(action) => action.base_owned(),
         }
     }
 }

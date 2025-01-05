@@ -54,8 +54,10 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::TokenBurnTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::token_freeze_transition_action::TokenFreezeTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
