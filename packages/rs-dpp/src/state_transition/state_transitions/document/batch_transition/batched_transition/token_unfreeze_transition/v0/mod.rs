@@ -2,7 +2,6 @@ pub mod v0_methods;
 
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use bincode::{Decode, Encode};
-use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -11,7 +10,7 @@ use std::fmt;
 mod property_names {
     pub const AMOUNT: &str = "$amount";
 }
-/// The Identifier fields in [`TokenMintTransition`]
+/// The Identifier fields in [`TokenUnfreezeTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
@@ -20,20 +19,16 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct TokenMintTransitionV0 {
+pub struct TokenUnfreezeTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
+    /// The identity that we are freezing
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(rename = "issuedToIdentityId")
+        serde(rename = "frozenIdentityId")
     )]
-    /// Who should we issue the token to? If this is not set then we issue to the identity set in
-    /// contract settings. If such an operation is allowed.
-    pub issued_to_identity_id: Option<Identifier>,
-
-    /// How much should we issue
-    pub amount: u64,
+    pub frozen_identity_id: Identifier,
     /// The public note
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
@@ -42,18 +37,9 @@ pub struct TokenMintTransitionV0 {
     pub public_note: Option<String>,
 }
 
-impl fmt::Display for TokenMintTransitionV0 {
+impl fmt::Display for TokenUnfreezeTransitionV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Format the base transition (assuming `TokenBaseTransition` implements Display)
-        write!(
-            f,
-            "Base: {}, Amount: {}, To: {}",
-            self.base, // Assuming `TokenBaseTransition` implements `Display`
-            self.amount,
-            self.issued_to_identity_id
-                .as_ref()
-                .map_or("(Identity Set By Contract)".to_string(), |id| id
-                    .to_string(Encoding::Base58))
-        )
+        write!(f, "Base: {}, Froze: {}", self.base, self.frozen_identity_id)
     }
 }

@@ -40,7 +40,6 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
-use platform_value::string_encoding::Encoding;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use crate::balances::credits::TokenAmount;

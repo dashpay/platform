@@ -14,8 +14,6 @@ use crate::error::Error;
 use crate::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, TokenTransitionAction};
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::v0::TokenBurnTransitionActionV0;
-use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionActionV0;
-use crate::state_transition_action::StateTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl TokenBurnTransitionActionV0 {

@@ -1,4 +1,3 @@
-use dashcore_rpc::dashcore::Network;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;

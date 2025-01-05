@@ -16,9 +16,11 @@ pub use self::batched_transition::{
     document_create_transition::DocumentCreateTransition, document_delete_transition,
     document_delete_transition::DocumentDeleteTransition, document_replace_transition,
     document_replace_transition::DocumentReplaceTransition, token_base_transition,
-    token_burn_transition, token_burn_transition::TokenBurnTransition, token_mint_transition,
+    token_burn_transition, token_burn_transition::TokenBurnTransition, token_freeze_transition,
+    token_freeze_transition::TokenFreezeTransition, token_mint_transition,
     token_mint_transition::TokenMintTransition, token_transfer_transition,
-    token_transfer_transition::TokenTransferTransition,
+    token_transfer_transition::TokenTransferTransition, token_unfreeze_transition,
+    token_unfreeze_transition::TokenUnfreezeTransition,
 };
 
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};

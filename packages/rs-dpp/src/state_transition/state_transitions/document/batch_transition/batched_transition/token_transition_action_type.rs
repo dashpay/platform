@@ -8,6 +8,8 @@ pub enum TokenTransitionActionType {
     Burn,
     Mint,
     Transfer,
+    Freeze,
+    Unfreeze,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -16,6 +18,8 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Burn => "Burn",
             TokenTransitionActionType::Mint => "Mint",
             TokenTransitionActionType::Transfer => "Transfer",
+            TokenTransitionActionType::Freeze => "Freeze",
+            TokenTransitionActionType::Unfreeze => "Unfreeze",
         };
         write!(f, "{}", action_str)
     }
@@ -31,6 +35,8 @@ impl TransitionActionTypeGetter for TokenTransition {
             TokenTransition::Burn(_) => TokenTransitionActionType::Burn,
             TokenTransition::Mint(_) => TokenTransitionActionType::Mint,
             TokenTransition::Transfer(_) => TokenTransitionActionType::Transfer,
+            TokenTransition::Freeze(_) => TokenTransitionActionType::Freeze,
+            TokenTransition::Unfreeze(_) => TokenTransitionActionType::Unfreeze,
         }
     }
 }
@@ -43,6 +49,8 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "burn" => Ok(TokenTransitionActionType::Burn),
             "issuance" => Ok(TokenTransitionActionType::Mint),
             "transfer" => Ok(TokenTransitionActionType::Transfer),
+            "freeze" => Ok(TokenTransitionActionType::Freeze),
+            "unfreeze" => Ok(TokenTransitionActionType::Unfreeze),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"
             ))),

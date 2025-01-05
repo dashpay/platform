@@ -27,19 +27,19 @@ pub trait TokenMintTransitionV0Methods:
 
     fn set_amount(&mut self, amount: u64);
 
-    /// Returns the `public_note` field of the `TokenIssuanceTransitionV0`.
+    /// Returns the `public_note` field of the `TokenMintTransitionV0`.
     fn public_note(&self) -> Option<&String>;
 
-    /// Returns the owned `public_note` field of the `TokenIssuanceTransitionV0`.
+    /// Returns the owned `public_note` field of the `TokenMintTransitionV0`.
     fn public_note_owned(self) -> Option<String>;
 
-    /// Sets the value of the `public_note` field in the `TokenIssuanceTransitionV0`.
+    /// Sets the value of the `public_note` field in the `TokenMintTransitionV0`.
     fn set_public_note(&mut self, public_note: Option<String>);
 
-    /// Returns the `issued_to_identity_id` field of the `TokenIssuanceTransitionV0`.
+    /// Returns the `issued_to_identity_id` field of the `TokenMintTransitionV0`.
     fn issued_to_identity_id(&self) -> Option<Identifier>;
 
-    /// Sets the value of the `issued_to_identity_id` field in the `TokenIssuanceTransitionV0`.
+    /// Sets the value of the `issued_to_identity_id` field in the `TokenMintTransitionV0`.
     fn set_issued_to_identity_id(&mut self, issued_to_identity_id: Option<Identifier>);
 }
 

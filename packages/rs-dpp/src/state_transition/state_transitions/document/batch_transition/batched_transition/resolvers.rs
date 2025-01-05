@@ -4,7 +4,8 @@ use crate::state_transition::batch_transition::batched_transition::{
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenMintTransition, TokenTransferTransition,
+    TokenBurnTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition,
+    TokenUnfreezeTransition,
 };
 
 impl BatchTransitionResolversV0 for BatchedTransition {
@@ -63,6 +64,20 @@ impl BatchTransitionResolversV0 for BatchedTransition {
             BatchedTransition::Token(token) => token.as_transition_token_transfer(),
         }
     }
+
+    fn as_transition_token_freeze(&self) -> Option<&TokenFreezeTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_freeze(),
+        }
+    }
+
+    fn as_transition_token_unfreeze(&self) -> Option<&TokenUnfreezeTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_unfreeze(),
+        }
+    }
 }
 
 impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
@@ -119,6 +134,20 @@ impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
         match self {
             BatchedTransitionRef::Document(_) => None,
             BatchedTransitionRef::Token(token) => token.as_transition_token_transfer(),
+        }
+    }
+
+    fn as_transition_token_freeze(&self) -> Option<&TokenFreezeTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_freeze(),
+        }
+    }
+
+    fn as_transition_token_unfreeze(&self) -> Option<&TokenUnfreezeTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_unfreeze(),
         }
     }
 }

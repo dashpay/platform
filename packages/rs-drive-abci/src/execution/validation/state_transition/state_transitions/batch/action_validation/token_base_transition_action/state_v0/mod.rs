@@ -2,7 +2,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::group::GroupActionAlreadySignedByIdentityError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};

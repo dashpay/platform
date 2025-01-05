@@ -23,8 +23,7 @@ use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{Revision, UserFeeIncrease};
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::{consensus::ConsensusError, prelude::Identifier, ProtocolError, validation::ConsensusValidationResult};
-use dpp::fee::fee_result::FeeResult;
+use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -534,6 +533,26 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     TokenTransitionAction::TransferAction(token_transfer_action),
                 );
                 Ok(batched_action.into())
+            }
+            TokenTransition::Freeze(token_freeze_transition) => {
+                let (batched_action, fee_result) = TokenFreezeTransitionAction::try_from_borrowed_token_freeze_transition_with_contract_lookup(drive, owner_id, token_freeze_transition, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::Unfreeze(token_unfreeze_transition) => {
+                let (batched_action, fee_result) = TokenUnfreezeTransitionAction::try_from_borrowed_token_unfreeze_transition_with_contract_lookup(drive, owner_id, token_unfreeze_transition, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
             }
         }
     }

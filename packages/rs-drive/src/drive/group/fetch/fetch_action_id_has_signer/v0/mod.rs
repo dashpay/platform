@@ -7,7 +7,6 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::GroupContractPosition;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
