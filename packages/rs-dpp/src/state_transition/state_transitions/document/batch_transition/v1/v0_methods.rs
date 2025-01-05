@@ -443,7 +443,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                     group_contract_position,
                 ) => {
                     let action_id = mint_transition.calculate_action_id(owner_id);
-                    println!("using action id {}", action_id.to_string(Encoding::Hex));
                     mint_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,

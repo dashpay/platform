@@ -43,28 +43,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenMintTransitionAction {
                     },
                 )];
 
-                if self.base().perform_action() {
-                    ops.push(TokenOperation(TokenOperationType::TokenMint {
-                        token_id: self.token_id(),
-                        identity_balance_holder_id: self.identity_balance_holder_id(),
-                        mint_amount: self.mint_amount(),
-                        allow_first_mint: false,
-                    }));
-
-                    let token_configuration = self.base().token_configuration()?;
-                    if token_configuration.keeps_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::Mint(
-                                self.mint_amount(),
-                                self.identity_balance_holder_id(),
-                                self.public_note_owned(),
-                            ),
-                        }));
-                    }
-                } else if let Some(GroupStateTransitionResolvedInfo {
+                if let Some(GroupStateTransitionResolvedInfo {
                     group_contract_position,
                     action_id,
                     action_is_proposer,
@@ -94,6 +73,29 @@ impl DriveHighLevelDocumentOperationConverter for TokenMintTransitionAction {
                         signer_identity_id: owner_id,
                         signer_power: *signer_power,
                     }));
+                }
+
+                if self.base().perform_action() {
+                    ops.push(TokenOperation(TokenOperationType::TokenMint {
+                        token_id: self.token_id(),
+                        identity_balance_holder_id: self.identity_balance_holder_id(),
+                        mint_amount: self.mint_amount(),
+                        allow_first_mint: false,
+                    }));
+
+                    let token_configuration = self.base().token_configuration()?;
+                    if token_configuration.keeps_history() {
+                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                            token_id: self.token_id(),
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event: TokenEvent::Mint(
+                                self.mint_amount(),
+                                self.identity_balance_holder_id(),
+                                self.public_note_owned(),
+                            ),
+                        }));
+                    }
                 }
 
                 Ok(ops)

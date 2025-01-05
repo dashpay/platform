@@ -43,23 +43,7 @@ impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
                     },
                 )];
 
-                if self.base().perform_action() {
-                    ops.push(TokenOperation(TokenOperationType::TokenBurn {
-                        token_id: self.token_id(),
-                        identity_balance_holder_id: owner_id,
-                        burn_amount: self.burn_amount(),
-                    }));
-
-                    let token_configuration = self.base().token_configuration()?;
-                    if token_configuration.keeps_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::Burn(self.burn_amount(), self.public_note_owned()),
-                        }));
-                    }
-                } else if let Some(GroupStateTransitionResolvedInfo {
+                if let Some(GroupStateTransitionResolvedInfo {
                     group_contract_position,
                     action_id,
                     action_is_proposer,
@@ -85,6 +69,24 @@ impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
                         signer_identity_id: owner_id,
                         signer_power: *signer_power,
                     }));
+                }
+
+                if self.base().perform_action() {
+                    ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                        token_id: self.token_id(),
+                        identity_balance_holder_id: owner_id,
+                        burn_amount: self.burn_amount(),
+                    }));
+
+                    let token_configuration = self.base().token_configuration()?;
+                    if token_configuration.keeps_history() {
+                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                            token_id: self.token_id(),
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event: TokenEvent::Burn(self.burn_amount(), self.public_note_owned()),
+                        }));
+                    }
                 }
 
                 Ok(ops)

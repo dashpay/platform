@@ -11256,6 +11256,300 @@ mod tests {
                 }
 
                 #[test]
+                fn test_token_mint_by_owner_requires_group_other_member_submitting_after_completion_causes_error(
+                ) {
+                    // We are using a group, and two members need to sign for the event to happen
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .with_latest_protocol_version()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let mut rng = StdRng::seed_from_u64(49853);
+
+                    let platform_state = platform.state.load();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (identity_2, signer2, key2) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (identity_3, signer3, key3) =
+                        setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+                    let (contract, token_id) = create_token_contract_with_owner_identity(
+                        &mut platform,
+                        identity.id(),
+                        Some(|token_configuration: &mut TokenConfiguration| {
+                            token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                                    authorized_to_change_authorized_action_takers:
+                                        AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_authorized_action_takers_to_contract_owner_allowed:
+                                        false,
+                                },
+                            ));
+                        }),
+                        Some(
+                            [(
+                                0,
+                                Group::V0(GroupV0 {
+                                    members: [
+                                        (identity.id(), 1),
+                                        (identity_2.id(), 1),
+                                        (identity_3.id(), 1),
+                                    ]
+                                    .into(),
+                                    required_power: 2,
+                                }),
+                            )]
+                            .into(),
+                        ),
+                        platform_version,
+                    );
+
+                    let token_mint_transition = BatchTransition::new_token_mint_transition(
+                        token_id,
+                        identity.id(),
+                        contract.id(),
+                        0,
+                        1337,
+                        Some(identity.id()),
+                        None,
+                        Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                        &key,
+                        2,
+                        0,
+                        &signer,
+                        platform_version,
+                        None,
+                        None,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                    let token_mint_serialized_transition = token_mint_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![token_mint_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(100000));
+
+                    // Now we need to get the second identity to also sign it
+                    let action_id = TokenMintTransition::calculate_action_id_with_fields(
+                        token_id.as_bytes(),
+                        identity.id().as_bytes(),
+                        2,
+                        1337,
+                    );
+                    let confirm_token_mint_transition = BatchTransition::new_token_mint_transition(
+                        token_id,
+                        identity_2.id(),
+                        contract.id(),
+                        0,
+                        1337,
+                        Some(identity.id()),
+                        None,
+                        Some(
+                            GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                                GroupStateTransitionInfo {
+                                    group_contract_position: 0,
+                                    action_id,
+                                    action_is_proposer: false,
+                                },
+                            ),
+                        ),
+                        &key2,
+                        2,
+                        0,
+                        &signer2,
+                        platform_version,
+                        None,
+                        None,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                    let confirm_token_mint_serialized_transition = confirm_token_mint_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![confirm_token_mint_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(101337));
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity_2.id().to_buffer(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, None);
+
+                    // Now we need to get the second identity to sign it again to cause the error
+                    let confirm_token_mint_transition = BatchTransition::new_token_mint_transition(
+                        token_id,
+                        identity_3.id(),
+                        contract.id(),
+                        0,
+                        1337,
+                        Some(identity.id()),
+                        None,
+                        Some(
+                            GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                                GroupStateTransitionInfo {
+                                    group_contract_position: 0,
+                                    action_id,
+                                    action_is_proposer: false,
+                                },
+                            ),
+                        ),
+                        &key3,
+                        2,
+                        0,
+                        &signer3,
+                        platform_version,
+                        None,
+                        None,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                    let confirm_token_mint_serialized_transition = confirm_token_mint_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &vec![confirm_token_mint_serialized_transition.clone()],
+                            &platform_state,
+                            &BlockInfo::default(),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process state transition");
+
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::StateError(
+                                StateError::GroupActionAlreadyCompletedError(_)
+                            ),
+                            _
+                        )]
+                    );
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity.id().to_buffer(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, Some(101337));
+
+                    let token_balance = platform
+                        .drive
+                        .fetch_identity_token_balance(
+                            token_id.to_buffer(),
+                            identity_2.id().to_buffer(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to fetch token balance");
+                    assert_eq!(token_balance, None);
+                }
+
+                #[test]
                 fn test_token_mint_by_owner_requires_group_proposer_not_in_group() {
                     // We are using a group, and two members need to sign for the event to happen
                     let platform_version = PlatformVersion::latest();

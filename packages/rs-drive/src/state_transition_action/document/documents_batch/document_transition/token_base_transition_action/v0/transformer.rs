@@ -3,7 +3,7 @@ use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
 use std::sync::Arc;
 use dpp::consensus::ConsensusError;
-use dpp::consensus::state::group::{GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
+use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
@@ -91,6 +91,17 @@ impl TokenBaseTransitionActionV0 {
                         Some(power) => power,
                     }
                 };
+                if current_power >= required_power {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::GroupActionAlreadyCompletedError(
+                            GroupActionAlreadyCompletedError::new(
+                                data_contract_id,
+                                group_contract_position,
+                                action_id,
+                            ),
+                        )),
+                    ));
+                }
                 let perform_action = if approximate_without_state_for_costs {
                     // most expensive case is that we perform action
                     true
@@ -191,6 +202,17 @@ impl TokenBaseTransitionActionV0 {
                         Some(power) => power,
                     }
                 };
+                if current_power >= required_power {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::GroupActionAlreadyCompletedError(
+                            GroupActionAlreadyCompletedError::new(
+                                *data_contract_id,
+                                *group_contract_position,
+                                *action_id,
+                            ),
+                        )),
+                    ));
+                }
                 let perform_action = if approximate_without_state_for_costs {
                     // most expensive case is that we perform action
                     true
