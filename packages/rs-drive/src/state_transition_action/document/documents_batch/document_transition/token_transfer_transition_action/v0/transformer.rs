@@ -67,7 +67,8 @@ impl TokenTransferTransitionActionV0 {
             &mut drive_operations,
             get_data_contract,
             platform_version,
-        )?;
+        )?
+        .into_data()?;
 
         let fee_result = Drive::calculate_fee(
             None,
@@ -148,7 +149,8 @@ impl TokenTransferTransitionActionV0 {
                 &mut drive_operations,
                 get_data_contract,
                 platform_version,
-            )?;
+            )?
+            .into_data()?;
 
         let fee_result = Drive::calculate_fee(
             None,

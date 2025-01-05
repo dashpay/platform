@@ -13,7 +13,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::v0::TokenMintTransitionActionV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -51,6 +51,7 @@ impl TokenMintTransitionActionV0 {
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<
@@ -71,16 +72,17 @@ impl TokenMintTransitionActionV0 {
 
         let mut drive_operations = vec![];
 
-        let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
-            drive,
-            owner_id,
-            base,
-            approximate_without_state_for_costs,
-            transaction,
-            &mut drive_operations,
-            get_data_contract,
-            platform_version,
-        )?;
+        let base_action_validation_result =
+            TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                &base,
+                approximate_without_state_for_costs,
+                transaction,
+                &mut drive_operations,
+                get_data_contract,
+                platform_version,
+            )?;
 
         let fee_result = Drive::calculate_fee(
             None,
@@ -91,6 +93,27 @@ impl TokenMintTransitionActionV0 {
             None,
         )?;
 
+        let base_action = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action = BumpIdentityDataContractNonceAction::from_token_base_transition(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action.into(),
+                        base_action_validation_result.errors,
+                    ),
+                    fee_result,
+                ));
+            }
+        };
+
         if !base_action
             .token_configuration()?
             .minting_allow_choosing_destination()
@@ -100,7 +123,7 @@ impl TokenMintTransitionActionV0 {
                 BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
                     &base_action,
                     owner_id,
-                    0,
+                    user_fee_increase,
                 );
             let batched_action =
                 BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
@@ -202,6 +225,7 @@ impl TokenMintTransitionActionV0 {
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<
@@ -220,7 +244,7 @@ impl TokenMintTransitionActionV0 {
 
         let mut drive_operations = vec![];
 
-        let base_action =
+        let base_action_validation_result =
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 drive,
                 owner_id,
@@ -241,6 +265,28 @@ impl TokenMintTransitionActionV0 {
             None,
         )?;
 
+        let base_action = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action.into(),
+                        base_action_validation_result.errors,
+                    ),
+                    fee_result,
+                ));
+            }
+        };
+
         if !base_action
             .token_configuration()?
             .minting_allow_choosing_destination()
@@ -250,7 +296,7 @@ impl TokenMintTransitionActionV0 {
                 BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
                     &base_action,
                     owner_id,
-                    0,
+                    user_fee_increase,
                 );
             let batched_action =
                 BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);

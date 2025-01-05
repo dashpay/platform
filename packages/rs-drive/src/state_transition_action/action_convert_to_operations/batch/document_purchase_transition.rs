@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
 use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;

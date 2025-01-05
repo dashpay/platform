@@ -8,6 +8,26 @@ use serde::{Deserialize, Serialize};
 
 pub mod action_event;
 pub mod group_action;
+#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq)]
+pub enum GroupStateTransitionInfoStatus {
+    GroupStateTransitionInfoProposer(GroupContractPosition),
+    GroupStateTransitionInfoOtherSigner(GroupStateTransitionInfo),
+}
+
+impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfo {
+    fn from(value: GroupStateTransitionInfoStatus) -> Self {
+        match value {
+            GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                group_contract_position,
+            ) => GroupStateTransitionInfo {
+                group_contract_position,
+                action_id: Default::default(),
+                action_is_proposer: true,
+            },
+            GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => info,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(

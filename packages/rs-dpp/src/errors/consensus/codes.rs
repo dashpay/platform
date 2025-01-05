@@ -175,6 +175,7 @@ impl ErrorWithCode for BasicError {
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
+            Self::GroupActionNotAllowedOnTransitionError(_) => 10701,
         }
     }
 }
@@ -270,6 +271,12 @@ impl ErrorWithCode for StateError {
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
+
+            // Group errors: 40800-40899
+            #[cfg(feature = "state-transition-validation")]
+            Self::IdentityNotMemberOfGroupError(_) => 40800,
+            Self::GroupActionDoesNotExistError(_) => 40801,
+            Self::GroupActionAlreadyCompletedError(_) => 40802,
         }
     }
 }

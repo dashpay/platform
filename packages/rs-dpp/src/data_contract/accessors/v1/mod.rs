@@ -1,8 +1,7 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
-use crate::data_contract::{DataContract, GroupContractPosition, TokenContractPosition};
-use crate::tokens::errors::TokenError;
+use crate::data_contract::{GroupContractPosition, TokenContractPosition};
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;

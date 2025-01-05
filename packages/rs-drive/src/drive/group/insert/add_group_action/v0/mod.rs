@@ -122,6 +122,16 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_add_group_action(
+                contract_id.to_buffer(),
+                group_contract_position,
+                Some(action_id.to_buffer()),
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         let group_action_root_path = group_action_root_path(
             contract_id.as_slice(),

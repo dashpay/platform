@@ -5,7 +5,8 @@ use crate::data_contract::TokenContractPosition;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
 use crate::fee::Credits;
-use crate::group::GroupStateTransitionInfo;
+#[cfg(feature = "state-transition-signing")]
+use crate::group::GroupStateTransitionInfoStatus;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
@@ -425,6 +426,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
 }
 
 impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
+    #[cfg(feature = "state-transition-signing")]
     fn new_token_mint_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -433,7 +435,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         amount: TokenAmount,
         issued_to_identity_id: Option<Identifier>,
         public_note: Option<String>,
-        using_group_info: Option<GroupStateTransitionInfo>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -485,6 +487,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         }
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_token_burn_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -492,7 +495,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         token_contract_position: u16,
         amount: TokenAmount,
         public_note: Option<String>,
-        using_group_info: Option<GroupStateTransitionInfo>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -543,6 +546,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         }
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_token_transfer_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -557,7 +561,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             DerivationEncryptionKeyIndex,
             Vec<u8>,
         )>,
-        using_group_info: Option<GroupStateTransitionInfo>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -593,7 +596,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     public_note,
                     shared_encrypted_note,
                     private_encrypted_note,
-                    using_group_info,
                     identity_public_key,
                     identity_contract_nonce,
                     user_fee_increase,

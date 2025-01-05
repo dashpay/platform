@@ -3,8 +3,8 @@
 //! This module defines general, commonly used functions in Drive.
 //!
 
+mod batch;
 mod contract;
-mod document;
 mod identity;
 mod system;
 

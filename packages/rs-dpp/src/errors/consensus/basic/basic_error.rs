@@ -67,6 +67,7 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::contract_has_no_tokens_error::ContractHasNoTokensError;
 use crate::consensus::basic::token::{
@@ -444,6 +445,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ChoosingTokenMintRecipientNotAllowedError(ChoosingTokenMintRecipientNotAllowedError),
+
+    #[error(transparent)]
+    GroupActionNotAllowedOnTransitionError(GroupActionNotAllowedOnTransitionError),
 }
 
 impl From<BasicError> for ConsensusError {

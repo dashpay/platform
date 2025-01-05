@@ -17,7 +17,7 @@ use crate::prelude::{
 };
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::{
-    BatchedTransition, BatchedTransitionRef,
+    BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::{
@@ -40,16 +40,20 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
+use platform_value::string_encoding::Encoding;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use crate::balances::credits::TokenAmount;
-use crate::group::GroupStateTransitionInfo;
+use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
@@ -81,6 +85,13 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
         self.transitions
             .first()
             .map(|transition| transition.borrow_as_ref())
+    }
+
+    /// Returns the first transition, if it exists, as a `BatchedTransitionMutRef`.
+    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef> {
+        self.transitions
+            .first_mut()
+            .map(|transition| transition.borrow_as_mut())
     }
 }
 
@@ -403,7 +414,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         amount: TokenAmount,
         issued_to_identity_id: Option<Identifier>,
         public_note: Option<String>,
-        using_group_info: Option<GroupStateTransitionInfo>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -413,18 +424,40 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         _delete_feature_version: Option<FeatureVersion>,
         _base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let mint_transition = TokenMintTransition::V0(TokenMintTransitionV0 {
+        let mut mint_transition = TokenMintTransition::V0(TokenMintTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce,
                 token_contract_position,
                 data_contract_id,
                 token_id,
-                using_group_info,
+                using_group_info: None,
             }),
             issued_to_identity_id,
             amount,
             public_note,
         });
+
+        if let Some(using_group_info_status) = using_group_info {
+            match using_group_info_status {
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                    group_contract_position,
+                ) => {
+                    let action_id = mint_transition.calculate_action_id(owner_id);
+                    println!("using action id {}", action_id.to_string(Encoding::Hex));
+                    mint_transition.base_mut().set_using_group_info(Some(
+                        GroupStateTransitionInfo {
+                            group_contract_position,
+                            action_id,
+                            action_is_proposer: true,
+                        },
+                    ))
+                }
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => {
+                    mint_transition.base_mut().set_using_group_info(Some(info))
+                }
+            }
+        }
+
         let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id,
             transitions: vec![BatchedTransition::Token(mint_transition.into())],
@@ -449,7 +482,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         token_contract_position: u16,
         amount: TokenAmount,
         public_note: Option<String>,
-        using_group_info: Option<GroupStateTransitionInfo>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -459,17 +492,37 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         _delete_feature_version: Option<FeatureVersion>,
         _base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let burn_transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+        let mut burn_transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce,
                 token_contract_position,
                 data_contract_id,
                 token_id,
-                using_group_info,
+                using_group_info: None,
             }),
             burn_amount: amount,
             public_note,
         });
+
+        if let Some(using_group_info_status) = using_group_info {
+            match using_group_info_status {
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                    group_contract_position,
+                ) => {
+                    let action_id = burn_transition.calculate_action_id(owner_id);
+                    burn_transition.base_mut().set_using_group_info(Some(
+                        GroupStateTransitionInfo {
+                            group_contract_position,
+                            action_id,
+                            action_is_proposer: true,
+                        },
+                    ))
+                }
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => {
+                    burn_transition.base_mut().set_using_group_info(Some(info))
+                }
+            }
+        }
 
         // Wrap in a batch transition
         let documents_batch_transition: BatchTransition = BatchTransitionV1 {
@@ -506,7 +559,6 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             DerivationEncryptionKeyIndex,
             Vec<u8>,
         )>,
-        using_group_info: Option<GroupStateTransitionInfo>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -523,7 +575,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 token_contract_position,
                 data_contract_id,
                 token_id,
-                using_group_info,
+                using_group_info: None,
             }),
             recipient_id,
             amount,

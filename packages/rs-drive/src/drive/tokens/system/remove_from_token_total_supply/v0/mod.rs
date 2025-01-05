@@ -1,7 +1,4 @@
-use crate::drive::balances::{
-    total_token_supply_path, total_token_supply_path_vec, total_tokens_root_supply_path,
-    total_tokens_root_supply_path_vec,
-};
+use crate::drive::balances::{total_tokens_root_supply_path, total_tokens_root_supply_path_vec};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

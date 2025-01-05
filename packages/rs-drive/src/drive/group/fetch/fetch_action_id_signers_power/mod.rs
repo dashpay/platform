@@ -19,7 +19,7 @@ impl Drive {
         action_id: Identifier,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupSumPower, Error> {
+    ) -> Result<Option<GroupSumPower>, Error> {
         match platform_version
             .drive
             .methods
@@ -51,7 +51,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupSumPower, Error> {
+    ) -> Result<Option<GroupSumPower>, Error> {
         match platform_version
             .drive
             .methods

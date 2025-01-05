@@ -15,9 +15,11 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
+use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TransitionActionTypeGetter;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use crate::state_transition::StateTransitionLike;
@@ -135,15 +137,30 @@ impl BatchTransition {
             // But only if we are the proposer
             if let Some(group_state_transition_info) = transition.base().using_group_info() {
                 if group_state_transition_info.action_is_proposer {
-                    let calculated_action_id = transition.calculate_action_id(self.owner_id());
-                    if group_state_transition_info.action_id != calculated_action_id {
-                        result.add_error(BasicError::InvalidActionIdError(
-                            InvalidActionIdError::new(
-                                calculated_action_id,
-                                group_state_transition_info.action_id,
+                    if let Some(calculated_action_id) =
+                        transition.calculate_action_id(self.owner_id())
+                    {
+                        if group_state_transition_info.action_id != calculated_action_id {
+                            result.add_error(BasicError::InvalidActionIdError(
+                                InvalidActionIdError::new(
+                                    calculated_action_id,
+                                    group_state_transition_info.action_id,
+                                ),
+                            ));
+                        }
+                    } else {
+                        result.add_error(BasicError::GroupActionNotAllowedOnTransitionError(
+                            GroupActionNotAllowedOnTransitionError::new(
+                                transition.action_type().to_string(),
                             ),
                         ));
                     }
+                } else if !transition.can_calculate_action_id() {
+                    result.add_error(BasicError::GroupActionNotAllowedOnTransitionError(
+                        GroupActionNotAllowedOnTransitionError::new(
+                            transition.action_type().to_string(),
+                        ),
+                    ));
                 }
             }
         }

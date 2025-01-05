@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
 use crate::state_transition_action::document::documents_batch::document_transition::TokenTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;

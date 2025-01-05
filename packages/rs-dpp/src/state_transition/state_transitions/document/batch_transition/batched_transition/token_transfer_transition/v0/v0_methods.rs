@@ -1,11 +1,8 @@
 use platform_value::Identifier;
 use crate::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
-use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransitionV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::util::hash::hash_double;
 
 impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
@@ -21,9 +18,7 @@ impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {
     }
 }
 
-pub trait TokenTransferTransitionV0Methods:
-    TokenBaseTransitionAccessors + AllowedAsMultiPartyAction
-{
+pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     /// Returns the `amount` field of the `TokenTransferTransitionV0`.
     fn amount(&self) -> u64;
 
@@ -196,25 +191,5 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
             self.shared_encrypted_note,
             self.private_encrypted_note,
         )
-    }
-}
-
-impl AllowedAsMultiPartyAction for TokenTransferTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
-        let TokenTransferTransitionV0 {
-            base,
-            amount,
-            recipient_id,
-            ..
-        } = self;
-
-        let mut bytes = b"action_token_transfer".to_vec();
-        bytes.extend_from_slice(base.token_id().as_bytes());
-        bytes.extend_from_slice(owner_id.as_bytes());
-        bytes.extend_from_slice(recipient_id.as_bytes());
-        bytes.extend_from_slice(&base.identity_contract_nonce().to_be_bytes());
-        bytes.extend_from_slice(&amount.to_be_bytes());
-
-        hash_double(bytes).into()
     }
 }

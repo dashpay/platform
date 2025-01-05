@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
 use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -7,14 +7,15 @@ use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDoc
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 
+use dpp::document::DocumentV0Getters;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::drive::DriveError;
 
-impl DriveHighLevelDocumentOperationConverter for DocumentUpdatePriceTransitionAction {
+impl DriveHighLevelDocumentOperationConverter for DocumentTransferTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
         self,
         epoch: &Epoch,
@@ -26,17 +27,23 @@ impl DriveHighLevelDocumentOperationConverter for DocumentUpdatePriceTransitionA
             .methods
             .state_transitions
             .convert_to_high_level_operations
-            .document_update_price_transition
+            .document_transfer_transition
         {
             0 => {
                 let data_contract_id = self.base().data_contract_id();
                 let document_type_name = self.base().document_type_name().clone();
                 let identity_contract_nonce = self.base().identity_contract_nonce();
-                let fetch_info = self.base().data_contract_fetch_info();
+                let contract_fetch_info = self.base().data_contract_fetch_info();
                 let document = self.document_owned();
 
-                let storage_flags =
-                    StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
+                // we are transferring the document so the new storage flags should be on the new owner
+
+                let new_document_owner_id = document.owner_id();
+
+                let storage_flags = StorageFlags::new_single_epoch(
+                    epoch.index,
+                    Some(new_document_owner_id.to_buffer()),
+                );
 
                 Ok(vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
@@ -50,16 +57,16 @@ impl DriveHighLevelDocumentOperationConverter for DocumentUpdatePriceTransitionA
                                 document,
                                 Some(Cow::Owned(storage_flags)),
                             )),
-                            owner_id: Some(owner_id.into_buffer()),
+                            owner_id: Some(new_document_owner_id.into_buffer()),
                         },
-                        contract_info: DataContractInfo::DataContractFetchInfo(fetch_info),
+                        contract_info: DataContractInfo::DataContractFetchInfo(contract_fetch_info),
                         document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                     }),
                 ])
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method:
-                    "DocumentUpdatePriceTransitionAction::into_high_level_document_drive_operations"
+                    "DocumentTransferTransitionAction::into_high_level_document_drive_operations"
                         .to_string(),
                 known_versions: vec![0],
                 received: version,

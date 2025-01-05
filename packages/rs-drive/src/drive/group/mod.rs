@@ -1,6 +1,7 @@
 use crate::drive::RootTree;
 use dpp::data_contract::GroupContractPosition;
 
+mod estimated_costs;
 mod fetch;
 mod insert;
 

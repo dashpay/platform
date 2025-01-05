@@ -4,6 +4,7 @@ use grovedb::TransactionArg;
 use std::sync::Arc;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{
     TokenBurnTransitionAction, TokenBurnTransitionActionV0,
@@ -12,6 +13,7 @@ use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTra
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::state_transition_action::document::documents_batch::document_transition::BatchedTransitionAction;
 
 /// Implement methods to transform a `TokenBurnTransition` into a `TokenBurnTransitionAction`.
 impl TokenBurnTransitionAction {
@@ -41,22 +43,29 @@ impl TokenBurnTransitionAction {
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         match value {
             TokenBurnTransition::V0(v0) => {
-                let (v0, fee) = TokenBurnTransitionActionV0::try_from_token_burn_transition_with_contract_lookup(
+                TokenBurnTransitionActionV0::try_from_token_burn_transition_with_contract_lookup(
                     drive,
                     owner_id,
                     v0,
                     approximate_without_state_for_costs,
                     transaction,
                     block_info,
+                    user_fee_increase,
                     get_data_contract,
                     platform_version,
-                )?;
-                Ok((v0.into(), fee))
+                )
             }
         }
     }
@@ -87,22 +96,29 @@ impl TokenBurnTransitionAction {
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         match value {
             TokenBurnTransition::V0(v0) => {
-                let (v0, fee) = TokenBurnTransitionActionV0::try_from_borrowed_token_burn_transition_with_contract_lookup(
+                TokenBurnTransitionActionV0::try_from_borrowed_token_burn_transition_with_contract_lookup(
                     drive,
                     owner_id,
                     v0,
                     approximate_without_state_for_costs,
                     transaction,
                     block_info,
+                    user_fee_increase,
                     get_data_contract,
                     platform_version,
-                )?;
-                Ok((v0.into(), fee))
+                )
             }
         }
     }

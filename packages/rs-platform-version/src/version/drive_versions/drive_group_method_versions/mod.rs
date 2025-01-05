@@ -15,6 +15,7 @@ pub struct DriveGroupFetchMethodVersions {
     pub fetch_action_id_signers_power: FeatureVersion,
     pub fetch_action_id_info: FeatureVersion,
     pub fetch_action_id_info_keep_serialized: FeatureVersion,
+    pub fetch_action_id_has_signer: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -27,4 +28,6 @@ pub struct DriveGroupInsertMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DriveGroupCostEstimationMethodVersions {}
+pub struct DriveGroupCostEstimationMethodVersions {
+    pub for_add_group_action: FeatureVersion,
+}

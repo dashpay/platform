@@ -14,5 +14,7 @@ pub const DRIVE_GROUP_METHOD_VERSIONS_V1: DriveGroupMethodVersions = DriveGroupM
         add_new_groups: 0,
         add_group_action: 0,
     },
-    cost_estimation: DriveGroupCostEstimationMethodVersions {},
+    cost_estimation: DriveGroupCostEstimationMethodVersions {
+        for_add_group_action: 0,
+    },
 };

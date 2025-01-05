@@ -1,4 +1,6 @@
-use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::batch_transition::batched_transition::{
+    BatchedTransitionMutRef, BatchedTransitionRef,
+};
 pub trait DocumentsBatchTransitionAccessorsV0 {
     /// Associated type for the iterator.
     type IterType<'a>: Iterator<Item = BatchedTransitionRef<'a>>
@@ -12,4 +14,6 @@ pub trait DocumentsBatchTransitionAccessorsV0 {
     fn transitions_are_empty(&self) -> bool;
 
     fn first_transition(&self) -> Option<BatchedTransitionRef>;
+
+    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef>;
 }

@@ -21,7 +21,7 @@ use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::prelude::Revision;
+use dpp::prelude::{Revision, UserFeeIncrease};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, ProtocolError, validation::ConsensusValidationResult};
 use dpp::fee::fee_result::FeeResult;
@@ -105,6 +105,7 @@ trait BatchTransitionInternalTransformerV0 {
         validate_against_state: bool,
         owner_id: Identifier,
         token_transitions: &Vec<&TokenTransition>,
+        user_fee_increase: UserFeeIncrease,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -118,6 +119,7 @@ trait BatchTransitionInternalTransformerV0 {
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &TokenTransition,
         owner_id: Identifier,
+        user_fee_increase: UserFeeIncrease,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
@@ -231,6 +233,8 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
 
+        let user_fee_increase = self.user_fee_increase();
+
         let mut validation_result_tokens = token_transitions_by_contracts
             .iter()
             .map(|(data_contract_id, token_transitions)| {
@@ -241,6 +245,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                     validate_against_state,
                     owner_id,
                     token_transitions,
+                    user_fee_increase,
                     transaction,
                     execution_context,
                     platform_version,
@@ -283,6 +288,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         validate_against_state: bool,
         owner_id: Identifier,
         token_transitions: &Vec<&TokenTransition>,
+        user_fee_increase: UserFeeIncrease,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -318,6 +324,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     data_contract_fetch_info.clone(),
                     token_transition,
                     owner_id,
+                    user_fee_increase,
                     execution_context,
                     platform_version,
                 )
@@ -489,26 +496,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &TokenTransition,
         owner_id: Identifier,
+        user_fee_increase: UserFeeIncrease,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
         let approximate_for_costs = !validate_against_state;
         match transition {
             TokenTransition::Burn(token_burn_transition) => {
-                let (token_burn_action, fee_result) = TokenBurnTransitionAction::try_from_borrowed_token_burn_transition_with_contract_lookup(drive, owner_id, token_burn_transition, approximate_for_costs, transaction, block_info, |_identifier| {
+                let (batched_action, fee_result) = TokenBurnTransitionAction::try_from_borrowed_token_burn_transition_with_contract_lookup(drive, owner_id, token_burn_transition, approximate_for_costs, transaction, block_info,user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                let batched_action = BatchedTransitionAction::TokenAction(
-                    TokenTransitionAction::BurnAction(token_burn_action),
-                );
-                Ok(batched_action.into())
+                Ok(batched_action)
             }
             TokenTransition::Mint(token_mint_transition) => {
-                let (batched_action, fee_result) = TokenMintTransitionAction::try_from_borrowed_token_mint_transition_with_contract_lookup(drive, owner_id, token_mint_transition, approximate_for_costs, transaction, block_info, |_identifier| {
+                let (batched_action, fee_result) = TokenMintTransitionAction::try_from_borrowed_token_mint_transition_with_contract_lookup(drive, owner_id, token_mint_transition, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 

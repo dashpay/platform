@@ -1,9 +1,11 @@
-use crate::drive::group::{group_contract_path, group_path_vec, group_root_path, GROUP_INFO_KEY};
+use crate::drive::group::{
+    group_contract_path, group_path, group_root_path, GROUP_ACTIONS_KEY, GROUP_INFO_KEY,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use crate::util::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef};
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::group::Group;
@@ -128,16 +130,24 @@ impl Drive {
                     &mut batch_operations,
                     &platform_version.drive,
                 )?;
-                let group_path = group_path_vec(contract_id.as_slice(), *group_pos);
+                let group_path = group_path(contract_id.as_slice(), group_pos_bytes.as_slice());
 
                 let serialized_group_info = group.serialize_to_bytes()?;
                 let info_item = Element::Item(serialized_group_info, None);
                 self.batch_insert(
-                    PathKeyElementInfo::PathKeyElement::<0>((
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement::<3>((
                         group_path,
-                        GROUP_INFO_KEY.to_vec(),
+                        GROUP_INFO_KEY,
                         info_item,
                     )),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                self.batch_insert_empty_tree(
+                    group_path,
+                    DriveKeyInfo::KeyRef(GROUP_ACTIONS_KEY),
+                    None,
                     &mut batch_operations,
                     &platform_version.drive,
                 )?;
@@ -147,7 +157,7 @@ impl Drive {
                 let group_pos_bytes = group_pos.to_be_bytes().to_vec();
                 let path = group_contract_path(contract_id.as_slice());
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
-                    PathFixedSizeKey((path, group_pos_bytes)),
+                    PathFixedSizeKeyRef((path, group_pos_bytes.as_slice())),
                     false,
                     None,
                     apply_type,
@@ -158,16 +168,24 @@ impl Drive {
                 )?;
 
                 if inserted {
-                    let group_path = group_path_vec(contract_id.as_slice(), *group_pos);
+                    let group_path = group_path(contract_id.as_slice(), group_pos_bytes.as_slice());
 
                     let serialized_group_info = group.serialize_to_bytes()?;
                     let info_item = Element::Item(serialized_group_info, None);
                     self.batch_insert(
-                        PathKeyElementInfo::PathKeyElement::<0>((
+                        PathKeyElementInfo::PathFixedSizeKeyRefElement::<3>((
                             group_path,
-                            GROUP_INFO_KEY.to_vec(),
+                            GROUP_INFO_KEY,
                             info_item,
                         )),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?;
+
+                    self.batch_insert_empty_tree(
+                        group_path,
+                        DriveKeyInfo::KeyRef(GROUP_ACTIONS_KEY),
+                        None,
                         &mut batch_operations,
                         &platform_version.drive,
                     )?;

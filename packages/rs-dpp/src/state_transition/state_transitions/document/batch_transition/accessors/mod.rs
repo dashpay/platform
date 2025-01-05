@@ -1,7 +1,7 @@
 mod v0;
 
 use std::slice::Iter;
-use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
+use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef};
 use crate::state_transition::batch_transition::BatchTransition;
 pub use v0::*;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -80,6 +80,19 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransition {
                 .transitions
                 .first()
                 .map(|batch_transition| batch_transition.borrow_as_ref()),
+        }
+    }
+
+    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef> {
+        match self {
+            BatchTransition::V0(v0) => v0
+                .transitions
+                .first_mut()
+                .map(|document_transition| BatchedTransitionMutRef::Document(document_transition)),
+            BatchTransition::V1(v1) => v1
+                .transitions
+                .first_mut()
+                .map(|batch_transition| batch_transition.borrow_as_mut()),
         }
     }
 }

@@ -36,6 +36,7 @@ use crate::consensus::state::document::document_contest_not_joinable_error::Docu
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
@@ -209,6 +210,18 @@ pub enum StateError {
 
     #[error(transparent)]
     UnauthorizedTokenActionError(UnauthorizedTokenActionError),
+
+    #[error(transparent)]
+    IdentityNotMemberOfGroupError(IdentityNotMemberOfGroupError),
+
+    #[error(transparent)]
+    GroupActionDoesNotExistError(GroupActionDoesNotExistError),
+
+    #[error(transparent)]
+    GroupActionAlreadyCompletedError(GroupActionAlreadyCompletedError),
+
+    #[error(transparent)]
+    GroupActionAlreadySignedByIdentityError(GroupActionAlreadySignedByIdentityError),
 }
 
 impl From<StateError> for ConsensusError {

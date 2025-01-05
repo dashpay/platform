@@ -1,6 +1,5 @@
 use platform_value::Identifier;
 use crate::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
-use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::TokenTransferTransition;
@@ -152,14 +151,6 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransition {
                 v0.shared_encrypted_note,
                 v0.private_encrypted_note,
             ),
-        }
-    }
-}
-
-impl AllowedAsMultiPartyAction for TokenTransferTransition {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
-        match self {
-            TokenTransferTransition::V0(v0) => v0.calculate_action_id(owner_id),
         }
     }
 }

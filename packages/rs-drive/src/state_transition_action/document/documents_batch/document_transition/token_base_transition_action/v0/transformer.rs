@@ -2,8 +2,12 @@ use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionResolvedInfo};
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
 use std::sync::Arc;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::group::{GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
+use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use platform_version::version::PlatformVersion;
@@ -24,7 +28,7 @@ impl TokenBaseTransitionActionV0 {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<ConsensusValidationResult<Self>, Error> {
         let TokenBaseTransitionV0 {
             token_contract_position,
             data_contract_id,
@@ -43,17 +47,50 @@ impl TokenBaseTransitionActionV0 {
                 action_is_proposer,
             }) => {
                 let group = data_contract.contract.group(group_contract_position)?;
-                let signer_power = group.member_power(owner_id)?;
+                let signer_power = match group.member_power(owner_id) {
+                    Ok(signer_power) => signer_power,
+                    Err(ProtocolError::GroupMemberNotFound(_)) => {
+                        return Ok(ConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(
+                                IdentityNotMemberOfGroupError::new(
+                                    owner_id,
+                                    data_contract_id,
+                                    group_contract_position,
+                                ),
+                            )),
+                        ));
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 let required_power = group.required_power();
-                let current_power = drive.fetch_action_id_signers_power_and_add_operations(
-                    data_contract_id,
-                    group_contract_position,
-                    action_id,
-                    approximate_without_state_for_costs,
-                    transaction,
-                    drive_operations,
-                    platform_version,
-                )?;
+                let current_power = if action_is_proposer {
+                    0
+                } else {
+                    match drive.fetch_action_id_signers_power_and_add_operations(
+                        data_contract_id,
+                        group_contract_position,
+                        action_id,
+                        approximate_without_state_for_costs,
+                        transaction,
+                        drive_operations,
+                        platform_version,
+                    )? {
+                        None => {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(
+                                    StateError::GroupActionDoesNotExistError(
+                                        GroupActionDoesNotExistError::new(
+                                            data_contract_id,
+                                            group_contract_position,
+                                            action_id,
+                                        ),
+                                    ),
+                                ),
+                            ));
+                        }
+                        Some(power) => power,
+                    }
+                };
                 let perform_action = if approximate_without_state_for_costs {
                     // most expensive case is that we perform action
                     true
@@ -77,7 +114,8 @@ impl TokenBaseTransitionActionV0 {
             data_contract,
             store_in_group,
             perform_action,
-        })
+        }
+        .into())
     }
 
     /// try from borrowed base transition with contract lookup
@@ -90,7 +128,7 @@ impl TokenBaseTransitionActionV0 {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<ConsensusValidationResult<Self>, Error> {
         let TokenBaseTransitionV0 {
             token_contract_position,
             data_contract_id,
@@ -109,17 +147,50 @@ impl TokenBaseTransitionActionV0 {
                 action_is_proposer,
             }) => {
                 let group = data_contract.contract.group(*group_contract_position)?;
-                let signer_power = group.member_power(owner_id)?;
+                let signer_power = match group.member_power(owner_id) {
+                    Ok(signer_power) => signer_power,
+                    Err(ProtocolError::GroupMemberNotFound(_)) => {
+                        return Ok(ConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(
+                                IdentityNotMemberOfGroupError::new(
+                                    owner_id,
+                                    *data_contract_id,
+                                    *group_contract_position,
+                                ),
+                            )),
+                        ));
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 let required_power = group.required_power();
-                let current_power = drive.fetch_action_id_signers_power_and_add_operations(
-                    *data_contract_id,
-                    *group_contract_position,
-                    *action_id,
-                    approximate_without_state_for_costs,
-                    transaction,
-                    drive_operations,
-                    platform_version,
-                )?;
+                let current_power = if *action_is_proposer {
+                    0
+                } else {
+                    match drive.fetch_action_id_signers_power_and_add_operations(
+                        *data_contract_id,
+                        *group_contract_position,
+                        *action_id,
+                        approximate_without_state_for_costs,
+                        transaction,
+                        drive_operations,
+                        platform_version,
+                    )? {
+                        None => {
+                            return Ok(ConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(
+                                    StateError::GroupActionDoesNotExistError(
+                                        GroupActionDoesNotExistError::new(
+                                            *data_contract_id,
+                                            *group_contract_position,
+                                            *action_id,
+                                        ),
+                                    ),
+                                ),
+                            ));
+                        }
+                        Some(power) => power,
+                    }
+                };
                 let perform_action = if approximate_without_state_for_costs {
                     // most expensive case is that we perform action
                     true
@@ -143,6 +214,7 @@ impl TokenBaseTransitionActionV0 {
             data_contract,
             store_in_group,
             perform_action,
-        })
+        }
+        .into())
     }
 }

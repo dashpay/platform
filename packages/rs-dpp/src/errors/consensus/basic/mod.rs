@@ -13,6 +13,7 @@ pub mod token;
 pub mod unsupported_protocol_version_error;
 
 pub mod basic_error;
+pub mod group;
 pub mod invalid_identifier_error;
 #[cfg(feature = "json-schema-validation")]
 pub mod json_schema_compilation_error;

@@ -1,31 +1,21 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
-use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
-use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
-use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
-use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{RecipientIdentityDoesNotExistError, UnauthorizedTokenActionError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::multi_identity_events::ActionTaker;
-use dpp::prelude::{ConsensusValidationResult, Identifier};
+use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters};
-use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
-use crate::execution::validation::state_transition::batch::state::v0::fetch_contender::fetch_contender;
-use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(super) trait TokenMintTransitionActionStateValidationV0 {
@@ -58,21 +48,74 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
             .map(|position| contract.expected_group(position))
             .transpose()?;
 
-        if !rules.can_make_change(
-            &contract.owner_id(),
-            main_control_group,
-            contract.groups(),
-            &ActionTaker::SingleIdentity(owner_id),
-        ) {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
-                    UnauthorizedTokenActionError::new(
-                        owner_id,
-                        "mint".to_string(),
-                        rules.authorized_to_make_change_action_takers().clone(),
-                    ),
-                )),
-            ));
+        if let Some(resolved_group_info) = self.base().store_in_group() {
+            // We are trying to do a group action
+            // We have already checked when converting into an action that we are a member of the Group
+            // Now we need to just check that the group is the actual group set by the contract
+            match rules.authorized_to_make_change_action_takers() {
+                AuthorizedActionTakers::NoOne | AuthorizedActionTakers::ContractOwner => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
+                            UnauthorizedTokenActionError::new(
+                                owner_id,
+                                "mint".to_string(),
+                                rules.authorized_to_make_change_action_takers().clone(),
+                            ),
+                        )),
+                    ))
+                }
+                AuthorizedActionTakers::MainGroup => {
+                    if let Some(main_control_group_contract_position) =
+                        token_configuration.main_control_group()
+                    {
+                        if main_control_group_contract_position
+                            != resolved_group_info.group_contract_position
+                        {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                ConsensusError::StateError(
+                                    StateError::UnauthorizedTokenActionError(
+                                        UnauthorizedTokenActionError::new(
+                                            owner_id,
+                                            "mint".to_string(),
+                                            rules.authorized_to_make_change_action_takers().clone(),
+                                        ),
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+                AuthorizedActionTakers::Group(group_contract_position) => {
+                    if *group_contract_position != resolved_group_info.group_contract_position {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
+                                UnauthorizedTokenActionError::new(
+                                    owner_id,
+                                    "mint".to_string(),
+                                    rules.authorized_to_make_change_action_takers().clone(),
+                                ),
+                            )),
+                        ));
+                    }
+                }
+            }
+        } else {
+            if !rules.can_make_change(
+                &contract.owner_id(),
+                main_control_group,
+                contract.groups(),
+                &ActionTaker::SingleIdentity(owner_id),
+            ) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
+                        UnauthorizedTokenActionError::new(
+                            owner_id,
+                            "mint".to_string(),
+                            rules.authorized_to_make_change_action_takers().clone(),
+                        ),
+                    )),
+                ));
+            }
         }
 
         // todo verify that minting would not break max supply

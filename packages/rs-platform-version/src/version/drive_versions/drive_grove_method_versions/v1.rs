@@ -27,6 +27,7 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         grove_get_sum_tree_total_value: 0,
         grove_has_raw: 0,
         grove_get_raw_item: 0,
+        grove_get_optional_sum_tree_total_value: 0,
     },
     batch: DriveGroveBatchMethodVersions {
         batch_insert_empty_tree: 0,

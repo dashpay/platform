@@ -1,6 +1,7 @@
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use grovedb::TransactionArg;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use platform_version::version::PlatformVersion;
@@ -21,7 +22,7 @@ impl TokenBaseTransitionAction {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<ConsensusValidationResult<Self>, Error> {
         match value {
             TokenBaseTransition::V0(v0) => Ok(
                 TokenBaseTransitionActionV0::try_from_base_transition_with_contract_lookup(
@@ -34,7 +35,7 @@ impl TokenBaseTransitionAction {
                     get_data_contract,
                     platform_version,
                 )?
-                .into(),
+                .map(|v0| v0.into()),
             ),
         }
     }
@@ -49,7 +50,7 @@ impl TokenBaseTransitionAction {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    ) -> Result<ConsensusValidationResult<Self>, Error> {
         match value {
             TokenBaseTransition::V0(v0) => Ok(
             TokenBaseTransitionActionV0::try_from_borrowed_base_transition_with_contract_lookup(
@@ -61,8 +62,7 @@ impl TokenBaseTransitionAction {
                 drive_operations,
                 get_data_contract,
                 platform_version,
-            )?
-            .into(),
+            )?.map(|v0| v0.into())
             ),
         }
     }

@@ -1,6 +1,6 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::document::documents_batch::BatchTransitionAction;
 use crate::util::batch::DriveOperation;

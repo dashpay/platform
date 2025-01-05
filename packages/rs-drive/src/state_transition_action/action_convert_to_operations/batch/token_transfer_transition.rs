@@ -5,7 +5,7 @@ use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;

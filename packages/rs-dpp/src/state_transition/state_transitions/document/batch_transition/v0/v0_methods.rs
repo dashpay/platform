@@ -16,7 +16,7 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::batch_transition::accessors::{DocumentsBatchTransitionAccessorsV0};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
-use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
+use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::{
     DocumentPurchaseTransition, DocumentReplaceTransition, DocumentTransferTransition, DocumentUpdatePriceTransition,
@@ -63,6 +63,12 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
     /// Returns the first transition, if it exists, as a `BatchedTransitionRef`.
     fn first_transition(&self) -> Option<BatchedTransitionRef> {
         self.transitions.first().map(BatchedTransitionRef::Document)
+    }
+
+    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef> {
+        self.transitions
+            .first_mut()
+            .map(BatchedTransitionMutRef::Document)
     }
 }
 

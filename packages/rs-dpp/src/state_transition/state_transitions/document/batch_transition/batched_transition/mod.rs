@@ -57,6 +57,14 @@ pub enum BatchedTransitionRef<'a> {
     Token(&'a TokenTransition),
 }
 
+#[derive(Debug, From, PartialEq, Display)]
+pub enum BatchedTransitionMutRef<'a> {
+    #[display("DocumentTransition({})", "_0")]
+    Document(&'a mut DocumentTransition),
+    #[display("TokenTransition({})", "_0")]
+    Token(&'a mut TokenTransition),
+}
+
 impl<'a> BatchedTransitionRef<'a> {
     pub fn to_owned_transition(&self) -> BatchedTransition {
         match self {
@@ -98,6 +106,19 @@ impl BatchedTransition {
             BatchedTransition::Token(tok) => {
                 // Create a reference to a TokenTransition
                 BatchedTransitionRef::Token(tok)
+            }
+        }
+    }
+
+    pub fn borrow_as_mut(&mut self) -> BatchedTransitionMutRef {
+        match self {
+            BatchedTransition::Document(doc) => {
+                // Create a reference to a DocumentTransition
+                BatchedTransitionMutRef::Document(doc)
+            }
+            BatchedTransition::Token(tok) => {
+                // Create a reference to a TokenTransition
+                BatchedTransitionMutRef::Token(tok)
             }
         }
     }

@@ -1,5 +1,5 @@
 use crate::balances::credits::TokenAmount;
-use crate::group::GroupStateTransitionInfo;
+use crate::group::GroupStateTransitionInfoStatus;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::prelude::{
@@ -23,7 +23,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         amount: TokenAmount,
         issued_to_identity_id: Option<Identifier>,
         public_note: Option<String>,
-        using_group_info: Option<GroupStateTransitionInfo>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -42,7 +42,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         token_contract_position: u16,
         amount: TokenAmount,
         public_note: Option<String>,
-        using_group_info: Option<GroupStateTransitionInfo>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -68,7 +68,6 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
             DerivationEncryptionKeyIndex,
             Vec<u8>,
         )>,
-        using_group_info: Option<GroupStateTransitionInfo>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

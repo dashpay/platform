@@ -5,12 +5,18 @@ use grovedb::TransactionArg;
 use std::sync::Arc;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::UserFeeIncrease;
+use dpp::validation::ConsensusValidationResult;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, TokenTransitionAction};
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::v0::TokenBurnTransitionActionV0;
+use crate::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionActionV0;
+use crate::state_transition_action::StateTransitionAction;
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl TokenBurnTransitionActionV0 {
     /// Attempts to create a `TokenBurnTransitionActionV0` from the given `TokenBurnTransitionV0` value.
@@ -43,9 +49,16 @@ impl TokenBurnTransitionActionV0 {
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let TokenBurnTransitionV0 {
             base,
             burn_amount,
@@ -54,16 +67,17 @@ impl TokenBurnTransitionActionV0 {
 
         let mut drive_operations = vec![];
 
-        let base_action = TokenBaseTransitionAction::try_from_base_transition_with_contract_lookup(
-            drive,
-            owner_id,
-            base,
-            approximate_without_state_for_costs,
-            transaction,
-            &mut drive_operations,
-            get_data_contract,
-            platform_version,
-        )?;
+        let base_action_validation_result =
+            TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
+                drive,
+                owner_id,
+                &base,
+                approximate_without_state_for_costs,
+                transaction,
+                &mut drive_operations,
+                get_data_contract,
+                platform_version,
+            )?;
 
         let fee_result = Drive::calculate_fee(
             None,
@@ -74,12 +88,37 @@ impl TokenBurnTransitionActionV0 {
             None,
         )?;
 
+        let base_action = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action = BumpIdentityDataContractNonceAction::from_token_base_transition(
+                    base,
+                    owner_id,
+                    user_fee_increase,
+                );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action.into(),
+                        base_action_validation_result.errors,
+                    ),
+                    fee_result,
+                ));
+            }
+        };
+
         Ok((
-            TokenBurnTransitionActionV0 {
-                base: base_action,
-                burn_amount,
-                public_note,
-            },
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::BurnAction(
+                TokenBurnTransitionActionV0 {
+                    base: base_action,
+                    burn_amount,
+                    public_note,
+                }
+                .into(),
+            ))
+            .into(),
             fee_result,
         ))
     }
@@ -114,9 +153,16 @@ impl TokenBurnTransitionActionV0 {
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let TokenBurnTransitionV0 {
             base,
             burn_amount,
@@ -125,7 +171,7 @@ impl TokenBurnTransitionActionV0 {
 
         let mut drive_operations = vec![];
 
-        let base_action =
+        let base_action_validation_result =
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 drive,
                 owner_id,
@@ -146,12 +192,38 @@ impl TokenBurnTransitionActionV0 {
             None,
         )?;
 
+        let base_action = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action.into(),
+                        base_action_validation_result.errors,
+                    ),
+                    fee_result,
+                ));
+            }
+        };
+
         Ok((
-            TokenBurnTransitionActionV0 {
-                base: base_action,
-                burn_amount: *burn_amount,
-                public_note: public_note.clone(),
-            },
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::BurnAction(
+                TokenBurnTransitionActionV0 {
+                    base: base_action,
+                    burn_amount: *burn_amount,
+                    public_note: public_note.clone(),
+                }
+                .into(),
+            ))
+            .into(),
             fee_result,
         ))
     }

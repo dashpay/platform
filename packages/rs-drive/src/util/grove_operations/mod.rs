@@ -137,6 +137,9 @@ pub mod batch_insert_sum_item_if_not_exists;
 /// Moved items that are found in a path query to a new path.
 pub mod batch_move_items_in_path_query;
 
+/// Get total value from sum tree in grove if it exists
+pub mod grove_get_optional_sum_tree_total_value;
+
 use grovedb_costs::CostContext;
 
 use grovedb::EstimatedLayerInformation;

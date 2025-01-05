@@ -91,7 +91,9 @@ pub trait TokenTransitionV0Methods {
     /// sets identity contract nonce
     fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
 
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier;
+    fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier>;
+
+    fn can_calculate_action_id(&self) -> bool;
 }
 
 impl TokenTransitionV0Methods for TokenTransition {
@@ -115,11 +117,18 @@ impl TokenTransitionV0Methods for TokenTransition {
         self.base().data_contract_id()
     }
 
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier> {
         match self {
-            TokenTransition::Burn(t) => t.calculate_action_id(owner_id),
-            TokenTransition::Mint(t) => t.calculate_action_id(owner_id),
-            TokenTransition::Transfer(t) => t.calculate_action_id(owner_id),
+            TokenTransition::Burn(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::Mint(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::Transfer(t) => None,
+        }
+    }
+
+    fn can_calculate_action_id(&self) -> bool {
+        match self {
+            TokenTransition::Burn(_) | TokenTransition::Mint(_) => true,
+            TokenTransition::Transfer(_) => false,
         }
     }
 
