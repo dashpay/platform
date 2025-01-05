@@ -1,11 +1,13 @@
-use crate::drive::group::{group_action_path, ACTION_SIGNERS_KEY};
+use crate::drive::group::group_action_signers_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use dpp::data_contract::group::GroupSumPower;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::GroupContractPosition;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -34,34 +36,67 @@ impl Drive {
     /// * `Error::Drive(DriveError::CorruptedContractPath)` if the fetched path does not refer to a valid sum item.
     /// * `Error::Drive(DriveError::CorruptedCodeExecution)` if the element type is unexpected.
     /// * `Error::GroveDB` for any underlying GroveDB errors.
-    pub(super) fn fetch_action_id_signers_power_v0(
+    pub(super) fn fetch_action_id_has_signer_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         action_id: Identifier,
+        signer_id: Identifier,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<GroupSumPower>, Error> {
+    ) -> Result<bool, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
-            contract_id.as_ref(),
+        let path = group_action_signers_path(
+            contract_id.as_slice(),
             &group_contract_position_bytes,
-            action_id.as_ref(),
+            action_id.as_slice(),
         );
 
-        let value = self
-            .grove_get_optional_sum_tree_total_value(
-                (&path).into(),
-                ACTION_SIGNERS_KEY,
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut vec![],
-                &platform_version.drive,
-            )?
-            .map(|v| v as GroupSumPower);
+        let value = self.grove_has_raw(
+            (&path).into(),
+            signer_id.as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
 
         Ok(value)
+    }
+
+    /// Fetches the Identity's balance from the backing store
+    /// Passing apply as false get the estimated cost instead
+    pub(super) fn fetch_action_id_has_signer_with_costs_v0(
+        &self,
+        contract_id: Identifier,
+        group_contract_position: GroupContractPosition,
+        action_id: Identifier,
+        signer_id: Identifier,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(bool, FeeResult), Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let value = self.fetch_action_id_has_signer_and_add_operations_v0(
+            contract_id,
+            group_contract_position,
+            action_id,
+            signer_id,
+            false,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+        Ok((value, fees))
     }
 
     /// v0 implementation of fetching the signers' power for a given action ID within a group contract and adding related operations.
@@ -88,44 +123,43 @@ impl Drive {
     /// * `Error::Drive(DriveError::CorruptedCodeExecution)` if the element type is unexpected.
     /// * `Error::Drive(DriveError::NotSupportedPrivate)` if stateful batch insertions are attempted.
     /// * `Error::GroveDB` for any underlying GroveDB errors.
-    pub(super) fn fetch_action_id_signers_power_and_add_operations_v0(
+    pub(super) fn fetch_action_id_has_signer_and_add_operations_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         action_id: Identifier,
+        signer_id: Identifier,
         estimate_costs_only: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<GroupSumPower>, Error> {
+    ) -> Result<bool, Error> {
         let group_contract_position_bytes = group_contract_position.to_be_bytes().to_vec();
         // Construct the GroveDB path for the action signers
-        let path = group_action_path(
-            contract_id.as_ref(),
+        let path = group_action_signers_path(
+            contract_id.as_slice(),
             &group_contract_position_bytes,
-            action_id.as_ref(),
+            action_id.as_slice(),
         );
 
         // no estimated_costs_only_with_layer_info, means we want to apply to state
         let direct_query_type = if estimate_costs_only {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_using_sums: true,
                 query_target: QueryTargetValue(8),
             }
         } else {
             DirectQueryType::StatefulDirectQuery
         };
 
-        let value = self
-            .grove_get_optional_sum_tree_total_value(
-                (&path).into(),
-                ACTION_SIGNERS_KEY,
-                direct_query_type,
-                transaction,
-                drive_operations,
-                &platform_version.drive,
-            )?
-            .map(|v| v as GroupSumPower);
+        let value = self.grove_has_raw(
+            (&path).into(),
+            signer_id.as_slice(),
+            direct_query_type,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?;
 
         Ok(value)
     }

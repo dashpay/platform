@@ -8,6 +8,7 @@ pub const DRIVE_GROUP_METHOD_VERSIONS_V1: DriveGroupMethodVersions = DriveGroupM
         fetch_action_id_signers_power: 0,
         fetch_action_id_info: 0,
         fetch_action_id_info_keep_serialized: 0,
+        fetch_action_id_has_signer: 0,
     },
     prove: DriveGroupProveMethodVersions {},
     insert: DriveGroupInsertMethodVersions {

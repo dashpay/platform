@@ -14,7 +14,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// Gets the return value and the cost of a groveDB `has_raw` operation.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_has_raw_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_has_raw_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

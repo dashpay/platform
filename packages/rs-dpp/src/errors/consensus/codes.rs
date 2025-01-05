@@ -277,6 +277,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityNotMemberOfGroupError(_) => 40800,
             Self::GroupActionDoesNotExistError(_) => 40801,
             Self::GroupActionAlreadyCompletedError(_) => 40802,
+            Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
         }
     }
 }

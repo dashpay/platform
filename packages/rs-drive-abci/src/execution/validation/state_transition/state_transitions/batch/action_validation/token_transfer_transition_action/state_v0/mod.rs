@@ -11,6 +11,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(super) trait TokenTransferTransitionActionStateValidationV0 {
@@ -34,6 +35,18 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let validation_result = self.base().validate_state(
+            platform,
+            owner_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
         // We need to verify that we have enough of the token
         let balance = platform
             .drive

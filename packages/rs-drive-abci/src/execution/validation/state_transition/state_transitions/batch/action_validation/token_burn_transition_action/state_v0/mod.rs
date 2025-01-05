@@ -14,6 +14,7 @@ use drive::query::TransactionArg;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(super) trait TokenBurnTransitionActionStateValidationV0 {
@@ -37,6 +38,18 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let validation_result = self.base().validate_state(
+            platform,
+            owner_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
         // Let's first check to see if we are authorized to perform this action
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;

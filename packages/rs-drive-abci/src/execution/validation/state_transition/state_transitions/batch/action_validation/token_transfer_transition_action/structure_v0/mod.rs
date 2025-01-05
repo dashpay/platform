@@ -20,8 +20,10 @@ impl TokenTransferTransitionActionStructureValidationV0 for TokenTransferTransit
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        self.base().validate_structure(platform_version)?;
-        let token_configuration = self.base().token_configuration()?;
+        let validation_result = self.base().validate_structure(platform_version)?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
 
         Ok(SimpleConsensusValidationResult::default())
     }
