@@ -5,6 +5,7 @@ pub mod balance;
 pub mod burn;
 pub mod estimated_costs;
 pub mod freeze;
+mod info;
 pub mod mint;
 pub mod system;
 pub mod transfer;

@@ -4,85 +4,83 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 impl Drive {
-    /// Fetches the token balances of an identity from the backing store.
+    /// Proves the token infos of an identity from the backing store.
     ///
     /// # Arguments
     ///
-    /// * `token_ids` - A list of token IDs whose balances are to be fetched.
-    /// * `identity_id` - The ID of the identity whose token balances are being queried.
+    /// * `token_ids` - A list of token IDs whose infos are to be proveed.
+    /// * `identity_id` - The ID of the identity whose token infos are being queried.
     /// * `transaction` - The current transaction context.
     /// * `platform_version` - The version of the platform to use for compatibility checks.
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error>` - A map of token IDs to their corresponding balances, or an error.
+    /// * `Result<Vec<u8>, Error>` - A grovedb proof, or an error.
     ///
     /// # Errors
     ///
     /// * `DriveError::UnknownVersionMismatch` - If the platform version does not support the requested operation.
-    pub fn fetch_identities_token_balances(
+    pub fn prove_identities_token_infos(
         &self,
         token_id: [u8; 32],
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+    ) -> Result<Vec<u8>, Error> {
         match platform_version
             .drive
             .methods
             .token
-            .fetch
-            .identities_token_balances
+            .prove
+            .identity_token_infos
         {
-            0 => self.fetch_identities_token_balances_v0(
+            0 => self.prove_identities_token_infos_v0(
                 token_id,
                 identity_ids,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_identity_token_balances".to_string(),
+                method: "prove_identity_token_infos".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    /// Fetches the identity's token balances with associated costs.
+    /// Proves the identity's token infos with associated costs.
     ///
     /// # Arguments
     ///
-    /// * `token_ids` - A list of token IDs to fetch the balances for.
-    /// * `identity_id` - The identity's ID whose balances are being queried.
+    /// * `token_ids` - A list of token IDs to prove the infos for.
+    /// * `identity_id` - The identity's ID whose infos are being queried.
     /// * `block_info` - Information about the current block for fee calculation.
     /// * `transaction` - The current transaction context.
     /// * `platform_version` - The platform version to use.
     ///
     /// # Returns
     ///
-    /// * `Result<((BTreeMap<[u8; 32], Option<TokenAmount>>), FeeResult), Error>` - A tuple containing a map of token balances and the associated fee result.
+    /// * `Result<Vec<u8>, Error>` - A grovedb proof, or an error.
     ///
     /// # Errors
     ///
     /// * `DriveError::UnknownVersionMismatch` - If the platform version does not support the requested operation.
-    pub fn fetch_identities_token_balances_with_costs(
+    pub fn prove_identities_token_infos_with_costs(
         &self,
         token_id: [u8; 32],
         identity_ids: &[[u8; 32]],
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(BTreeMap<[u8; 32], Option<TokenAmount>>, FeeResult), Error> {
+    ) -> Result<(Vec<u8>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let value = self.fetch_identities_token_balances_operations(
+        let value = self.prove_identities_token_infos_operations(
             token_id,
             identity_ids,
             transaction,
@@ -102,39 +100,39 @@ impl Drive {
         Ok((value, fees))
     }
 
-    /// Creates the low-level operations needed to fetch the identity's token balances from the backing store.
+    /// Creates the low-level operations needed to prove the identity's token infos from the backing store.
     ///
     /// # Arguments
     ///
-    /// * `token_ids` - A list of token IDs to query the balances for.
-    /// * `identity_id` - The ID of the identity whose token balances are being queried.
+    /// * `token_ids` - A list of token IDs to query the infos for.
+    /// * `identity_id` - The ID of the identity whose token infos are being queried.
     /// * `transaction` - The current transaction context.
     /// * `drive_operations` - A vector to store the created low-level drive operations.
     /// * `platform_version` - The platform version to use for compatibility checks.
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error>` - A map of token IDs to their corresponding balances, or an error.
+    /// * `Result<Vec<u8>, Error>` - A grovedb proof, or an error.
     ///
     /// # Errors
     ///
     /// * `DriveError::UnknownVersionMismatch` - If the platform version does not support the requested operation.
-    pub fn fetch_identities_token_balances_operations(
+    pub fn prove_identities_token_infos_operations(
         &self,
         token_id: [u8; 32],
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+    ) -> Result<Vec<u8>, Error> {
         match platform_version
             .drive
             .methods
             .token
-            .fetch
-            .identities_token_balances
+            .prove
+            .identity_token_infos
         {
-            0 => self.fetch_identities_token_balances_operations_v0(
+            0 => self.prove_identities_token_infos_operations_v0(
                 token_id,
                 identity_ids,
                 transaction,
@@ -142,7 +140,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_identities_token_balances_operations".to_string(),
+                method: "prove_identities_token_infos_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

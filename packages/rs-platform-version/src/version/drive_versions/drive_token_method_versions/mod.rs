@@ -13,12 +13,20 @@ pub struct DriveTokenMethodVersions {
 pub struct DriveTokenFetchMethodVersions {
     pub identity_token_balance: FeatureVersion,
     pub identity_token_balances: FeatureVersion,
+    pub identities_token_balances: FeatureVersion,
+    pub identity_token_info: FeatureVersion,
+    pub identity_token_infos: FeatureVersion,
+    pub identities_token_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenProveMethodVersions {
     pub identity_token_balance: FeatureVersion,
     pub identity_token_balances: FeatureVersion,
+    pub identities_token_balances: FeatureVersion,
+    pub identity_token_info: FeatureVersion,
+    pub identity_token_infos: FeatureVersion,
+    pub identities_token_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

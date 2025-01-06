@@ -26,6 +26,8 @@ pub struct DriveAbciQueryPrefundedSpecializedBalancesVersions {
 pub struct DriveAbciQueryTokenVersions {
     pub identity_token_balances: FeatureVersionBounds,
     pub identities_token_balances: FeatureVersionBounds,
+    pub identities_token_infos: FeatureVersionBounds,
+    pub identity_token_infos: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

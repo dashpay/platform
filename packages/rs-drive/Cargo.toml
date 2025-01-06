@@ -100,6 +100,7 @@ server = [
   "parking_lot",
   "arc-swap",
   "moka",
+  "dpp/validation",
   "dpp/platform-value-json",
   "dpp/system_contracts",
   "dpp/state-transitions",

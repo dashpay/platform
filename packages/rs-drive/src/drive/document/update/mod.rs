@@ -685,7 +685,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -777,7 +777,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -871,7 +871,15 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, None, None, transaction.as_ref(), None);
+        let contract = setup_contract(
+            &drive,
+            path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            transaction.as_ref(),
+            None,
+        );
 
         let id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -1166,7 +1174,15 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, None, None, transaction.as_ref(), None);
+        let contract = setup_contract(
+            &drive,
+            path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            transaction.as_ref(),
+            None,
+        );
 
         let id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -1365,7 +1381,15 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, None, None, transaction.as_ref(), None);
+        let contract = setup_contract(
+            &drive,
+            path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            transaction.as_ref(),
+            None,
+        );
 
         let id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -1700,7 +1724,15 @@ mod tests {
         };
 
         // setup code
-        let contract = setup_contract(&drive, path, None, None, None, transaction.as_ref(), None);
+        let contract = setup_contract(
+            &drive,
+            path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            transaction.as_ref(),
+            None,
+        );
 
         let person_0_original = Person {
             id: Identifier::from([0u8; 32]),

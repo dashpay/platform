@@ -273,7 +273,6 @@ impl ErrorWithCode for StateError {
             Self::DataTriggerError(ref e) => e.code(),
 
             // Group errors: 40800-40899
-            #[cfg(feature = "state-transition-validation")]
             Self::IdentityNotMemberOfGroupError(_) => 40800,
             Self::GroupActionDoesNotExistError(_) => 40801,
             Self::GroupActionAlreadyCompletedError(_) => 40802,

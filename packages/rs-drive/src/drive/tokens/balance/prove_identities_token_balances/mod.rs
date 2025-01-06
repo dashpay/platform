@@ -38,7 +38,7 @@ impl Drive {
             .methods
             .token
             .prove
-            .identity_token_balances
+            .identities_token_balances
         {
             0 => self.prove_identities_token_balances_v0(
                 token_id,
@@ -130,7 +130,7 @@ impl Drive {
             .methods
             .token
             .prove
-            .identity_token_balances
+            .identities_token_balances
         {
             0 => self.prove_identities_token_balances_operations_v0(
                 token_id,

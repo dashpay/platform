@@ -57,6 +57,8 @@ service Platform {
   rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
   rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
   rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
+  rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
+  rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1281,5 +1283,81 @@ message GetIdentitiesTokenBalancesResponse {
   }
   oneof version {
     GetIdentitiesTokenBalancesResponseV0 v0 = 1;
+  }
+}
+
+
+
+message GetIdentityTokenInfosRequest {
+  message GetIdentityTokenInfosRequestV0 {
+    bytes identity_id = 1;
+    repeated bytes token_ids = 2;
+    bool prove = 3;
+  }
+  oneof version {
+    GetIdentityTokenInfosRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentityTokenInfosResponse {
+  message GetIdentityTokenInfosResponseV0 {
+    message TokenIdentityInfoEntry {
+      bool frozen = 1;
+    }
+
+    message TokenInfoEntry {
+      bytes token_id = 1;
+      optional TokenIdentityInfoEntry info = 2;
+    }
+
+    message TokenInfos {
+      repeated TokenInfoEntry token_infos = 1;
+    }
+
+    oneof result {
+      TokenInfos token_infos = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetIdentityTokenInfosResponseV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesTokenInfosRequest {
+  message GetIdentitiesTokenInfosRequestV0 {
+    bytes token_id = 1;
+    repeated bytes identity_ids = 2;
+    bool prove = 3;
+  }
+  oneof version {
+    GetIdentitiesTokenInfosRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesTokenInfosResponse {
+  message GetIdentitiesTokenInfosResponseV0 {
+    message TokenIdentityInfoEntry {
+      bool frozen = 1;
+    }
+
+    message TokenInfoEntry {
+      bytes identity_id = 1;
+      optional TokenIdentityInfoEntry info = 2;
+    }
+
+    message IdentityTokenInfos {
+      repeated TokenInfoEntry token_infos = 1;
+    }
+
+    oneof result {
+      IdentityTokenInfos identity_token_infos = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetIdentitiesTokenInfosResponseV0 v0 = 1;
   }
 }

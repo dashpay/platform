@@ -1,6 +1,8 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::TokenContractPosition;
 #[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
@@ -11,11 +13,12 @@ use crate::group::GroupStateTransitionInfoStatus;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
+use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::{
-    DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
-    SenderKeyIndex,
+    DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex,
 };
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -608,6 +611,126 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_transfer_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_freeze_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        freeze_identity_id: Identifier,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        match batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the freeze transition for batch version 1
+                BatchTransitionV1::new_token_freeze_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    freeze_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    batch_feature_version,
+                    delete_feature_version,
+                    base_feature_version,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_freeze_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_unfreeze_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        unfreeze_identity_id: Identifier,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        match batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the freeze transition for batch version 1
+                BatchTransitionV1::new_token_unfreeze_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    unfreeze_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    batch_feature_version,
+                    delete_feature_version,
+                    base_feature_version,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_unfreeze_transition".to_string(),
                 known_versions: vec![1],
                 received: version,
             }),

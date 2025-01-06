@@ -223,15 +223,15 @@ mod tests {
 
     use super::*;
 
+    use crate::util::test_helpers::setup_contract;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
     use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
-
-    use crate::util::test_helpers::setup_contract;
 
     use crate::util::batch::drive_op_batch::document::DocumentOperation::{
         AddOperation, UpdateOperation,
@@ -604,7 +604,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -718,7 +718,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -938,7 +938,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );

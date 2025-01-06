@@ -23,13 +23,15 @@ use dapi_grpc::platform::v0::{
     GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
     GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
-    GetIdentitiesTokenBalancesResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
+    GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
     GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
@@ -631,6 +633,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identities_token_balances,
             "query_identities_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identity_token_infos(
+        &self,
+        request: Request<GetIdentityTokenInfosRequest>,
+    ) -> Result<Response<GetIdentityTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_infos,
+            "query_identity_token_infos",
+        )
+        .await
+    }
+
+    async fn get_identities_token_infos(
+        &self,
+        request: Request<GetIdentitiesTokenInfosRequest>,
+    ) -> Result<Response<GetIdentitiesTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_infos,
+            "query_identities_token_infos",
         )
         .await
     }

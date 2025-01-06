@@ -1,4 +1,4 @@
-use crate::drive::tokens::{token_identity_infos_path, token_identity_infos_path_vec};
+use crate::drive::tokens::token_identity_infos_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

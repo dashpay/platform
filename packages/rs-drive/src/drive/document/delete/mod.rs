@@ -69,6 +69,7 @@ mod tests {
     use crate::query::DriveDocumentQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
@@ -99,7 +100,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             None,
             None,
         );
@@ -196,7 +197,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -340,7 +341,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -527,7 +528,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-reduced.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -805,7 +806,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -908,7 +909,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );

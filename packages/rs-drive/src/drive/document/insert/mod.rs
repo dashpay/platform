@@ -51,11 +51,11 @@ mod tests {
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 
-    use dpp::block::epoch::Epoch;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
@@ -166,7 +166,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -265,7 +265,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -333,7 +333,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -401,7 +401,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -469,7 +469,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -548,7 +548,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );
@@ -644,7 +644,7 @@ mod tests {
             "tests/supporting_files/contract/dpns/dpns-contract.json",
             None,
             None,
-            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
             None,
         );

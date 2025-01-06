@@ -7,10 +7,18 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
     fetch: DriveTokenFetchMethodVersions {
         identity_token_balance: 0,
         identity_token_balances: 0,
+        identities_token_balances: 0,
+        identity_token_info: 0,
+        identity_token_infos: 0,
+        identities_token_infos: 0,
     },
     prove: DriveTokenProveMethodVersions {
         identity_token_balance: 0,
         identity_token_balances: 0,
+        identities_token_balances: 0,
+        identity_token_info: 0,
+        identity_token_infos: 0,
+        identities_token_infos: 0,
     },
     update: DriveTokenUpdateMethodVersions {
         create_token_trees: 0,
