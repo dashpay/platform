@@ -1,9 +1,9 @@
 #[cfg(feature = "server")]
 mod add_to_previous_token_balance;
 #[cfg(feature = "server")]
-mod fetch;
-#[cfg(feature = "server")]
 mod fetch_identities_token_balances;
+#[cfg(feature = "server")]
+mod fetch_identity_token_balance;
 #[cfg(feature = "server")]
 mod fetch_identity_token_balances;
 #[cfg(feature = "server")]

@@ -68,6 +68,7 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                     UnauthorizedTokenActionError::new(
+                        self.token_id(),
                         owner_id,
                         "burn".to_string(),
                         rules.authorized_to_make_change_action_takers().clone(),
@@ -92,6 +93,7 @@ impl TokenBurnTransitionActionStateValidationV0 for TokenBurnTransitionAction {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                     IdentityDoesNotHaveEnoughTokenBalanceError::new(
+                        self.token_id(),
                         owner_id,
                         self.burn_amount(),
                         balance,

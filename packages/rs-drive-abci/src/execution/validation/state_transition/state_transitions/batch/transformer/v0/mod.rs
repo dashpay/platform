@@ -234,8 +234,6 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
 
-        let user_fee_increase = self.user_fee_increase();
-
         let mut validation_result_tokens = token_transitions_by_contracts
             .iter()
             .map(|(data_contract_id, token_transitions)| {

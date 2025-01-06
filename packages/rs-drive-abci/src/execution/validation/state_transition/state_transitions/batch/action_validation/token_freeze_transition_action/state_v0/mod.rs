@@ -1,7 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, UnauthorizedTokenActionError};
+use dpp::consensus::state::token::UnauthorizedTokenActionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -12,8 +12,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -68,6 +67,7 @@ impl TokenFreezeTransitionActionStateValidationV0 for TokenFreezeTransitionActio
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                     UnauthorizedTokenActionError::new(
+                        self.token_id(),
                         owner_id,
                         "freeze".to_string(),
                         rules.authorized_to_make_change_action_takers().clone(),

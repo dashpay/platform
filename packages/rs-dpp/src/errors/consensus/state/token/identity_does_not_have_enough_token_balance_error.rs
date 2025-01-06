@@ -10,14 +10,16 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Identity {} does not have enough token balance: required {}, actual {}, action: {}",
+    "Identity {} does not have enough balance for token {}: required {}, actual {}, action: {}",
     identity_id,
+    token_id,
     required_balance,
     actual_balance,
     action
 )]
 #[platform_serialize(unversioned)]
 pub struct IdentityDoesNotHaveEnoughTokenBalanceError {
+    token_id: Identifier,
     identity_id: Identifier,
     required_balance: u64,
     actual_balance: u64,
@@ -26,17 +28,22 @@ pub struct IdentityDoesNotHaveEnoughTokenBalanceError {
 
 impl IdentityDoesNotHaveEnoughTokenBalanceError {
     pub fn new(
+        token_id: Identifier,
         identity_id: Identifier,
         required_balance: u64,
         actual_balance: u64,
         action: String,
     ) -> Self {
         Self {
+            token_id,
             identity_id,
             required_balance,
             actual_balance,
             action,
         }
+    }
+    pub fn token_id(&self) -> &Identifier {
+        &self.token_id
     }
 
     pub fn identity_id(&self) -> &Identifier {

@@ -23,9 +23,7 @@ use crate::consensus::state::identity::invalid_identity_public_key_id_error::Inv
 use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
-use crate::consensus::state::identity::{
-    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
-};
+use crate::consensus::state::identity::{IdentityAlreadyExistsError, IdentityInsufficientBalanceError, RecipientIdentityDoesNotExistError};
 use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -43,7 +41,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, RecipientIdentityDoesNotExistError, UnauthorizedTokenActionError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, UnauthorizedTokenActionError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -210,6 +208,9 @@ pub enum StateError {
 
     #[error(transparent)]
     UnauthorizedTokenActionError(UnauthorizedTokenActionError),
+
+    #[error(transparent)]
+    IdentityTokenAccountFrozenError(IdentityTokenAccountFrozenError),
 
     #[error(transparent)]
     IdentityNotMemberOfGroupError(IdentityNotMemberOfGroupError),

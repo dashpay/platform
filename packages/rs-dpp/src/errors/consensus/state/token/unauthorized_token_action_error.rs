@@ -11,13 +11,15 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Identity {} is not authorized to perform action: {}. Authorized action takers: {:?}",
+    "Identity {} is not authorized to perform action: {} on token: {}. Authorized action takers: {:?}",
     identity_id,
+    token_id,
     action,
     authorized_action_takers
 )]
 #[platform_serialize(unversioned)]
 pub struct UnauthorizedTokenActionError {
+    token_id: Identifier,
     identity_id: Identifier,
     action: String,
     authorized_action_takers: AuthorizedActionTakers,
@@ -25,15 +27,21 @@ pub struct UnauthorizedTokenActionError {
 
 impl UnauthorizedTokenActionError {
     pub fn new(
+        token_id: Identifier,
         identity_id: Identifier,
         action: String,
         authorized_action_takers: AuthorizedActionTakers,
     ) -> Self {
         Self {
+            token_id,
             identity_id,
             action,
             authorized_action_takers,
         }
+    }
+
+    pub fn token_id(&self) -> &Identifier {
+        &self.token_id
     }
 
     pub fn identity_id(&self) -> &Identifier {

@@ -67,6 +67,7 @@ impl TokenUnfreezeTransitionActionStateValidationV0 for TokenUnfreezeTransitionA
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                     UnauthorizedTokenActionError::new(
+                        self.token_id(),
                         owner_id,
                         "unfreeze".to_string(),
                         rules.authorized_to_make_change_action_takers().clone(),

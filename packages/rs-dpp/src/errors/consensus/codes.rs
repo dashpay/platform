@@ -132,6 +132,7 @@ impl ErrorWithCode for BasicError {
             Self::ContractHasNoTokensError(_) => 10454,
             Self::DestinationIdentityForTokenMintingNotSetError(_) => 10455,
             Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10456,
+            Self::TokenTransferToOurselfError(_) => 10457,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -233,9 +234,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestNotPaidForError(_) => 40114,
 
             // Token errors: 40150-40199
-            Self::RecipientIdentityDoesNotExistError(_) => 40150,
-            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40151,
-            Self::UnauthorizedTokenActionError(_) => 40152,
+            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40150,
+            Self::UnauthorizedTokenActionError(_) => 40151,
+            Self::IdentityTokenAccountFrozenError(_) => 40152,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -254,6 +255,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractUpdatePermissionError(_) => 40213,
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
+            Self::RecipientIdentityDoesNotExistError(_) => 40216,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

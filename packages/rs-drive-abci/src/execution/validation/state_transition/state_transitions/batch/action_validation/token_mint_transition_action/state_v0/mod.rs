@@ -1,7 +1,8 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
+use dpp::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{RecipientIdentityDoesNotExistError, UnauthorizedTokenActionError};
+use dpp::consensus::state::token::UnauthorizedTokenActionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -70,6 +71,7 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                             UnauthorizedTokenActionError::new(
+                                self.token_id(),
                                 owner_id,
                                 "mint".to_string(),
                                 rules.authorized_to_make_change_action_takers().clone(),
@@ -88,6 +90,7 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
                                 ConsensusError::StateError(
                                     StateError::UnauthorizedTokenActionError(
                                         UnauthorizedTokenActionError::new(
+                                            self.token_id(),
                                             owner_id,
                                             "mint".to_string(),
                                             rules.authorized_to_make_change_action_takers().clone(),
@@ -103,6 +106,7 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                                 UnauthorizedTokenActionError::new(
+                                    self.token_id(),
                                     owner_id,
                                     "mint".to_string(),
                                     rules.authorized_to_make_change_action_takers().clone(),
@@ -122,6 +126,7 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                         UnauthorizedTokenActionError::new(
+                            self.token_id(),
                             owner_id,
                             "mint".to_string(),
                             rules.authorized_to_make_change_action_takers().clone(),

@@ -16,11 +16,12 @@ use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
-use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError};
+use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError, TokenTransferToOurselfError};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TransitionActionTypeGetter;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use crate::state_transition::StateTransitionLike;
 
@@ -131,6 +132,24 @@ impl BatchTransition {
                     calculated_token_id,
                     transition_token_id,
                 )));
+            }
+
+            match transition {
+                TokenTransition::Burn(_) => {}
+                TokenTransition::Mint(_) => {}
+                TokenTransition::Transfer(transfer) => {
+                    if transfer.recipient_id() == self.owner_id() {
+                        // We can not transfer to ourselves
+                        result.add_error(BasicError::TokenTransferToOurselfError(
+                            TokenTransferToOurselfError::new(
+                                transition.token_id(),
+                                self.owner_id(),
+                            ),
+                        ));
+                    }
+                }
+                TokenTransition::Freeze(_) => {}
+                TokenTransition::Unfreeze(_) => {}
             }
 
             // We need to verify that the action id given matches the expected action id
