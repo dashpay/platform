@@ -342,7 +342,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
                         after.len(),
                     ))
                 })?),
-                true,
+                false,
             ),
         };
 
