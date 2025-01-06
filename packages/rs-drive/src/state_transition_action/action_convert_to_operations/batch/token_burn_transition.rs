@@ -9,15 +9,15 @@ use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use crate::util::batch::drive_op_batch::{GroupOperationType, TokenOperationType};
 use crate::util::batch::DriveOperation::{GroupOperation, IdentityOperation, TokenOperation};
 
-impl DriveHighLevelDocumentOperationConverter for TokenBurnTransitionAction {
-    fn into_high_level_document_drive_operations<'b>(
+impl DriveHighLevelBatchOperationConverter for TokenBurnTransitionAction {
+    fn into_high_level_batch_drive_operations<'b>(
         self,
         _epoch: &Epoch,
         owner_id: Identifier,

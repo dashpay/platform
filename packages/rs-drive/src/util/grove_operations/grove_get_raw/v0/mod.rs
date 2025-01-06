@@ -13,7 +13,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub(crate) fn grove_get_raw_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_get_raw_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

@@ -35,5 +35,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,
                 partially_use_asset_lock: 0,
+                token_freeze_transition: 0,
+                token_unfreeze_transition: 0,
             },
     };

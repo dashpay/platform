@@ -12,6 +12,7 @@ use dpp::fee::fee_result::FeeResult;
 use crate::drive::balances::total_tokens_root_supply_path_vec;
 use crate::drive::tokens::{
     token_balances_path_vec, token_path, tokens_root_path, TOKEN_BALANCES_KEY,
+    TOKEN_IDENTITY_INFO_KEY,
 };
 use crate::error::contract::DataContractError;
 use crate::util::object_size_info::DriveKeyInfo;
@@ -203,9 +204,17 @@ impl Drive {
                 &platform_version.drive,
             )?;
 
-            self.batch_insert_empty_tree(
+            self.batch_insert_empty_sum_tree(
                 token_path(&token_id_bytes),
                 DriveKeyInfo::Key(vec![TOKEN_BALANCES_KEY]),
+                None,
+                &mut batch_operations,
+                &platform_version.drive,
+            )?;
+
+            self.batch_insert_empty_tree(
+                token_path(&token_id_bytes),
+                DriveKeyInfo::Key(vec![TOKEN_IDENTITY_INFO_KEY]),
                 None,
                 &mut batch_operations,
                 &platform_version.drive,

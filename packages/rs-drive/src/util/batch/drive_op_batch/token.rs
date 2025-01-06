@@ -15,7 +15,7 @@ use std::collections::HashMap;
 /// Operations on Tokens
 #[derive(Clone, Debug)]
 pub enum TokenOperationType {
-    /// Burns token from the account issuing the .
+    /// Burns token from the account issuing the action.
     TokenBurn {
         /// The token id
         token_id: Identifier,
@@ -24,7 +24,7 @@ pub enum TokenOperationType {
         /// The amount to burn
         burn_amount: TokenAmount,
     },
-    /// Adds a document to a contract matching the desired info.
+    /// Mints tokens
     TokenMint {
         /// The token id
         token_id: Identifier,
@@ -35,7 +35,7 @@ pub enum TokenOperationType {
         /// Should we allow this to be the first ever mint
         allow_first_mint: bool,
     },
-    /// Adds a document to a contract matching the desired info.
+    /// Performs a token transfer
     TokenTransfer {
         /// The token id
         token_id: Identifier,
@@ -46,7 +46,21 @@ pub enum TokenOperationType {
         /// The amount to transfer
         amount: TokenAmount,
     },
-    /// Adds a document to a contract matching the desired info.
+    /// Freezes an identity's token balance so money can no longer be sent out.
+    TokenFreeze {
+        /// The token id
+        token_id: Identifier,
+        /// The frozen identity id
+        frozen_identity_id: Identifier,
+    },
+    /// Unfreezes an identity's token balance so money can be sent out again.
+    TokenUnfreeze {
+        /// The token id
+        token_id: Identifier,
+        /// The frozen identity id
+        frozen_identity_id: Identifier,
+    },
+    /// Adds a historical document explaining a token action.
     TokenHistory {
         /// The token id
         token_id: Identifier,
@@ -140,6 +154,32 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     nonce,
                     event,
                     block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenFreeze {
+                token_id,
+                frozen_identity_id,
+            } => {
+                let batch_operations = drive.token_freeze_operations(
+                    token_id,
+                    frozen_identity_id,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenUnfreeze {
+                token_id,
+                frozen_identity_id,
+            } => {
+                let batch_operations = drive.token_unfreeze_operations(
+                    token_id,
+                    frozen_identity_id,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

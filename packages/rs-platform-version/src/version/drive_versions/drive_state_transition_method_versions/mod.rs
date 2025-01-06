@@ -33,6 +33,8 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub bump_identity_data_contract_nonce: FeatureVersion,
     pub bump_identity_nonce: FeatureVersion,
     pub partially_use_asset_lock: FeatureVersion,
+    pub token_freeze_transition: FeatureVersion,
+    pub token_unfreeze_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

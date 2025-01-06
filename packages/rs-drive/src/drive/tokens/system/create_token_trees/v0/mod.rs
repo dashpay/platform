@@ -1,5 +1,7 @@
 use crate::drive::balances::total_tokens_root_supply_path;
-use crate::drive::tokens::{token_path, tokens_root_path, TOKEN_BALANCES_KEY};
+use crate::drive::tokens::{
+    token_path, tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -159,6 +161,24 @@ impl Drive {
             // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
             return Err(Error::Drive(DriveError::CorruptedDriveState(
                 "token balance tree already exists".to_string(),
+            )));
+        }
+
+        let inserted = self.batch_insert_empty_tree_if_not_exists(
+            PathFixedSizeKey((token_path(&token_id), vec![TOKEN_IDENTITY_INFO_KEY])),
+            false,
+            None,
+            non_sum_tree_apply_type,
+            transaction,
+            &mut None,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
+
+        if !inserted && !allow_already_exists {
+            // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "token info tree already exists".to_string(),
             )));
         }
 

@@ -22,5 +22,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         remove_from_identity_token_balance: 0,
         add_to_identity_token_balance: 0,
         add_transaction_history_operations: 0,
+        freeze: 0,
+        unfreeze: 0,
     },
 };

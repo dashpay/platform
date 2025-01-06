@@ -14,14 +14,16 @@ mod document_transition;
 mod document_update_price_transition;
 mod documents_batch_transition;
 mod token_burn_transition;
+mod token_freeze_transition;
 mod token_mint_transition;
 mod token_transfer_transition;
 mod token_transition;
+mod token_unfreeze_transition;
 
 /// A converter that will get High Level Drive Operations from State transitions
-pub trait DriveHighLevelDocumentOperationConverter {
+pub trait DriveHighLevelBatchOperationConverter {
     /// This will get a list of atomic drive operations from a high level operations
-    fn into_high_level_document_drive_operations<'a>(
+    fn into_high_level_batch_drive_operations<'a>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,

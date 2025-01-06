@@ -4,7 +4,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::TokenUnfreezeTransitionV0;
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::token_unfreeze_transition_action::v0::TokenUnfreezeTransitionActionV0;

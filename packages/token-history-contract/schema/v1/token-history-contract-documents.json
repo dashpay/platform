@@ -68,8 +68,7 @@
       "tokenId",
       "amount",
       "$createdAt",
-      "$createdAtBlockHeight",
-      "$createdAtCoreBlockHeight"
+      "$createdAtBlockHeight"
     ],
     "additionalProperties": false
   },
@@ -165,8 +164,7 @@
       "amount",
       "recipientId",
       "$createdAt",
-      "$createdAtBlockHeight",
-      "$createdAtCoreBlockHeight"
+      "$createdAtBlockHeight"
     ],
     "additionalProperties": false
   },
@@ -302,8 +300,7 @@
       "amount",
       "toIdentityId",
       "$createdAt",
-      "$createdAtBlockHeight",
-      "$createdAtCoreBlockHeight"
+      "$createdAtBlockHeight"
     ],
     "additionalProperties": false
   },
@@ -389,13 +386,13 @@
         ]
       },
       {
-        "name": "byUnfrozenIdentityId",
+        "name": "byFrozenIdentityId",
         "properties": [
           {
             "tokenId": "asc"
           },
           {
-            "unfrozenIdentityId": "asc"
+            "frozenIdentityId": "asc"
           },
           {
             "$createdAt": "asc"
@@ -412,7 +409,7 @@
         "description": "The token ID",
         "position": 0
       },
-      "unfrozenIdentityId": {
+      "frozenIdentityId": {
         "type": "array",
         "byteArray": true,
         "minItems": 32,
@@ -423,7 +420,7 @@
     },
     "required": [
       "tokenId",
-      "unfrozenIdentityId",
+      "frozenIdentityId",
       "$createdAt",
       "$createdAtBlockHeight"
     ],

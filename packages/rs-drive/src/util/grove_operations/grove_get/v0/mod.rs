@@ -13,7 +13,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// Gets the element at the given path from groveDB.
     /// Pushes the `OperationCost` of getting the element to `drive_operations`.
-    pub(crate) fn grove_get_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_get_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

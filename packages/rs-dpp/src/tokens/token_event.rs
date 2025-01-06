@@ -16,6 +16,7 @@ pub type TokenEventPersonalEncryptedNote = Option<(
 use crate::ProtocolError;
 
 pub type RecipientIdentifier = Identifier;
+pub type FrozenIdentifier = Identifier;
 
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
@@ -24,6 +25,8 @@ pub type RecipientIdentifier = Identifier;
 pub enum TokenEvent {
     Mint(TokenAmount, RecipientIdentifier, TokenEventPublicNote),
     Burn(TokenAmount, TokenEventPublicNote),
+    Freeze(FrozenIdentifier, TokenEventPublicNote),
+    Unfreeze(FrozenIdentifier, TokenEventPublicNote),
     Transfer(
         RecipientIdentifier,
         TokenEventPublicNote,

@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -15,8 +15,8 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use dpp::version::PlatformVersion;
 use crate::error::drive::DriveError;
 
-impl DriveHighLevelDocumentOperationConverter for DocumentTransferTransitionAction {
-    fn into_high_level_document_drive_operations<'b>(
+impl DriveHighLevelBatchOperationConverter for DocumentTransferTransitionAction {
+    fn into_high_level_batch_drive_operations<'b>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,

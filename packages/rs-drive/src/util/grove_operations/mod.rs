@@ -139,6 +139,8 @@ pub mod batch_move_items_in_path_query;
 
 /// Get total value from sum tree in grove if it exists
 pub mod grove_get_optional_sum_tree_total_value;
+/// Fetch raw grove data if it exists, None otherwise
+pub mod grove_get_raw_optional_item;
 
 use grovedb_costs::CostContext;
 

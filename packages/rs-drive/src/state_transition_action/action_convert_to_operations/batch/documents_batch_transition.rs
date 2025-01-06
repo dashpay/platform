@@ -1,6 +1,6 @@
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelDocumentOperationConverter;
+use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::document::documents_batch::BatchTransitionAction;
 use crate::util::batch::DriveOperation;
@@ -26,7 +26,7 @@ impl DriveHighLevelOperationConverter for BatchTransitionAction {
                 Ok(transitions
                     .into_iter()
                     .map(|transition| {
-                        transition.into_high_level_document_drive_operations(
+                        transition.into_high_level_batch_drive_operations(
                             epoch,
                             owner_id,
                             platform_version,

@@ -28,8 +28,10 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::token_freeze_transition_action::TokenFreezeTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -39,8 +41,10 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_mint_transition_action::TokenMintTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_transfer_transition_action::TokenTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
@@ -253,6 +257,32 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                     BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(transfer_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                result.errors,
+                            ));
+                        }
+                    }
+                    TokenTransitionAction::FreezeAction(freeze_action) => {
+                        let result = freeze_action.validate_structure(platform_version)?;
+                        if !result.is_valid() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(freeze_action.base(), self.owner_id(), self.user_fee_increase()),
+                            );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                result.errors,
+                            ));
+                        }
+                    }
+                    TokenTransitionAction::UnfreezeAction(unfreeze_action) => {
+                        let result = unfreeze_action.validate_structure(platform_version)?;
+                        if !result.is_valid() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(unfreeze_action.base(), self.owner_id(), self.user_fee_increase()),
+                            );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                                 bump_action,
