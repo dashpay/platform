@@ -355,7 +355,7 @@ mod test {
         Err(ExecutionError {
             inner: MockError::Generic,
             retries,
-            address: Some(Uri::from_static("http://localhost").into()),
+            address: Some("http://localhost".parse().expect("valid address")),
         })
     }
 

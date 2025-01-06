@@ -6,6 +6,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
     DriveAbciValidationVersions, PenaltyAmounts,
 };
 
+// We introduced nonce validation for masternode voting in this version, and changed the call
+// for nonce validation, however the actual validation for masternode voting was faulty, which is
+// why we introduced V5. (We also are making an emergency hard fork).
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -142,7 +145,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 token_unfreeze_transition_state_validation: 0,
             },
         },
-        has_nonce_validation: 1,
+        has_nonce_validation: 1, // <---- changed this
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

@@ -10,6 +10,7 @@ use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::tonic::transport::Certificate;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
@@ -49,6 +50,16 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
 pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
+
+/// The default request settings for the SDK, used when the user does not provide any.
+///
+/// Use [SdkBuilder::with_settings] to set custom settings.
+const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
+    retries: Some(3),
+    timeout: None,
+    ban_failed_address: None,
+    connect_timeout: None,
+};
 
 /// a type to represent staleness in seconds
 pub type StalenessInSeconds = u64;
@@ -697,7 +708,7 @@ pub struct SdkBuilder {
     ///
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
-    settings: RequestSettings,
+    settings: Option<RequestSettings>,
 
     network: Network,
 
@@ -740,6 +751,9 @@ pub struct SdkBuilder {
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
+
+    /// CA certificate to use for TLS connections.
+    ca_certificate: Option<Certificate>,
 }
 
 impl Default for SdkBuilder {
@@ -747,7 +761,7 @@ impl Default for SdkBuilder {
     fn default() -> Self {
         Self {
             addresses: None,
-            settings: RequestSettings::default(),
+            settings: None,
             network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
@@ -770,6 +784,8 @@ impl Default for SdkBuilder {
             cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
+
+            ca_certificate: None,
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -820,6 +836,41 @@ impl SdkBuilder {
         self
     }
 
+    /// Configure CA certificate to use when verifying TLS connections.
+    ///
+    /// Used mainly for testing purposes and local networks.
+    ///
+    /// If not set, uses standard system CA certificates.
+    pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
+        self.ca_certificate = Some(pem_certificate);
+        self
+    }
+
+    /// Load CA certificate from file.
+    ///
+    /// This is a convenience method that reads the certificate from a file and sets it using
+    /// [SdkBuilder::with_ca_certificate()].
+    pub fn with_ca_certificate_file(
+        self,
+        certificate_file_path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<Self> {
+        let pem = std::fs::read(certificate_file_path)?;
+
+        // parse the certificate and check if it's valid
+        let mut verified_pem = std::io::BufReader::new(pem.as_slice());
+        rustls_pemfile::certs(&mut verified_pem)
+            .next()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "No valid certificates found in the file",
+                )
+            })??;
+
+        let cert = Certificate::from_pem(pem);
+        Ok(self.with_ca_certificate(cert))
+    }
+
     /// Configure request settings.
     ///
     /// Tune request settings used to connect to the Dash Platform.
@@ -828,7 +879,7 @@ impl SdkBuilder {
     ///
     /// See [`RequestSettings`] for more information.
     pub fn with_settings(mut self, settings: RequestSettings) -> Self {
-        self.settings = settings;
+        self.settings = Some(settings);
         self
     }
 
@@ -944,17 +995,26 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
+        let dapi_client_settings = match self.settings {
+            Some(settings) => DEFAULT_REQUEST_SETTINGS.override_by(settings),
+            None => DEFAULT_REQUEST_SETTINGS,
+        };
+
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let dapi = DapiClient::new(addresses, self.settings);
+                let mut dapi = DapiClient::new(addresses, dapi_client_settings);
+                if let Some(pem) = self.ca_certificate {
+                    dapi = dapi.with_ca_certificate(pem);
+                }
+
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     network: self.network,
-                    dapi_client_settings: self.settings,
+                    dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
@@ -1017,9 +1077,9 @@ impl SdkBuilder {
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
                     network: self.network,
-                    dapi_client_settings: self.settings,
-                    inner: SdkInstance::Mock {
-                        mock: mock_sdk.clone(),
+                    dapi_client_settings,
+                    inner:SdkInstance::Mock {
+                        mock:mock_sdk.clone(),
                         dapi,
                         address_list: AddressList::new(),
                         version: self.version,

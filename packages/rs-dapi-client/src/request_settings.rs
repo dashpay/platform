@@ -1,5 +1,6 @@
 //! DAPI client request settings processing.
 
+use dapi_grpc::tonic::transport::Certificate;
 use std::time::Duration;
 
 /// Default low-level client timeout
@@ -64,12 +65,13 @@ impl RequestSettings {
             ban_failed_address: self
                 .ban_failed_address
                 .unwrap_or(DEFAULT_BAN_FAILED_ADDRESS),
+            ca_certificate: None,
         }
     }
 }
 
 /// DAPI settings ready to use.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
@@ -79,4 +81,15 @@ pub struct AppliedRequestSettings {
     pub retries: usize,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: bool,
+    /// Certificate Authority certificate to use for verifying the server's certificate.
+    pub ca_certificate: Option<Certificate>,
+}
+impl AppliedRequestSettings {
+    /// Use provided CA certificate for verifying the server's certificate.
+    ///
+    /// If set to None, the system's default CA certificates will be used.
+    pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
+        self.ca_certificate = ca_cert;
+        self
+    }
 }
