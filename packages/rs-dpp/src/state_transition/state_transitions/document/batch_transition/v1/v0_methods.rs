@@ -60,7 +60,8 @@ use crate::state_transition::batch_transition::token_transfer_transition::TokenT
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
-    type IterType<'a> = Map<Iter<'a, BatchedTransition>, fn(&'a BatchedTransition) -> BatchedTransitionRef<'a>>
+    type IterType<'a>
+        = Map<Iter<'a, BatchedTransition>, fn(&'a BatchedTransition) -> BatchedTransitionRef<'a>>
     where
         Self: 'a;
 

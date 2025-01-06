@@ -13,7 +13,6 @@ use dpp::consensus::ConsensusError;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
@@ -26,7 +25,6 @@ use crate::{
     IdentityPublicKeyWasm,
 };
 
-use document_transition::DocumentTransitionWasm;
 use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;

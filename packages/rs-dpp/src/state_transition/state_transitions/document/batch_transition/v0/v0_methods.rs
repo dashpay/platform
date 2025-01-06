@@ -41,7 +41,11 @@ use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionRes
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
-    type IterType<'a> = std::iter::Map<Iter<'a, DocumentTransition>, fn(&'a DocumentTransition) -> BatchedTransitionRef<'a>>
+    type IterType<'a>
+        = std::iter::Map<
+        Iter<'a, DocumentTransition>,
+        fn(&'a DocumentTransition) -> BatchedTransitionRef<'a>,
+    >
     where
         Self: 'a;
 

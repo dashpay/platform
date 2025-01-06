@@ -5,11 +5,10 @@ use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
     ThresholdBlsPublicKey, VerificationQuorum,
 };
+use bincode::{Decode, Encode};
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::QuorumHash;
 use dpp::bls_signatures::Bls12381G2Impl;
-use dpp::identity::state_transition::asset_lock_proof::Encode;
-use dpp::platform_serialization::de::Decode;
 use dpp::platform_value::Bytes32;
 
 #[derive(Debug, Clone, Encode, Decode)]

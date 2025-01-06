@@ -61,12 +61,12 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
   DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractTokenConfigurationUpdateError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractTokenConfigurationUpdateError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidTokenBaseSupplyError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
 use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::token::{InvalidActionIdError, InvalidGroupPositionError, InvalidTokenIdError, InvalidTokenPositionError};
-use dpp::consensus::basic::token::contract_has_no_tokens_error::ContractHasNoTokensError;
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidGroupPositionError, InvalidTokenIdError, InvalidTokenPositionError, TokenTransferToOurselfError};
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
@@ -75,12 +75,15 @@ use dpp::consensus::state::document::document_contest_not_joinable_error::Docume
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
 use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
+use dpp::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, UnauthorizedTokenActionError};
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -309,6 +312,30 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentContestNotPaidForError(e) => {
             generic_consensus_error!(DocumentContestNotPaidForError, e).into()
+        }
+        StateError::RecipientIdentityDoesNotExistError(e) => {
+            generic_consensus_error!(RecipientIdentityDoesNotExistError, e).into()
+        }
+        StateError::IdentityDoesNotHaveEnoughTokenBalanceError(e) => {
+            generic_consensus_error!(IdentityDoesNotHaveEnoughTokenBalanceError, e).into()
+        }
+        StateError::UnauthorizedTokenActionError(e) => {
+            generic_consensus_error!(UnauthorizedTokenActionError, e).into()
+        }
+        StateError::IdentityTokenAccountFrozenError(e) => {
+            generic_consensus_error!(IdentityTokenAccountFrozenError, e).into()
+        }
+        StateError::IdentityNotMemberOfGroupError(e) => {
+            generic_consensus_error!(IdentityNotMemberOfGroupError, e).into()
+        }
+        StateError::GroupActionDoesNotExistError(e) => {
+            generic_consensus_error!(GroupActionDoesNotExistError, e).into()
+        }
+        StateError::GroupActionAlreadyCompletedError(e) => {
+            generic_consensus_error!(GroupActionAlreadyCompletedError, e).into()
+        }
+        StateError::GroupActionAlreadySignedByIdentityError(e) => {
+            generic_consensus_error!(GroupActionAlreadySignedByIdentityError, e).into()
         }
     }
 }
@@ -594,6 +621,27 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
 
         BasicError::InvalidActionIdError(e) => {
             generic_consensus_error!(InvalidActionIdError, e).into()
+        }
+        BasicError::NonContiguousContractTokenPositionsError(e) => {
+            generic_consensus_error!(NonContiguousContractTokenPositionsError, e).into()
+        }
+        BasicError::NonContiguousContractGroupPositionsError(e) => {
+            generic_consensus_error!(NonContiguousContractGroupPositionsError, e).into()
+        }
+        BasicError::InvalidTokenBaseSupplyError(e) => {
+            generic_consensus_error!(InvalidTokenBaseSupplyError, e).into()
+        }
+        BasicError::TokenTransferToOurselfError(e) => {
+            generic_consensus_error!(TokenTransferToOurselfError, e).into()
+        }
+        BasicError::DestinationIdentityForTokenMintingNotSetError(e) => {
+            generic_consensus_error!(DestinationIdentityForTokenMintingNotSetError, e).into()
+        }
+        BasicError::ChoosingTokenMintRecipientNotAllowedError(e) => {
+            generic_consensus_error!(ChoosingTokenMintRecipientNotAllowedError, e).into()
+        }
+        BasicError::GroupActionNotAllowedOnTransitionError(e) => {
+            generic_consensus_error!(GroupActionNotAllowedOnTransitionError, e).into()
         }
     }
 }

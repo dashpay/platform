@@ -42,7 +42,8 @@ impl<'a> Iterator for DocumentBatchIterator<'a> {
 }
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransition {
-    type IterType<'a> = DocumentBatchIterator<'a>
+    type IterType<'a>
+        = DocumentBatchIterator<'a>
     where
         Self: 'a;
 
