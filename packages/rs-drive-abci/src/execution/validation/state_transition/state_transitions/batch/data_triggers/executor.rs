@@ -1,10 +1,10 @@
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;

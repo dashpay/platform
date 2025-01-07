@@ -13,6 +13,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use crate::error::contract::DataContractError;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -218,7 +219,7 @@ impl Drive {
                 platform_version,
             )?;
 
-        for token_pos in contract.tokens().keys() {
+        for (token_pos, configuration) in contract.tokens() {
             let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
                 DataContractError::CorruptedDataContract(format!(
                     "data contract has a token at position {}, but can not find it",
@@ -228,6 +229,7 @@ impl Drive {
 
             batch_operations.extend(self.create_token_trees_operations(
                 token_id.to_buffer(),
+                configuration.start_as_paused(),
                 true,
                 &mut None,
                 estimated_costs_only_with_layer_info,

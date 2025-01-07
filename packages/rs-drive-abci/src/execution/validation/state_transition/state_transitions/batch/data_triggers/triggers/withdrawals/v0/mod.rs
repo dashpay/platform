@@ -4,7 +4,7 @@ use crate::error::Error;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -13,8 +13,8 @@ use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTrigg
 use dpp::{document, ProtocolError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -131,9 +131,9 @@ mod tests {
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters};
     use dpp::platform_value::platform_value;
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use dpp::version::PlatformVersion;

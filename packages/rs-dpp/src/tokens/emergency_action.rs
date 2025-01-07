@@ -1,4 +1,7 @@
+use crate::tokens::status::TokenStatus;
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -12,4 +15,16 @@ pub enum TokenEmergencyAction {
     #[default]
     Pause = 0,
     Resume = 1,
+}
+
+impl TokenEmergencyAction {
+    pub fn resulting_status(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<TokenStatus, ProtocolError> {
+        match self {
+            TokenEmergencyAction::Pause => TokenStatus::new(true, platform_version),
+            TokenEmergencyAction::Resume => TokenStatus::new(false, platform_version),
+        }
+    }
 }

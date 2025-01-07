@@ -2,9 +2,9 @@ use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, Inva
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 
 use crate::error::Error;
 

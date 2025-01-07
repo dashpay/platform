@@ -7,8 +7,10 @@ use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
-use drive::state_transition_action::document::batch::BatchTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use drive::state_transition_action::batch::BatchTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
@@ -20,6 +22,8 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_mint_transition_action::TokenMintTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_transfer_transition_action::TokenTransferTransitionActionValidation;
@@ -184,6 +188,26 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             transaction,
                             platform_version,
                         )?,
+                    TokenTransitionAction::EmergencyActionAction(emergency_action_action) => {
+                        emergency_action_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::DestroyFrozenFundsAction(
+                        destroy_frozen_funds_action,
+                    ) => destroy_frozen_funds_action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

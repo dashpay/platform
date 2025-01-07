@@ -17,21 +17,25 @@ use dpp::validation::ConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
 
-use drive::state_transition_action::document::batch::batched_transition::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
-use drive::state_transition_action::document::batch::BatchTransitionAction;
+use drive::state_transition_action::batch::BatchTransitionAction;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::TokenFreezeTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -41,6 +45,8 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_mint_transition_action::TokenMintTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token_transfer_transition_action::TokenTransferTransitionActionValidation;
@@ -282,6 +288,36 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                 BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(unfreeze_action.base(), self.owner_id(), self.user_fee_increase()),
+                            );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                result.errors,
+                            ));
+                        }
+                    }
+                    TokenTransitionAction::EmergencyActionAction(emergency_action_action) => {
+                        let result =
+                            emergency_action_action.validate_structure(platform_version)?;
+                        if !result.is_valid() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(emergency_action_action.base(), self.owner_id(), self.user_fee_increase()),
+                            );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                result.errors,
+                            ));
+                        }
+                    }
+                    TokenTransitionAction::DestroyFrozenFundsAction(
+                        destroy_frozen_funds_action,
+                    ) => {
+                        let result =
+                            destroy_frozen_funds_action.validate_structure(platform_version)?;
+                        if !result.is_valid() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(destroy_frozen_funds_action.base(), self.owner_id(), self.user_fee_increase()),
                             );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(

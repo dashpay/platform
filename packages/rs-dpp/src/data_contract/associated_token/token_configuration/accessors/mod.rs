@@ -40,6 +40,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
+    /// Returns if we start as paused.
+    fn start_as_paused(&self) -> bool {
+        match self {
+            TokenConfiguration::V0(v0) => v0.start_as_paused(),
+        }
+    }
+
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<u64> {
         match self {

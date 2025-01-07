@@ -32,5 +32,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         add_transaction_history_operations: 0,
         freeze: 0,
         unfreeze: 0,
+        apply_status: 0,
     },
 };

@@ -16,6 +16,7 @@ pub trait TokenConfigurationV0Getters {
     fn base_supply(&self) -> u64;
     /// Returns the base supply.
     fn keeps_history(&self) -> bool;
+    fn start_as_paused(&self) -> bool;
 
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<u64>;

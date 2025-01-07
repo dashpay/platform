@@ -4,7 +4,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 };
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::{
+use drive::state_transition_action::batch::batched_transition::document_transition::{
     DocumentTransitionAction, DocumentTransitionActionType,
 };
 

@@ -44,6 +44,9 @@ pub struct TokenConfigurationV0 {
     /// Do we keep history, default is true.
     #[serde(default = "default_keeps_history")]
     pub keeps_history: bool,
+    /// Do we start off as paused, meaning that we can not transfer till we unpause.
+    #[serde(default = "default_starts_as_paused")]
+    pub start_as_paused: bool,
     /// Who can change the max supply
     /// Even if set no one can ever change this under the base supply
     #[serde(default = "default_change_control_rules")]
@@ -84,6 +87,11 @@ fn default_keeps_history() -> bool {
     true // Default to `true` for keeps_history
 }
 
+// Default function for `starts_as_paused`
+fn default_starts_as_paused() -> bool {
+    false
+}
+
 fn default_change_control_rules() -> ChangeControlRules {
     ChangeControlRules::V0(ChangeControlRulesV0 {
         authorized_to_make_change: AuthorizedActionTakers::NoOne,
@@ -106,10 +114,12 @@ impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV0 {{\n  conventions: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
             self.base_supply,
             self.max_supply,
+            self.keeps_history,
+            self.start_as_paused,
             self.max_supply_change_rules,
             self.new_tokens_destination_identity,
             self.new_tokens_destination_identity_rules,
@@ -137,6 +147,7 @@ impl TokenConfigurationV0 {
             base_supply: 100000,
             max_supply: None,
             keeps_history: true,
+            start_as_paused: false,
             max_supply_change_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
                 authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,

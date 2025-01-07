@@ -1,6 +1,7 @@
 use crate::drive::RootTree;
 
 mod add_transaction_history_operations;
+pub mod apply_status;
 pub mod balance;
 pub mod burn;
 pub mod estimated_costs;
@@ -11,6 +12,7 @@ pub mod system;
 pub mod transfer;
 pub mod unfreeze;
 
+pub const TOKEN_STATUS_INFO_KEY: u8 = 96;
 pub const TOKEN_IDENTITY_INFO_KEY: u8 = 64;
 pub const TOKEN_BALANCES_KEY: u8 = 128;
 

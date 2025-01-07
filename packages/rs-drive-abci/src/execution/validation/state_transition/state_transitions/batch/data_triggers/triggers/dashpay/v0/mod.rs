@@ -6,9 +6,9 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::dashpay_contract::v1::document_types::contact_request::properties
 ::{TO_USER_ID};
 use dpp::version::PlatformVersion;
@@ -105,8 +105,8 @@ mod test {
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value;
     use dpp::platform_value::{Bytes32};
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionActionType;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+    use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionActionType;
     use crate::execution::validation::state_transition::batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;

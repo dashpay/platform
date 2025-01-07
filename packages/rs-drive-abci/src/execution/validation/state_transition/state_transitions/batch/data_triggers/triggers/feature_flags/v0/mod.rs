@@ -6,9 +6,9 @@ use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTrigg
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::feature_flags_contract;
 use dpp::system_data_contracts::feature_flags_contract::v1::document_types::update_consensus_params::properties
 ::PROPERTY_ENABLE_AT_HEIGHT;

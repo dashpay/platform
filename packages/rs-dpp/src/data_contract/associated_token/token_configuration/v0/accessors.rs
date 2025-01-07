@@ -31,6 +31,11 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         self.keeps_history
     }
 
+    /// Returns if we start off as paused
+    fn start_as_paused(&self) -> bool {
+        self.start_as_paused
+    }
+
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<u64> {
         self.max_supply

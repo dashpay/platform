@@ -1,4 +1,4 @@
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;

@@ -9,8 +9,8 @@ use dpp::data_contract::document_type::restricted_creation::CreationRestrictionM
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::identifier::Identifier;
 use dpp::validation::{SimpleConsensusValidationResult};
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 

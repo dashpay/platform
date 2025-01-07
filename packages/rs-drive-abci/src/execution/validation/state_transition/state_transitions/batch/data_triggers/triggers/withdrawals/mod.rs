@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::withdrawals::v0::delete_withdrawal_data_trigger_v0;
 

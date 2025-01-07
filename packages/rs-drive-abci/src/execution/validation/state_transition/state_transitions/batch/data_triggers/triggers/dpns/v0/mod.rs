@@ -15,9 +15,9 @@ use dpp::document::DocumentV0Getters;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::dpns_contract;
 use dpp::system_data_contracts::dpns_contract::v1::document_types::domain::properties::{ALLOW_SUBDOMAINS,
                                                                                      DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
@@ -369,8 +369,8 @@ mod test {
     use std::sync::Arc;
     use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::Bytes32;
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionActionType;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+    use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_batched_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::{DefaultForPlatformVersion};

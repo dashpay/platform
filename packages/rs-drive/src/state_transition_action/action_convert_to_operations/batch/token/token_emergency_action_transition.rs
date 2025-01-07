@@ -73,9 +73,9 @@ impl DriveHighLevelBatchOperationConverter for TokenEmergencyActionTransitionAct
                 }
 
                 if self.base().perform_action() {
-                    ops.push(TokenOperation(TokenOperationType::TokenEmergencyAction {
+                    ops.push(TokenOperation(TokenOperationType::TokenSetStatus {
                         token_id: self.token_id(),
-                        emergency_action: self.emergency_action(),
+                        status: self.emergency_action().resulting_status(platform_version)?,
                     }));
 
                     let token_configuration = self.base().token_configuration()?;

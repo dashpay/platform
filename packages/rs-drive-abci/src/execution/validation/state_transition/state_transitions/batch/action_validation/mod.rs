@@ -7,6 +7,7 @@ pub(crate) mod document_update_price_transition_action;
 pub(crate) mod token_base_transition_action;
 pub(crate) mod token_burn_transition_action;
 pub(crate) mod token_destroy_frozen_funds_transition_action;
+pub(crate) mod token_emergency_action_transition_action;
 pub(crate) mod token_freeze_transition_action;
 pub(crate) mod token_mint_transition_action;
 pub(crate) mod token_transfer_transition_action;

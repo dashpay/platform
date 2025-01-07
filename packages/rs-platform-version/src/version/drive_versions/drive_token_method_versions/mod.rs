@@ -42,4 +42,5 @@ pub struct DriveTokenUpdateMethodVersions {
     pub add_transaction_history_operations: FeatureVersion,
     pub freeze: FeatureVersion,
     pub unfreeze: FeatureVersion,
+    pub apply_status: FeatureVersion,
 }
