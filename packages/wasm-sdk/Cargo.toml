@@ -20,7 +20,6 @@ web-sys = { version = "0.3.4", features = [
 ] }
 wasm-bindgen = { version = "=0.2.99" }
 wasm-bindgen-futures = { version = "0.4.49" }
-# wasm-dpp = { path = "../wasm-dpp" } # TODO: breaks build with `invalid type: map, expected a string at line 2 column 18`
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["wasm"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }                   # TODO: I think it's not needed (LKl)
 # tonic = { version = "*", features = ["transport"], default-features = false }
@@ -34,6 +33,9 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }                  
 # ]
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
+platform-value = { path = "../rs-platform-value", features = ["json"] }
+serde-wasm-bindgen = { version = "0.6.5" }
+
 [profile.release]
 lto = "fat"
 opt-level = "z"

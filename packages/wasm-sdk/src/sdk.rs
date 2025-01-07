@@ -1,17 +1,21 @@
 use crate::context_provider::WasmContext;
-use crate::error::WasmError;
+use crate::dpp::{DataContractWasm, IdentityWasm};
+use crate::error::{to_js_error, WasmError};
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::IdentityV0;
 use dash_sdk::dpp::prelude::AssetLockProof;
+use dash_sdk::dpp::ProtocolError;
+use dash_sdk::drive::verify::identity;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
-use dash_sdk::platform::{Fetch, Identifier, Identity};
-use dash_sdk::{Sdk, SdkBuilder};
+use dash_sdk::platform::{DataContract, Fetch, Identifier, Identity};
+use dash_sdk::{Error, Sdk, SdkBuilder};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, DerefMut};
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsError;
 use web_sys::window;
 
 #[wasm_bindgen]
@@ -64,7 +68,7 @@ impl WasmSdkBuilder {
         WasmSdkBuilder(SdkBuilder::new_testnet())
     }
 
-    pub fn build(self) -> Result<WasmSdk, WasmError> {
+    pub fn build(self) -> Result<WasmSdk, JsError> {
         Ok(WasmSdk(self.0.build()?))
     }
 
@@ -74,34 +78,32 @@ impl WasmSdkBuilder {
 }
 
 #[wasm_bindgen]
-// TODO: return -> wasm_dpp::IdentityWasm
-pub async fn identity_fetch(sdk: &WasmSdk, base58_id: &str) {
+pub async fn identity_fetch(sdk: &WasmSdk, base58_id: &str) -> Result<IdentityWasm, JsError> {
     let id = Identifier::from_string(
         base58_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .expect("parse identity id");
+    )?;
 
-    let identity = Identity::fetch_by_identifier(sdk, id)
-        .await
-        .expect("fetch identity")
-        .unwrap_or_else(|| panic!("identity {} not found", id));
-
-    display_in_browser(&format!("{:?}", identity));
-    // <IdentityWasm as From<_>>::from(identity)
+    Identity::fetch_by_identifier(sdk, id)
+        .await?
+        .ok_or_else(|| JsError::new("Identity not found"))
+        .map(Into::into)
 }
 
-/// Helper to display results
-fn display_in_browser<D: Display>(s: &D) {
-    // Get the document object
-    let document = window().unwrap().document().unwrap();
+#[wasm_bindgen]
+pub async fn data_contract_fetch(
+    sdk: &WasmSdk,
+    base58_id: &str,
+) -> Result<DataContractWasm, JsError> {
+    let id = Identifier::from_string(
+        base58_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )?;
 
-    // Create a new div element with our message
-    let div = document.create_element("div").unwrap();
-    div.set_text_content(Some(&s.to_string()));
-
-    // Append the div to the body
-    document.body().unwrap().append_child(&div).unwrap();
+    DataContract::fetch_by_identifier(sdk, id)
+        .await?
+        .ok_or_else(|| JsError::new("Data contract not found"))
+        .map(Into::into)
 }
 
 pub async fn identity_put(sdk: &WasmSdk) {

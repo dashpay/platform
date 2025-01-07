@@ -1,3 +1,4 @@
+use crate::error::to_js_error;
 use dash_sdk::dashcore_rpc::jsonrpc::serde_json::Value;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::identity::KeyID;
@@ -69,8 +70,4 @@ fn create_batch_transition(
         .serialize_to_bytes()
         .map_err(to_js_error)
         .map(|bytes| Uint8Array::from(bytes.as_slice()))
-}
-
-fn to_js_error(e: impl Display) -> JsError {
-    JsError::new(&format!("{}", e))
 }

@@ -1,6 +1,7 @@
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
 pub mod context_provider;
+pub mod dpp;
 pub mod error;
 pub mod sdk;
 pub mod state_transitions;

@@ -473,6 +473,17 @@ impl_transport_request_grpc!(
     subscribe_to_transactions_with_proofs
 );
 
+impl_transport_request_grpc!(
+    core_proto::MasternodeListRequest,
+    Streaming<core_proto::MasternodeListResponse>,
+    CoreGrpcClient,
+    RequestSettings {
+        timeout: Some(STREAMING_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    subscribe_to_masternode_list
+);
+
 // rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
 impl_transport_request_grpc!(
     platform_proto::GetStatusRequest,

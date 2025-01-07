@@ -22,6 +22,7 @@ use drive_proof_verifier::FromProof;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::context_provider::WasmContext;
+use crate::dpp::{DataContractWasm, IdentityWasm};
 
 #[wasm_bindgen]
 pub async fn verify_identity_response() -> Option<IdentityWasm> {
@@ -65,7 +66,7 @@ pub async fn verify_identity_response() -> Option<IdentityWasm> {
         )
         .expect("parse proof");
 
-    response.map(IdentityWasm)
+    response.map(IdentityWasm::from)
 }
 
 #[wasm_bindgen]
@@ -123,7 +124,7 @@ pub async fn verify_data_contract() -> Option<DataContractWasm> {
     )
     .expect("parse proof");
 
-    response.map(DataContractWasm)
+    response.map(DataContractWasm::from)
 }
 
 #[wasm_bindgen]
@@ -177,26 +178,6 @@ pub async fn verify_documents() -> Vec<DocumentWasm> {
         .filter(|(_, doc)| doc.is_some())
         .map(|(_, doc)| DocumentWasm(doc.unwrap()))
         .collect()
-}
-
-#[wasm_bindgen]
-pub struct IdentityWasm(Identity);
-
-#[wasm_bindgen]
-impl IdentityWasm {
-    pub fn id(&self) -> String {
-        self.0.id().to_string(Encoding::Base58)
-    }
-}
-
-#[wasm_bindgen]
-pub struct DataContractWasm(DataContract);
-
-#[wasm_bindgen]
-impl DataContractWasm {
-    pub fn id(&self) -> String {
-        self.0.id().to_string(Encoding::Base58)
-    }
 }
 
 #[wasm_bindgen]

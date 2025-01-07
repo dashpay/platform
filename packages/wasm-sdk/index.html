@@ -2,61 +2,84 @@
 <html>
 
 <head>
-    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <style>
+    #preloader {
+      display: none;
+    }
+    .container {
+      padding: 10px;
+    }
+  </style>
 </head>
 
 <body>
-    <!-- Note the usage of `type=module` here as this is an ES6 module -->
-    <script type="module">
-        // Use ES module import syntax to import functionality from the module
-        // that we have compiled.
-        //
-        // Note that the `default` import is an initialization function which
-        // will "boot" the module and make it ready to use. Currently browsers
-        // don't support natively imported WebAssembly as an ES module, but
-        // eventually the manual initialization won't be required!
-        import init, { start, WasmSdkBuilder, identity_fetch } from './pkg/wasm_sdk.js';
+<div id="preloader">Loading...</div>
+<div class="container">
+<input type="text" id="identityInput" placeholder="Enter Identity ID" />
+<button id="fetchButton">Fetch Identity</button>
+</div>
 
-        async function run() {
-            // First up we need to actually load the Wasm file, so we use the
-            // default export to inform it where the Wasm file is located on the
-            // server, and then we wait on the returned promise to wait for the
-            // Wasm to be loaded.
-            //
-            // It may look like this: `await init('./pkg/without_a_bundler_bg.wasm');`,
-            // but there is also a handy default inside `init` function, which uses
-            // `import.meta` to locate the Wasm file relatively to js file.
-            //
-            // Note that instead of a string you can also pass in any of the
-            // following things:
-            //
-            // * `WebAssembly.Module`
-            //
-            // * `ArrayBuffer`
-            //
-            // * `Response`
-            //
-            // * `Promise` which returns any of the above, e.g. `fetch("./path/to/wasm")`
-            //
-            // This gives you complete control over how the module is loaded
-            // and compiled.
-            //
-            // Also note that the promise, when resolved, yields the Wasm module's
-            // exports which is the same as importing the `*_bg` module in other
-            // modes
-            await init();
+<div class="container">
+<input type="text" id="identityInput2" placeholder="Enter Data Contract ID" />
+<button id="fetchButton2">Fetch Data Contract</button>
+</div>
+<div id="identityInfo"></div>
 
-            // And afterwards we can use all the functionality defined in wasm.
-            const sdk = await WasmSdkBuilder.new_mainnet().build();
-            console.log(sdk);
+<script type="module">
+  import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch } from './pkg/wasm_sdk.js';
 
-            const identity = await identity_fetch(sdk, "T1jY1c6ojfhYe5w8TV7eNwWXvGRhkcqHJPHfdC54RVz");
-            console.log("fetched identity");
-            console.log(identity);
-        }
+  async function run() {
+    await init();
 
-        run();
-    </script>
+    const sdk = await WasmSdkBuilder.new_mainnet().build();
+    console.log(sdk);
+
+    document.getElementById('fetchButton').addEventListener('click', async () => {
+      const identityId = document.getElementById('identityInput').value;
+      const preloader = document.getElementById('preloader');
+      const identityInfo = document.getElementById('identityInfo');
+
+      preloader.style.display = 'block';
+      identityInfo.textContent = '';
+
+      try {
+        const identity = await identity_fetch(sdk, identityId);
+        console.log("fetched identity");
+        console.log(identity);
+        identityInfo.textContent = JSON.stringify(identity.toJSON(), null, 2);
+      } catch (error) {
+        console.error("Error fetching identity:", error);
+        identityInfo.textContent = `Error fetching identity: ${error}`;
+      } finally {
+        preloader.style.display = 'none';
+      }
+    });
+
+    document.getElementById('fetchButton2').addEventListener('click', async () => {
+      const identityId = document.getElementById('identityInput2').value;
+      const preloader = document.getElementById('preloader');
+      const identityInfo = document.getElementById('identityInfo');
+
+      preloader.style.display = 'block';
+      identityInfo.textContent = '';
+
+      try {
+        const dataContract = await data_contract_fetch(sdk, identityId);
+        console.log("fetched data contract");
+        console.log(dataContract);
+        identityInfo.textContent = JSON.stringify(dataContract.toJSON(), null, 2);
+      } catch (error) {
+        console.error("Error fetching contract:", error);
+        identityInfo.textContent = `Error fetching contract: ${error}`;
+      } finally {
+        preloader.style.display = 'none';
+      }
+    });
+  }
+
+  run();
+</script>
 </body>
 
 </html>
