@@ -1,6 +1,7 @@
 mod transformer;
 
 use std::sync::Arc;
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
@@ -12,6 +13,8 @@ pub struct TokenDestroyFrozenFundsTransitionActionV0 {
     pub base: TokenBaseTransitionAction,
     /// The identity to credit the token to
     pub frozen_identity_id: Identifier,
+    /// The amount that will be burned
+    pub amount: TokenAmount,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -29,6 +32,12 @@ pub trait TokenDestroyFrozenFundsTransitionActionAccessorsV0 {
 
     /// Sets the identity balance holder ID
     fn set_frozen_identity_id(&mut self, frozen_identity_id: Identifier);
+
+    /// Returns the amount of tokens that the identity had and will be burned
+    fn amount(&self) -> TokenAmount;
+
+    /// Sets the amount of tokens that the identity had and will be burned
+    fn set_amount(&mut self, amount: TokenAmount);
 
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
@@ -82,6 +91,14 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
 
     fn set_frozen_identity_id(&mut self, frozen_identity_id: Identifier) {
         self.frozen_identity_id = frozen_identity_id;
+    }
+
+    fn amount(&self) -> TokenAmount {
+        self.amount
+    }
+
+    fn set_amount(&mut self, amount: TokenAmount) {
+        self.amount = amount;
     }
 
     fn public_note(&self) -> Option<&String> {

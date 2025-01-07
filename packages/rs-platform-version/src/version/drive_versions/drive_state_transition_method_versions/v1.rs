@@ -37,5 +37,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 partially_use_asset_lock: 0,
                 token_freeze_transition: 0,
                 token_unfreeze_transition: 0,
+                token_emergency_action_transition: 0,
+                token_destroy_frozen_funds_transition: 0,
             },
     };

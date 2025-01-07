@@ -693,10 +693,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _delete_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut unfreeze_transition = TokenUnfreezeTransition::V0(TokenUnfreezeTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -761,10 +761,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _delete_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut destroy_frozen_funds_transition =
             TokenDestroyFrozenFundsTransition::V0(TokenDestroyFrozenFundsTransitionV0 {
@@ -832,10 +832,10 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        platform_version: &PlatformVersion,
-        batch_feature_version: Option<FeatureVersion>,
-        delete_feature_version: Option<FeatureVersion>,
-        base_feature_version: Option<FeatureVersion>,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _delete_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut emergency_action_transition =
             TokenEmergencyActionTransition::V0(TokenEmergencyActionTransitionV0 {

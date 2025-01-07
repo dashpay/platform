@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Encode, Decode, PartialOrd, PartialEq, Eq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),

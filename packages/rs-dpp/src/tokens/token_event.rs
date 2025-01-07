@@ -13,6 +13,7 @@ pub type TokenEventPersonalEncryptedNote = Option<(
     DerivationEncryptionKeyIndex,
     Vec<u8>,
 )>;
+use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::ProtocolError;
 
 pub type RecipientIdentifier = Identifier;
@@ -27,6 +28,7 @@ pub enum TokenEvent {
     Burn(TokenAmount, TokenEventPublicNote),
     Freeze(FrozenIdentifier, TokenEventPublicNote),
     Unfreeze(FrozenIdentifier, TokenEventPublicNote),
+    DestroyFrozenFunds(FrozenIdentifier, TokenAmount, TokenEventPublicNote),
     Transfer(
         RecipientIdentifier,
         TokenEventPublicNote,
@@ -34,4 +36,5 @@ pub enum TokenEvent {
         TokenEventPersonalEncryptedNote,
         TokenAmount,
     ),
+    EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
 }

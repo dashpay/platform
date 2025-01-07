@@ -1,4 +1,5 @@
 use derive_more::From;
+use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 
 /// transformer module for token destroy_frozen_funds transition action
@@ -40,6 +41,18 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
     fn set_frozen_identity_id(&mut self, id: Identifier) {
         match self {
             TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.frozen_identity_id = id,
+        }
+    }
+
+    fn amount(&self) -> TokenAmount {
+        match self {
+            TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.amount,
+        }
+    }
+
+    fn set_amount(&mut self, amount: TokenAmount) {
+        match self {
+            TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.amount = amount,
         }
     }
 

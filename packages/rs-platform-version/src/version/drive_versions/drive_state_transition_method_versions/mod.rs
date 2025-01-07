@@ -35,6 +35,8 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub partially_use_asset_lock: FeatureVersion,
     pub token_freeze_transition: FeatureVersion,
     pub token_unfreeze_transition: FeatureVersion,
+    pub token_emergency_action_transition: FeatureVersion,
+    pub token_destroy_frozen_funds_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

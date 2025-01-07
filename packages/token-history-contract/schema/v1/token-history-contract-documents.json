@@ -425,5 +425,146 @@
       "$createdAtBlockHeight"
     ],
     "additionalProperties": false
+  },
+  "destroyFrozenFunds": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "amount": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byFrozenIdentityId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "frozenIdentityId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "frozenIdentityId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identity Id of the frozen token account",
+        "position": 1
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The amount that was frost burned",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "frozenIdentityId",
+      "amount",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "emergencyAction": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "action": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byAction",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "action": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0
+      },
+      "action": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The action we are performing",
+        "position": 1
+      }
+    },
+    "required": [
+      "tokenId",
+      "action",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
   }
 }

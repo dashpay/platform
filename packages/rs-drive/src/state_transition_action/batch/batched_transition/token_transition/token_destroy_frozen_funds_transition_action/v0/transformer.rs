@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::IdentityDoesNotHaveEnoughTokenBalanceError;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::TokenDestroyFrozenFundsTransitionV0;
 use dpp::ProtocolError;
@@ -9,6 +11,7 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::v0::TokenDestroyFrozenFundsTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -77,6 +80,15 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
                 platform_version,
             )?;
 
+        let maybe_token_amount = drive.fetch_identity_token_balance_operations(
+            base.token_id().to_buffer(),
+            owner_id.to_buffer(),
+            !approximate_without_state_for_costs,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+
         let fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
@@ -85,6 +97,34 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             platform_version,
             None,
         )?;
+
+        let Some(token_amount) = maybe_token_amount else {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                    &base,
+                    owner_id,
+                    user_fee_increase,
+                );
+            let batched_action =
+                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    batched_action.into(),
+                    vec![StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
+                        IdentityDoesNotHaveEnoughTokenBalanceError::new(
+                            base.token_id(),
+                            frozen_identity_id,
+                            1,
+                            0,
+                            "destroy_frozen_funds".to_string(),
+                        ),
+                    )
+                    .into()],
+                ),
+                fee_result,
+            ));
+        };
 
         let base_action = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
@@ -112,6 +152,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
                 TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id,
+                    amount: token_amount,
                     public_note,
                 }
                 .into(),
@@ -185,6 +226,15 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
                 platform_version,
             )?;
 
+        let maybe_token_amount = drive.fetch_identity_token_balance_operations(
+            base.token_id().to_buffer(),
+            owner_id.to_buffer(),
+            !approximate_without_state_for_costs,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+
         let fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
@@ -193,6 +243,34 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             platform_version,
             None,
         )?;
+
+        let Some(token_amount) = maybe_token_amount else {
+            let bump_action =
+                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                    &base,
+                    owner_id,
+                    user_fee_increase,
+                );
+            let batched_action =
+                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+            return Ok((
+                ConsensusValidationResult::new_with_data_and_errors(
+                    batched_action.into(),
+                    vec![StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
+                        IdentityDoesNotHaveEnoughTokenBalanceError::new(
+                            base.token_id(),
+                            *frozen_identity_id,
+                            1,
+                            0,
+                            "destroy_frozen_funds".to_string(),
+                        ),
+                    )
+                    .into()],
+                ),
+                fee_result,
+            ));
+        };
 
         let base_action = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
@@ -221,6 +299,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
                 TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id: *frozen_identity_id,
+                    amount: token_amount,
                     public_note: public_note.clone(),
                 }
                 .into(),

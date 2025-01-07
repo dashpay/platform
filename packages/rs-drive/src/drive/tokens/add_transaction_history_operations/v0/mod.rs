@@ -303,6 +303,103 @@ impl Drive {
                     platform_version,
                 )?;
             }
+            TokenEvent::DestroyFrozenFunds(frozen_identity_id, amount, public_note) => {
+                let document_type = contract.document_type_for_name("destroyFrozenFunds")?;
+                let document_id = Document::generate_document_id_v0(
+                    &contract.id(),
+                    &owner_id,
+                    "destroyFrozenFunds",
+                    owner_nonce.to_be_bytes().as_slice(),
+                );
+                let mut properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("frozenIdentityId".to_string(), frozen_identity_id.into()),
+                    ("amount".to_string(), amount.into()),
+                ]);
+                if let Some(note) = public_note {
+                    properties.insert("note".to_string(), note.into());
+                }
+                let document: Document = DocumentV0 {
+                    id: document_id,
+                    owner_id,
+                    properties,
+                    revision: None,
+                    created_at: Some(block_info.time_ms),
+                    updated_at: None,
+                    transferred_at: None,
+                    created_at_block_height: Some(block_info.height),
+                    updated_at_block_height: None,
+                    transferred_at_block_height: None,
+                    created_at_core_block_height: None,
+                    updated_at_core_block_height: None,
+                    transferred_at_core_block_height: None,
+                }
+                .into();
+                operations = self.add_document_for_contract_operations(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentOwnedInfo((document, None)),
+                            owner_id: Some(owner_id.to_buffer()),
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+            TokenEvent::EmergencyAction(action, public_note) => {
+                let document_type = contract.document_type_for_name("emergencyAction")?;
+                let document_id = Document::generate_document_id_v0(
+                    &contract.id(),
+                    &owner_id,
+                    "emergencyAction",
+                    owner_nonce.to_be_bytes().as_slice(),
+                );
+                let mut properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("action".to_string(), (action as u8).into()),
+                ]);
+                if let Some(note) = public_note {
+                    properties.insert("note".to_string(), note.into());
+                }
+                let document: Document = DocumentV0 {
+                    id: document_id,
+                    owner_id,
+                    properties,
+                    revision: None,
+                    created_at: Some(block_info.time_ms),
+                    updated_at: None,
+                    transferred_at: None,
+                    created_at_block_height: Some(block_info.height),
+                    updated_at_block_height: None,
+                    transferred_at_block_height: None,
+                    created_at_core_block_height: None,
+                    updated_at_core_block_height: None,
+                    transferred_at_core_block_height: None,
+                }
+                .into();
+                operations = self.add_document_for_contract_operations(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentOwnedInfo((document, None)),
+                            owner_id: Some(owner_id.to_buffer()),
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+            }
         }
 
         Ok(operations)

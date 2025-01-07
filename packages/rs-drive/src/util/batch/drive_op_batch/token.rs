@@ -6,6 +6,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_event::TokenEvent;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -59,6 +60,13 @@ pub enum TokenOperationType {
         token_id: Identifier,
         /// The frozen identity id
         frozen_identity_id: Identifier,
+    },
+    /// Perform an emergency action on the token.
+    TokenEmergencyAction {
+        /// The token id
+        token_id: Identifier,
+        /// The emergency action
+        emergency_action: TokenEmergencyAction,
     },
     /// Adds a historical document explaining a token action.
     TokenHistory {
@@ -180,6 +188,19 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 let batch_operations = drive.token_unfreeze_operations(
                     token_id,
                     frozen_identity_id,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenEmergencyAction {
+                token_id,
+                emergency_action,
+            } => {
+                let batch_operations = drive.token_set_emergency_action_operations(
+                    token_id,
+                    emergency_action,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
