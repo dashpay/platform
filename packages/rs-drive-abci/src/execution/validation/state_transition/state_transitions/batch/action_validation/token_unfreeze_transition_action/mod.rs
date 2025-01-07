@@ -1,7 +1,7 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::documents_batch::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;

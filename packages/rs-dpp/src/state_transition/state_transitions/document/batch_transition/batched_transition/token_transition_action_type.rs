@@ -10,6 +10,8 @@ pub enum TokenTransitionActionType {
     Transfer,
     Freeze,
     Unfreeze,
+    DestroyFrozenFunds,
+    EmergencyAction,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -20,16 +22,18 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Transfer => "Transfer",
             TokenTransitionActionType::Freeze => "Freeze",
             TokenTransitionActionType::Unfreeze => "Unfreeze",
+            TokenTransitionActionType::DestroyFrozenFunds => "DestroyFrozenFunds",
+            TokenTransitionActionType::EmergencyAction => "EmergencyAction",
         };
         write!(f, "{}", action_str)
     }
 }
 
-pub trait TransitionActionTypeGetter {
+pub trait TokenTransitionActionTypeGetter {
     fn action_type(&self) -> TokenTransitionActionType;
 }
 
-impl TransitionActionTypeGetter for TokenTransition {
+impl TokenTransitionActionTypeGetter for TokenTransition {
     fn action_type(&self) -> TokenTransitionActionType {
         match self {
             TokenTransition::Burn(_) => TokenTransitionActionType::Burn,
@@ -37,6 +41,8 @@ impl TransitionActionTypeGetter for TokenTransition {
             TokenTransition::Transfer(_) => TokenTransitionActionType::Transfer,
             TokenTransition::Freeze(_) => TokenTransitionActionType::Freeze,
             TokenTransition::Unfreeze(_) => TokenTransitionActionType::Unfreeze,
+            TokenTransition::DestroyFrozenFunds(_) => TokenTransitionActionType::DestroyFrozenFunds,
+            TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
         }
     }
 }
@@ -51,6 +57,12 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "transfer" => Ok(TokenTransitionActionType::Transfer),
             "freeze" => Ok(TokenTransitionActionType::Freeze),
             "unfreeze" => Ok(TokenTransitionActionType::Unfreeze),
+            "destroy_frozen_funds" | "destroyFrozenFunds" => {
+                Ok(TokenTransitionActionType::DestroyFrozenFunds)
+            }
+            "emergency_action" | "emergencyAction" => {
+                Ok(TokenTransitionActionType::EmergencyAction)
+            }
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"
             ))),

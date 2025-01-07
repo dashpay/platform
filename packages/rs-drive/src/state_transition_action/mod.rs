@@ -1,7 +1,5 @@
 /// contract
 pub mod contract;
-/// documents
-pub mod document;
 /// identity
 pub mod identity;
 
@@ -9,10 +7,12 @@ pub mod identity;
 pub mod system;
 // TODO: Must crate only but we need to remove of use it first
 pub mod action_convert_to_operations;
+/// documents_batch
+pub mod batch;
 
+use crate::state_transition_action::batch::BatchTransitionAction;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use crate::state_transition_action::document::documents_batch::BatchTransitionAction;
 use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use crate::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;

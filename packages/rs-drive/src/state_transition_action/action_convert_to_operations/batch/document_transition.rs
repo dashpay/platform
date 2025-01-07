@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
-use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::prelude::Identifier;

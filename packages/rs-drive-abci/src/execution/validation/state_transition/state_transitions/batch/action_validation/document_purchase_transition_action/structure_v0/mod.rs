@@ -4,8 +4,8 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::DocumentV0Getters;
 use dpp::nft::TradeMode;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::{DocumentPurchaseTransitionAction, DocumentPurchaseTransitionActionAccessorsV0};
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_purchase_transition_action::{DocumentPurchaseTransitionAction, DocumentPurchaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 

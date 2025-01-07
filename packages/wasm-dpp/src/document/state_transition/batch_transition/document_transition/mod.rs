@@ -10,7 +10,7 @@ use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::TransitionActionTypeGetter;
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::{util::json_value::JsonValueExt, ProtocolError};
 use serde::Serialize;

@@ -2,7 +2,7 @@ use dashcore_rpc::dashcore::Network;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;

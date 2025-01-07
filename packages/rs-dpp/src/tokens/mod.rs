@@ -2,6 +2,7 @@ use crate::data_contract::TokenContractPosition;
 use crate::util::hash::hash_double;
 
 pub mod allowed_currency;
+pub mod emergency_action;
 pub mod errors;
 pub mod info;
 pub mod token_event;

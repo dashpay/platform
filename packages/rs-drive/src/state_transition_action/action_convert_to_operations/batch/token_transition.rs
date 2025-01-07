@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
-use crate::state_transition_action::document::documents_batch::document_transition::TokenTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::prelude::Identifier;
@@ -29,6 +29,20 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
                 .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
             TokenTransitionAction::UnfreezeAction(token_unfreeze_action) => token_unfreeze_action
                 .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::EmergencyActionAction(token_emergency_action) => {
+                token_emergency_action.into_high_level_batch_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
+            TokenTransitionAction::DestroyFrozenFundsAction(token_destroy_frozen_funds) => {
+                token_destroy_frozen_funds.into_high_level_batch_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
+            }
         }
     }
 }

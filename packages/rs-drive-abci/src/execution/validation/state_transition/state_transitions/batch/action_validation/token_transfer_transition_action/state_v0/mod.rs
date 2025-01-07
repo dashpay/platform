@@ -5,10 +5,10 @@ use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, I
 use dpp::prelude::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction};
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_transfer_transition_action::{TokenTransferTransitionAction};
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
-use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};

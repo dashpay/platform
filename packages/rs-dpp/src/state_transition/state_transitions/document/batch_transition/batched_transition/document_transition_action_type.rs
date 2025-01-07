@@ -13,11 +13,11 @@ pub enum DocumentTransitionActionType {
     IgnoreWhileBumpingRevision,
 }
 
-pub trait TransitionActionTypeGetter {
+pub trait DocumentTransitionActionTypeGetter {
     fn action_type(&self) -> DocumentTransitionActionType;
 }
 
-impl TransitionActionTypeGetter for DocumentTransition {
+impl DocumentTransitionActionTypeGetter for DocumentTransition {
     fn action_type(&self) -> DocumentTransitionActionType {
         match self {
             DocumentTransition::Create(_) => DocumentTransitionActionType::Create,

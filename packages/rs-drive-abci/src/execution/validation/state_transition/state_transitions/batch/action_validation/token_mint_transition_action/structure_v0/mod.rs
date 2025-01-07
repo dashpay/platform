@@ -1,5 +1,5 @@
 use dpp::validation::{SimpleConsensusValidationResult};
-use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;

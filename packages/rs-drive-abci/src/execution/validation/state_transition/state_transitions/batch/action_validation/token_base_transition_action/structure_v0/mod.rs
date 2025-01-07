@@ -4,7 +4,7 @@ use dpp::consensus::basic::token::InvalidTokenPositionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::validation::{SimpleConsensusValidationResult};
-use drive::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 

@@ -5,7 +5,7 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode};
 use crate::prelude::{IdentityNonce, Revision};
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -99,6 +99,16 @@ impl BatchTransitionResolversV0 for DocumentTransition {
     }
 
     fn as_transition_token_unfreeze(&self) -> Option<&TokenUnfreezeTransition> {
+        None
+    }
+
+    fn as_transition_token_destroy_frozen_funds(
+        &self,
+    ) -> Option<&TokenDestroyFrozenFundsTransition> {
+        None
+    }
+
+    fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition> {
         None
     }
 }

@@ -5,7 +5,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 };
 use dpp::version::PlatformVersion;
 
-use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]

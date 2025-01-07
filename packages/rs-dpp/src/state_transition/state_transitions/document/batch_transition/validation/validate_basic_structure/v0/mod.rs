@@ -19,7 +19,7 @@ use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError, TokenTransferToOurselfError};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
-use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TransitionActionTypeGetter;
+use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
@@ -150,6 +150,8 @@ impl BatchTransition {
                 }
                 TokenTransition::Freeze(_) => {}
                 TokenTransition::Unfreeze(_) => {}
+                TokenTransition::DestroyFrozenFunds(_) => {}
+                TokenTransition::EmergencyAction(_) => {}
             }
 
             // We need to verify that the action id given matches the expected action id

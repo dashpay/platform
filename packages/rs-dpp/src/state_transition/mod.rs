@@ -373,6 +373,12 @@ impl StateTransition {
                         BatchedTransitionRef::Token(TokenTransition::Unfreeze(_)) => {
                             "TokenUnfreeze"
                         }
+                        BatchedTransitionRef::Token(TokenTransition::DestroyFrozenFunds(_)) => {
+                            "TokenDestroyFrozenFunds"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::EmergencyAction(_)) => {
+                            "TokenEmergencyAction"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }

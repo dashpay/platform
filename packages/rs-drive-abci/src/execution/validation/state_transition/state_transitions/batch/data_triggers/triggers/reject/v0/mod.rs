@@ -1,9 +1,9 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::validation::state_transition::batch::data_triggers::DataTriggerExecutionResult;
-use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 /// Creates a data trigger for handling document rejections.
 ///

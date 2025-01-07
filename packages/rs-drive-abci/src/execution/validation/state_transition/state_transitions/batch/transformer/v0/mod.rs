@@ -30,12 +30,12 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::StateTransitionLike;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
-use drive::state_transition_action::document::documents_batch::BatchTransitionAction;
-use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::{BatchedTransitionAction, DocumentTransitionAction, TokenTransitionAction};
+use drive::state_transition_action::document::batch::BatchTransitionAction;
+use drive::state_transition_action::document::batch::v0::BatchTransitionActionV0;
 
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use dpp::version::PlatformVersion;
@@ -50,14 +50,14 @@ use dpp::state_transition::batch_transition::document_base_transition::document_
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
-use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::token_burn_transition_action::TokenBurnTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::token_freeze_transition_action::TokenFreezeTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::token_mint_transition_action::TokenMintTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_burn_transition_action::TokenBurnTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_freeze_transition_action::TokenFreezeTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_mint_transition_action::TokenMintTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_transfer_transition_action::TokenTransferTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
@@ -261,7 +261,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
 
         if validation_result.has_data() {
             let (transitions, errors) = validation_result.into_data_and_errors()?;
-            let batch_transition_action = DocumentsBatchTransitionActionV0 {
+            let batch_transition_action = BatchTransitionActionV0 {
                 owner_id,
                 transitions,
                 user_fee_increase,

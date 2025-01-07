@@ -8,10 +8,10 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use crate::state_transition_action::document::documents_batch::document_transition::BatchedTransitionAction;
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionV0};
 
 impl BumpIdentityDataContractNonceAction {

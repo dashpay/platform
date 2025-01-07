@@ -28,6 +28,7 @@ use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransitionV1};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
@@ -731,6 +732,126 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_unfreeze_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    fn new_token_destroy_frozen_funds_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        frozen_identity_id: Identifier,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        match batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the destroy frozen funds transition for batch version 1
+                BatchTransitionV1::new_token_destroy_frozen_funds_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    frozen_identity_id,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    batch_feature_version,
+                    delete_feature_version,
+                    base_feature_version,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_destroy_frozen_funds_transition"
+                    .to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    fn new_token_emergency_action_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        emergency_action: TokenEmergencyAction,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        match batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV1::new_token_emergency_action_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    emergency_action,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    batch_feature_version,
+                    delete_feature_version,
+                    base_feature_version,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_emergency_action_transition"
+                    .to_string(),
                 known_versions: vec![1],
                 received: version,
             }),

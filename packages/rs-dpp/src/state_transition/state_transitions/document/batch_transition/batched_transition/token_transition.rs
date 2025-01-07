@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use bincode::{Encode, Decode};
 use crate::prelude::IdentityNonce;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -33,6 +33,12 @@ pub enum TokenTransition {
 
     #[display("TokenUnfreezeTransition({})", "_0")]
     Unfreeze(TokenUnfreezeTransition),
+
+    #[display("TokenDestroyFrozenFundsTransition({})", "_0")]
+    DestroyFrozenFunds(TokenDestroyFrozenFundsTransition),
+
+    #[display("TokenEmergencyActionTransition({})", "_0")]
+    EmergencyAction(TokenEmergencyActionTransition),
 }
 
 impl BatchTransitionResolversV0 for TokenTransition {
@@ -93,6 +99,24 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
+
+    fn as_transition_token_destroy_frozen_funds(
+        &self,
+    ) -> Option<&TokenDestroyFrozenFundsTransition> {
+        if let Self::DestroyFrozenFunds(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition> {
+        if let Self::EmergencyAction(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait TokenTransitionV0Methods {
@@ -127,6 +151,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Transfer(t) => t.base(),
             TokenTransition::Freeze(t) => t.base(),
             TokenTransition::Unfreeze(t) => t.base(),
+            TokenTransition::DestroyFrozenFunds(t) => t.base(),
+            TokenTransition::EmergencyAction(t) => t.base(),
         }
     }
 
@@ -137,6 +163,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Transfer(t) => t.base_mut(),
             TokenTransition::Freeze(t) => t.base_mut(),
             TokenTransition::Unfreeze(t) => t.base_mut(),
+            TokenTransition::DestroyFrozenFunds(t) => t.base_mut(),
+            TokenTransition::EmergencyAction(t) => t.base_mut(),
         }
     }
 
@@ -151,6 +179,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Freeze(t) => Some(t.calculate_action_id(owner_id)),
             TokenTransition::Unfreeze(t) => Some(t.calculate_action_id(owner_id)),
             TokenTransition::Transfer(_) => None,
+            TokenTransition::DestroyFrozenFunds(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id)),
         }
     }
 
@@ -159,7 +189,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Burn(_)
             | TokenTransition::Mint(_)
             | TokenTransition::Freeze(_)
-            | TokenTransition::Unfreeze(_) => true,
+            | TokenTransition::Unfreeze(_)
+            | TokenTransition::DestroyFrozenFunds(_)
+            | TokenTransition::EmergencyAction(_) => true,
             TokenTransition::Transfer(_) => false,
         }
     }

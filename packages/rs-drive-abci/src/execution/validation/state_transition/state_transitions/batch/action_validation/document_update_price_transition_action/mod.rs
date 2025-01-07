@@ -4,7 +4,7 @@ use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
+use drive::state_transition_action::document::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;

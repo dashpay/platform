@@ -6,8 +6,8 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionV0;
-use crate::state_transition_action::document::documents_batch::document_transition::token_base_transition_action::TokenBaseTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionV0;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceActionV0;
 
 impl BumpIdentityDataContractNonceActionV0 {
