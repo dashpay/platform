@@ -95,7 +95,6 @@ regtest=1
 testactivationheight=mn_rr@1000 
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
-{{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
 llmqtestinstantsenddip0024=llmq_test_instantsend
 
 {{?? it.network === 'devnet'}}

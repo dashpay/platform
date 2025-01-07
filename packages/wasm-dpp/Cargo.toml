@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "1.7.0"
+version = "1.8.0-dev.2"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -54,6 +54,6 @@ async-trait = "0.1.59"
 bincode = "2.0.0-rc.3"
 [profile.release]
 lto = true
-opt-level = 's'
+opt-level = 'z'
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]

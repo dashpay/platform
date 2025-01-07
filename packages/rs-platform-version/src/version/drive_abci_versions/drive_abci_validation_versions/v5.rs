@@ -6,10 +6,11 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
     DriveAbciValidationVersions, PenaltyAmounts,
 };
 
-// We introduced nonce validation for masternode voting in this version, and changed the call
-// for nonce validation, however the actual validation for masternode voting was faulty, which is
-// why we introduced V5. (We also are making an emergency hard fork).
-pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
+// In this version we change the nonce validation of masternode voting.
+// There was a bug before this where the nonce validation would validate using the owner identity
+// instead of the voting identity.
+// This is not the same issue as before when we didn't validate nonces on masternode votes at all.
+pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
             common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
@@ -78,7 +79,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: None,
                 advanced_minimum_balance_pre_check: Some(0),
-                nonce: Some(0),
+                nonce: Some(1), // <---- Changed this here
                 state: 0,
                 transform_into_action: 0,
             },
@@ -134,7 +135,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 document_update_price_transition_state_validation: 0,
             },
         },
-        has_nonce_validation: 1, // <---- changed this
+        has_nonce_validation: 1,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

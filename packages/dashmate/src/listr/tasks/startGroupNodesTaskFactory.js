@@ -83,46 +83,6 @@ export default function startGroupNodesTaskFactory(
         },
       },
       {
-        title: 'Mock core node time',
-        enabled: () => minerConfig && minerConfig.get('network') === NETWORK_LOCAL,
-        task: async () => {
-          // TASK RATIONALE:
-          // During DKG sessions, nodes can make only 1 quorum request per 10 minutes.
-          // If mocktime is not adjusted, quorums will start failing to form after some time.
-          const minerInterval = minerConfig.get('core.miner.interval');
-          // 2.5 minutes - mimics the behaviour of the real network
-          const secondsToAdd = 150;
-
-          const tasks = configGroup.map((config) => ({
-            title: `Adjust ${config.getName()} mock time`,
-            task: async () => {
-              /* eslint-disable no-useless-escape */
-              await dockerCompose.execCommand(
-                config,
-                'core',
-                [
-                  'bash',
-                  '-c',
-                  `
-                  response=\$(dash-cli getblockchaininfo);
-                  mocktime=\$(echo \${response} | grep -o -E '\"mediantime\"\: [0-9]+' |  cut -d ' ' -f2);
-                  while true; do
-                    mocktime=\$((mocktime + ${secondsToAdd}));
-                    dash-cli setmocktime \$mocktime;
-                    sleep ${minerInterval};
-                  done
-                  `,
-                ],
-                ['--detach'],
-              );
-              /* eslint-enable no-useless-escape */
-            },
-          }));
-
-          return new Listr(tasks, { concurrent: true });
-        },
-      },
-      {
         title: 'Start a miner',
         enabled: () => minerConfig && minerConfig.get('network') === NETWORK_LOCAL,
         task: async () => {
