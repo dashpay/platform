@@ -203,6 +203,48 @@ impl TokenConfiguration {
             }
         }
 
+        // Check changes to destroy_frozen_funds_rules
+        if old.destroy_frozen_funds_rules != new.destroy_frozen_funds_rules {
+            if !old.destroy_frozen_funds_rules.can_change_to(
+                &new.destroy_frozen_funds_rules,
+                contract_owner_id,
+                main_group,
+                groups,
+                action_taker,
+            ) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "destroyFrozenFundsRules".to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        // Check changes to emergency_action_rules
+        if old.emergency_action_rules != new.emergency_action_rules {
+            if !old.emergency_action_rules.can_change_to(
+                &new.emergency_action_rules,
+                contract_owner_id,
+                main_group,
+                groups,
+                action_taker,
+            ) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "emergencyActionRules".to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
         // Check changes to main_control_group
         if old.main_control_group != new.main_control_group {
             if !old

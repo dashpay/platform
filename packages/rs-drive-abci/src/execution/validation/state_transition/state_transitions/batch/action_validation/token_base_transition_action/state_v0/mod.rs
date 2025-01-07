@@ -4,7 +4,7 @@ use dpp::consensus::state::group::GroupActionAlreadySignedByIdentityError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use crate::error::Error;

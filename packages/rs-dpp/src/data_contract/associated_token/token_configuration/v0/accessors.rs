@@ -81,6 +81,16 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         &self.unfreeze_rules
     }
 
+    /// Returns the `destroy frozen funds` rules.
+    fn destroy_frozen_funds_rules(&self) -> &ChangeControlRules {
+        &self.destroy_frozen_funds_rules
+    }
+
+    /// Returns the emergency action rules.
+    fn emergency_action_rules(&self) -> &ChangeControlRules {
+        &self.emergency_action_rules
+    }
+
     /// Returns the main control group.
     fn main_control_group(&self) -> Option<GroupContractPosition> {
         self.main_control_group
@@ -142,6 +152,16 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the unfreeze rules.
     fn set_unfreeze_rules(&mut self, rules: ChangeControlRules) {
         self.unfreeze_rules = rules;
+    }
+
+    /// Sets the destroy frozen funds rules.
+    fn set_destroy_frozen_funds_rules(&mut self, rules: ChangeControlRules) {
+        self.destroy_frozen_funds_rules = rules;
+    }
+
+    /// Sets the emergency action rules.
+    fn set_emergency_action_rules(&mut self, rules: ChangeControlRules) {
+        self.emergency_action_rules = rules;
     }
 
     /// Sets the main control group.

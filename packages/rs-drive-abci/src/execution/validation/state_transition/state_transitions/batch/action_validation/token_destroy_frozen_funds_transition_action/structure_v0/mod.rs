@@ -1,16 +1,18 @@
 use dpp::validation::{SimpleConsensusValidationResult};
-use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
+use drive::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::{TokenDestroyFrozenFundsTransitionAction, TokenDestroyFrozenFundsTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;
 
-pub(super) trait TokenMintTransitionActionStructureValidationV0 {
+pub(super) trait TokenDestroyFrozenFundsTransitionActionStructureValidationV0 {
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
-impl TokenMintTransitionActionStructureValidationV0 for TokenMintTransitionAction {
+impl TokenDestroyFrozenFundsTransitionActionStructureValidationV0
+    for TokenDestroyFrozenFundsTransitionAction
+{
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,

@@ -10,10 +10,10 @@ use dpp::data_contract::change_control_rules::authorized_action_takers::Authoriz
 use dpp::multi_identity_events::ActionTaker;
 use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
+use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};

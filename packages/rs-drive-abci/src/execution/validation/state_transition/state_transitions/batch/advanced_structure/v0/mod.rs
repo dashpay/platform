@@ -28,10 +28,10 @@ use drive::state_transition_action::document::batch::batched_transition::documen
 use drive::state_transition_action::document::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
 use drive::state_transition_action::document::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::document::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_freeze_transition_action::TokenFreezeTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_mint_transition_action::TokenMintTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::TokenFreezeTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;

@@ -44,6 +44,10 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the unfreeze rules.
     fn unfreeze_rules(&self) -> &ChangeControlRules;
+    /// Returns the destroy frozen funds rules.
+    fn destroy_frozen_funds_rules(&self) -> &ChangeControlRules;
+    /// Returns the emergency action rules.
+    fn emergency_action_rules(&self) -> &ChangeControlRules;
 
     /// Returns the main control group.
     fn main_control_group(&self) -> Option<GroupContractPosition>;
@@ -83,6 +87,10 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the unfreeze rules.
     fn set_unfreeze_rules(&mut self, rules: ChangeControlRules);
+    /// Sets the `destroy frozen funds` rules.
+    fn set_destroy_frozen_funds_rules(&mut self, rules: ChangeControlRules);
+    /// Sets the emergency action rules.
+    fn set_emergency_action_rules(&mut self, rules: ChangeControlRules);
 
     /// Sets the main control group.
     fn set_main_control_group(&mut self, group: Option<GroupContractPosition>);

@@ -1,20 +1,20 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::batch::action_validation::token_unfreeze_transition_action::state_v0::TokenUnfreezeTransitionActionStateValidationV0;
-use crate::execution::validation::state_transition::batch::action_validation::token_unfreeze_transition_action::structure_v0::TokenUnfreezeTransitionActionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::token_destroy_frozen_funds_transition_action::state_v0::TokenDestroyFrozenFundsTransitionActionStateValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::token_destroy_frozen_funds_transition_action::structure_v0::TokenDestroyFrozenFundsTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod state_v0;
 mod structure_v0;
 
-pub trait TokenUnfreezeTransitionActionValidation {
+pub trait TokenDestroyFrozenFundsTransitionActionValidation {
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
@@ -31,7 +31,7 @@ pub trait TokenUnfreezeTransitionActionValidation {
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl TokenUnfreezeTransitionActionValidation for TokenUnfreezeTransitionAction {
+impl TokenDestroyFrozenFundsTransitionActionValidation for TokenDestroyFrozenFundsTransitionAction {
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
@@ -41,11 +41,11 @@ impl TokenUnfreezeTransitionActionValidation for TokenUnfreezeTransitionAction {
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .token_unfreeze_transition_structure_validation
+            .token_destroy_frozen_funds_transition_structure_validation
         {
             0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "TokenUnfreezeTransitionAction::validate_structure".to_string(),
+                method: "TokenDestroyFrozenFundsTransitionAction::validate_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -66,7 +66,7 @@ impl TokenUnfreezeTransitionActionValidation for TokenUnfreezeTransitionAction {
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .token_unfreeze_transition_state_validation
+            .token_destroy_frozen_funds_transition_state_validation
         {
             0 => self.validate_state_v0(
                 platform,
@@ -77,7 +77,7 @@ impl TokenUnfreezeTransitionActionValidation for TokenUnfreezeTransitionAction {
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "TokenUnfreezeTransitionAction::validate_state".to_string(),
+                method: "TokenDestroyFrozenFundsTransitionAction::validate_state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

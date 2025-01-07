@@ -8,7 +8,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::multi_identity_events::ActionTaker;
 use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::document::batch::batched_transition::document_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
+use drive::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use crate::error::Error;

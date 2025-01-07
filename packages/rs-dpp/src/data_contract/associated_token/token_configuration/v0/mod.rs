@@ -64,6 +64,10 @@ pub struct TokenConfigurationV0 {
     pub freeze_rules: ChangeControlRules,
     #[serde(default = "default_change_control_rules")]
     pub unfreeze_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
+    pub destroy_frozen_funds_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
+    pub emergency_action_rules: ChangeControlRules,
     #[serde(default)]
     pub main_control_group: Option<GroupContractPosition>,
     #[serde(default)]
@@ -102,7 +106,7 @@ impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV0 {{\n  conventions: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
             self.base_supply,
             self.max_supply,
@@ -115,6 +119,8 @@ impl fmt::Display for TokenConfigurationV0 {
             self.manual_burning_rules,
             self.freeze_rules,
             self.unfreeze_rules,
+            self.destroy_frozen_funds_rules,
+            self.emergency_action_rules,
             self.main_control_group,
             self.main_control_group_can_be_modified
         )
@@ -176,6 +182,20 @@ impl TokenConfigurationV0 {
             }
             .into(),
             unfreeze_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }
+            .into(),
+            destroy_frozen_funds_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_authorized_action_takers_to_contract_owner_allowed: false,
+            }
+            .into(),
+            emergency_action_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
                 authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,

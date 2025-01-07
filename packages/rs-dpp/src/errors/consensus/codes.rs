@@ -237,6 +237,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40150,
             Self::UnauthorizedTokenActionError(_) => 40151,
             Self::IdentityTokenAccountFrozenError(_) => 40152,
+            Self::IdentityTokenAccountNotFrozenError(_) => 40153,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
