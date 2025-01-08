@@ -3,6 +3,7 @@
 
 use crate::abci::app::CheckTxAbciApplication;
 use crate::abci::app::ConsensusAbciApplication;
+use crate::abci::app::StateSourceAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
 use crate::query::QueryService;
@@ -31,12 +32,18 @@ pub fn start(
 
     let check_tx_service =
         CheckTxAbciApplication::new(Arc::clone(&platform), Arc::new(check_tx_core_rpc));
+    let state_source_service = StateSourceAbciApplication::new(Arc::clone(&platform));
 
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_service))
         .add_service(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
                 check_tx_service,
+            ),
+        )
+        .add_service(
+            tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
+                state_source_service,
             ),
         );
 

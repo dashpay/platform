@@ -188,4 +188,8 @@ pub enum DriveError {
     /// Data Contract not found
     #[error("data contract not found: {0}")]
     DataContractNotFound(String),
+
+    /// Error todo
+    #[error("snapshot error")]
+    Snapshot(String),
 }
