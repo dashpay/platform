@@ -98,6 +98,7 @@ impl AddressStatus {
 }
 
 /// [AddressList] errors
+#[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddressListError {
