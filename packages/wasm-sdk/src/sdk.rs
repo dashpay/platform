@@ -1,22 +1,30 @@
 use crate::context_provider::WasmContext;
 use crate::dpp::{DataContractWasm, IdentityWasm};
 use crate::error::{to_js_error, WasmError};
+use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::DataContractFactory;
+use dash_sdk::dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::IdentityV0;
 use dash_sdk::dpp::prelude::AssetLockProof;
+use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::drive::verify::identity;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
-use dash_sdk::platform::{DataContract, Fetch, Identifier, Identity};
+use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
+use dash_sdk::sdk::AddressList;
 use dash_sdk::{Error, Sdk, SdkBuilder};
+use platform_value::platform_value;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, DerefMut};
+use std::str::FromStr;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsError;
-use web_sys::window;
+use web_sys::{console, js_sys, window};
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -106,6 +114,7 @@ pub async fn data_contract_fetch(
         .map(Into::into)
 }
 
+#[wasm_bindgen]
 pub async fn identity_put(sdk: &WasmSdk) {
     let id = Identifier::from_bytes(&[0; 32]).expect("create identifier");
 
@@ -136,17 +145,17 @@ pub async fn identity_put(sdk: &WasmSdk) {
         .unwrap();
 }
 
-// #[wasm_bindgen]
-// pub async fn epoch_testing() {
-//     let sdk = SdkBuilder::new(AddressList::new())
-//         .build()
-//         .expect("build sdk");
-//
-//     let ei = ExtendedEpochInfo::fetch(&sdk, 0)
-//         .await
-//         .expect("fetch extended epoch info")
-//         .expect("extended epoch info not found");
-// }
+#[wasm_bindgen]
+pub async fn epoch_testing() {
+    let sdk = SdkBuilder::new(AddressList::new())
+        .build()
+        .expect("build sdk");
+
+    let ei = ExtendedEpochInfo::fetch(&sdk, 0)
+        .await
+        .expect("fetch extended epoch info")
+        .expect("extended epoch info not found");
+}
 
 // #[wasm_bindgen]
 // pub fn setup_sdk() -> WasmSdk {
@@ -156,41 +165,42 @@ pub async fn identity_put(sdk: &WasmSdk) {
 //     WasmSdk(sdk)
 // }
 
-// #[wasm_bindgen]
-// pub async fn docs_testing(sdk: &WasmSdk) {
-// let id = Identifier::random();
-//
-// let factory = DataContractFactory::new(1).expect("create data contract factory");
-// factory
-//     .create(id, 1, platform_value!({}), None, None)
-//     .expect("create data contract");
-//
-// let dc = DataContract::fetch(&sdk, id)
-//     .await
-//     .expect("fetch data contract")
-//     .expect("data contract not found");
-//
-// let dcs = dc
-//     .serialize_to_bytes_with_platform_version(sdk.version())
-//     .expect("serialize data contract");
-//
-// let query = DocumentQuery::new(dc.clone(), "asd").expect("create query");
-// let doc = Document::fetch(sdk, query)
-//     .await
-//     .expect("fetch document")
-//     .expect("document not found");
-//
-// let document_type = dc
-//     .document_type_for_name("aaa")
-//     .expect("document type for name");
-// let doc_serialized = doc
-//     .serialize(document_type, sdk.version())
-//     .expect("serialize document");
-//
-// let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))
-//     .expect("create js string");
-// console::log_1(&msg);
-// }
+#[wasm_bindgen]
+pub async fn docs_testing(sdk: &WasmSdk) {
+    let id = Identifier::random();
+
+    let factory = DataContractFactory::new(1).expect("create data contract factory");
+    factory
+        .create(id, 1, platform_value!({}), None, None)
+        .expect("create data contract");
+
+    let dc = DataContract::fetch(&sdk, id)
+        .await
+        .expect("fetch data contract")
+        .expect("data contract not found");
+
+    let dcs = dc
+        .serialize_to_bytes_with_platform_version(sdk.version())
+        .expect("serialize data contract");
+
+    let query = DocumentQuery::new(dc.clone(), "asd").expect("create query");
+    let doc = Document::fetch(sdk, query)
+        .await
+        .expect("fetch document")
+        .expect("document not found");
+
+    let document_type = dc
+        .document_type_for_name("aaa")
+        .expect("document type for name");
+    let doc_serialized = doc
+        .serialize(document_type, sdk.version())
+        .expect("serialize document");
+
+    let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))
+        .expect("create js string");
+    console::log_1(&msg);
+}
+
 #[derive(Clone, Debug)]
 struct MockSigner;
 impl Signer for MockSigner {
