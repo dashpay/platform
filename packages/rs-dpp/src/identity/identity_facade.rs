@@ -90,6 +90,15 @@ impl IdentityFacade {
         self.factory
             .create_identity_create_transition(identity, asset_lock_proof)
     }
+    #[cfg(feature = "state-transitions")]
+    pub fn create_identity_create_transition_using_public_keys(
+        &self,
+        public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+        asset_lock_proof: AssetLockProof,
+    ) -> Result<(Identity, IdentityCreateTransition), ProtocolError> {
+        self.factory
+            .create_identity_with_create_transition(public_keys, asset_lock_proof)
+    }
 
     #[cfg(feature = "state-transitions")]
     pub fn create_identity_topup_transition(
