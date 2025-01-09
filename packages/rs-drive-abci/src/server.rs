@@ -40,11 +40,6 @@ pub fn start(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
                 check_tx_service,
             ),
-        )
-        .add_service(
-            tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
-                state_source_service,
-            ),
         );
 
     let grpc_server_cancel = cancel.clone();
