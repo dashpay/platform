@@ -4,8 +4,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::votes::paths::{
     vote_contested_resource_active_polls_contract_tree_path,
@@ -49,7 +49,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(2, false), //voting is on level 2
                 // We have balances in the middle which is a sum tree
                 estimated_layer_sizes: AllSubtrees(
@@ -67,7 +67,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(vote_root_path()),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 // contested resource tree is a key of "c" so it should be on the top layer of the merk
                 estimated_layer_count: EstimatedLevel(0, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
@@ -78,7 +78,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(vote_contested_resource_tree_path()),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 // active poll "p", with "e" and "i" first so it should be on the second layer of the merk
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
@@ -89,7 +89,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(vote_contested_resource_active_polls_tree_path()),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -102,7 +102,7 @@ impl Drive {
                 contract.id_ref().as_bytes(),
             )),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(document_type_count),
                 estimated_layer_sizes: AllSubtrees(
                     ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,

@@ -11,7 +11,7 @@ use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
@@ -98,8 +98,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
                 flags_len: 0,
             }
         };

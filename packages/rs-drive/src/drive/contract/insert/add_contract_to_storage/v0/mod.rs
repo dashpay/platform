@@ -19,7 +19,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -64,8 +64,8 @@ impl Drive {
             } else {
                 let apply_type = if estimated_costs_only_with_layer_info.is_some() {
                     BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        is_sum_tree: false,
-                        in_tree_using_sums: false,
+                        tree_type: TreeType::NormalTree,
+                        in_tree_type: TreeType::NormalTree,
                         flags_len: storage_flags
                             .as_ref()
                             .map(|flags| flags.to_element_flags().len())

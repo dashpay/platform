@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllItems;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::identity::identity_query_keys_security_level_tree_path_vec;
 
@@ -45,7 +45,7 @@ impl Drive {
             )),
             //todo: revisit
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(4), //we can estimate that each security level will only have 4 keys
                 //We can mark these as all subtrees, because the revision will be under
                 estimated_layer_sizes: AllItems(1, KEY_REFERENCE_SIZE, None),

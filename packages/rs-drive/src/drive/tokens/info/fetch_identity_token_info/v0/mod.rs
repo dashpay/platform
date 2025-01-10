@@ -9,7 +9,7 @@ use dpp::serialization::PlatformDeserializable;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn fetch_identity_token_info_v0(
@@ -42,7 +42,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(8),
             }
         };

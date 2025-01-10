@@ -12,7 +12,7 @@ use dpp::fee::Credits;
 
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store
@@ -77,7 +77,7 @@ impl Drive {
         } else {
             // 8 is the size of a i64 used in sum trees
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: true,
+                in_tree_type: TreeType::SumTree,
                 query_target: QueryTargetValue(8),
             }
         };

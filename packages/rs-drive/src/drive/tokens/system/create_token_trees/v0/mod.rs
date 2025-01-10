@@ -15,7 +15,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformSerializable;
 use dpp::tokens::status::TokenStatus;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
@@ -120,8 +120,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
                 flags_len: 0,
             }
         };
@@ -130,7 +130,7 @@ impl Drive {
             BatchInsertApplyType::StatefulBatchInsert
         } else {
             BatchInsertApplyType::StatelessBatchInsert {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 target: QueryTarget::QueryTargetValue(8),
             }
         };
@@ -139,8 +139,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: true,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::SumTree,
                 flags_len: 0,
             }
         };

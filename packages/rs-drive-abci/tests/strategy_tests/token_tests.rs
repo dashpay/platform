@@ -79,7 +79,7 @@ mod tests {
             contract: contract.clone(),
             token_id,
             token_pos: 0,
-            action: TokenEvent::Mint(1000, None),
+            action: TokenEvent::Mint(1000, identity2.id(), None),
         };
 
         let strategy = NetworkStrategy {
@@ -206,7 +206,7 @@ mod tests {
             contract: contract.clone(),
             token_id,
             token_pos: 0,
-            action: TokenEvent::Mint(1000, None),
+            action: TokenEvent::Mint(1000, identity2.id(), None),
         };
 
         let strategy = NetworkStrategy {

@@ -24,19 +24,19 @@ impl Drive {
     ) -> Result<Option<Element>, Error> {
         match query_type {
             QueryType::StatelessQuery {
-                in_tree_using_sums,
+                in_tree_type: in_tree_using_sums,
                 query_target,
                 estimated_reference_sizes,
             } => {
                 let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
-                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                    QueryTarget::QueryTargetTree(flags_size, tree_type) => {
                         GroveDb::average_case_for_get_tree(
                             &key_info_path,
                             &key_info,
                             flags_size,
-                            is_sum_tree,
+                            tree_type,
                             in_tree_using_sums,
                             &drive_version.grove_version,
                         )

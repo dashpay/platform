@@ -89,14 +89,14 @@ impl Drive {
             };
             let delete_operation = match apply_type {
                 BatchMoveApplyType::StatelessBatchMove {
-                    is_sum_tree,
+                    in_tree_type,
                     estimated_key_size,
                     estimated_value_size,
                     ..
                 } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
                     &KeyInfoPath::from_known_owned_path(path.to_vec()),
                     &KeyInfo::KnownKey(key.to_vec()),
-                    is_sum_tree,
+                    in_tree_type,
                     false,
                     true,
                     0,
@@ -142,7 +142,7 @@ mod tests {
         util::test_helpers::setup::setup_drive,
     };
     use assert_matches::assert_matches;
-    use grovedb::{Element, PathQuery, Query, SizedQuery};
+    use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
 
@@ -218,7 +218,7 @@ mod tests {
 
         // Set up the apply type and drive operations vector
         let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
         let mut drive_operations = Vec::new();
 
@@ -330,7 +330,7 @@ mod tests {
 
         // Set up the apply type and drive operations vector
         let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
         let mut drive_operations = Vec::new();
 
@@ -433,7 +433,7 @@ mod tests {
 
         // Set up the apply type and drive operations vector
         let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
         let mut drive_operations = Vec::new();
 

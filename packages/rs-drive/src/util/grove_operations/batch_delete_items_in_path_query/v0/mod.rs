@@ -87,7 +87,7 @@ impl Drive {
             };
             let delete_operation = match apply_type {
                 BatchDeleteApplyType::StatelessBatchDelete {
-                    is_sum_tree,
+                    in_tree_type: is_sum_tree,
                     estimated_key_size,
                     estimated_value_size,
                 } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
@@ -136,7 +136,7 @@ mod tests {
         util::grove_operations::BatchDeleteApplyType,
     };
     use assert_matches::assert_matches;
-    use grovedb::SizedQuery;
+    use grovedb::{SizedQuery, TreeType};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
 
@@ -533,7 +533,7 @@ mod tests {
 
         // Set up the stateless apply type with estimated sizes
         let apply_type = BatchDeleteApplyType::StatelessBatchDelete {
-            is_sum_tree: false,
+            in_tree_type: TreeType::NormalTree,
             estimated_key_size: key.len() as u32,
             estimated_value_size: element
                 .serialized_size(&platform_version.drive.grove_version)

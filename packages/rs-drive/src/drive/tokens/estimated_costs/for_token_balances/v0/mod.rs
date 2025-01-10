@@ -4,8 +4,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::tokens::{
     token_balances_path, token_identity_infos_path, token_path, tokens_root_path,
@@ -65,7 +65,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(2, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
@@ -75,7 +75,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(tokens_root_path()),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(10, false), // We estimate that on average we need to update 10 nodes
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -85,7 +85,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(token_path(&token_id)),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: EstimatedLevel(1, false),
                     estimated_layer_sizes: AllSubtrees(
                         1,
@@ -101,7 +101,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(token_path(&token_id)),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: EstimatedLevel(0, false),
                     estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
                 },
@@ -113,7 +113,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(token_identity_infos_path(&token_id)),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,
@@ -128,7 +128,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(token_balances_path(&token_id)),
             EstimatedLayerInformation {
-                is_sum_tree: true,
+                tree_type: TreeType::SumTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
             },

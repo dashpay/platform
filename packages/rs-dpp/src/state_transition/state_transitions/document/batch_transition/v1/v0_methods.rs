@@ -749,6 +749,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         Ok(state_transition)
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_token_destroy_frozen_funds_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -820,6 +821,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         Ok(state_transition)
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_token_emergency_action_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,

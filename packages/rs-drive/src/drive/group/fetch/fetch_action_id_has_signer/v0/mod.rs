@@ -9,7 +9,7 @@ use dpp::data_contract::GroupContractPosition;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// v0 implementation of fetching the signers' power for a given action ID within a group contract.
@@ -144,7 +144,7 @@ impl Drive {
         // no estimated_costs_only_with_layer_info, means we want to apply to state
         let direct_query_type = if estimate_costs_only {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: true,
+                in_tree_type: TreeType::SumTree,
                 query_target: QueryTargetValue(8),
             }
         } else {

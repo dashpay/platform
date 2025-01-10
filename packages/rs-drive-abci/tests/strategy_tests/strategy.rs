@@ -1427,7 +1427,7 @@ impl NetworkStrategy {
                         contract,
                         token_id,
                         token_pos,
-                        action: TokenEvent::Mint(amount, note),
+                        action: TokenEvent::Mint(amount, recipient, note),
                     }) if current_identities.len() > 1 => {
                         let random_index = rng.gen_range(0..current_identities.len());
                         let random_identity_id = current_identities[random_index].id();

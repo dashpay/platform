@@ -11,7 +11,7 @@ use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
-use grovedb::{batch::KeyInfoPath, Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{batch::KeyInfoPath, Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -101,7 +101,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(8),
             }
         };

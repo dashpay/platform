@@ -8,9 +8,9 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::GroupContractPosition;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
+use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -79,7 +79,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
@@ -96,7 +96,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(group_root_path()),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(10, false), // We estimate that on average we need to update 10 nodes
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -105,7 +105,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(group_contract_path(contract_id.as_slice())),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(2, NoSumTrees, None),
             },
@@ -117,7 +117,7 @@ impl Drive {
                 &group_contract_position.to_be_bytes(),
             )),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
@@ -129,7 +129,7 @@ impl Drive {
                 &group_contract_position.to_be_bytes(),
             )),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(10, false),
                 estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
             },
@@ -143,7 +143,7 @@ impl Drive {
                     action_id.as_slice(),
                 )),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: EstimatedLevel(1, false),
                     estimated_layer_sizes: Mix {
                         subtrees_size: Some((1, AllSumTrees, None, 1)),
@@ -160,7 +160,7 @@ impl Drive {
                     action_id.as_slice(),
                 )),
                 EstimatedLayerInformation {
-                    is_sum_tree: true,
+                    tree_type: TreeType::SumTree,
                     estimated_layer_count: EstimatedLevel(1, false),
                     estimated_layer_sizes: AllItems(8, 1, None),
                 },

@@ -34,7 +34,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -380,7 +380,7 @@ impl Drive {
                         document.id().as_slice(),
                         Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         previous_batch_operations,
@@ -394,7 +394,7 @@ impl Drive {
                         &[0],
                         Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         previous_batch_operations,

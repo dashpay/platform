@@ -187,7 +187,7 @@ pub fn setup(
         "tests/supporting_files/contract/family/family-contract-with-history.json",
         None,
         None,
-        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
         Some(platform_version),
     );

@@ -144,7 +144,7 @@ pub mod grove_get_raw_optional_item;
 
 use grovedb_costs::CostContext;
 
-use grovedb::EstimatedLayerInformation;
+use grovedb::{EstimatedLayerInformation, MaybeTree, TreeType};
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -192,7 +192,7 @@ pub enum BatchDeleteApplyType {
     /// Stateless batch delete
     StatelessBatchDelete {
         /// Are we deleting in a sum tree
-        is_sum_tree: bool,
+        in_tree_type: TreeType,
         /// What is the estimated key size
         estimated_key_size: u32,
         /// What is the estimated value size
@@ -201,7 +201,7 @@ pub enum BatchDeleteApplyType {
     /// Stateful batch delete
     StatefulBatchDelete {
         /// Are we known to be in a subtree and does this subtree have sums
-        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
+        is_known_to_be_subtree_with_sum: Option<MaybeTree>,
     },
 }
 
@@ -211,9 +211,9 @@ pub enum BatchMoveApplyType {
     /// Stateless batch move
     StatelessBatchMove {
         /// Are we moving from inside a sum tree
-        in_tree_using_sums: bool,
+        in_tree_type: TreeType,
         /// Are we moving a sum tree
-        is_sum_tree: bool,
+        tree_type: TreeType,
         /// What is the estimated key size
         estimated_key_size: u32,
         /// What is the estimated value size
@@ -224,7 +224,7 @@ pub enum BatchMoveApplyType {
     /// Stateful batch move
     StatefulBatchMove {
         /// Are we known to be in a subtree and does this subtree have sums
-        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
+        is_known_to_be_subtree_with_sum: Option<MaybeTree>,
     },
 }
 
@@ -239,7 +239,7 @@ pub enum BatchDeleteUpTreeApplyType {
     /// Stateful batch delete
     StatefulBatchDelete {
         /// Are we known to be in a subtree and does this subtree have sums
-        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
+        is_known_to_be_subtree_with_sum: Option<MaybeTree>,
     },
 }
 
@@ -250,9 +250,9 @@ pub enum BatchInsertTreeApplyType {
     /// Stateless batch insert tree
     StatelessBatchInsertTree {
         /// Does this tree use sums?
-        in_tree_using_sums: bool,
+        in_tree_type: TreeType,
         /// Are we inserting in a sum tree
-        is_sum_tree: bool,
+        tree_type: TreeType,
         /// The flags length
         flags_len: FlagsLen,
     },
@@ -272,12 +272,12 @@ impl BatchInsertTreeApplyType {
     pub(crate) fn to_direct_query_type(self) -> DirectQueryType {
         match self {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums,
-                is_sum_tree,
+                in_tree_type,
+                tree_type,
                 flags_len,
             } => DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums,
-                query_target: QueryTarget::QueryTargetTree(flags_len, is_sum_tree),
+                in_tree_type,
+                query_target: QueryTarget::QueryTargetTree(flags_len, tree_type),
             },
             BatchInsertTreeApplyType::StatefulBatchInsertTree => {
                 DirectQueryType::StatefulDirectQuery
@@ -291,7 +291,7 @@ pub enum BatchInsertApplyType {
     /// Stateless batch insert
     StatelessBatchInsert {
         /// Does this tree use sums?
-        in_tree_using_sums: bool,
+        in_tree_type: TreeType,
         /// the type of Target (Tree or Value)
         target: QueryTarget,
     },
@@ -310,10 +310,10 @@ impl BatchInsertApplyType {
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertApplyType::StatelessBatchInsert {
-                in_tree_using_sums,
+                in_tree_type: in_tree_using_sums,
                 target,
             } => DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: *in_tree_using_sums,
+                in_tree_type: *in_tree_using_sums,
                 query_target: *target,
             },
             BatchInsertApplyType::StatefulBatchInsert => DirectQueryType::StatefulDirectQuery,
@@ -329,7 +329,7 @@ pub type FlagsLen = u32;
 /// Query target
 pub enum QueryTarget {
     /// tree
-    QueryTargetTree(FlagsLen, IsSumTree),
+    QueryTargetTree(FlagsLen, TreeType),
     /// value
     QueryTargetValue(u32),
 }
@@ -338,9 +338,8 @@ impl QueryTarget {
     /// Length
     pub(crate) fn len(&self) -> u32 {
         match self {
-            QueryTarget::QueryTargetTree(flags_len, is_sum_tree) => {
-                let len = if *is_sum_tree { 11 } else { 3 };
-                *flags_len + len
+            QueryTarget::QueryTargetTree(flags_len, tree_type) => {
+                *flags_len + tree_type.inner_node_type().cost() + 3
             }
             QueryTarget::QueryTargetValue(len) => *len,
         }
@@ -354,7 +353,7 @@ pub enum DirectQueryType {
     /// Stateless direct query
     StatelessDirectQuery {
         /// Does this tree use sums?
-        in_tree_using_sums: bool,
+        in_tree_type: TreeType,
         /// the type of Target (Tree or Value)
         query_target: QueryTarget,
     },
@@ -366,10 +365,10 @@ impl From<DirectQueryType> for QueryType {
     fn from(value: DirectQueryType) -> Self {
         match value {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums,
+                in_tree_type,
                 query_target,
             } => QueryType::StatelessQuery {
-                in_tree_using_sums,
+                in_tree_type,
                 query_target,
                 estimated_reference_sizes: vec![],
             },
@@ -410,10 +409,10 @@ impl DirectQueryType {
     pub(crate) fn add_reference_sizes(self, reference_sizes: Vec<u32>) -> QueryType {
         match self {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums,
+                in_tree_type: in_tree_using_sums,
                 query_target,
             } => QueryType::StatelessQuery {
-                in_tree_using_sums,
+                in_tree_type: in_tree_using_sums,
                 query_target,
                 estimated_reference_sizes: reference_sizes,
             },
@@ -428,7 +427,7 @@ pub enum QueryType {
     /// Stateless query
     StatelessQuery {
         /// Does this tree use sums?
-        in_tree_using_sums: bool,
+        in_tree_type: TreeType,
         /// the type of Target (Tree or Value)
         query_target: QueryTarget,
         /// The estimated sizes of references
@@ -442,11 +441,11 @@ impl From<BatchDeleteApplyType> for QueryType {
     fn from(value: BatchDeleteApplyType) -> Self {
         match value {
             BatchDeleteApplyType::StatelessBatchDelete {
-                is_sum_tree,
+                in_tree_type: is_sum_tree,
                 estimated_value_size,
                 ..
             } => QueryType::StatelessQuery {
-                in_tree_using_sums: is_sum_tree,
+                in_tree_type: is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(estimated_value_size),
                 estimated_reference_sizes: vec![],
             },
@@ -459,11 +458,11 @@ impl From<&BatchDeleteApplyType> for QueryType {
     fn from(value: &BatchDeleteApplyType) -> Self {
         match value {
             BatchDeleteApplyType::StatelessBatchDelete {
-                is_sum_tree,
+                in_tree_type: is_sum_tree,
                 estimated_value_size,
                 ..
             } => QueryType::StatelessQuery {
-                in_tree_using_sums: *is_sum_tree,
+                in_tree_type: *is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(*estimated_value_size),
                 estimated_reference_sizes: vec![],
             },
@@ -476,11 +475,11 @@ impl From<BatchDeleteApplyType> for DirectQueryType {
     fn from(value: BatchDeleteApplyType) -> Self {
         match value {
             BatchDeleteApplyType::StatelessBatchDelete {
-                is_sum_tree,
+                in_tree_type: is_sum_tree,
                 estimated_value_size,
                 ..
             } => DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: is_sum_tree,
+                in_tree_type: is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(estimated_value_size),
             },
             BatchDeleteApplyType::StatefulBatchDelete { .. } => {
@@ -494,11 +493,11 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
     fn from(value: &BatchDeleteApplyType) -> Self {
         match value {
             BatchDeleteApplyType::StatelessBatchDelete {
-                is_sum_tree,
+                in_tree_type: is_sum_tree,
                 estimated_value_size,
                 ..
             } => DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: *is_sum_tree,
+                in_tree_type: *is_sum_tree,
                 query_target: QueryTarget::QueryTargetValue(*estimated_value_size),
             },
             BatchDeleteApplyType::StatefulBatchDelete { .. } => {

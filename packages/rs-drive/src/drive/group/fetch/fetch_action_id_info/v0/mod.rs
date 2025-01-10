@@ -12,7 +12,7 @@ use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn fetch_action_id_info_v0(
@@ -70,7 +70,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(8),
             }
         };

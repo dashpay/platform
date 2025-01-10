@@ -19,7 +19,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::{HashMap, HashSet};
 
 impl Drive {
@@ -300,8 +300,8 @@ impl Drive {
                     BatchInsertTreeApplyType::StatefulBatchInsertTree
                 } else {
                     BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        in_tree_using_sums: false,
-                        is_sum_tree: false,
+                        in_tree_type: TreeType::NormalTree,
+                        tree_type: TreeType::NormalTree,
                         flags_len: element_flags
                             .as_ref()
                             .map(|e| e.len() as u32)

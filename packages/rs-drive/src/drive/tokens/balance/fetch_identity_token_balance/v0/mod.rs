@@ -8,7 +8,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn fetch_identity_token_balance_v0(
@@ -42,7 +42,7 @@ impl Drive {
         } else {
             // 8 is the size of an i64 used in sum trees
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: true,
+                in_tree_type: TreeType::SumTree,
                 query_target: QueryTargetValue(8),
             }
         };

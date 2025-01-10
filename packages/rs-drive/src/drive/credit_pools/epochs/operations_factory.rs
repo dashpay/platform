@@ -20,7 +20,7 @@ use dpp::fee::Credits;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 
 /// Operations on Epochs
 pub trait EpochOperations {
@@ -288,7 +288,11 @@ impl EpochOperations for Epoch {
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
     fn delete_proposers_tree_operation(&self) -> QualifiedGroveDbOp {
-        QualifiedGroveDbOp::delete_tree_op(self.get_path_vec(), KEY_PROPOSERS.to_vec(), false)
+        QualifiedGroveDbOp::delete_tree_op(
+            self.get_path_vec(),
+            KEY_PROPOSERS.to_vec(),
+            TreeType::NormalTree,
+        )
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
