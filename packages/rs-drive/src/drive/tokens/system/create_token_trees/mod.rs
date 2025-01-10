@@ -13,7 +13,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
+    /// Adds an identity by inserting a new identity subtree structure to the `Identities` subtree.
     pub fn create_token_trees(
         &self,
         token_id: [u8; 32],

@@ -1,4 +1,4 @@
-use crate::drive::tokens::{token_path, TOKEN_IDENTITY_INFO_KEY};
+use crate::drive::tokens::token_statuses_root_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -85,10 +85,18 @@ impl Drive {
 
         let token_status_bytes = status.serialize_consume_to_bytes()?;
 
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_token_status_infos(
+                token_id,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
         self.batch_insert(
             PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
-                token_path(&token_id),
-                &[TOKEN_IDENTITY_INFO_KEY],
+                token_statuses_root_path(),
+                token_id.as_slice(),
                 Element::Item(token_status_bytes, None),
             )),
             &mut drive_operations,

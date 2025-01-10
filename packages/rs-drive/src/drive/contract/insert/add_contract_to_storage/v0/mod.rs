@@ -79,7 +79,7 @@ impl Drive {
 
                 self.batch_insert_empty_tree_if_not_exists(
                     key_info,
-                    false,
+                    TreeType::NormalTree,
                     storage_flags.as_ref().map(|flags| flags.as_ref()),
                     apply_type,
                     transaction,

@@ -4,6 +4,9 @@ use crate::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::system::misc_path_vec;
+use crate::drive::tokens::{
+    tokens_root_path_vec, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
+};
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -52,6 +55,24 @@ impl Drive {
         batch.add_insert(
             misc_path_vec(),
             TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.to_vec(),
+            Element::empty_tree(),
+        );
+
+        batch.add_insert(
+            tokens_root_path_vec(),
+            vec![TOKEN_BALANCES_KEY],
+            Element::empty_big_sum_tree(),
+        );
+
+        batch.add_insert(
+            tokens_root_path_vec(),
+            vec![TOKEN_IDENTITY_INFO_KEY],
+            Element::empty_tree(),
+        );
+
+        batch.add_insert(
+            tokens_root_path_vec(),
+            vec![TOKEN_STATUS_INFO_KEY],
             Element::empty_tree(),
         );
 

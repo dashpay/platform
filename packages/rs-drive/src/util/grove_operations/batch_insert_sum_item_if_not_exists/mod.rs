@@ -47,7 +47,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match drive_version
             .grove_methods
             .batch

@@ -17,6 +17,9 @@ use drive::drive::identity::withdrawals::paths::{
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::system::misc_path;
+use drive::drive::tokens::{
+    tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
+};
 use drive::drive::RootTree;
 use drive::grovedb::{Element, Transaction};
 use drive::grovedb_path::SubtreePath;
@@ -113,11 +116,39 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
+        let path = tokens_root_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_BALANCES_KEY],
+            Element::empty_big_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_IDENTITY_INFO_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_STATUS_INFO_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
         let path = misc_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
             TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.as_slice(),
-            Element::empty_tree(),
+            Element::empty_big_sum_tree(),
             Some(transaction),
             None,
             &platform_version.drive,

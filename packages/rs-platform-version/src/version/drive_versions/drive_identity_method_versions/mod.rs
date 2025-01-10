@@ -69,6 +69,7 @@ pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_purpose_in_key_reference_tree: FeatureVersion,
     pub for_root_key_reference_tree: FeatureVersion,
     pub for_update_revision: FeatureVersion,
+    pub for_token_identity_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

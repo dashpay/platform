@@ -131,7 +131,7 @@ impl Drive {
         // We insert the identity tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKey((identity_tree_path, id.to_vec())),
-            false,
+            TreeType::NormalTree,
             Some(&storage_flags),
             apply_type,
             transaction,

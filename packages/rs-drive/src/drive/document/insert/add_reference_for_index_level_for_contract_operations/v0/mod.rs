@@ -75,7 +75,7 @@ impl Drive {
             // a contested resource index
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                false,
+                TreeType::NormalTree,
                 *storage_flags,
                 apply_type,
                 transaction,

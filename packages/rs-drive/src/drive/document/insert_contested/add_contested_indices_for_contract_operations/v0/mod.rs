@@ -153,7 +153,7 @@ impl Drive {
                 document_top_field
                     .clone()
                     .add_path_info(index_path_info.clone()),
-                false,
+                TreeType::NormalTree,
                 storage_flags,
                 apply_type,
                 transaction,
@@ -200,7 +200,7 @@ impl Drive {
 
         self.batch_insert_empty_tree_if_not_exists(
             DriveKeyInfo::Key(owner_id.to_vec()).add_path_info(index_path_info.clone()),
-            false,
+            TreeType::NormalTree,
             storage_flags,
             apply_type,
             transaction,
@@ -212,7 +212,7 @@ impl Drive {
         let inserted_abstain = self.batch_insert_empty_tree_if_not_exists(
             DriveKeyInfo::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec())
                 .add_path_info(index_path_info.clone()),
-            false,
+            TreeType::NormalTree,
             storage_flags,
             apply_type,
             transaction,
@@ -224,7 +224,7 @@ impl Drive {
         let inserted_lock = self.batch_insert_empty_tree_if_not_exists(
             DriveKeyInfo::Key(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec())
                 .add_path_info(index_path_info.clone()),
-            false,
+            TreeType::NormalTree,
             storage_flags,
             apply_type,
             transaction,

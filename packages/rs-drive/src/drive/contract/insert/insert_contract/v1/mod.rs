@@ -11,8 +11,7 @@ use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::balances::total_tokens_root_supply_path_vec;
 use crate::drive::tokens::{
-    token_balances_path_vec, token_path, tokens_root_path, TOKEN_BALANCES_KEY,
-    TOKEN_IDENTITY_INFO_KEY,
+    token_balances_path_vec, token_balances_root_path, token_identity_infos_root_path,
 };
 use crate::error::contract::DataContractError;
 use crate::util::object_size_info::DriveKeyInfo;
@@ -23,9 +22,8 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
-use grovedb::Element::Item;
+use grovedb::Element::SumItem;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
@@ -186,7 +184,6 @@ impl Drive {
             {
                 Drive::add_estimation_costs_for_token_balances(
                     token_id_bytes,
-                    false,
                     estimated_costs_only_with_layer_info,
                     &platform_version.drive,
                 )?;
@@ -196,25 +193,17 @@ impl Drive {
                 )?;
             }
 
-            self.batch_insert_empty_tree(
-                tokens_root_path(),
-                DriveKeyInfo::KeyRef(&token_id_bytes),
-                None,
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
-
             self.batch_insert_empty_sum_tree(
-                token_path(&token_id_bytes),
-                DriveKeyInfo::Key(vec![TOKEN_BALANCES_KEY]),
+                token_balances_root_path(),
+                DriveKeyInfo::KeyRef(token_id_bytes.as_slice()),
                 None,
                 &mut batch_operations,
                 &platform_version.drive,
             )?;
 
             self.batch_insert_empty_tree(
-                token_path(&token_id_bytes),
-                DriveKeyInfo::Key(vec![TOKEN_IDENTITY_INFO_KEY]),
+                token_identity_infos_root_path(),
+                DriveKeyInfo::KeyRef(token_id_bytes.as_slice()),
                 None,
                 &mut batch_operations,
                 &platform_version.drive,
@@ -251,7 +240,7 @@ impl Drive {
                     PathKeyElement((
                         path_holding_total_token_supply,
                         token_id.to_vec(),
-                        Item(token_config.base_supply().encode_var_vec(), None),
+                        Element::new_sum_item(token_config.base_supply() as i64),
                     )),
                     &mut batch_operations,
                     &platform_version.drive,
@@ -261,7 +250,7 @@ impl Drive {
                     PathKeyElement((
                         path_holding_total_token_supply,
                         token_id.to_vec(),
-                        Item(0u64.encode_var_vec(), None),
+                        SumItem(0, None),
                     )),
                     &mut batch_operations,
                     &platform_version.drive,

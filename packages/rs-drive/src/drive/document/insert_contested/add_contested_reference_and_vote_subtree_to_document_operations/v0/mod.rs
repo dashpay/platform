@@ -166,7 +166,7 @@ impl Drive {
         // here we are the tree that will contain the voting tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             votes_path_key_info,
-            true,
+            TreeType::SumTree,
             storage_flags,
             apply_type,
             transaction,

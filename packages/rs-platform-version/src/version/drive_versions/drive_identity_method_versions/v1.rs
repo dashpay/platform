@@ -130,6 +130,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             for_purpose_in_key_reference_tree: 0,
             for_root_key_reference_tree: 0,
             for_update_revision: 0,
+            for_token_identity_infos: 0,
         },
         withdrawals: DriveIdentityWithdrawalMethodVersions {
             document: DriveIdentityWithdrawalDocumentMethodVersions {

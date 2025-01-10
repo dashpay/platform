@@ -9,7 +9,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::MaxReferenceHop;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags};
+use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
 use itertools::Itertools;
 
@@ -382,6 +382,54 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty sum tree at the given path and key
+    pub fn for_known_path_key_empty_big_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::new_big_sum_tree_with_flags(None, storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_big_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty count tree at the given path and key
+    pub fn for_known_path_key_empty_count_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::new_count_tree_with_flags(None, storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty count tree at the given path and key
+    pub fn for_known_path_key_empty_count_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::new_count_sum_tree_with_flags(None, storage_flags.to_some_element_flags())
+            }
+            None => Element::new_count_sum_tree(None),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     pub fn for_estimated_path_key_empty_tree(
         path: KeyInfoPath,
@@ -483,6 +531,37 @@ impl LowLevelDriveOperation {
             flags,
             trust_refresh_reference,
         ))
+    }
+}
+
+pub trait LowLevelDriveOperationTreeTypeConverter {
+    /// Sets `GroveOperation` for inserting an empty tree at the given path and key
+    fn empty_tree_operation_for_known_path_key(
+        &self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> LowLevelDriveOperation;
+}
+
+impl LowLevelDriveOperationTreeTypeConverter for TreeType {
+    /// Sets `GroveOperation` for inserting an empty tree at the given path and key
+    fn empty_tree_operation_for_known_path_key(
+        &self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> LowLevelDriveOperation {
+        let element_flags = storage_flags.map(|storage_flags| storage_flags.to_element_flags());
+        let element = match self {
+            TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
+            TreeType::SumTree => Element::empty_sum_tree_with_flags(element_flags),
+            TreeType::BigSumTree => Element::empty_big_sum_tree_with_flags(element_flags),
+            TreeType::CountTree => Element::empty_count_tree_with_flags(element_flags),
+            TreeType::CountSumTree => Element::empty_count_sum_tree_with_flags(element_flags),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)
     }
 }
 

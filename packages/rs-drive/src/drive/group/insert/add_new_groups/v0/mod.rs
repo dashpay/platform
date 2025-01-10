@@ -110,7 +110,7 @@ impl Drive {
         // We insert the contract root into the group tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             PathFixedSizeKey((group_tree_path, contract_id.to_vec())),
-            false,
+            TreeType::NormalTree,
             None,
             apply_type,
             transaction,
@@ -158,7 +158,7 @@ impl Drive {
                 let path = group_contract_path(contract_id.as_slice());
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
                     PathFixedSizeKeyRef((path, group_pos_bytes.as_slice())),
-                    false,
+                    TreeType::NormalTree,
                     None,
                     apply_type,
                     transaction,

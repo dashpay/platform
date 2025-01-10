@@ -9,24 +9,28 @@ use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds estimation costs for token balance changes.
+    /// Adds estimation costs for token balance changes based on the provided drive version.
     ///
-    /// It operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
-    /// new entries to it, representing the estimated costs for different layers of the balance tree.
+    /// This method updates the `estimated_costs_only_with_layer_info` HashMap with entries
+    /// representing the estimated costs for different layers of the balance tree. The method
+    /// adjusts its behavior depending on the provided `drive_version`, allowing it to support
+    /// different versioned implementations for cost estimation.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing
-    ///   the `KeyInfoPath` and `EstimatedLayerInformation`.
+    /// - `token_id`: A 32-byte identifier for the token whose balance changes are being estimated.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap that holds
+    ///   `KeyInfoPath` and `EstimatedLayerInformation` for each token balance layer.
+    /// - `drive_version`: The version of the drive to determine which estimation logic to apply.
     ///
     /// # Returns
-    /// - `Ok(())` if successful.
-    /// - `Err(DriveError::UnknownVersionMismatch)` if the method version doesn't match any known versions.
+    /// - `Ok(())` if the operation is successful.
+    /// - `Err(DriveError::UnknownVersionMismatch)` if the provided `drive_version` does not match
+    ///   any known supported versions.
     ///
     /// # Errors
-    /// This function will return an error if the method version doesn't match any known versions.
+    /// This function will return an error if the provided `drive_version` does not match a known version.
     pub(crate) fn add_estimation_costs_for_token_balances(
         token_id: [u8; 32],
-        with_info_tree: bool,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -39,7 +43,6 @@ impl Drive {
             0 => {
                 Self::add_estimation_costs_for_token_balances_v0(
                     token_id,
-                    with_info_tree,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())

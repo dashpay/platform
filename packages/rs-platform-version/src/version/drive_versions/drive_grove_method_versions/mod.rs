@@ -36,6 +36,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_raw_item: FeatureVersion,
     pub grove_get_optional_sum_tree_total_value: FeatureVersion,
     pub grove_get_raw_optional_item: FeatureVersion,
+    pub grove_get_big_sum_tree_total_value: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

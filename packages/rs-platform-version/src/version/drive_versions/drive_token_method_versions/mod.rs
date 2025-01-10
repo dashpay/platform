@@ -7,6 +7,7 @@ pub struct DriveTokenMethodVersions {
     pub fetch: DriveTokenFetchMethodVersions,
     pub prove: DriveTokenProveMethodVersions,
     pub update: DriveTokenUpdateMethodVersions,
+    pub calculate_total_tokens_balance: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

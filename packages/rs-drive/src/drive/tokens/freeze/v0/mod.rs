@@ -88,9 +88,8 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_token_balances(
+            Self::add_estimation_costs_for_token_identity_infos(
                 token_id.to_buffer(),
-                true,
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;

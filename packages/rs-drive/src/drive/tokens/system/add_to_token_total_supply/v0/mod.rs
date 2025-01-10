@@ -9,9 +9,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::Element::Item;
+use grovedb::Element::SumItem;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
@@ -115,23 +114,27 @@ impl Drive {
         )?;
 
         if let Some(total_token_supply_in_platform) = total_token_supply_in_platform {
-            let new_total =
-                total_token_supply_in_platform
-                    .checked_add(amount)
-                    .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                        "trying to add an amount that would underflow total supply",
-                    )))?;
+            let new_total = (total_token_supply_in_platform as i64)
+                .checked_add(amount as i64)
+                .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
+                    "trying to add an amount that would underflow total supply",
+                )))?;
             let replace_op = QualifiedGroveDbOp::replace_op(
                 path_holding_total_token_supply_vec,
                 token_id.to_vec(),
-                Item(new_total.encode_var_vec(), None),
+                SumItem(new_total, None),
             );
             drive_operations.push(GroveOperation(replace_op));
         } else if allow_first_mint {
+            if amount > i64::MAX as u64 {
+                return Err(Error::Drive(DriveError::CriticalCorruptedState(
+                    "amount is over max allowed in Sum Item (i64::Max)",
+                )));
+            }
             let insert_op = QualifiedGroveDbOp::insert_only_op(
                 path_holding_total_token_supply_vec,
                 token_id.to_vec(),
-                Item(amount.encode_var_vec(), None),
+                SumItem(amount as i64, None),
             );
             drive_operations.push(GroveOperation(insert_op));
         } else {

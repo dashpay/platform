@@ -1,7 +1,6 @@
 use crate::drive::balances::total_tokens_root_supply_path;
 use crate::drive::tokens::{
-    token_path, tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY,
-    TOKEN_STATUS_INFO_KEY,
+    token_balances_root_path, token_identity_infos_root_path, token_statuses_root_path,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -9,7 +8,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, QueryTarget};
 use crate::util::object_size_info::PathKeyElementInfo;
-use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformSerializable;
@@ -115,7 +114,6 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        // Decide if we're doing a stateful or stateless insert for cost estimation
         let non_sum_tree_apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
@@ -139,7 +137,7 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
+                in_tree_type: TreeType::BigSumTree,
                 tree_type: TreeType::SumTree,
                 flags_len: 0,
             }
@@ -147,10 +145,10 @@ impl Drive {
 
         // Insert an empty tree for this token if it doesn't exist
         let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((tokens_root_path(), token_id.to_vec())),
-            false,
-            None, // No storage flags
-            non_sum_tree_apply_type,
+            PathFixedSizeKeyRef::<2>((token_balances_root_path(), token_id.as_slice())),
+            TreeType::SumTree,
+            None,
+            token_balance_tree_apply_type,
             transaction,
             previous_batch_operations,
             &mut batch_operations,
@@ -160,15 +158,15 @@ impl Drive {
         if !inserted && !allow_already_exists {
             // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
             return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "token root tree already exists".to_string(),
+                "token balance root tree already exists".to_string(),
             )));
         }
 
         let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((token_path(&token_id), vec![TOKEN_BALANCES_KEY])),
-            true,
+            PathFixedSizeKeyRef::<2>((token_identity_infos_root_path(), token_id.as_slice())),
+            TreeType::NormalTree,
             None,
-            token_balance_tree_apply_type,
+            non_sum_tree_apply_type,
             transaction,
             &mut None,
             &mut batch_operations,
@@ -187,8 +185,8 @@ impl Drive {
 
         let inserted = self.batch_insert_if_not_exists(
             PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
-                token_path(&token_id),
-                &[TOKEN_IDENTITY_INFO_KEY],
+                token_statuses_root_path(),
+                token_id.as_slice(),
                 Element::Item(token_status_bytes, None),
             )),
             item_apply_type,
@@ -204,41 +202,18 @@ impl Drive {
             )));
         }
 
-        let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((token_path(&token_id), vec![TOKEN_STATUS_INFO_KEY])),
-            false,
-            None,
-            non_sum_tree_apply_type,
+        self.batch_insert_sum_item_if_not_exists(
+            PathKeyElementInfo::PathFixedSizeKeyRefElement::<2>((
+                total_tokens_root_supply_path(),
+                token_id.as_slice(),
+                Element::SumItem(0, None),
+            )),
+            !allow_already_exists,
+            item_apply_type,
             transaction,
-            &mut None,
             &mut batch_operations,
             &platform_version.drive,
         )?;
-
-        if !inserted && !allow_already_exists {
-            // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "token info tree already exists".to_string(),
-            )));
-        }
-
-        let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((total_tokens_root_supply_path(), token_id.to_vec())),
-            false,
-            None,
-            non_sum_tree_apply_type,
-            transaction,
-            &mut None,
-            &mut batch_operations,
-            &platform_version.drive,
-        )?;
-
-        if !inserted && !allow_already_exists {
-            // The token root already exists. Depending on your logic, this might be allowed or should be treated as an error.
-            return Err(Error::Drive(DriveError::CorruptedDriveState(
-                "sum tree tree already exists".to_string(),
-            )));
-        }
 
         Ok(batch_operations)
     }

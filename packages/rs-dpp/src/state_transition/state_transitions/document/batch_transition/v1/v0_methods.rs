@@ -60,6 +60,7 @@ use crate::state_transition::batch_transition::token_freeze_transition::TokenFre
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {

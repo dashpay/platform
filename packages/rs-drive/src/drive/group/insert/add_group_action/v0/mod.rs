@@ -160,7 +160,7 @@ impl Drive {
             // We insert the contract root into the group tree
             inserted_root_action = self.batch_insert_empty_tree_if_not_exists(
                 PathFixedSizeKeyRef((group_action_root_path, action_id.as_slice())),
-                false,
+                TreeType::NormalTree,
                 None,
                 apply_type,
                 transaction,

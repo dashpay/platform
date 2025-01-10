@@ -119,7 +119,7 @@ impl Drive {
             // we insert the contract root tree if it doesn't exist already
             self.batch_insert_empty_tree_if_not_exists(
                 PathKeyInfo::<0>::PathKey((identity_path, vec![IdentityContractInfo as u8])),
-                false,
+                TreeType::NormalTree,
                 None,
                 apply_type,
                 transaction,
@@ -134,7 +134,7 @@ impl Drive {
                     identity_contract_info_root_path_vec(&identity_id),
                     contract_id.to_vec(),
                 )),
-                false,
+                TreeType::NormalTree,
                 None,
                 apply_type,
                 transaction,

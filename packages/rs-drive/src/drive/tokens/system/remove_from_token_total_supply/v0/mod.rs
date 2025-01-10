@@ -9,9 +9,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
-use grovedb::Element::Item;
+use grovedb::Element::SumItem;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
@@ -120,7 +119,7 @@ impl Drive {
         let replace_op = QualifiedGroveDbOp::replace_op(
             path_holding_total_token_supply_vec,
             token_id.to_vec(),
-            Item(new_total.encode_var_vec(), None),
+            SumItem(new_total as i64, None),
         );
         drive_operations.push(GroveOperation(replace_op));
 

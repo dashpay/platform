@@ -67,6 +67,9 @@ impl Drive {
                     12, // 32 + 1 + 1 / 3
                     SomeSumTrees {
                         sum_trees_weight: 1,
+                        big_sum_trees_weight: 0,
+                        count_trees_weight: 0,
+                        count_sum_trees_weight: 0,
                         non_sum_trees_weight: 2,
                     },
                     None,

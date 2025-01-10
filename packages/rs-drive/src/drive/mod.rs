@@ -49,10 +49,14 @@ pub(crate) mod prefunded_specialized_balances;
 pub mod votes;
 
 /// Group module
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod group;
 #[cfg(feature = "server")]
 mod shared;
-mod tokens;
+
+/// Token module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod tokens;
 
 #[cfg(feature = "server")]
 use crate::cache::DriveCache;

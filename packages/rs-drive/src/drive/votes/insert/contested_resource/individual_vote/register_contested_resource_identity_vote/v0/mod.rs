@@ -16,7 +16,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{bincode, ProtocolError};
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, MaybeTree, TransactionArg};
+use grovedb::{Element, MaybeTree, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -118,7 +118,7 @@ impl Drive {
 
         self.batch_insert_empty_tree_if_not_exists(
             PathKeyInfo::PathKey::<0>((votes_identities_path, voter_pro_tx_hash.to_vec())),
-            false,
+            TreeType::NormalTree,
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree, //todo this shouldn't always be stateful
             transaction,

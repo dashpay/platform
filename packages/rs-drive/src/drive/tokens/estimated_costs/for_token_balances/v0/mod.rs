@@ -7,11 +7,9 @@ use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
 
-use crate::drive::tokens::{
-    token_balances_path, token_identity_infos_path, token_path, tokens_root_path,
-};
+use crate::drive::tokens::{token_balances_path, token_balances_root_path, tokens_root_path};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
+use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees};
 use std::collections::HashMap;
 
 pub const ESTIMATED_TOKEN_INFO_SIZE_BYTES: u32 = 256;
@@ -52,7 +50,6 @@ impl Drive {
     /// ```
     pub(super) fn add_estimation_costs_for_token_balances_v0(
         token_id: [u8; 32],
-        with_info_tree: bool,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
@@ -76,53 +73,19 @@ impl Drive {
             KeyInfoPath::from_known_path(tokens_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                estimated_layer_count: EstimatedLevel(10, false), // We estimate that on average we need to update 10 nodes
-                estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, None),
+                estimated_layer_count: EstimatedLevel(0, false), // this should be at the top
+                estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
             },
         );
 
-        if with_info_tree {
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(token_path(&token_id)),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: EstimatedLevel(1, false),
-                    estimated_layer_sizes: AllSubtrees(
-                        1,
-                        SomeSumTrees {
-                            sum_trees_weight: 1,
-                            non_sum_trees_weight: 1,
-                        },
-                        None,
-                    ),
-                },
-            );
-        } else {
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(token_path(&token_id)),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: EstimatedLevel(0, false),
-                    estimated_layer_sizes: AllSubtrees(1, AllSumTrees, None),
-                },
-            );
-        }
-
-        if with_info_tree {
-            // there is one tree for the root path
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_path(token_identity_infos_path(&token_id)),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: PotentiallyAtMaxElements,
-                    estimated_layer_sizes: AllItems(
-                        DEFAULT_HASH_SIZE_U8,
-                        ESTIMATED_TOKEN_INFO_SIZE_BYTES,
-                        None,
-                    ),
-                },
-            );
-        }
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(token_balances_root_path()),
+            EstimatedLayerInformation {
+                tree_type: TreeType::BigSumTree,
+                estimated_layer_count: EstimatedLevel(10, false), // we can estimate 10 levels deep
+                estimated_layer_sizes: AllSubtrees(DEFAULT_HASH_SIZE_U8, AllSumTrees, None),
+            },
+        );
 
         // this is where the balances are
         estimated_costs_only_with_layer_info.insert(

@@ -105,6 +105,10 @@ pub struct ExecutionConfig {
     #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
+    /// Should we verify sum trees? Useful to set as `false` for tests
+    #[serde(default = "ExecutionConfig::default_verify_token_sum_trees")]
+    pub verify_token_sum_trees: bool,
+
     /// How long in seconds should an epoch last
     /// It might last a lot longer if the chain is halted
     #[serde(
@@ -611,6 +615,10 @@ where
 
 impl ExecutionConfig {
     fn default_verify_sum_trees() -> bool {
+        true
+    }
+
+    fn default_verify_token_sum_trees() -> bool {
         true
     }
 

@@ -34,4 +34,5 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         unfreeze: 0,
         apply_status: 0,
     },
+    calculate_total_tokens_balance: 0,
 };

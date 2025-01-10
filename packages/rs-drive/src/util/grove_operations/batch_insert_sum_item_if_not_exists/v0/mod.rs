@@ -55,7 +55,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
                 if let Element::SumItem(new_value, _) = element {
@@ -70,11 +70,13 @@ impl Drive {
                     )?;
 
                     if let Some(Element::SumItem(..)) = existing_element {
-                        if error_if_exists {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        return if error_if_exists {
+                            Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),
-                            )));
-                        }
+                            )))
+                        } else {
+                            Ok(false)
+                        };
                         // Else do nothing
                     } else if existing_element.is_some() {
                         return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -95,7 +97,7 @@ impl Drive {
                         "expected sum item element type",
                     )));
                 }
-                Ok(())
+                Ok(true)
             }
             PathKeyElement((path, key, element)) => {
                 if let Element::SumItem(new_value, _) = element {
@@ -110,11 +112,13 @@ impl Drive {
                     )?;
 
                     if let Some(Element::SumItem(..)) = existing_element {
-                        if error_if_exists {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        return if error_if_exists {
+                            Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),
-                            )));
-                        }
+                            )))
+                        } else {
+                            Ok(false)
+                        };
                         // Else do nothing
                     } else if existing_element.is_some() {
                         return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -135,7 +139,7 @@ impl Drive {
                         "expected sum item element type",
                     )));
                 }
-                Ok(())
+                Ok(true)
             }
             PathFixedSizeKeyRefElement((path, key, element)) => {
                 if let Element::SumItem(new_value, _) = element {
@@ -150,11 +154,13 @@ impl Drive {
                     )?;
 
                     if let Some(Element::SumItem(..)) = existing_element {
-                        if error_if_exists {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        return if error_if_exists {
+                            Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),
-                            )));
-                        }
+                            )))
+                        } else {
+                            Ok(false)
+                        };
                         // Else do nothing
                     } else if existing_element.is_some() {
                         return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -176,7 +182,7 @@ impl Drive {
                         "expected sum item element type",
                     )));
                 }
-                Ok(())
+                Ok(true)
             }
             PathKeyElementSize((key_info_path, key_info, element)) => {
                 if let Element::SumItem(new_value, _) = element {
@@ -202,7 +208,7 @@ impl Drive {
                                     Element::new_sum_item(new_value),
                                 ),
                             );
-                            Ok(())
+                            Ok(true)
                         }
                         BatchInsertApplyType::StatefulBatchInsert => {
                             Err(Error::Drive(DriveError::NotSupportedPrivate(
