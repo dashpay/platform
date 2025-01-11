@@ -14,16 +14,44 @@ mod tests {
 
     mod add_new_keys_to_identity {
         use super::*;
+        use crate::drive::Drive;
+        use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
         use dpp::fee::fee_result::FeeResult;
         use dpp::version::PlatformVersion;
+        use rand::prelude::StdRng;
+        use rand::{Rng, SeedableRng};
 
         #[test]
-        fn should_add_one_new_key_to_identity() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
+        fn should_add_one_new_key_to_identity_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 14202000,
+                processing_fee: 1098260,
+                ..Default::default()
+            };
+
+            should_add_one_new_key_to_identity(platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_add_one_new_key_to_identity_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 14202000,
+                processing_fee: 1098260,
+                ..Default::default()
+            };
+
+            should_add_one_new_key_to_identity(platform_version, expected_fee_result);
+        }
+
+        fn should_add_one_new_key_to_identity(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -57,14 +85,7 @@ mod tests {
                 )
                 .expect("expected to update identity with new keys");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 14202000,
-                    processing_fee: 1098260,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
             drive
                 .grove
@@ -80,10 +101,124 @@ mod tests {
         }
 
         #[test]
-        fn should_add_two_dozen_new_keys_to_identity() {
+        fn check_reference_below_tokens_cost_first_version() {
+            let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 9423000,
+                processing_fee: 406100,
+                ..Default::default()
+            };
+            check_reference_below_tokens_cost(platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn check_reference_below_tokens_cost_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 9423000,
+                processing_fee: 406100,
+                ..Default::default()
+            };
+            check_reference_below_tokens_cost(platform_version, expected_fee_result);
+        }
+
+        fn check_reference_below_tokens_cost(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
             let drive = setup_drive_with_initial_state_structure(None);
 
+            let identity = Identity::random_identity(5, Some(12345), platform_version)
+                .expect("expected a random identity");
+
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
+
+            drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert identity");
+
+            IdentityPublicKey::random_authentication_keys(5, 1, Some(15), platform_version);
+
+            let mut rng = StdRng::seed_from_u64(23450);
+
+            let db_transaction = drive.grove.start_transaction();
+
+            let batch_operations = drive
+                .insert_non_unique_public_key_hash_reference_to_identity_operations(
+                    identity.id().to_buffer(),
+                    rng.gen(),
+                    &mut None,
+                    Some(&db_transaction),
+                    &platform_version.drive,
+                )
+                .expect("expected to update identity with new keys");
+
+            let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+            drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    Some(&db_transaction),
+                    batch_operations,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
+                .expect("expected to apply operations");
+
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &Epoch::new(0).unwrap(),
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )
+            .expect("expected fee result");
+
+            assert_eq!(fee_result, expected_fee_result);
+
+            drive
+                .grove
+                .commit_transaction(db_transaction)
+                .unwrap()
+                .expect("expected to be able to commit a transaction");
+        }
+
+        #[test]
+        fn should_add_two_dozen_new_keys_to_identity_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 347382000,
+                processing_fee: 6819220,
+                ..Default::default()
+            };
+
+            should_add_two_dozen_new_keys_to_identity(platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_add_two_dozen_new_keys_to_identity_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 347382000,
+                processing_fee: 6819220,
+                ..Default::default()
+            };
+
+            should_add_two_dozen_new_keys_to_identity(platform_version, expected_fee_result);
+        }
+
+        fn should_add_two_dozen_new_keys_to_identity(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -117,14 +252,7 @@ mod tests {
                 )
                 .expect("expected to update identity with new keys");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 347382000,
-                    processing_fee: 6819220,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
             drive
                 .grove
@@ -140,10 +268,40 @@ mod tests {
         }
 
         #[test]
-        fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
+        fn should_estimated_costs_without_state_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 17145000,
+                processing_fee: 5483620,
+                ..Default::default()
+            };
+
+            should_estimated_costs_without_state_add_new_keys(
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn should_estimated_costs_without_state_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 17145000,
+                processing_fee: 5483620,
+                ..Default::default()
+            };
+
+            should_estimated_costs_without_state_add_new_keys(
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        fn should_estimated_costs_without_state_add_new_keys(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -177,15 +335,7 @@ mod tests {
                 .expect("should return app hash");
 
             assert_eq!(app_hash_after, app_hash_before);
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 17145000,
-                    processing_fee: 5483620,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
         }
     }
 
@@ -199,10 +349,30 @@ mod tests {
         use dpp::version::PlatformVersion;
 
         #[test]
-        fn should_disable_a_few_keys() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
+        fn should_disable_a_few_keys_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 513000,
+                processing_fee: 869380,
+                ..Default::default()
+            };
+            should_disable_a_few_keys(platform_version, expected_fee_result);
+        }
+        #[test]
+        fn should_disable_a_few_keys_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 513000,
+                processing_fee: 869380,
+                ..Default::default()
+            };
+            should_disable_a_few_keys(platform_version, expected_fee_result);
+        }
+        fn should_disable_a_few_keys(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -251,14 +421,7 @@ mod tests {
                 )
                 .expect("should disable a few keys");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 513000,
-                    processing_fee: 869380,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result,);
 
             drive
                 .grove
@@ -278,10 +441,40 @@ mod tests {
         }
 
         #[test]
-        fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
+        fn should_estimated_costs_without_state_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 3216860,
+                ..Default::default()
+            };
+
+            should_estimated_costs_without_state_disable_keys(
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn should_estimated_costs_without_state_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 3216860,
+                ..Default::default()
+            };
+
+            should_estimated_costs_without_state_disable_keys(
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        fn should_estimated_costs_without_state_disable_keys(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -315,22 +508,55 @@ mod tests {
                 .expect("should return app hash");
 
             assert_eq!(app_hash_after, app_hash_before);
+            assert_eq!(fee_result, expected_fee_result);
+        }
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 486000,
-                    processing_fee: 3216860,
-                    ..Default::default()
-                }
+        #[test]
+        fn estimated_costs_should_have_same_storage_cost_first_version() {
+            let platform_version = PlatformVersion::first();
+            let expected_estimated_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 3216860,
+                ..Default::default()
+            };
+            let expected_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 794720,
+                ..Default::default()
+            };
+            estimated_costs_should_have_same_storage_cost(
+                platform_version,
+                expected_estimated_fee_result,
+                expected_fee_result,
             );
         }
 
         #[test]
-        fn estimated_costs_should_have_same_storage_cost() {
-            let drive = setup_drive_with_initial_state_structure(None);
+        fn estimated_costs_should_have_same_storage_cost_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_estimated_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 3216860,
+                ..Default::default()
+            };
+            let expected_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 794720,
+                ..Default::default()
+            };
+            estimated_costs_should_have_same_storage_cost(
+                platform_version,
+                expected_estimated_fee_result,
+                expected_fee_result,
+            );
+        }
 
-            let platform_version = PlatformVersion::first();
+        fn estimated_costs_should_have_same_storage_cost(
+            platform_version: &PlatformVersion,
+            expected_estimated_fee_result: FeeResult,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -350,7 +576,7 @@ mod tests {
 
             let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
-            let expected_fee_result = drive
+            let estimated_fee_result = drive
                 .disable_identity_keys(
                     identity.id().to_buffer(),
                     vec![0, 1],
@@ -374,7 +600,9 @@ mod tests {
                 )
                 .expect("should get the cost of the disabling a few keys");
 
-            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee);
+            assert_eq!(estimated_fee_result.storage_fee, fee_result.storage_fee);
+            assert_eq!(estimated_fee_result, expected_estimated_fee_result);
+            assert_eq!(fee_result, expected_fee_result);
         }
     }
 
@@ -386,10 +614,36 @@ mod tests {
         use dpp::version::PlatformVersion;
 
         #[test]
-        fn should_update_revision() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
+        fn should_update_revision_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 238820,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            should_update_revision(platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_update_revision_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 238820,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            should_update_revision(platform_version, expected_fee_result);
+        }
+
+        fn should_update_revision(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -422,15 +676,7 @@ mod tests {
                 )
                 .expect("should update revision");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 0,
-                    processing_fee: 238820,
-                    removed_bytes_from_system: 0,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
             drive
                 .grove
@@ -446,10 +692,42 @@ mod tests {
         }
 
         #[test]
-        fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
+        fn should_estimated_costs_without_state_first_version() {
             let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 1813560,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            should_estimated_costs_without_state_update_identity_revision(
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn should_estimated_costs_without_state_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 1813560,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            should_estimated_costs_without_state_update_identity_revision(
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        fn should_estimated_costs_without_state_update_identity_revision(
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -483,16 +761,7 @@ mod tests {
                 .expect("should return app hash");
 
             assert_eq!(app_hash_after, app_hash_before);
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 0,
-                    processing_fee: 1813560,
-                    removed_bytes_from_system: 0,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
         }
     }
 }
