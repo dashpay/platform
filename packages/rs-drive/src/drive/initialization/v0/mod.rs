@@ -284,8 +284,6 @@ mod tests {
         let platform_version = PlatformVersion::first();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let _db_transaction = drive.grove.start_transaction();
-
         let platform_version = PlatformVersion::first();
         let drive_version = &platform_version.drive;
 
@@ -573,8 +571,6 @@ mod tests {
     #[test]
     fn test_initial_state_structure_proper_heights_in_latest_protocol_version() {
         let drive = setup_drive_with_initial_state_structure(None);
-
-        let _db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;

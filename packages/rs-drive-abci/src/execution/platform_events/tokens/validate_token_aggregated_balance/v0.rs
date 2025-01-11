@@ -1,12 +1,10 @@
-use dpp::block::epoch::Epoch;
-use drive::drive::Drive;
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
-use platform_version::version::PlatformVersion;
+use dpp::version::PlatformVersion;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to GroveDB op batch related to processing
@@ -22,25 +20,24 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     ) -> Result<(), Error> {
         if self.config.execution.verify_token_sum_trees {
             // Verify sum trees
-            let credits_verified = self
+            let token_balance = self
                 .drive
-                .calculate_total_token_balance(Some(transaction), &platform_version.drive)
+                .calculate_total_tokens_balance(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
 
-            if !credits_verified.ok()? {
+            if !token_balance.ok()? {
                 return Err(Error::Execution(
                     ExecutionError::CorruptedCreditsNotBalanced(format!(
                         "credits are not balanced after block execution {:?} off by {}",
-                        credits_verified,
-                        credits_verified
-                            .total_in_trees()
-                            .unwrap()
-                            .abs_diff(credits_verified.total_credits_in_platform)
+                        token_balance,
+                        token_balance
+                            .total_identity_token_balances
+                            .abs_diff(token_balance.total_tokens_in_platform)
                     )),
                 ));
             }
         }
 
-        Ok(outcome)
+        Ok(())
     }
 }

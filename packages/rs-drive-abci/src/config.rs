@@ -677,6 +677,7 @@ impl Default for ExecutionConfig {
         Self {
             use_document_triggers: ExecutionConfig::default_use_document_triggers(),
             verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
+            verify_token_sum_trees: ExecutionConfig::default_verify_token_sum_trees(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
         }
     }
