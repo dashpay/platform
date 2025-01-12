@@ -425,7 +425,7 @@ mod tests {
 
         #[test]
         fn test_error_if_fee_pools_not_initialized() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -449,10 +449,9 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure(None);
-            let transaction = drive.grove.start_transaction();
-
             let platform_version = PlatformVersion::first();
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(1042).unwrap();
 
@@ -484,10 +483,9 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure(None);
-            let transaction = drive.grove.start_transaction();
-
             let platform_version = PlatformVersion::first();
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(1042).unwrap();
 

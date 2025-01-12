@@ -482,7 +482,7 @@ pub(in crate::execution) mod tests {
 
         // Process fees
         let processed_block_fees = platform
-            .process_block_fees(
+            .process_block_fees_and_validate_sum_trees(
                 &block_execution_context,
                 block_fees_v0.into(),
                 &transaction,

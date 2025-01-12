@@ -604,7 +604,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864009980)
+        assert_eq!(balance, 99864009940)
     }
 
     #[test]

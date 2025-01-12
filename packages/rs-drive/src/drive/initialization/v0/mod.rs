@@ -660,7 +660,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 248); //it + left + right + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 250); //it + left + right + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Pools as u8]);

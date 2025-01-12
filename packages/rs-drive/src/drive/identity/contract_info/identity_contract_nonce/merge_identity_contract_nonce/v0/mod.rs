@@ -302,7 +302,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
 
     fn setup_base_test(contract_id: [u8; 32]) -> (Drive, Identity) {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();

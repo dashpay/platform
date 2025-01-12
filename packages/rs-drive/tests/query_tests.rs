@@ -203,7 +203,7 @@ pub fn setup_family_tests(
 ) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let drive = setup_drive(Some(drive_config));
+    let drive = setup_drive(Some(drive_config), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -274,7 +274,7 @@ pub fn setup_family_tests(
 pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let drive = setup_drive(Some(drive_config));
+    let drive = setup_drive(Some(drive_config), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -346,7 +346,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
 pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let drive = setup_drive(Some(drive_config));
+    let drive = setup_drive(Some(drive_config), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -816,7 +816,7 @@ pub fn setup_dpns_tests_with_batches(
     seed: u64,
     platform_version: &PlatformVersion,
 ) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -864,7 +864,7 @@ pub fn setup_withdrawal_tests(
     total_owners: Option<u32>,
     seed: u64,
 ) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -910,7 +910,7 @@ pub fn setup_withdrawal_tests(
 #[cfg(feature = "server")]
 /// Sets up the References contract to test queries on.
 pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -948,7 +948,7 @@ pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) 
 #[cfg(feature = "server")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -987,7 +987,7 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Dat
 #[cfg(feature = "server")]
 /// Sets up the DPNS contract and inserts data from the given path to test queries on.
 pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
-    let drive = setup_drive(None);
+    let drive = setup_drive(None, None);
 
     let db_transaction = drive.grove.start_transaction();
 

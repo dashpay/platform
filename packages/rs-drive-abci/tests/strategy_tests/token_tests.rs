@@ -3,12 +3,9 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::NetworkStrategy;
     use dpp::dash_to_duffs;
-    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::platform_value::string_encoding::Encoding;
-    use dpp::prelude::Identifier;
     use dpp::state_transition::StateTransition;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::tokens::token_event::TokenEvent;

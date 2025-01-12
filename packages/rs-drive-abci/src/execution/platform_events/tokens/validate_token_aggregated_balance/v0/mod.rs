@@ -6,15 +6,10 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use dpp::version::PlatformVersion;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
-    /// Adds operations to GroveDB op batch related to processing
-    /// and distributing the block fees from the previous block and applies the batch.
-    ///
-    /// Returns `ProcessedBlockFeesOutcome`.
+impl<C> Platform<C> {
     #[inline(always)]
     pub(super) fn validate_token_aggregated_balance_v0(
         &self,
-        block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {

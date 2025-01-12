@@ -29,7 +29,8 @@ impl Drive {
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<DriveConfig>,
-    ) -> Result<(Self, Option<ProtocolVersion>), Error> {
+        default_platform_version: Option<&PlatformVersion>,
+    ) -> Result<(Self, Option<&'static PlatformVersion>), Error> {
         let config = config.unwrap_or_default();
 
         let grove = Arc::new(GroveDb::open(path)?);
@@ -42,13 +43,18 @@ impl Drive {
         let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
         let data_contracts_block_cache_size = config.data_contracts_block_cache_size;
 
-        let protocol_version = Drive::fetch_current_protocol_version_with_grovedb(&grove, None)?;
+        let maybe_protocol_version =
+            Drive::fetch_current_protocol_version_with_grovedb(&grove, None)?;
+        let maybe_platform_version = maybe_protocol_version
+            .map(|protocol_version| {
+                PlatformVersion::get(protocol_version).map_err(ProtocolError::PlatformVersionError)
+            })
+            .transpose()?;
 
         // At this point we don't know the version what we need to process next block or initialize the chain
         // so version related data should be updated on init chain or on block execution
-        let platform_version =
-            PlatformVersion::get(protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION))
-                .map_err(ProtocolError::PlatformVersionError)?;
+        let platform_version = maybe_platform_version
+            .unwrap_or_else(|| default_platform_version.unwrap_or(PlatformVersion::latest()));
 
         let drive = Drive {
             grove,
@@ -66,6 +72,6 @@ impl Drive {
             },
         };
 
-        Ok((drive, protocol_version))
+        Ok((drive, maybe_platform_version))
     }
 }

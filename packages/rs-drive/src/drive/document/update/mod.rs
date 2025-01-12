@@ -852,7 +852,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive = setup_drive(Some(config));
+        let drive: Drive = setup_drive(Some(config), None);
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1155,7 +1155,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive = setup_drive(Some(config));
+        let drive: Drive = setup_drive(Some(config), None);
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1362,7 +1362,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive = setup_drive(Some(config));
+        let drive: Drive = setup_drive(Some(config), None);
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1705,7 +1705,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive = setup_drive(Some(config));
+        let drive: Drive = setup_drive(Some(config), None);
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())

@@ -311,7 +311,7 @@ mod tests {
     /// Runs `test_root_hash_with_batches` 10 times.
     #[test]
     fn test_deterministic_root_hash_with_batches_first_platform_version() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
 
         let platform_version = PlatformVersion::first();
 
@@ -330,7 +330,7 @@ mod tests {
     /// Runs `test_root_hash_with_batches` 10 times.
     #[test]
     fn test_deterministic_root_hash_with_batches_latest_platform_version() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
 
         let platform_version = PlatformVersion::latest();
 

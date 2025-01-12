@@ -2308,9 +2308,10 @@ mod tests {
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
         let platform_version = PlatformVersion::latest();
+
+        let (drive, _) = Drive::open(tmp_dir, None, Some(platform_version))
+            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -2340,9 +2341,10 @@ mod tests {
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
         let platform_version = PlatformVersion::latest();
+
+        let (drive, _) = Drive::open(tmp_dir, None, Some(platform_version))
+            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)

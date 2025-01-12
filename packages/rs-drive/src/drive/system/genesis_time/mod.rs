@@ -64,7 +64,7 @@ mod tests {
 
         #[test]
         fn should_return_none_if_cache_is_empty_and_start_time_is_not_persisted() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
 
             let result = drive
                 .get_genesis_time(None)
@@ -75,7 +75,7 @@ mod tests {
 
         #[test]
         fn should_return_some_if_cache_is_set() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
 
             let mut genesis_time_ms_cache = drive.cache.genesis_time_ms.write();
 
@@ -141,7 +141,7 @@ mod tests {
 
         #[test]
         fn should_set_genesis_time_to_cache() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
 
             let genesis_time_ms: u64 = 100;
 

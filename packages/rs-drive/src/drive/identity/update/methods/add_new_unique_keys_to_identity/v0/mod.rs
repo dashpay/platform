@@ -45,7 +45,6 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-        println!("{:?}", drive_operations);
         let fees = Drive::calculate_fee(
             None,
             Some(drive_operations),

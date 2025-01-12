@@ -1,7 +1,7 @@
 /// Methods occurring at the finalization of a block
 pub(in crate::execution) mod block_end;
 /// Block fee processing
-pub(in crate::execution) mod block_fee_processing;
+pub(in crate::execution) mod block_processing_end_events;
 /// Events happening what starting to process a block
 pub(in crate::execution) mod block_start;
 /// Update from core such as a masternode list update or quorums being updated

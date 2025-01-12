@@ -17,7 +17,7 @@ use crate::version::drive_versions::{
     DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
     DriveProveMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
-use grovedb_version::version::v1::GROVE_V1;
+use grovedb_version::version::v2::GROVE_V2;
 
 pub const DRIVE_VERSION_V3: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
@@ -100,5 +100,5 @@ pub const DRIVE_VERSION_V3: DriveVersion = DriveVersion {
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
-    grove_version: GROVE_V1,
+    grove_version: GROVE_V2,
 };

@@ -8,7 +8,8 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
-    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciVotingMethodVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciTokensProcessingMethodVersions,
+    DriveAbciVotingMethodVersions,
 };
 
 // Introduced in Protocol version 8 for tokens
@@ -53,7 +54,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMeth
     },
     block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
         add_process_epoch_change_operations: 0,
-        process_block_fees: 0,
+        process_block_fees_and_validate_sum_trees: 1,
+    },
+    tokens_processing: DriveAbciTokensProcessingMethodVersions {
+        validate_token_aggregated_balance: 0,
     },
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         choose_quorum: 0,

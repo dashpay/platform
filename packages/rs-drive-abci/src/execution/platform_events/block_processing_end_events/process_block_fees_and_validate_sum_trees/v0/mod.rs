@@ -47,7 +47,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     ///
     /// Returns `ProcessedBlockFeesOutcome`.
     #[inline(always)]
-    pub(super) fn process_block_fees_v0(
+    pub(super) fn process_block_fees_and_validate_sum_trees_v0(
         &self,
         block_execution_context: &BlockExecutionContext,
         block_fees: BlockFees,
@@ -274,7 +274,7 @@ mod tests {
             };
 
             let storage_fee_distribution_outcome = platform
-                .process_block_fees_v0(
+                .process_block_fees_and_validate_sum_trees_v0(
                     &block_execution_context.into(),
                     block_fees.clone(),
                     transaction,

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use dpp::version::PlatformVersion;
 
@@ -34,7 +35,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// * `Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error>` -
     ///   If the operation is successful, it returns `Ok(ProcessedBlockFeesOutcome)`. If there is an error, it returns `Error`.
     ///
-    pub fn process_block_fees(
+    pub fn process_block_fees_and_validate_sum_trees(
         &self,
         block_execution_context: &BlockExecutionContext,
         block_fees: BlockFees,
@@ -45,17 +46,23 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .drive_abci
             .methods
             .block_fee_processing
-            .process_block_fees
+            .process_block_fees_and_validate_sum_trees
         {
-            0 => self.process_block_fees_v0(
+            0 => self.process_block_fees_and_validate_sum_trees_v0(
+                block_execution_context,
+                block_fees,
+                transaction,
+                platform_version,
+            ),
+            1 => self.process_block_fees_and_validate_sum_trees_v1(
                 block_execution_context,
                 block_fees,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "process_block_fees".to_string(),
-                known_versions: vec![0],
+                method: "process_block_fees_and_validate_sum_trees".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

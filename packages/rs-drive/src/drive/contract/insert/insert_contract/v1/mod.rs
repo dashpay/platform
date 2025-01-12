@@ -187,6 +187,11 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     &platform_version.drive,
                 )?;
+                Drive::add_estimation_costs_for_token_identity_infos(
+                    token_id_bytes,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
                 Drive::add_estimation_costs_for_token_total_supply(
                     estimated_costs_only_with_layer_info,
                     &platform_version.drive,
