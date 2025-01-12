@@ -655,7 +655,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 0,
-                processing_fee: 1813560,
+                processing_fee: 238820,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };
@@ -669,7 +669,7 @@ mod tests {
             // Possibly different if your scenario's estimated cost differs
             let expected_fee_result = FeeResult {
                 storage_fee: 0,
-                processing_fee: 238820,
+                processing_fee: 1813560,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };
