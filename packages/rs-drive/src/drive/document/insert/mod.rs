@@ -321,13 +321,86 @@ mod tests {
     }
 
     #[test]
-    fn test_add_dashpay_profile_with_fee() {
+    fn test_add_dashpay_profile_with_fee_first_version_apply() {
+        let platform_version = PlatformVersion::first();
+        let expected_fee_result = FeeResult {
+            storage_fee: 1305
+                * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                ),
+            processing_fee: 900400,
+            ..Default::default()
+        };
+
+        do_test_add_dashpay_profile_with_fee(true, platform_version, expected_fee_result);
+    }
+
+    #[test]
+    fn test_add_dashpay_profile_with_fee_first_version_estimated() {
+        let platform_version = PlatformVersion::first();
+        let expected_fee_result = FeeResult {
+            storage_fee: 1305
+                * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                ),
+            processing_fee: 73253660,
+            ..Default::default()
+        };
+
+        do_test_add_dashpay_profile_with_fee(false, platform_version, expected_fee_result);
+    }
+
+    #[test]
+    fn test_add_dashpay_profile_with_fee_latest_version_apply() {
+        let platform_version = PlatformVersion::latest();
+        let expected_fee_result = FeeResult {
+            storage_fee: 1305
+                * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                ),
+            processing_fee: 900400,
+            ..Default::default()
+        };
+
+        do_test_add_dashpay_profile_with_fee(true, platform_version, expected_fee_result);
+    }
+
+    #[test]
+    fn test_add_dashpay_profile_with_fee_latest_version_estimated() {
+        let platform_version = PlatformVersion::latest();
+        let expected_fee_result = FeeResult {
+            storage_fee: 1305
+                * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                ),
+            processing_fee: 73253660,
+            ..Default::default()
+        };
+
+        do_test_add_dashpay_profile_with_fee(false, platform_version, expected_fee_result);
+    }
+
+    /// This helper sets up the environment, adds a dashpay profile document,
+    /// and either applies or just estimates the cost.
+    ///
+    /// `apply`: if true, we commit the transaction (applying the changes).
+    ///          if false, we do not commit, so changes are only estimated.
+    /// `platform_version`: which PlatformVersion to use.
+    /// `expected_fee_result`: the FeeResult we expect in the test assertion.
+    fn do_test_add_dashpay_profile_with_fee(
+        apply: bool,
+        platform_version: &PlatformVersion,
+        expected_fee_result: FeeResult,
+    ) {
         let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
-        let platform_version = PlatformVersion::latest();
-
+        // Setup contract
         let contract = setup_contract(
             &drive,
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
@@ -342,8 +415,9 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get document type");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
 
+        // Build dashpay profile doc
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
@@ -352,6 +426,7 @@ mod tests {
         )
         .expect("expected to get cbor document");
 
+        // Perform the add operation, with either an apply or a dry run
         let fee_result = drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
@@ -365,95 +440,15 @@ mod tests {
                     contract: &contract,
                     document_type,
                 },
-                false,
+                false, // override
                 BlockInfo::default(),
-                true,
+                apply,
                 Some(&db_transaction),
                 platform_version,
                 None,
             )
             .expect("expected to insert a document successfully");
-
-        assert_eq!(
-            fee_result,
-            FeeResult {
-                storage_fee: 1305
-                    * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                        &EPOCH_CHANGE_FEE_VERSION_TEST,
-                        StorageDiskUsageCreditPerByte,
-                    ),
-                processing_fee: 900400,
-                ..Default::default()
-            }
-        );
-    }
-
-    #[test]
-    fn test_add_dashpay_profile_average_case_cost_fee() {
-        let drive = setup_drive_with_initial_state_structure(None);
-
-        let db_transaction = drive.grove.start_transaction();
-
-        let platform_version = PlatformVersion::latest();
-
-        let contract = setup_contract(
-            &drive,
-            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
-            None,
-            None,
-            None::<fn(&mut DataContract)>,
-            Some(&db_transaction),
-            None,
-        );
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get document type");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let dashpay_profile_document = json_document_to_document(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(random_owner_id.into()),
-            document_type,
-            platform_version,
-        )
-        .expect("expected to get cbor document");
-
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((
-                            &dashpay_profile_document,
-                            StorageFlags::optional_default_as_cow(),
-                        )),
-                        owner_id: Some(random_owner_id),
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                false,
-                Some(&db_transaction),
-                platform_version,
-                None,
-            )
-            .expect("expected to insert a document successfully");
-
-        let added_bytes = storage_fee
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
-        assert_eq!(1305, added_bytes);
-        assert_eq!(73253660, processing_fee);
+        assert_eq!(fee_result, expected_fee_result);
     }
 
     #[test]
