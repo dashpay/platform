@@ -14,7 +14,6 @@ pub const ESTIMATED_TOKEN_STATUS_INFO_SIZE_BYTES: u32 = 32;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_token_status_infos_v0(
-        token_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top

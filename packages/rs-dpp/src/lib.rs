@@ -85,6 +85,8 @@ pub mod prelude {
     pub type CoreBlockHeight = u32;
     pub type TimestampMillis = u64;
 
+    pub type StartAtIncluded = bool;
+
     pub type TimestampIncluded = bool;
     pub type Revision = u64;
     pub type IdentityNonce = u64;

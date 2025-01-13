@@ -21,8 +21,8 @@ use dapi_grpc::platform::v0::{
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -671,6 +671,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_token_statuses,
             "get_token_statuses",
+        )
+        .await
+    }
+
+    async fn get_group_info(
+        &self,
+        request: Request<GetGroupInfoRequest>,
+    ) -> Result<Response<GetGroupInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_info,
+            "get_group_info",
         )
         .await
     }

@@ -30,7 +30,6 @@ impl Drive {
     /// # Errors
     /// This function will return an error if the provided `drive_version` does not match a known version.
     pub(crate) fn add_estimation_costs_for_token_status_infos(
-        token_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -42,7 +41,6 @@ impl Drive {
         {
             0 => {
                 Self::add_estimation_costs_for_token_status_infos_v0(
-                    token_id,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())

@@ -60,7 +60,9 @@ service Platform {
   rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
   rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
   rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+  rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
   rpc getActiveGroupActions(GetActiveGroupActionsRequest) returns (GetActiveGroupActionsResponse);
+//  rpc getClosedGroupActions(GetClosedGroupActionsRequest) returns (GetClosedGroupActionsResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1393,6 +1395,89 @@ message GetTokenStatusesResponse {
   }
   oneof version {
     GetTokenStatusesResponseV0 v0 = 1;
+  }
+}
+
+message GetGroupInfoRequest {
+  message GetGroupInfoRequestV0 {
+    bytes contract_id = 1;
+    uint32 group_contract_position = 2;
+    bool prove = 3;
+  }
+  oneof version {
+    GetGroupInfoRequestV0 v0 = 1;
+  }
+}
+
+message GetGroupInfoResponse {
+  message GetGroupInfoResponseV0 {
+    message GroupMemberEntry {
+      bytes member_id = 1;
+      uint32 power = 2;
+    }
+
+    message GroupInfoEntry {
+      repeated GroupMemberEntry members = 1;
+      uint32 group_required_power = 2;
+    }
+
+    message GroupInfo {
+      optional GroupInfoEntry group_info = 1;
+    }
+
+    oneof result {
+      GroupInfo group_info = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 4;
+  }
+  oneof version {
+    GetGroupInfoResponseV0 v0 = 1;
+  }
+}
+
+message GetGroupInfosRequest {
+  message StartAtGroupContractPosition {
+    uint32 start_group_contract_position = 1;
+    bool start_group_contract_position_included = 2;
+  }
+
+  message GetGroupInfosRequestV0 {
+    bytes contract_id = 1;
+    optional StartAtGroupContractPosition start_at_group_contract_position = 2;
+    optional uint32 count = 3;
+    bool prove = 4;
+  }
+  oneof version {
+    GetGroupInfosRequestV0 v0 = 1;
+  }
+}
+
+message GetGroupInfosResponse {
+  message GetGroupInfosResponseV0 {
+    message GroupMemberEntry {
+      bytes member_id = 1;
+      uint32 power = 2;
+    }
+
+    message GroupPositionInfoEntry {
+      uint32 group_contract_position = 1;
+      repeated GroupMemberEntry members = 2;
+      uint32 group_required_power = 3;
+    }
+
+    message GroupInfos {
+      repeated GroupPositionInfoEntry group_infos = 1;
+    }
+
+    oneof result {
+      GroupInfos group_infos = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 4;
+  }
+  oneof version {
+    GetGroupInfosResponseV0 v0 = 1;
   }
 }
 

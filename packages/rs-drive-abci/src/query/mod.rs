@@ -1,5 +1,6 @@
 mod data_contract_based_queries;
 mod document_query;
+mod group_queries;
 mod identity_based_queries;
 mod prefunded_specialized_balances;
 mod proofs;

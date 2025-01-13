@@ -1,5 +1,6 @@
 use crate::drive::group::{
-    group_contract_path, group_path, group_root_path, GROUP_ACTIONS_KEY, GROUP_INFO_KEY,
+    group_contract_path, group_path, group_root_path, GROUP_ACTIVE_ACTIONS_KEY,
+    GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -134,6 +135,15 @@ impl Drive {
 
                 let serialized_group_info = group.serialize_to_bytes()?;
                 let info_item = Element::Item(serialized_group_info, None);
+
+                self.batch_insert_empty_tree(
+                    group_path,
+                    DriveKeyInfo::KeyRef(GROUP_ACTIVE_ACTIONS_KEY),
+                    None,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
                 self.batch_insert(
                     PathKeyElementInfo::PathFixedSizeKeyRefElement::<3>((
                         group_path,
@@ -146,7 +156,7 @@ impl Drive {
 
                 self.batch_insert_empty_tree(
                     group_path,
-                    DriveKeyInfo::KeyRef(GROUP_ACTIONS_KEY),
+                    DriveKeyInfo::KeyRef(GROUP_CLOSED_ACTIONS_KEY),
                     None,
                     &mut batch_operations,
                     &platform_version.drive,
@@ -172,6 +182,15 @@ impl Drive {
 
                     let serialized_group_info = group.serialize_to_bytes()?;
                     let info_item = Element::Item(serialized_group_info, None);
+
+                    self.batch_insert_empty_tree(
+                        group_path,
+                        DriveKeyInfo::KeyRef(GROUP_ACTIVE_ACTIONS_KEY),
+                        None,
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?;
+
                     self.batch_insert(
                         PathKeyElementInfo::PathFixedSizeKeyRefElement::<3>((
                             group_path,
@@ -184,7 +203,7 @@ impl Drive {
 
                     self.batch_insert_empty_tree(
                         group_path,
-                        DriveKeyInfo::KeyRef(GROUP_ACTIONS_KEY),
+                        DriveKeyInfo::KeyRef(GROUP_CLOSED_ACTIONS_KEY),
                         None,
                         &mut batch_operations,
                         &platform_version.drive,

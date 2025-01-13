@@ -16,10 +16,15 @@ pub struct DriveGroupFetchMethodVersions {
     pub fetch_action_id_info: FeatureVersion,
     pub fetch_action_id_info_keep_serialized: FeatureVersion,
     pub fetch_action_id_has_signer: FeatureVersion,
+    pub fetch_group_info: FeatureVersion,
+    pub fetch_group_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DriveGroupProveMethodVersions {}
+pub struct DriveGroupProveMethodVersions {
+    pub prove_group_info: FeatureVersion,
+    pub prove_group_infos: FeatureVersion,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveGroupInsertMethodVersions {
