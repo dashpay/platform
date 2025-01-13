@@ -28,7 +28,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "rand",
   "signer",
   "serde",
-], default-features = false, tag = "0.34.0", optional = true }
+], default-features = false, tag = "0.34.0" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
@@ -47,7 +47,7 @@ serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "1.0" }
 data-contracts = { path = "../data-contracts", optional = true }
-platform-value = { path = "../rs-platform-value", optional = true }
+platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
@@ -72,12 +72,11 @@ env_logger = { version = "0.11" }
 log = { version = "0.4.22" }
 
 [features]
-default = ["platform-value", "state-transitions"]
+default = ["state-transitions"]
 bls-signatures = ["dashcore/bls"]
 ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
   "json-object",
-  "platform-value",
   "system_contracts",
   "state-transitions",
   "extended-document",
@@ -125,13 +124,13 @@ dash-sdk-features = [
   #  "platform-value",
   #  "system_contracts",
   # "validation", # TODO: This one is big
-    "identity-hashing",
+  "identity-hashing",
   "data-contract-json-conversion",
   #  "identity-serialization",
   #  "vote-serialization",
   #  "document-value-conversion",
   #  "data-contract-value-conversion",
-    "identity-value-conversion",
+  "identity-value-conversion",
   #  "core-types",
   #  "core-types-serialization",
   #  "core-types-serde-conversion",
