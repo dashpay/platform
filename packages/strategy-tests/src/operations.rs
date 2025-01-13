@@ -35,6 +35,7 @@ pub struct TokenOp {
     pub contract: Contract,
     pub token_id: Identifier,
     pub token_pos: TokenContractPosition,
+    pub use_identity_with_id: Option<Identifier>,
     pub action: TokenEvent,
 }
 
@@ -43,6 +44,7 @@ pub struct TokenOpInSerializationFormat {
     pub contract: DataContractInSerializationFormat,
     pub token_id: Identifier,
     pub token_pos: TokenContractPosition,
+    pub use_identity_with_id: Option<Identifier>,
     pub action: TokenEvent,
 }
 
@@ -65,6 +67,7 @@ impl PlatformSerializableWithPlatformVersion for TokenOp {
             contract,
             token_id,
             token_pos,
+            use_identity_with_id,
             action,
         } = self;
         let data_contract_serialization_format: DataContractInSerializationFormat =
@@ -74,6 +77,7 @@ impl PlatformSerializableWithPlatformVersion for TokenOp {
             contract: data_contract_serialization_format,
             token_id,
             token_pos,
+            use_identity_with_id,
             action,
         };
         let config = bincode::config::standard()
@@ -107,6 +111,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Tok
             contract,
             token_id,
             token_pos,
+            use_identity_with_id,
             action,
         } = token_op_in_serialization_format;
         let data_contract = DataContract::try_from_platform_versioned(
@@ -119,6 +124,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Tok
             contract: data_contract,
             token_id,
             token_pos,
+            use_identity_with_id,
             action,
         })
     }

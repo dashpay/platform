@@ -21,8 +21,8 @@ use drive_abci::execution::validation::state_transition::transformer::StateTrans
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
-
-use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contracts::SystemDataContract;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
@@ -34,6 +34,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use drive_abci::execution::validation::state_transition::ValidationMode;
@@ -259,7 +260,37 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     },
                                 );
                             }
-                            BatchedTransitionAction::TokenAction(_) => {}
+                            BatchedTransitionAction::TokenAction(token_transition_action) => {
+                                if token_transition_action
+                                    .base()
+                                    .token_configuration()
+                                    .expect("expected token configuration")
+                                    .keeps_history()
+                                {
+                                    // if we keep history we just need to check the historical document
+                                    proofs_request.documents.push(
+                                        get_proofs_request_v0::DocumentRequest {
+                                            contract_id: SystemDataContract::TokenHistory
+                                                .id()
+                                                .to_vec(),
+                                            document_type: token_transition_action
+                                                .historical_document_type_name()
+                                                .to_string(),
+                                            document_type_keeps_history: false,
+                                            document_id: token_transition_action
+                                                .historical_document_id(
+                                                    batch_transition.owner_id(),
+                                                    token_transition_action
+                                                        .base()
+                                                        .identity_contract_nonce(),
+                                                )
+                                                .to_vec(),
+                                            document_contested_status: 0,
+                                        },
+                                    );
+                                } else {
+                                }
+                            }
                             BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {}
                         });
                     let versioned_request = GetProofsRequest {
@@ -468,8 +499,64 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     }
                                 }
                             }
-                            BatchedTransitionAction::TokenAction(_) => {
-                                todo!();
+                            BatchedTransitionAction::TokenAction(token_transition_action) => {
+                                if token_transition_action
+                                    .base()
+                                    .token_configuration()
+                                    .expect("expected token configuration")
+                                    .keeps_history()
+                                {
+                                    let document_type_name = token_transition_action
+                                        .historical_document_type_name()
+                                        .to_string();
+
+                                    let token_history = platform
+                                        .drive
+                                        .cache
+                                        .system_data_contracts
+                                        .load_token_history();
+
+                                    let document_type = token_history
+                                        .document_type_for_name(document_type_name.as_str())
+                                        .expect("get document type");
+
+                                    let query = SingleDocumentDriveQuery {
+                                        contract_id: SystemDataContract::TokenHistory
+                                            .id()
+                                            .to_buffer(),
+                                        document_type_name,
+                                        document_type_keeps_history: false,
+                                        document_id: token_transition_action
+                                            .historical_document_id(
+                                                batch_transition.owner_id(),
+                                                token_transition_action
+                                                    .base()
+                                                    .identity_contract_nonce(),
+                                            )
+                                            .to_buffer(),
+                                        block_time_ms: None, //None because we want latest
+                                        contested_status:
+                                            SingleDocumentDriveQueryContestedStatus::NotContested,
+                                    };
+
+                                    let (root_hash, document) = query
+                                        .verify_proof(
+                                            false,
+                                            &response_proof.grovedb_proof,
+                                            document_type,
+                                            platform_version,
+                                        )
+                                        .expect("expected to verify a document");
+
+                                    assert_eq!(
+                                        &root_hash,
+                                        expected_root_hash,
+                                        "state last block info {:?}",
+                                        platform.state.last_committed_block_info()
+                                    );
+                                } else {
+                                    todo!();
+                                }
                             }
                             BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                                 panic!("we should not have a bump identity data contract nonce");

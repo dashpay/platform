@@ -1427,13 +1427,18 @@ impl NetworkStrategy {
                         contract,
                         token_id,
                         token_pos,
+                        use_identity_with_id,
                         action: TokenEvent::Mint(amount, recipient, note),
                     }) if current_identities.len() > 1 => {
-                        let random_index = rng.gen_range(0..current_identities.len());
-                        let random_identity_id = current_identities[random_index].id();
+                        let operation_owner_id = if let Some(identity_id) = use_identity_with_id {
+                            *identity_id
+                        } else {
+                            let random_index = rng.gen_range(0..current_identities.len());
+                            current_identities[random_index].id()
+                        };
 
                         let request = IdentityKeysRequest {
-                            identity_id: random_identity_id.to_buffer(),
+                            identity_id: operation_owner_id.to_buffer(),
                             request_type: KeyRequestType::SpecificKeys(vec![1]),
                             limit: Some(1),
                             offset: None,
@@ -1442,9 +1447,9 @@ impl NetworkStrategy {
                             .drive
                             .fetch_identity_balance_with_keys(request, None, platform_version)
                             .expect("expected to be able to get identity")
-                            .expect("expected to get an identity");
+                            .expect("expected to get an identity for token mint operation");
                         let identity_contract_nonce = contract_nonce_counter
-                            .entry((random_identity_id, contract.id()))
+                            .entry((operation_owner_id, contract.id()))
                             .or_default();
                         *identity_contract_nonce += 1;
                         let token_mint_transition: TokenMintTransition = TokenMintTransitionV0 {
@@ -1456,7 +1461,7 @@ impl NetworkStrategy {
                                 using_group_info: None,
                             }
                             .into(),
-                            issued_to_identity_id: Some(random_identity_id),
+                            issued_to_identity_id: Some(*recipient),
                             amount: *amount,
                             public_note: note.clone(),
                         }
@@ -1642,7 +1647,7 @@ impl NetworkStrategy {
             )
         } else {
             create_state_transitions_for_identities(
-                identities,
+                &mut identities,
                 balance_range,
                 signer,
                 rng,

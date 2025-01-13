@@ -3,12 +3,15 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::NetworkStrategy;
     use dpp::dash_to_duffs;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::state_transition::StateTransition;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::tokens::token_event::TokenEvent;
+    use drive::query::PathQuery;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
@@ -38,28 +41,22 @@ mod tests {
 
         let mut simple_signer = SimpleSigner::default();
 
-        let (identity1, keys1) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity1, keys1) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
-        let (identity2, keys2) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
         simple_signer.add_keys(keys1);
         simple_signer.add_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
-                vec![identity1.clone(), identity2.clone()],
+                vec![&mut identity1, &mut identity2],
                 &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
                 &simple_signer,
                 &mut rng,
@@ -70,12 +67,18 @@ mod tests {
             .collect();
 
         let contract = created_contract.data_contract_mut();
+        let mut token_configuration = contract
+            .token_configuration_mut(0)
+            .expect("expected to get token configuration");
+        token_configuration.set_minting_allow_choosing_destination(true);
         let token_id = contract.token_id(0).expect("expected to get token_id");
+        contract.set_owner_id(identity1.id());
 
         let token_op = TokenOp {
             contract: contract.clone(),
             token_id,
             token_pos: 0,
+            use_identity_with_id: Some(identity1.id()),
             action: TokenEvent::Mint(1000, identity2.id(), None),
         };
 
@@ -164,28 +167,22 @@ mod tests {
 
         let mut simple_signer = SimpleSigner::default();
 
-        let (identity1, keys1) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity1, keys1) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
-        let (identity2, keys2) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
         simple_signer.add_keys(keys1);
         simple_signer.add_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
-                vec![identity1.clone(), identity2.clone()],
+                vec![&mut identity1, &mut identity2],
                 &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
                 &simple_signer,
                 &mut rng,
@@ -203,6 +200,7 @@ mod tests {
             contract: contract.clone(),
             token_id,
             token_pos: 0,
+            use_identity_with_id: None,
             action: TokenEvent::Mint(1000, identity2.id(), None),
         };
 

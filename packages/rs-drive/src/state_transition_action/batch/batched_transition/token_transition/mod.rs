@@ -19,7 +19,10 @@ pub mod token_destroy_frozen_funds_transition_action;
 pub mod token_emergency_action_transition_action;
 
 use derive_more::From;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use dpp::document::Document;
+use dpp::identifier::Identifier;
+use dpp::prelude::IdentityNonce;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::{TokenFreezeTransitionAction, TokenFreezeTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::{TokenUnfreezeTransitionAction, TokenUnfreezeTransitionActionAccessorsV0};
@@ -75,5 +78,33 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(action) => action.base_owned(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base_owned(),
         }
+    }
+
+    /// Historical document type name for the token history contract
+    pub fn historical_document_type_name(&self) -> &str {
+        match self {
+            TokenTransitionAction::BurnAction(_) => "burn",
+            TokenTransitionAction::MintAction(_) => "mint",
+            TokenTransitionAction::TransferAction(_) => "transfer",
+            TokenTransitionAction::FreezeAction(_) => "freeze",
+            TokenTransitionAction::UnfreezeAction(_) => "unfreeze",
+            TokenTransitionAction::EmergencyActionAction(_) => "emergencyAction",
+            TokenTransitionAction::DestroyFrozenFundsAction(_) => "destroyFrozenFunds",
+        }
+    }
+
+    /// Historical document id
+    pub fn historical_document_id(
+        &self,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+    ) -> Identifier {
+        let name = self.historical_document_type_name();
+        Document::generate_document_id_v0(
+            &self.base().data_contract_id(),
+            &owner_id,
+            name,
+            owner_nonce.to_be_bytes().as_slice(),
+        )
     }
 }

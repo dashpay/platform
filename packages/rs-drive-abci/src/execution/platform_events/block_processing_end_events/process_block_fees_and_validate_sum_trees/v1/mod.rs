@@ -46,6 +46,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// and distributing the block fees from the previous block and applies the batch.
     ///
     /// Returns `ProcessedBlockFeesOutcome`.
+    ///
+    /// V1 adds the validation of the token aggregated balance
     #[inline(always)]
     pub(super) fn process_block_fees_and_validate_sum_trees_v1(
         &self,

@@ -86,7 +86,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMeth
         fetch_transactions_block_inclusion_status: 0,
         pool_withdrawals_into_transactions_queue: 0,
         update_broadcasted_withdrawal_statuses: 0,
-        rebroadcast_expired_withdrawal_documents: 0,
+        rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 0,
     },

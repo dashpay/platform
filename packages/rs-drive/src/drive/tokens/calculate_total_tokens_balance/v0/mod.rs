@@ -1,6 +1,6 @@
 use crate::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use crate::drive::system::misc_path;
-use crate::drive::tokens::token_balances_root_path;
+use crate::drive::tokens::{token_balances_root_path, tokens_root_path, TOKEN_BALANCES_KEY};
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
@@ -28,11 +28,11 @@ impl Drive {
             drive_version,
         )?;
 
-        let tokens_balances_path = token_balances_root_path();
+        let tokens_root_path = tokens_root_path();
 
         let total_identity_token_balances = self.grove_get_big_sum_tree_total_value(
-            (&tokens_balances_path).into(),
-            Into::<&[u8; 1]>::into(RootTree::Balances),
+            (&tokens_root_path).into(),
+            &[TOKEN_BALANCES_KEY],
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut drive_operations,

@@ -2653,28 +2653,22 @@ mod tests {
 
         let mut simple_signer = SimpleSigner::default();
 
-        let (identity1, keys1) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity1, keys1) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
         simple_signer.add_keys(keys1);
 
-        let (identity2, keys2) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
         simple_signer.add_keys(keys2);
 
         let start_identities = create_state_transitions_for_identities(
-            vec![identity1, identity2],
+            vec![&mut identity1, &mut identity2],
             &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,

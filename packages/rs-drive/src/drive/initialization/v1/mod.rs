@@ -55,7 +55,7 @@ impl Drive {
         batch.add_insert(
             misc_path_vec(),
             TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.to_vec(),
-            Element::empty_tree(),
+            Element::empty_big_sum_tree(),
         );
 
         batch.add_insert(
