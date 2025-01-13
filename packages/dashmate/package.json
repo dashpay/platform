@@ -91,7 +91,7 @@
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
     "semver": "^7.5.3",
-    "systeminformation": "^5.22.11",
+    "systeminformation": "^5.25.11",
     "table": "^6.8.1",
     "tar": "7.4.3",
     "wrap-ansi": "^7.0.0"
