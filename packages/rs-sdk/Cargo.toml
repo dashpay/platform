@@ -62,6 +62,7 @@ tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
 sanitize-filename = { version = "0.6.0" }
 test-case = { version = "3.3.1" }
+assert_matches = "1.5.0"
 
 [features]
 # TODO make a way to enable "tokio/rt-multi-thread" if someone uses --no-default-features

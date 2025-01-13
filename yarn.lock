@@ -6471,7 +6471,7 @@ __metadata:
     semver: "npm:^7.5.3"
     sinon: "npm:^17.0.1"
     sinon-chai: "npm:^3.7.0"
-    systeminformation: "npm:^5.22.11"
+    systeminformation: "npm:^5.25.11"
     table: "npm:^6.8.1"
     tar: "npm:7.4.3"
     wrap-ansi: "npm:^7.0.0"
@@ -14695,12 +14695,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"systeminformation@npm:^5.22.11":
-  version: 5.22.11
-  resolution: "systeminformation@npm:5.22.11"
+"systeminformation@npm:^5.25.11":
+  version: 5.25.11
+  resolution: "systeminformation@npm:5.25.11"
   bin:
     systeminformation: lib/cli.js
-  checksum: 315cd3f2cc2aefbee9201fac043521d073e8c94a77f8900617dad67fdb798116fd2963a365d4d3da81dbca6da360d1f7008c61e1fe33ef9f8f3b77aa4f506014
+  checksum: 9a43bb8991ac07a0bcf3f9002c32e9f36a1100b2f620049c4c3dc24f74556c681b1e4552dc27581af32a842540cd42c1bb085e842b0c325273fb558b51c7159f
   conditions: (os=darwin | os=linux | os=win32 | os=freebsd | os=openbsd | os=netbsd | os=sunos | os=android)
   languageName: node
   linkType: hard

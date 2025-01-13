@@ -1210,6 +1210,7 @@ name = "dash-sdk"
 version = "1.8.0-dev.2"
 dependencies = [
  "arc-swap",
+ "assert_matches",
  "async-trait",
  "backon",
  "base64 0.22.1",
