@@ -22,7 +22,7 @@ pub type PlatformGrpcClient = PlatformClient<WasmClient>;
 pub type CoreGrpcClient = CoreClient<WasmClient>;
 
 /// Create a channel that will be used to communicate with the DAPI.
-pub(super) fn create_channel(
+pub fn create_channel(
     uri: Uri,
     _settings: Option<&AppliedRequestSettings>,
 ) -> Result<WasmClient, TransportError> {
@@ -89,8 +89,8 @@ fn wasm_client_error_to_status(e: tonic_web_wasm_client::Error) -> Status {
 /// We reimplement it here to make it Send.
 // TODO: Consider moving it to different module.
 #[derive(Default, Clone, Debug)]
-pub struct BackonSleeper {}
-impl backon::Sleeper for BackonSleeper {
+pub struct WasmBackonSleeper {}
+impl backon::Sleeper for WasmBackonSleeper {
     type Sleep = BoxFuture<'static, ()>;
     fn sleep(&self, dur: Duration) -> Self::Sleep {
         into_send(gloo_timers::future::sleep(dur)).boxed()

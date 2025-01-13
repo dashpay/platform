@@ -20,7 +20,7 @@ pub use tonic_channel::{
 };
 #[cfg(target_arch = "wasm32")]
 pub use wasm_channel::{
-    create_channel, CoreGrpcClient, PlatformGrpcClient, TonicBackonSleeper as BackonSleeper,
+    create_channel, CoreGrpcClient, PlatformGrpcClient, WasmBackonSleeper as BackonSleeper,
 };
 
 /// Generic transport layer request.

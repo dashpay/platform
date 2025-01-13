@@ -10,7 +10,7 @@ use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
@@ -759,7 +759,7 @@ pub struct SdkBuilder {
     pub(crate) cancel_token: CancellationToken,
 
     /// CA certificate to use for TLS connections.
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     ca_certificate: Option<Certificate>,
 }
 
@@ -791,7 +791,7 @@ impl Default for SdkBuilder {
             cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
-            #[cfg(not(feature = "wasm"))]
+            #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
             #[cfg(feature = "mocks")]
@@ -857,7 +857,7 @@ impl SdkBuilder {
     /// Used mainly for testing purposes and local networks.
     ///
     /// If not set, uses standard system CA certificates.
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
         self.ca_certificate = Some(pem_certificate);
         self
@@ -867,7 +867,7 @@ impl SdkBuilder {
     ///
     /// This is a convenience method that reads the certificate from a file and sets it using
     /// [SdkBuilder::with_ca_certificate()].
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate_file(
         self,
         certificate_file_path: impl AsRef<std::path::Path>,
@@ -1023,7 +1023,7 @@ impl SdkBuilder {
             Some(addresses) => {
                 #[allow(unused_mut)] // needs to be mutable for features other than wasm
                 let mut dapi = DapiClient::new(addresses, dapi_client_settings);
-                #[cfg(not(feature = "wasm"))]
+                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(pem) = self.ca_certificate {
                     dapi = dapi.with_ca_certificate(pem);
                 }

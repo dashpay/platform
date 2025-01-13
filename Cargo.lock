@@ -314,7 +314,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba5289ec98f68f28dd809fd601059e6aa908bb8f6108620930828283d4ee23d7"
 dependencies = [
  "fastrand",
- "gloo-timers",
  "tokio",
 ]
 
@@ -1150,6 +1149,7 @@ version = "1.8.0-dev.2"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
+ "getrandom",
  "platform-version",
  "prost",
  "serde",

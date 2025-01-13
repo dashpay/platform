@@ -22,23 +22,10 @@ platform = []
 tenderdash-proto = []
 
 # Client support.
-client = [
-  "tonic/channel",
-  "tonic/transport",
-  "tonic/tls",
-  "tonic/tls-roots",
-  "tonic/tls-webpki-roots",
-  "platform",
-]
+client = ["platform"]
 
 # Build tonic server code. Includes all client features and adds server-specific dependencies.
-server = [
-  "tonic/channel",
-  "tonic/transport",
-  "platform",
-  "tenderdash-proto/server",
-  "client",
-]
+server = ["platform", "tenderdash-proto/server", "client"]
 
 serde = ["dep:serde", "dep:serde_bytes", "tenderdash-proto/serde"]
 mocks = ["serde", "dep:serde_json"]
@@ -57,6 +44,20 @@ serde_bytes = { version = "0.11.12", optional = true }
 serde_json = { version = "1.0", optional = true }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 platform-version = { path = "../rs-platform-version" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { version = "0.12.3", features = [
+  "codegen",
+  "prost",
+  "channel",
+  "transport",
+  "tls",
+  "tls-roots",
+  "tls-webpki-roots",
+], default-features = false }
 
 [build-dependencies]
 tonic-build = { version = "0.12.3" }

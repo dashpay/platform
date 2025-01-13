@@ -5,7 +5,7 @@ pub mod core {
     #![allow(non_camel_case_types)]
     pub mod v0 {
         // Note: only one of the features can be analyzed at a time
-        #[cfg(feature = "server")]
+        #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
         include!("core/server/org.dash.platform.dapi.v0.rs");
 
         #[cfg(all(
@@ -15,10 +15,7 @@ pub mod core {
         ))]
         include!("core/client/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(
-            target_arch = "wasm32",
-            not(any(feature = "server", feature = "client"))
-        ))]
+        #[cfg(target_arch = "wasm32")]
         include!("core/wasm/org.dash.platform.dapi.v0.rs");
     }
 }
@@ -26,16 +23,17 @@ pub mod core {
 #[cfg(feature = "platform")]
 pub mod platform {
     pub mod v0 {
-        #[cfg(feature = "server")]
+        #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
         include!("platform/server/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "client", not(feature = "server")))]
+        #[cfg(all(
+            feature = "client",
+            not(feature = "server"),
+            not(target_arch = "wasm32")
+        ))]
         include!("platform/client/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(
-            target_arch = "wasm32",
-            not(any(feature = "server", feature = "client"))
-        ))]
+        #[cfg(target_arch = "wasm32")]
         include!("platform/wasm/org.dash.platform.dapi.v0.rs");
     }
 

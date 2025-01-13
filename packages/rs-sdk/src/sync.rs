@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
     /// Not running inside tokio runtime
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("not running inside tokio runtime: {0}")]
     NotInTokioRuntime(#[from] tokio::runtime::TryCurrentError),
 
@@ -62,7 +62,7 @@ impl From<AsyncError> for crate::Error {
 ///
 /// Due to limitations of tokio runtime, we cannot use `tokio::runtime::Runtime::block_on` if we are already inside a tokio runtime.
 /// This function is a workaround for that limitation.
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn block_on<F>(fut: F) -> Result<F::Output, AsyncError>
 where
     F: Future + Send + 'static,
@@ -85,7 +85,7 @@ where
     Ok(resp)
 }
 
-#[cfg(feature = "wasm")]
+#[cfg(target_arch = "wasm32")]
 pub fn block_on<F>(_fut: F) -> Result<F::Output, AsyncError>
 where
     F: Future + Send + 'static,
