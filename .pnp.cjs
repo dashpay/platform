@@ -8610,7 +8610,7 @@ const RAW_RUNTIME_STATE =
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
-          ["systeminformation", "npm:5.22.11"],\
+          ["systeminformation", "npm:5.25.11"],\
           ["table", "npm:6.8.1"],\
           ["tar", "npm:7.4.3"],\
           ["wrap-ansi", "npm:7.0.0"]\
@@ -18111,10 +18111,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["systeminformation", [\
-      ["npm:5.22.11", {\
-        "packageLocation": "./.yarn/unplugged/systeminformation-npm-5.22.11-e704a1605b/node_modules/systeminformation/",\
+      ["npm:5.25.11", {\
+        "packageLocation": "./.yarn/unplugged/systeminformation-npm-5.25.11-e1c9348b68/node_modules/systeminformation/",\
         "packageDependencies": [\
-          ["systeminformation", "npm:5.22.11"]\
+          ["systeminformation", "npm:5.25.11"]\
         ],\
         "linkType": "HARD"\
       }]\
