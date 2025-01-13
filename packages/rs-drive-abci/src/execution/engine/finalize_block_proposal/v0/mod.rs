@@ -195,7 +195,10 @@ where
                 .expect("current epoch info should be in range"),
         );
 
-        to_commit_block_info.time_ms = block_header.time.to_milis();
+        to_commit_block_info.time_ms = block_header
+            .time
+            .to_millis()
+            .map_err(|e| AbciError::BadRequest(format!("invalid block time: {}", e)))?;
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
