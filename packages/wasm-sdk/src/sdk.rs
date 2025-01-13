@@ -1,6 +1,5 @@
 use crate::context_provider::WasmContext;
 use crate::dpp::{DataContractWasm, IdentityWasm};
-use crate::error::{to_js_error, WasmError};
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -10,8 +9,6 @@ use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::IdentityV0;
 use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
-use dash_sdk::dpp::ProtocolError;
-use dash_sdk::drive::verify::identity;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
@@ -156,14 +153,6 @@ pub async fn epoch_testing() {
         .expect("fetch extended epoch info")
         .expect("extended epoch info not found");
 }
-
-// #[wasm_bindgen]
-// pub fn setup_sdk() -> WasmSdk {
-//     let sdk = SdkBuilder::new(AddressList::new())
-//         .build()
-//         .expect("build sdk");
-//     WasmSdk(sdk)
-// }
 
 #[wasm_bindgen]
 pub async fn docs_testing(sdk: &WasmSdk) {

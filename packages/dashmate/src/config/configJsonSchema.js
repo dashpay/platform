@@ -349,15 +349,11 @@ export default {
             interval: {
               $ref: '#/definitions/duration',
             },
-            mediantime: {
-              type: ['integer', 'null'],
-              minimum: 0,
-            },
             address: {
               type: ['string', 'null'],
             },
           },
-          required: ['enable', 'interval', 'mediantime', 'address'],
+          required: ['enable', 'interval', 'address'],
           additionalProperties: false,
         },
         devnet: {

@@ -124,14 +124,6 @@ export default function resetNodeTaskFactory(
         },
       },
       {
-        title: 'Reset dashmate\'s ephemeral data',
-        enabled: (ctx) => !ctx.removeConfig && !ctx.isHardReset && !ctx.isPlatformOnlyReset,
-        task: () => {
-          // TODO: We should remove it from config
-          config.set('core.miner.mediantime', null);
-        },
-      },
-      {
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
         task: () => {
