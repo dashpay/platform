@@ -90,7 +90,7 @@ impl StateSyncAbciConfig {
     pub fn default_local() -> Self {
         Self {
             snapshots_enabled: true,
-            checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             snapshots_frequency: 3,
             max_num_snapshots: 10,
         }

@@ -52,10 +52,7 @@ where
             platform
                 .config
                 .state_sync_config
-                .checkpoints_path
-                .to_str()
-                .unwrap()
-                .to_string(),
+                .checkpoints_path.clone(),
             platform.config.state_sync_config.max_num_snapshots,
             platform.config.state_sync_config.snapshots_frequency,
         );

@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    pin::Pin,
-};
+use std::{fs, path::{Path, PathBuf}, pin::Pin};
 
 use bincode::{config, Decode, Encode};
 use dapi_grpc::tonic;
@@ -42,7 +39,7 @@ pub struct Snapshot {
 pub struct SnapshotManager {
     freq: i64,
     number_stored_snapshots: usize,
-    checkpoints_path: String,
+    checkpoints_path: PathBuf,
 }
 
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
@@ -111,7 +108,14 @@ impl Metrics {
 
 impl SnapshotManager {
     /// Create a new instance of snapshot manager
-    pub fn new(checkpoints_path: String, number_stored_snapshots: usize, freq: i64) -> Self {
+    pub fn new(checkpoints_path: PathBuf, number_stored_snapshots: usize, freq: i64) -> Self {
+        if let Err(e) = fs::create_dir_all(checkpoints_path.clone()) {
+            tracing::error!(
+                "Failed to create directory {}: {}",
+                checkpoints_path.display(),
+                e
+            );
+        }
         Self {
             freq,
             number_stored_snapshots,
@@ -159,9 +163,8 @@ impl SnapshotManager {
         if height == 0 || height % self.freq != 0 {
             return Ok(());
         }
-        let checkpoint_path: PathBuf = [self.checkpoints_path.clone(), height.to_string()]
-            .iter()
-            .collect();
+        let checkpoints_path_base = self.checkpoints_path.clone();
+        let checkpoint_path: PathBuf = checkpoints_path_base.join(height.to_string());
         grove
             .create_checkpoint(&checkpoint_path)
             .map_err(|e| Error::Drive(GroveDB(e)))?;
@@ -230,7 +233,7 @@ mod tests {
             let checkpoints_dir = tempfile::tempdir().unwrap();
             let grove = GroveDb::open(grove_dir.path()).unwrap();
             let manager =
-                SnapshotManager::new(checkpoints_dir.path().to_str().unwrap().to_string(), 3, 1);
+                SnapshotManager::new(checkpoints_dir.path().to_str().unwrap().to_string().into(), 3, 1);
             for height in start..=end {
                 manager.create_snapshot(&grove, height).unwrap();
             }
