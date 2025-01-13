@@ -353,6 +353,7 @@ COPY --parents \
     packages/feature-flags-contract \
     packages/dpns-contract \
     packages/wallet-utils-contract \
+    packages/token-history-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -419,6 +420,7 @@ COPY --parents \
     packages/rs-drive-abci \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
+    packages/token-history-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
@@ -508,6 +510,7 @@ COPY --parents \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
+    packages/token-history-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
@@ -628,6 +631,7 @@ COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
 COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
+COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract

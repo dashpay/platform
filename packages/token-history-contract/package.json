@@ -1,7 +1,7 @@
 {
-  "name": "@dashevo/wallet-utils-contract",
-  "version": "1.6.2",
-  "description": "A contract and helper scripts for Wallet DApp",
+  "name": "@dashevo/token-history-contract",
+  "version": "1.8.0-dev.2",
+  "description": "The token history contract",
   "scripts": {
     "lint": "eslint .",
     "test": "yarn run test:unit",
@@ -9,9 +9,9 @@
   },
   "contributors": [
     {
-      "name": "Eric Britten",
-      "email": "eric.britten@dash.org",
-      "url": "https://github.com/hashengineering"
+      "name": "Samuel Westrich",
+      "email": "sam@dash.org",
+      "url": "https://github.com/quantumexplorer"
     }
   ],
   "license": "MIT",
