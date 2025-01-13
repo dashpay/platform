@@ -24,8 +24,8 @@ use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 use strategy_tests::frequency::Frequency;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::{Hashable, Signable};
 
 #[derive(Clone, Debug, Default)]
@@ -72,7 +72,7 @@ pub struct ProofVerification<'a> {
     pub public_key: &'a dpp::bls_signatures::PublicKey<Bls12381G2Impl>,
 }
 
-impl<'a> ProofVerification<'a> {
+impl ProofVerification<'_> {
     /// Verify proof signature
     ///
     /// Constructs new signature for provided state ID and checks if signature is still valid.
@@ -157,7 +157,7 @@ impl<'a> ProofVerification<'a> {
             app_version: self.app_version,
             core_chain_locked_height: self.core_chain_locked_height,
             height: self.height as u64,
-            time: self.time.to_milis(),
+            time: self.time.to_millis().expect("time as milliseconds"),
         };
 
         self.verify_signature(state_id, proof.round)
@@ -168,7 +168,7 @@ impl QueryStrategy {
     pub(crate) fn query_chain_for_strategy(
         &self,
         proof_verification: &ProofVerification,
-        current_identities: &Vec<Identity>,
+        current_identities: &[Identity],
         abci_app: &FullAbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
         platform_version: &PlatformVersion,
@@ -194,7 +194,7 @@ impl QueryStrategy {
 
     pub(crate) fn query_identities_by_public_key_hashes(
         proof_verification: &ProofVerification,
-        current_identities: &Vec<Identity>,
+        current_identities: &[Identity],
         frequency: &Frequency,
         abci_app: &FullAbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
