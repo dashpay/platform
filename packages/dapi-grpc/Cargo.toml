@@ -29,12 +29,11 @@ client = [
   "tonic/tls-roots",
   "tonic/tls-webpki-roots",
   "platform",
-  "tenderdash-proto/client",
 ]
 
 # Specialized features for building the client in a wasm environment.
 # Conflicts with `client` and `server` feature.
-wasm = ["tenderdash-proto/client"]
+wasm = []
 
 # Build tonic server code. Includes all client features and adds server-specific dependencies.
 server = [
@@ -49,7 +48,7 @@ serde = ["dep:serde", "dep:serde_bytes", "tenderdash-proto/serde"]
 mocks = ["serde", "dep:serde_json"]
 
 [dependencies]
-tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.2.1", rev = "3106dcee743ebac2299ce32174a23b84445b20aa", default-features = false }
+tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.2.1", rev = "a558c0a2deab149183f125a012b14b709150401c", default-features = false }
 
 prost = { version = "0.13" }
 futures-core = "0.3.30"
