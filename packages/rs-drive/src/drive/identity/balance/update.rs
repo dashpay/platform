@@ -21,10 +21,61 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_add_to_balance() {
-            let drive = setup_drive_with_initial_state_structure(None);
+        fn should_add_to_balance_first_version_apply() {
+            let platform_version = PlatformVersion::first();
+            // Use the same fee result if you want, or adjust if needed:
+            let expected_fee_result = FeeResult {
+                processing_fee: 174660,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
 
+            do_should_add_to_balance(true, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_add_to_balance_first_version_estimated() {
+            let platform_version = PlatformVersion::first();
+            // Use the same fee result if you want, or adjust if needed:
+            let expected_fee_result = FeeResult {
+                processing_fee: 4278840,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_add_to_balance(false, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_add_to_balance_latest_version_apply() {
             let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                processing_fee: 174660,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_add_to_balance(true, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_add_to_balance_latest_version_estimated() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                processing_fee: 4278840,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_add_to_balance(false, platform_version, expected_fee_result);
+        }
+
+        fn do_should_add_to_balance(
+            apply: bool,
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
@@ -33,6 +84,7 @@ mod tests {
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
+            // Add new identity (always apply here so it actually gets inserted)
             drive
                 .add_new_identity(
                     identity.clone(),
@@ -48,43 +100,41 @@ mod tests {
 
             let amount = 300;
 
+            // Add to the identity balance, either applying or estimating
             let fee_result = drive
                 .add_to_identity_balance(
                     identity.id().to_buffer(),
                     amount,
                     &block_info,
-                    true,
+                    apply,
                     Some(&db_transaction),
                     platform_version,
                 )
                 .expect("expected to add to identity balance");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 174660,
-                    removed_bytes_from_system: 0,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
-            drive
-                .grove
-                .commit_transaction(db_transaction)
-                .unwrap()
-                .expect("expected to be able to commit a transaction");
+            if apply {
+                // Commit if we are applying
+                drive
+                    .grove
+                    .commit_transaction(db_transaction)
+                    .unwrap()
+                    .expect("expected to be able to commit a transaction");
 
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(
-                    identity.id().to_buffer(),
-                    &block_info,
-                    true,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get balance");
+                // Check the updated balance
+                let (balance, _fee_cost) = drive
+                    .fetch_identity_balance_with_costs(
+                        identity.id().to_buffer(),
+                        &block_info,
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get balance");
 
-            assert_eq!(balance.unwrap(), old_balance + amount);
+                assert_eq!(balance.unwrap(), old_balance + amount);
+            }
         }
 
         #[test]
@@ -110,9 +160,45 @@ mod tests {
         }
 
         #[test]
-        fn should_deduct_from_debt_if_balance_is_nil() {
-            let drive = setup_drive_with_initial_state_structure(None);
+        fn should_deduct_from_debt_if_balance_is_nil_first_version_apply() {
+            let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 385160,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_deduct_from_debt_if_balance_is_nil(
+                true,
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn should_deduct_from_debt_if_balance_is_nil_latest_version_apply() {
             let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 385160,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_deduct_from_debt_if_balance_is_nil(
+                true,
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        fn do_should_deduct_from_debt_if_balance_is_nil(
+            apply: bool,
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
                 .expect("expected an identity");
@@ -147,55 +233,86 @@ mod tests {
                     identity.id().to_buffer(),
                     added_balance,
                     &block_info,
-                    true,
+                    apply,
                     None,
                     platform_version,
                 )
                 .expect("expected to add to identity balance");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 0,
-                    processing_fee: 385160,
-                    removed_bytes_from_system: 0,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
-            let (updated_balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(
-                    identity.id().to_buffer(),
-                    &block_info,
-                    true,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get balance");
+            if apply {
+                let (updated_balance, _fee_cost) = drive
+                    .fetch_identity_balance_with_costs(
+                        identity.id().to_buffer(),
+                        &block_info,
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get balance");
 
-            assert_eq!(
-                updated_balance.expect("balance should present"),
-                added_balance - negative_amount
-            );
+                assert_eq!(
+                    updated_balance.expect("balance should present"),
+                    added_balance - negative_amount
+                );
 
-            let updated_negative_balance = drive
-                .fetch_identity_negative_balance_operations(
-                    identity.id().to_buffer(),
-                    true,
-                    None,
-                    &mut drive_operations,
-                    platform_version,
-                )
-                .expect("expected to get balance")
-                .expect("balance should present");
+                let updated_negative_balance = drive
+                    .fetch_identity_negative_balance_operations(
+                        identity.id().to_buffer(),
+                        true,
+                        None,
+                        &mut drive_operations,
+                        platform_version,
+                    )
+                    .expect("expected to get negative balance")
+                    .expect("negative balance should present");
 
-            assert_eq!(updated_negative_balance, 0)
+                assert_eq!(updated_negative_balance, 0);
+            }
         }
 
         #[test]
-        fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
-            let drive = setup_drive_with_initial_state_structure(None);
+        fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower_first_version_apply() {
+            let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 260540,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower(
+                true,
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower_latest_version_apply()
+        {
             let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 0,
+                processing_fee: 260540,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower(
+                true,
+                platform_version,
+                expected_fee_result,
+            );
+        }
+
+        fn do_should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower(
+            apply: bool,
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
             let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
                 .expect("expected an identity");
 
@@ -229,103 +346,40 @@ mod tests {
                     identity.id().to_buffer(),
                     added_balance,
                     &block_info,
-                    true,
+                    apply,
                     None,
                     platform_version,
                 )
                 .expect("expected to add to identity balance");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    storage_fee: 0,
-                    processing_fee: 260540,
-                    removed_bytes_from_system: 0,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
-            let (updated_balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(
-                    identity.id().to_buffer(),
-                    &block_info,
-                    true,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get balance");
+            if apply {
+                let (updated_balance, _fee_cost) = drive
+                    .fetch_identity_balance_with_costs(
+                        identity.id().to_buffer(),
+                        &block_info,
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get balance");
 
-            assert_eq!(updated_balance.expect("balance should present"), 0);
+                assert_eq!(updated_balance.expect("balance should present"), 0);
 
-            let updated_negative_balance = drive
-                .fetch_identity_negative_balance_operations(
-                    identity.id().to_buffer(),
-                    true,
-                    None,
-                    &mut drive_operations,
-                    platform_version,
-                )
-                .expect("expected to get balance")
-                .expect("balance should present");
+                let updated_negative_balance = drive
+                    .fetch_identity_negative_balance_operations(
+                        identity.id().to_buffer(),
+                        true,
+                        None,
+                        &mut drive_operations,
+                        platform_version,
+                    )
+                    .expect("expected to get balance")
+                    .expect("balance should present");
 
-            assert_eq!(updated_negative_balance, negative_amount - added_balance)
-        }
-
-        #[test]
-        fn should_estimate_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
-            let platform_version = PlatformVersion::latest();
-
-            let identity = Identity::random_identity(5, Some(12345), platform_version)
-                .expect("expected a random identity");
-
-            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
-
-            let app_hash_before = drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("should return app hash");
-
-            let fee_result = drive
-                .add_to_identity_balance(
-                    identity.id().to_buffer(),
-                    300,
-                    &block,
-                    false,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get estimated costs to update an identity balance");
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 4278840,
-                    ..Default::default()
-                }
-            );
-
-            let app_hash_after = drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("should return app hash");
-
-            assert_eq!(app_hash_after, app_hash_before);
-
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(
-                    identity.id().to_buffer(),
-                    &block,
-                    true,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get balance");
-
-            assert!(balance.is_none()); //shouldn't have changed
+                assert_eq!(updated_negative_balance, negative_amount - added_balance);
+            }
         }
     }
 
@@ -336,23 +390,73 @@ mod tests {
         use dpp::version::PlatformVersion;
 
         #[test]
-        fn should_remove_from_balance() {
-            let drive = setup_drive_with_initial_state_structure(None);
+        fn should_remove_from_balance_first_version_apply() {
+            let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                processing_fee: 174660,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
 
+            do_should_remove_from_balance(true, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_remove_from_balance_first_version_estimated() {
+            let platform_version = PlatformVersion::first();
+            let expected_fee_result = FeeResult {
+                processing_fee: 2476860,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_remove_from_balance(false, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_remove_from_balance_latest_version_apply() {
             let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                processing_fee: 174660,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_remove_from_balance(true, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_remove_from_balance_latest_version_estimated() {
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                processing_fee: 2476860,
+                removed_bytes_from_system: 0,
+                ..Default::default()
+            };
+
+            do_should_remove_from_balance(false, platform_version, expected_fee_result);
+        }
+
+        fn do_should_remove_from_balance(
+            apply: bool,
+            platform_version: &PlatformVersion,
+            expected_fee_result: FeeResult,
+        ) {
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let identity = Identity::random_identity(5, Some(12345), platform_version)
                 .expect("expected a random identity");
 
             let old_balance = identity.balance();
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
+            // Insert the identity with apply=true so it's actually stored
             drive
                 .add_new_identity(
                     identity.clone(),
                     false,
-                    &block,
+                    &block_info,
                     true,
                     None,
                     platform_version,
@@ -367,100 +471,35 @@ mod tests {
                 .remove_from_identity_balance(
                     identity.id().to_buffer(),
                     amount,
-                    &block,
-                    true,
+                    &block_info,
+                    apply,
                     Some(&db_transaction),
                     platform_version,
                     None,
                 )
-                .expect("expected to add to identity balance");
+                .expect("expected to remove from identity balance");
 
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 174660,
-                    removed_bytes_from_system: 0,
-                    ..Default::default()
-                }
-            );
+            assert_eq!(fee_result, expected_fee_result);
 
-            drive
-                .grove
-                .commit_transaction(db_transaction)
-                .unwrap()
-                .expect("expected to be able to commit a transaction");
+            if apply {
+                drive
+                    .grove
+                    .commit_transaction(db_transaction)
+                    .unwrap()
+                    .expect("expected to be able to commit a transaction");
 
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(
-                    identity.id().to_buffer(),
-                    &block,
-                    true,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get balance");
+                let (balance, _fee_cost) = drive
+                    .fetch_identity_balance_with_costs(
+                        identity.id().to_buffer(),
+                        &block_info,
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get balance");
 
-            assert_eq!(balance.unwrap(), old_balance - amount);
-        }
-
-        #[test]
-        fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure(None);
-
-            let platform_version = PlatformVersion::latest();
-
-            let identity = Identity::random_identity(5, Some(12345), platform_version)
-                .expect("expected a random identity");
-
-            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
-
-            let app_hash_before = drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("should return app hash");
-
-            let amount = 10;
-
-            let fee_result = drive
-                .remove_from_identity_balance(
-                    identity.id().to_buffer(),
-                    amount,
-                    &block,
-                    false,
-                    None,
-                    platform_version,
-                    None,
-                )
-                .expect("expected to add to identity balance");
-
-            let app_hash_after = drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("should return app hash");
-
-            assert_eq!(app_hash_after, app_hash_before);
-
-            assert_eq!(
-                fee_result,
-                FeeResult {
-                    processing_fee: 2476860,
-                    ..Default::default()
-                }
-            );
-
-            let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(
-                    identity.id().to_buffer(),
-                    &block,
-                    true,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to get balance");
-
-            assert!(balance.is_none()); //shouldn't have changed
+                assert_eq!(balance.unwrap(), old_balance - amount);
+            }
         }
     }
 

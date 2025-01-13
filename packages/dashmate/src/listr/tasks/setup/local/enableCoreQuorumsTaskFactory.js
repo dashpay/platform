@@ -50,8 +50,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           // move forward to next DKG
           const blocksUntilNextDKG = 24 - (bestBlockHeight % 24);
           if (blocksUntilNextDKG !== 0) {
-            await ctx.bumpMockTime();
-
             await generateBlocks(
               ctx.seedCoreService,
               blocksUntilNextDKG,
@@ -82,7 +80,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           await waitForQuorumConnections(
             ctx.masternodeRpcClients,
             ctx.expectedConnections,
-            ctx.bumpMockTime,
           );
 
           const { result: sporks } = await ctx.seedRpcClient.spork('show');
@@ -91,11 +88,8 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           if (isSpork21Active) {
             await waitForMasternodeProbes(
               ctx.masternodeRpcClients,
-              ctx.bumpMockTime,
             );
           }
-
-          await ctx.bumpMockTime();
 
           await generateBlocks(
             ctx.seedCoreService,
@@ -118,8 +112,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
             2,
             ctx.expectedMembers,
           );
-
-          await ctx.bumpMockTime();
 
           await generateBlocks(
             ctx.seedCoreService,
@@ -145,8 +137,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
             ctx.expectedComplaints,
           );
 
-          await ctx.bumpMockTime();
-
           await generateBlocks(
             ctx.seedCoreService,
             2,
@@ -171,8 +161,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
             ctx.expectedJustifications,
           );
 
-          await ctx.bumpMockTime();
-
           await generateBlocks(
             ctx.seedCoreService,
             2,
@@ -196,8 +184,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
             'receivedPrematureCommitments',
             ctx.expectedCommitments,
           );
-
-          await ctx.bumpMockTime();
 
           await generateBlocks(
             ctx.seedCoreService,
@@ -232,8 +218,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
       {
         title: 'Mining final commitment',
         task: async (ctx, task) => {
-          await ctx.bumpMockTime();
-
           await generateBlocks(
             ctx.seedCoreService,
             1,
@@ -245,8 +229,6 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
 
           while (!testPlatformQuorumEnabled) {
             await wait(300);
-
-            await ctx.bumpMockTime();
 
             await generateBlocks(
               ctx.seedCoreService,
