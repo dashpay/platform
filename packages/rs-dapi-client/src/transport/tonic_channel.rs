@@ -1,14 +1,8 @@
-use std::time::Duration;
-
-use super::{CanRetry, TransportClient, TransportError, TransportRequest};
-use crate::connection_pool::{ConnectionPool, PoolPrefix};
-use crate::{request_settings::AppliedRequestSettings, RequestSettings, Uri};
+use super::TransportError;
+use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
-use dapi_grpc::core::v0::{self as core_proto};
-use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
+use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig};
-use dapi_grpc::tonic::{IntoRequest, Streaming};
-use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;
@@ -16,17 +10,18 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 pub type CoreGrpcClient = CoreClient<Channel>;
 
 /// backon::Sleeper
-#[derive(Default, Clone, Debug)]
-pub(crate) struct BackonSleeper(backon::TokioSleeper);
+// #[derive(Default, Clone, Debug)]
+pub type TonicBackonSleeper = backon::TokioSleeper;
 
-impl backon::Sleeper for Sleeper {
-    type Sleep = <backon::TokioSleeper as backon::Sleeper>::Sleep;
-    fn sleep(&self, dur: Duration) -> Self::Sleep {
-        self.0.sleep(dur)
-    }
-}
+// impl backon::Sleeper for TonicBackonSleeper {
+//     type Sleep = <backon::TokioSleeper as backon::Sleeper>::Sleep;
+//     fn sleep(&self, dur: Duration) -> Self::Sleep {
+//         self.0.sleep(dur)
+//     }
+// }
 
-pub(super) fn create_channel(
+/// Create channel (connection) for gRPC transport.
+pub fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
 ) -> Result<Channel, TransportError> {

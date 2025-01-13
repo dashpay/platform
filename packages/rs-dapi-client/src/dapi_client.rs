@@ -3,7 +3,7 @@
 use backon::{ConstantBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use std::fmt::{Debug, Display};
 use std::sync::atomic::AtomicUsize;
@@ -78,7 +78,7 @@ pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
     pool: ConnectionPool,
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     /// Certificate Authority certificate to use for verifying the server's certificate.
     pub ca_certificate: Option<Certificate>,
     #[cfg(feature = "dump")]
@@ -97,7 +97,7 @@ impl DapiClient {
             pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]
             dump_dir: None,
-            #[cfg(not(feature = "wasm"))]
+            #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
         }
     }
@@ -110,7 +110,7 @@ impl DapiClient {
     ///
     /// # Returns
     /// [DapiClient] with CA certificate set.
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, ca_cert: Certificate) -> Self {
         self.ca_certificate = Some(ca_cert);
 
@@ -205,7 +205,7 @@ impl DapiRequestExecutor for DapiClient {
             .override_by(R::SETTINGS_OVERRIDES)
             .override_by(settings)
             .finalize();
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(not(target_arch = "wasm32"))]
         let applied_settings = applied_settings.with_ca_certificate(self.ca_certificate.clone());
 
         // Setup retry policy:
@@ -315,11 +315,14 @@ impl DapiRequestExecutor for DapiClient {
             }
         };
 
-        let sleeper = transport::channel_impl::BackonSleeper::default();
+        let sleeper = transport::BackonSleeper::default();
 
         // Start the routine with retry policy applied:
         // We allow let_and_return because `result` is used later if dump feature is enabled
-        let result = routine
+        let result: Result<
+            ExecutionResponse<<R as TransportRequest>::Response>,
+            ExecutionError<DapiClientError>,
+        > = routine
             .retry(retry_settings)
             .sleep(sleeper)
             .notify(|error, duration| {

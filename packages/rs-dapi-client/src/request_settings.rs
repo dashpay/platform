@@ -1,6 +1,6 @@
 //! DAPI client request settings processing.
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use std::time::Duration;
 
@@ -66,7 +66,7 @@ impl RequestSettings {
             ban_failed_address: self
                 .ban_failed_address
                 .unwrap_or(DEFAULT_BAN_FAILED_ADDRESS),
-            #[cfg(not(feature = "wasm"))]
+            #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
         }
     }
@@ -84,14 +84,14 @@ pub struct AppliedRequestSettings {
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: bool,
     /// Certificate Authority certificate to use for verifying the server's certificate.
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub ca_certificate: Option<Certificate>,
 }
 impl AppliedRequestSettings {
     /// Use provided CA certificate for verifying the server's certificate.
     ///
     /// If set to None, the system's default CA certificates will be used.
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
         self.ca_certificate = ca_cert;
         self

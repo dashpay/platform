@@ -31,10 +31,6 @@ client = [
   "platform",
 ]
 
-# Specialized features for building the client in a wasm environment.
-# Conflicts with `client` and `server` feature.
-wasm = []
-
 # Build tonic server code. Includes all client features and adds server-specific dependencies.
 server = [
   "tonic/channel",

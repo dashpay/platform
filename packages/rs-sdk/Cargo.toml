@@ -69,8 +69,6 @@ default = [
   "tokio/rt-multi-thread",
 ]
 
-wasm = ["dapi-grpc/wasm", "rs-dapi-client/wasm"]
-
 mocks = [
   "dep:serde",
   "dep:serde_json",

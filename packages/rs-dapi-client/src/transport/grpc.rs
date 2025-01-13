@@ -2,10 +2,7 @@
 
 use std::time::Duration;
 
-#[cfg(not(feature = "wasm"))]
-use super::tonic_channel::create_channel;
-#[cfg(feature = "wasm")]
-use super::wasm_channel::create_channel;
+use super::create_channel;
 use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use super::{CoreGrpcClient, PlatformGrpcClient};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};

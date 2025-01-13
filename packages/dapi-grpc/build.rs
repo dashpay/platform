@@ -17,7 +17,7 @@ fn main() {
     generate_code(ImplType::Server);
     #[cfg(feature = "client")]
     generate_code(ImplType::Client);
-    #[cfg(feature = "wasm")]
+    #[cfg(target_arch = "wasm32")]
     generate_code(ImplType::Wasm);
 }
 

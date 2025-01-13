@@ -19,8 +19,6 @@ pub use address_list::AddressListError;
 pub use address_list::AddressStatus;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::{update_address_ban_status, DapiClient, DapiClientError};
-#[cfg(not(feature = "wasm"))]
-pub use dapi_grpc::tonic::transport::http;
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
 pub use executor::{
@@ -28,9 +26,9 @@ pub use executor::{
     WrapToExecutionResult,
 };
 use futures::{future::BoxFuture, FutureExt};
-#[cfg(feature = "wasm")]
+#[cfg(target_arch = "wasm32")]
 pub use http::Uri;
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub use http_serde::http::Uri;
 
 pub use request_settings::RequestSettings;

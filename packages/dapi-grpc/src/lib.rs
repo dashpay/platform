@@ -8,10 +8,17 @@ pub mod core {
         #[cfg(feature = "server")]
         include!("core/server/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "client", not(feature = "server")))]
+        #[cfg(all(
+            feature = "client",
+            not(feature = "server"),
+            not(target_arch = "wasm32")
+        ))]
         include!("core/client/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "wasm", not(any(feature = "server", feature = "client"))))]
+        #[cfg(all(
+            target_arch = "wasm32",
+            not(any(feature = "server", feature = "client"))
+        ))]
         include!("core/wasm/org.dash.platform.dapi.v0.rs");
     }
 }
@@ -25,16 +32,19 @@ pub mod platform {
         #[cfg(all(feature = "client", not(feature = "server")))]
         include!("platform/client/org.dash.platform.dapi.v0.rs");
 
-        #[cfg(all(feature = "wasm", not(any(feature = "server", feature = "client"))))]
+        #[cfg(all(
+            target_arch = "wasm32",
+            not(any(feature = "server", feature = "client"))
+        ))]
         include!("platform/wasm/org.dash.platform.dapi.v0.rs");
     }
 
     #[cfg(feature = "tenderdash-proto")]
     pub use tenderdash_proto as proto;
 
-    #[cfg(any(feature = "server", feature = "client", feature = "wasm"))]
+    #[cfg(any(feature = "server", feature = "client", target_arch = "wasm32"))]
     mod versioning;
-    #[cfg(any(feature = "server", feature = "client", feature = "wasm"))]
+    #[cfg(any(feature = "server", feature = "client", target_arch = "wasm32"))]
     pub use versioning::{VersionedGrpcMessage, VersionedGrpcResponse};
 }
 
