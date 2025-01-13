@@ -49,7 +49,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 0
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "amount": {
         "type": "integer",
@@ -136,7 +137,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 0
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "recipientId": {
         "type": "array",
@@ -144,7 +146,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 1
+        "position": 1,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "amount": {
         "type": "integer",
@@ -232,7 +235,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 0
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "amount": {
         "type": "integer",
@@ -246,7 +250,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The identity or the group Id",
-        "position": 2
+        "position": 2,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "encryptedPersonalNote": {
         "type": "array",
@@ -346,7 +351,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 0
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "frozenIdentityId": {
         "type": "array",
@@ -354,7 +360,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The identity Id of the frozen token account",
-        "position": 1
+        "position": 1,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       }
     },
     "required": [
@@ -479,7 +486,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 0
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "frozenIdentityId": {
         "type": "array",
@@ -487,7 +495,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The identity Id of the frozen token account",
-        "position": 1
+        "position": 1,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "amount": {
         "type": "integer",
@@ -550,7 +559,8 @@
         "minItems": 32,
         "maxItems": 32,
         "description": "The token ID",
-        "position": 0
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
       },
       "action": {
         "type": "integer",

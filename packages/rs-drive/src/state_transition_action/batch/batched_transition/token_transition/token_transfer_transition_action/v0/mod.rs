@@ -12,6 +12,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
     TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
 };
+use crate::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 
 /// Token transfer transition action v0
 #[derive(Debug, Clone)]
@@ -139,6 +140,18 @@ pub trait TokenTransferTransitionActionAccessorsV0 {
             Vec<u8>,
         )>,
     );
+    /// All notes
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    );
 }
 
 impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionActionV0 {
@@ -214,6 +227,24 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionActionV
         )>,
     ) {
         self.private_encrypted_note = private_encrypted_note;
+    }
+
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    ) {
+        (
+            self.public_note.clone(),
+            self.shared_encrypted_note.clone(),
+            self.private_encrypted_note.clone(),
+        )
     }
 
     fn notes_owned(

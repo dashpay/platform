@@ -19,9 +19,12 @@ pub mod token_destroy_frozen_funds_transition_action;
 pub mod token_emergency_action_transition_action;
 
 use derive_more::From;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contracts::SystemDataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{DataContract, IdentityNonce};
+use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::{TokenFreezeTransitionAction, TokenFreezeTransitionActionAccessorsV0};
@@ -101,10 +104,30 @@ impl TokenTransitionAction {
     ) -> Identifier {
         let name = self.historical_document_type_name();
         Document::generate_document_id_v0(
-            &self.base().data_contract_id(),
+            &SystemDataContract::TokenHistory.id(),
             &owner_id,
             name,
             owner_nonce.to_be_bytes().as_slice(),
         )
+    }
+
+    /// Historical document id
+    pub fn build_historical_document(
+        &self,
+        token_historical_contract: &DataContract,
+        token_id: Identifier,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+        block_info: &BlockInfo,
+    ) -> Result<Document, Error> {
+        self.associated_token_event()
+            .build_historical_document_owned(
+                token_historical_contract,
+                token_id,
+                owner_id,
+                owner_nonce,
+                block_info,
+            )
+            .map_err(Error::Protocol)
     }
 }

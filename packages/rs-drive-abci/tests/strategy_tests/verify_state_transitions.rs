@@ -21,8 +21,10 @@ use drive_abci::execution::validation::state_transition::transformer::StateTrans
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contracts::SystemDataContract;
+use dpp::prelude::Identifier;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
@@ -506,6 +508,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .expect("expected token configuration")
                                     .keeps_history()
                                 {
+                                    let token_id = token_transition_action.base().token_id();
                                     let document_type_name = token_transition_action
                                         .historical_document_type_name()
                                         .to_string();
@@ -554,6 +557,30 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         "state last block info {:?}",
                                         platform.state.last_committed_block_info()
                                     );
+
+                                    assert!(
+                                        document.is_some(),
+                                        "we expect a token history document"
+                                    );
+
+                                    let expected_document = token_transition_action
+                                        .build_historical_document(
+                                            &token_history,
+                                            token_id,
+                                            batch_transition.owner_id(),
+                                            token_transition_action
+                                                .base()
+                                                .identity_contract_nonce(),
+                                            platform
+                                                .state
+                                                .last_committed_block_info()
+                                                .as_ref()
+                                                .expect("expected last commited block info")
+                                                .basic_info(),
+                                        )
+                                        .expect("expected to build historical document");
+
+                                    assert_eq!(document.unwrap(), expected_document);
                                 } else {
                                     todo!();
                                 }

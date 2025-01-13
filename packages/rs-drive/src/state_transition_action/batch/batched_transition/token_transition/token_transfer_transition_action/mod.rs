@@ -123,6 +123,22 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction 
         }
     }
 
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    ) {
+        match self {
+            TokenTransferTransitionAction::V0(v0) => v0.notes(),
+        }
+    }
+
     fn notes_owned(
         self,
     ) -> (
