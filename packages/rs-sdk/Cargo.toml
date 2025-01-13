@@ -65,7 +65,6 @@ test-case = { version = "3.3.1" }
 assert_matches = "1.5.0"
 
 [features]
-# TODO make a way to enable "tokio/rt-multi-thread" if someone uses --no-default-features
 default = ["mocks", "offline-testing", "dapi-grpc/client"]
 
 mocks = [

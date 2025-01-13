@@ -16,7 +16,7 @@ use std::fmt::Debug;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use tonic_channel::{
-    create_channel, CoreGrpcClient, PlatformGrpcClient, TonicBackonSleeper as BackonSleeper,
+    create_channel, CoreGrpcClient, PlatformGrpcClient, TokioBackonSleeper as BackonSleeper,
 };
 #[cfg(target_arch = "wasm32")]
 pub use wasm_channel::{

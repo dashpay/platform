@@ -11,7 +11,7 @@ pub type CoreGrpcClient = CoreClient<Channel>;
 
 /// backon::Sleeper
 // #[derive(Default, Clone, Debug)]
-pub type TonicBackonSleeper = backon::TokioSleeper;
+pub type TokioBackonSleeper = backon::TokioSleeper;
 
 // impl backon::Sleeper for TonicBackonSleeper {
 //     type Sleep = <backon::TokioSleeper as backon::Sleeper>::Sleep;
