@@ -70,6 +70,7 @@ pub struct StateSyncAbciConfig {
     pub snapshots_enabled: bool,
 
     /// Path to checkpoints
+    #[serde(default = "StateSyncAbciConfig::default_checkpoints_path")]
     pub checkpoints_path: PathBuf,
 
     /// Frequency of snapshot creation (in blocks)
@@ -112,5 +113,11 @@ impl StateSyncAbciConfig {
             snapshots_frequency: 3,
             max_num_snapshots: 10,
         }
+    }
+
+    fn default_checkpoints_path() -> PathBuf {
+        std::env::var("CHECKPOINTS_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/var/lib/dash-platform/data/checkpoints"))
     }
 }

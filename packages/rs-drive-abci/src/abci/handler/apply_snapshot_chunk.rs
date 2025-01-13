@@ -90,15 +90,6 @@ where
                 )
             })?;
         if incorrect_hashes.len() > 0 {
-            for element in incorrect_hashes.keys() {
-                let subtree_path: Vec<&[u8]> = element.iter().map(|vec| vec.as_slice()).collect();
-                let path: &[&[u8]] = &subtree_path;
-                let prefix = RocksDbStorage::build_prefix(path.into()).unwrap();
-                println!(
-                    "[state_sync] incorrect hash in prefix:{:?}",
-                    hex::encode(prefix)
-                );
-            }
             Err(AbciError::StateSyncInternalError(format!(
                 "apply_snapshot_chunk grovedb verification failed with {} incorrect hashes",
                 incorrect_hashes.len()

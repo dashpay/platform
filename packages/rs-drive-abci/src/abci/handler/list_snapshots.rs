@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::AbciError;
@@ -37,10 +38,7 @@ where
         }
     };
     let checkpoint_exists = |s: &Snapshot| -> bool {
-        match GroveDb::open(&s.path) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        Path::new(&s.path).exists()
     };
 
     response.snapshots = snapshots

@@ -127,7 +127,7 @@ impl SnapshotManager {
     pub fn get_snapshots(&self, grove: &GroveDb) -> Result<Vec<Snapshot>, Error> {
         let data = grove
             .get_aux(SNAPSHOT_KEY, None)
-            .unwrap()
+            .value
             .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         match data {
@@ -208,7 +208,7 @@ impl SnapshotManager {
             .map_err(|e| Error::Drive(Drive(DriveError::Snapshot(e.to_string()))))?;
         grove
             .put_aux(SNAPSHOT_KEY, data.as_slice(), None, None)
-            .unwrap()
+            .value
             .map_err(|e| Error::Drive(GroveDB(e)))?;
         Ok(())
     }
