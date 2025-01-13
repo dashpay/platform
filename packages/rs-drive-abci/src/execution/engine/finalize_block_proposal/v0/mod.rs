@@ -9,7 +9,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 
 use tenderdash_abci::{
-    proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
+    proto::{types::BlockId as ProtoBlockId, ToMillis},
     signatures::Hashable,
 };
 
