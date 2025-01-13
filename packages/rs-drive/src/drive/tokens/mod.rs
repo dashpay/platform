@@ -18,8 +18,8 @@ pub mod estimated_costs;
 /// Manages freezing operations in the system.
 pub mod freeze;
 
-/// Contains informational utility functions.
-mod info;
+/// Identity token info module, like if someone is frozen
+pub mod info;
 
 /// Implements minting operations for creating new tokens.
 pub mod mint;
@@ -35,6 +35,9 @@ pub mod unfreeze;
 
 /// Calculates the total token balance across all accounts.
 pub mod calculate_total_tokens_balance;
+
+/// Token status module, like if the token is paused
+pub mod status;
 
 /// Key for accessing token status information.
 pub const TOKEN_STATUS_INFO_KEY: u8 = 96;

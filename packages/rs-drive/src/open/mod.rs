@@ -4,9 +4,8 @@ use crate::config::DriveConfig;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::errors::ProtocolError;
-use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
-use platform_version::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
+use platform_version::version::PlatformVersion;
 use std::path::Path;
 use std::sync::Arc;
 

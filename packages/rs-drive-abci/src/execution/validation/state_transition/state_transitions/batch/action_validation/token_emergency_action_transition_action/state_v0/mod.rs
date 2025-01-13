@@ -12,7 +12,7 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::token_base_transition_action::TokenBaseTransitionActionValidation;
 use crate::platform_types::platform::PlatformStateRef;
 

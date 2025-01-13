@@ -1,7 +1,7 @@
 use crate::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use crate::drive::system::misc_path;
-use crate::drive::tokens::{token_balances_root_path, tokens_root_path, TOKEN_BALANCES_KEY};
-use crate::drive::{Drive, RootTree};
+use crate::drive::tokens::{tokens_root_path, TOKEN_BALANCES_KEY};
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::balances::total_tokens_balance::TotalTokensBalance;

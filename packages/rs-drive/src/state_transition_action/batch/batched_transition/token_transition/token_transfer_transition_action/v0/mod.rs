@@ -12,7 +12,6 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
     TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
 };
-use crate::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 
 /// Token transfer transition action v0
 #[derive(Debug, Clone)]

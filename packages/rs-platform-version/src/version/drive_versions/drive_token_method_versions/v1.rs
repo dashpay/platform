@@ -11,6 +11,8 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         identity_token_info: 0,
         identity_token_infos: 0,
         identities_token_infos: 0,
+        token_statuses: 0,
+        token_status: 0,
     },
     prove: DriveTokenProveMethodVersions {
         identity_token_balance: 0,
@@ -19,6 +21,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         identity_token_info: 0,
         identity_token_infos: 0,
         identities_token_infos: 0,
+        token_statuses: 0,
     },
     update: DriveTokenUpdateMethodVersions {
         create_token_trees: 0,

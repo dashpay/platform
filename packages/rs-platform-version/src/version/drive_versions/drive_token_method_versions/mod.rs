@@ -18,6 +18,8 @@ pub struct DriveTokenFetchMethodVersions {
     pub identity_token_info: FeatureVersion,
     pub identity_token_infos: FeatureVersion,
     pub identities_token_infos: FeatureVersion,
+    pub token_statuses: FeatureVersion,
+    pub token_status: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -28,6 +30,7 @@ pub struct DriveTokenProveMethodVersions {
     pub identity_token_info: FeatureVersion,
     pub identity_token_infos: FeatureVersion,
     pub identities_token_infos: FeatureVersion,
+    pub token_statuses: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

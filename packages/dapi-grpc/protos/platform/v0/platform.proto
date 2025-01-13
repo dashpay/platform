@@ -59,6 +59,8 @@ service Platform {
   rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
   rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
   rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
+  rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+  rpc getActiveGroupActions(GetActiveGroupActionsRequest) returns (GetActiveGroupActionsResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1359,5 +1361,137 @@ message GetIdentitiesTokenInfosResponse {
   }
   oneof version {
     GetIdentitiesTokenInfosResponseV0 v0 = 1;
+  }
+}
+
+message GetTokenStatusesRequest {
+  message GetTokenStatusesRequestV0 {
+    repeated bytes token_ids = 1;
+    bool prove = 2;
+  }
+  oneof version {
+    GetTokenStatusesRequestV0 v0 = 1;
+  }
+}
+
+message GetTokenStatusesResponse {
+  message GetTokenStatusesResponseV0 {
+    message TokenStatusEntry {
+      bytes token_id = 1;
+      optional bool paused = 2;
+    }
+
+    message TokenStatuses {
+      repeated TokenStatusEntry token_statuses = 1;
+    }
+
+    oneof result {
+      TokenStatuses token_statuses = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetTokenStatusesResponseV0 v0 = 1;
+  }
+}
+
+message GetActiveGroupActionsRequest {
+  message GetActiveGroupActionsRequestV0 {
+    bytes contract_id = 1;
+    uint32 group_contract_position = 2;
+    bool prove = 3;
+  }
+  oneof version {
+    GetActiveGroupActionsRequestV0 v0 = 1;
+  }
+}
+
+message GetActiveGroupActionsResponse {
+  message GetActiveGroupActionsResponseV0 {
+    // Mint event
+    message MintEvent {
+      uint64 amount = 1; // Amount to mint
+      bytes recipient_id = 2; // Recipient identifier
+      string public_note = 3; // Public note
+    }
+
+    // Burn event
+    message BurnEvent {
+      uint64 amount = 1; // Amount to burn
+      string public_note = 2; // Public note
+    }
+
+    // Freeze event
+    message FreezeEvent {
+      bytes frozen_id = 1; // Identifier of the frozen entity
+      string public_note = 2; // Public note
+    }
+
+    // Unfreeze event
+    message UnfreezeEvent {
+      bytes frozen_id = 1; // Identifier of the unfrozen entity
+      string public_note = 2; // Public note
+    }
+
+    // Destroy frozen funds event
+    message DestroyFrozenFundsEvent {
+      bytes frozen_id = 1; // Identifier of the frozen entity
+      uint64 amount = 2; // Amount to destroy
+      string public_note = 3; // Public note
+    }
+
+    // Transfer event
+    message TransferEvent {
+      bytes recipient_id = 1; // Recipient identifier
+      string public_note = 2; // Public note
+      bytes shared_encrypted_note = 3; // Shared encrypted note
+      bytes personal_encrypted_note = 4; // Personal encrypted note
+      uint64 amount = 5; // Amount transferred
+    }
+
+    // Emergency action event
+    message EmergencyActionEvent {
+      string action_type = 1; // Emergency action type
+      string public_note = 2; // Public note
+    }
+
+    // Event associated with this action
+    message GroupActionEvent {
+      oneof event_type {
+        TokenEvent token_event = 1; // Token event details
+      }
+    }
+
+    // Details for token events
+    message TokenEvent {
+      oneof type {
+        MintEvent mint = 1;             // Mint event details
+        BurnEvent burn = 2;             // Burn event details
+        FreezeEvent freeze = 3;         // Freeze event details
+        UnfreezeEvent unfreeze = 4;     // Unfreeze event details
+        DestroyFrozenFundsEvent destroy_frozen_funds = 5; // Destroy frozen funds
+        TransferEvent transfer = 6;     // Transfer event details
+        EmergencyActionEvent emergency_action = 7; // Emergency action details
+      }
+    }
+
+    message GroupActionEntry {
+      bytes action_id = 1; // Unique identifier for the action
+      GroupActionEvent event = 2; // The event data
+    }
+
+    message GroupActions {
+      repeated GroupActionEntry group_actions = 1;
+    }
+
+    oneof result {
+      GroupActions group_actions = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetActiveGroupActionsResponseV0 v0 = 1;
   }
 }

@@ -10,7 +10,8 @@ use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse,
+    GetActiveGroupActionsRequest, GetActiveGroupActionsResponse, GetConsensusParamsRequest,
     GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
     GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
@@ -35,8 +36,9 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetStatusRequest, GetStatusResponse, GetTotalCreditsInPlatformRequest,
-    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
+    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -657,6 +659,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identities_token_infos,
             "query_identities_token_infos",
+        )
+        .await
+    }
+
+    async fn get_token_statuses(
+        &self,
+        request: Request<GetTokenStatusesRequest>,
+    ) -> Result<Response<GetTokenStatusesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_statuses,
+            "get_token_statuses",
+        )
+        .await
+    }
+
+    async fn get_active_group_actions(
+        &self,
+        request: Request<GetActiveGroupActionsRequest>,
+    ) -> Result<Response<GetActiveGroupActionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_active_group_actions,
+            "get_active_group_actions",
         )
         .await
     }

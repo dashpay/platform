@@ -48,7 +48,6 @@ use dpp::state_transition::batch_transition::batched_transition::document_update
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use dpp::tokens::emergency_action::TokenEmergencyAction;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
