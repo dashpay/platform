@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
 use grovedb::TransactionArg;
@@ -15,7 +16,7 @@ impl Drive {
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+    ) -> Result<BTreeMap<Identifier, Option<TokenAmount>>, Error> {
         self.fetch_identities_token_balances_operations_v0(
             token_id,
             identity_ids,
@@ -32,7 +33,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+    ) -> Result<BTreeMap<Identifier, Option<TokenAmount>>, Error> {
         let path_query = Self::token_balances_for_identity_ids_query(token_id, identity_ids);
 
         self.grove_get_raw_path_query_with_optional(
@@ -44,7 +45,7 @@ impl Drive {
         )?
         .into_iter()
         .map(|(_, key, element)| {
-            let identity_id: [u8; 32] = key.try_into().map_err(|_| {
+            let identity_id: Identifier = key.try_into().map_err(|_| {
                 Error::Drive(DriveError::CorruptedDriveState(
                     "identity id not 32 bytes".to_string(),
                 ))

@@ -20,10 +20,13 @@ pub mod token_emergency_action_transition_action;
 
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contracts::SystemDataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DataContract, IdentityNonce};
+use dpp::ProtocolError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
@@ -94,6 +97,14 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(_) => "emergencyAction",
             TokenTransitionAction::DestroyFrozenFundsAction(_) => "destroyFrozenFunds",
         }
+    }
+
+    /// Historical document type for the token history contract
+    pub fn historical_document_type<'a>(
+        &self,
+        token_history_contract: &'a DataContract,
+    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+        Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
     }
 
     /// Historical document id

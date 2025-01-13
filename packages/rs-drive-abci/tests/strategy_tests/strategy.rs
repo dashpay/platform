@@ -56,8 +56,10 @@ use dpp::state_transition::batch_transition::document_create_transition::{
 };
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 use dpp::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV0, BatchTransitionV1, TokenMintTransition,
+    TokenTransferTransition,
 };
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
@@ -1455,7 +1457,7 @@ impl NetworkStrategy {
                         let token_mint_transition: TokenMintTransition = TokenMintTransitionV0 {
                             base: TokenBaseTransitionV0 {
                                 identity_contract_nonce: *identity_contract_nonce,
-                                token_contract_position: 0,
+                                token_contract_position: *token_pos,
                                 data_contract_id: contract.id(),
                                 token_id: *token_id,
                                 using_group_info: None,
@@ -1471,6 +1473,91 @@ impl NetworkStrategy {
                             owner_id: identity.id,
                             transitions: vec![BatchedTransition::Token(
                                 token_mint_transition.into(),
+                            )],
+                            user_fee_increase: 0,
+                            signature_public_key_id: 0,
+                            signature: BinaryData::default(),
+                        }
+                        .into();
+
+                        let mut batch_transition: StateTransition = batch_transition.into();
+
+                        let identity_public_key = identity
+                            .loaded_public_keys
+                            .values()
+                            .next()
+                            .expect("expected a key");
+
+                        batch_transition
+                            .sign_external(
+                                identity_public_key,
+                                signer,
+                                Some(|_data_contract_id, _document_type_name| {
+                                    Ok(SecurityLevel::HIGH)
+                                }),
+                            )
+                            .expect("expected to sign");
+
+                        operations.push(batch_transition);
+                    }
+                    OperationType::Token(TokenOp {
+                        contract,
+                        token_id,
+                        token_pos,
+                        use_identity_with_id,
+                        action:
+                            TokenEvent::Transfer(
+                                recipient,
+                                public_note,
+                                shared_encrypted_note,
+                                private_encrypted_note,
+                                amount,
+                            ),
+                    }) if current_identities.len() > 1 => {
+                        let operation_owner_id = if let Some(identity_id) = use_identity_with_id {
+                            *identity_id
+                        } else {
+                            let random_index = rng.gen_range(0..current_identities.len());
+                            current_identities[random_index].id()
+                        };
+
+                        let request = IdentityKeysRequest {
+                            identity_id: operation_owner_id.to_buffer(),
+                            request_type: KeyRequestType::SpecificKeys(vec![1]),
+                            limit: Some(1),
+                            offset: None,
+                        };
+                        let identity = platform
+                            .drive
+                            .fetch_identity_balance_with_keys(request, None, platform_version)
+                            .expect("expected to be able to get identity")
+                            .expect("expected to get an identity for token mint operation");
+                        let identity_contract_nonce = contract_nonce_counter
+                            .entry((operation_owner_id, contract.id()))
+                            .or_default();
+                        *identity_contract_nonce += 1;
+                        let token_transfer_transition: TokenTransferTransition =
+                            TokenTransferTransitionV0 {
+                                base: TokenBaseTransitionV0 {
+                                    identity_contract_nonce: *identity_contract_nonce,
+                                    token_contract_position: *token_pos,
+                                    data_contract_id: contract.id(),
+                                    token_id: *token_id,
+                                    using_group_info: None,
+                                }
+                                .into(),
+                                amount: *amount,
+                                recipient_id: *recipient,
+                                public_note: public_note.clone(),
+                                shared_encrypted_note: shared_encrypted_note.clone(),
+                                private_encrypted_note: private_encrypted_note.clone(),
+                            }
+                            .into();
+
+                        let batch_transition: BatchTransition = BatchTransitionV1 {
+                            owner_id: identity.id,
+                            transitions: vec![BatchedTransition::Token(
+                                token_transfer_transition.into(),
                             )],
                             user_fee_increase: 0,
                             signature_public_key_id: 0,

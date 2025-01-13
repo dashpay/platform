@@ -309,7 +309,7 @@
     ],
     "additionalProperties": false
   },
-  "frozen": {
+  "freeze": {
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": false,
@@ -372,7 +372,7 @@
     ],
     "additionalProperties": false
   },
-  "unfrozen": {
+  "unfreeze": {
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": false,

@@ -116,6 +116,10 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 mint_amount,
                 allow_first_mint,
             } => {
+                println!(
+                    "minting in {} token to id {} ({})",
+                    token_id, identity_balance_holder_id, mint_amount
+                );
                 let token_id_bytes: [u8; 32] = token_id.to_buffer();
                 let identity_id_bytes: [u8; 32] = identity_balance_holder_id.to_buffer();
                 let batch_operations = drive.token_mint_operations(

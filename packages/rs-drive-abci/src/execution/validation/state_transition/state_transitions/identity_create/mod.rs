@@ -423,7 +423,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1913100);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1919540);
 
         platform
             .drive
@@ -438,7 +438,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99913873900);
+        assert_eq!(identity_balance, 99913867460);
     }
 
     #[test]
@@ -868,7 +868,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2188760);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
 
         platform
             .drive
@@ -883,7 +883,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909268540); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[test]
@@ -1820,7 +1820,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2188760);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
 
         platform
             .drive
@@ -1835,6 +1835,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909268540); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
     }
 }

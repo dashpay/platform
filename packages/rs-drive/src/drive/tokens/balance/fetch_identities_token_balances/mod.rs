@@ -7,6 +7,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
@@ -34,7 +35,7 @@ impl Drive {
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+    ) -> Result<BTreeMap<Identifier, Option<TokenAmount>>, Error> {
         match platform_version
             .drive
             .methods
@@ -80,7 +81,7 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(BTreeMap<[u8; 32], Option<TokenAmount>>, FeeResult), Error> {
+    ) -> Result<(BTreeMap<Identifier, Option<TokenAmount>>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identities_token_balances_operations(
             token_id,
@@ -126,7 +127,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
+    ) -> Result<BTreeMap<Identifier, Option<TokenAmount>>, Error> {
         match platform_version
             .drive
             .methods

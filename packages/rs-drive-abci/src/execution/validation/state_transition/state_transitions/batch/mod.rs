@@ -10776,7 +10776,7 @@ mod tests {
                     let (identity, signer, key) =
                         setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-                    let (identity_2, signer2, key2) =
+                    let (identity_2, _, _) =
                         setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
                     let (contract, token_id) = create_token_contract_with_owner_identity(
@@ -11889,7 +11889,7 @@ mod tests {
 
                     let platform_state = platform.state.load();
 
-                    let (identity, signer, key) =
+                    let (identity, _, _) =
                         setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
                     let (identity_2, signer2, key2) =
@@ -12508,7 +12508,6 @@ mod tests {
                         platform_version,
                     )
                     .expect("expected to fetch token balance");
-                let expected_amount = 100000 - 1337;
                 assert_eq!(token_balance, Some(100000));
             }
 

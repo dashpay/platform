@@ -24,6 +24,7 @@ use tenderdash_abci::proto::abci::ExecTxResult;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contracts::SystemDataContract;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::prelude::Identifier;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
@@ -519,10 +520,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         .system_data_contracts
                                         .load_token_history();
 
-                                    let document_type = token_history
-                                        .document_type_for_name(document_type_name.as_str())
-                                        .expect("get document type");
-
                                     let query = SingleDocumentDriveQuery {
                                         contract_id: SystemDataContract::TokenHistory
                                             .id()
@@ -542,11 +539,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                             SingleDocumentDriveQueryContestedStatus::NotContested,
                                     };
 
-                                    let (root_hash, document) = query
-                                        .verify_proof(
+                                    let (root_hash, serialized_document) = query
+                                        .verify_proof_keep_serialized(
                                             false,
                                             &response_proof.grovedb_proof,
-                                            document_type,
                                             platform_version,
                                         )
                                         .expect("expected to verify a document");
@@ -559,7 +555,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     );
 
                                     assert!(
-                                        document.is_some(),
+                                        serialized_document.is_some(),
                                         "we expect a token history document"
                                     );
 
@@ -580,7 +576,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         )
                                         .expect("expected to build historical document");
 
-                                    assert_eq!(document.unwrap(), expected_document);
+                                    let serialized_expected_document = expected_document
+                                        .serialize(
+                                            token_transition_action
+                                                .historical_document_type(&token_history)
+                                                .expect("expected document type"),
+                                            platform_version,
+                                        )
+                                        .expect("expected to serialize");
+
+                                    assert_eq!(
+                                        serialized_document.unwrap(),
+                                        serialized_expected_document
+                                    );
                                 } else {
                                     todo!();
                                 }

@@ -4,15 +4,13 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::token_event::TokenEvent;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 impl Drive {
     /// Adds token transaction history
@@ -40,8 +38,6 @@ impl Drive {
             owner_nonce,
             block_info,
         )?;
-
-        println!("document {:?}", document);
 
         let operations = self.add_document_for_contract_operations(
             DocumentAndContractInfo {
