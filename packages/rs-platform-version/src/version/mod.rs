@@ -1,5 +1,4 @@
 mod protocol_version;
-use crate::version::v7::PROTOCOL_VERSION_7;
 use crate::version::v8::PROTOCOL_VERSION_8;
 pub use protocol_version::*;
 
