@@ -49,15 +49,15 @@ bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.22.1", optional = true }
 tempfile = { version = "3", optional = true }
 enum-map = { version = "2.0.3", optional = true }
-intmap = { version = "2.0.0", features = ["serde"], optional = true }
+intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { version = "2.1.0", optional = true, default-features = false }
-grovedb-costs = { version = "2.1.0", optional = true }
-grovedb-path = { version = "2.1.0" }
-grovedb-storage = { version = "2.1.0", optional = true }
-grovedb-version = { version = "2.1.0" }
-grovedb-epoch-based-storage-flags = { version = "2.1.0" }
+grovedb = { version = "2.2.1", optional = true, default-features = false }
+grovedb-costs = { version = "2.2.1", optional = true }
+grovedb-path = { version = "2.2.1" }
+grovedb-storage = { version = "2.2.1", optional = true }
+grovedb-version = { version = "2.2.1" }
+grovedb-epoch-based-storage-flags = { version = "2.2.1" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -104,7 +104,7 @@ server = [
   "dpp/system_contracts",
   "dpp/state-transitions",
   "fee-distribution",
-  "grovedb/full",
+  "grovedb/minimal",
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",

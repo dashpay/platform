@@ -7678,14 +7678,14 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 4339120);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 4345280);
 
             assert_eq!(
                 processing_result
                     .aggregated_fees()
                     .fee_refunds
                     .calculate_refunds_amount_for_identity(identity.id()),
-                Some(53203452)
+                Some(52987722)
             );
 
             let query_sender_results = platform
@@ -7712,7 +7712,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.2) - original_creation_cost + 50272452
+                dash_to_credits!(0.2) - original_creation_cost + 46955162
             );
 
             let buyers_balance = platform
@@ -7722,7 +7722,7 @@ mod tests {
                 .expect("expected that purchaser exists");
 
             // the buyer paid 0.1, but also storage and processing fees
-            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68950120);
+            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68956280);
         }
 
         #[test]
