@@ -6447,8 +6447,8 @@ mod tests {
     }
 
     mod nft_tests {
-        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
         use super::*;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
         #[test]
         fn test_document_set_price_on_document_without_ability_to_purchase() {
             let platform_version = PlatformVersion::latest();
@@ -7194,8 +7194,535 @@ mod tests {
                 .expect("expected to get purchaser balance")
                 .expect("expected that purchaser exists");
 
-            // the buyer payed 0.1, but also storage and processing fees
+            // the buyer paid 0.1, but also storage and processing fees
             assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        }
+
+        #[test]
+        fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-documents-mutable.json";
+
+            // let's construct the grovedb structure for the card game data contract
+            let contract = json_document_to_contract(card_game_path, true, platform_version)
+                .expect("expected to get data contract");
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let (purchaser, recipient_signer, recipient_key) =
+                setup_identity(&mut platform, 450, dash_to_credits!(1.0));
+
+            let seller_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected that identity exists");
+
+            assert_eq!(seller_balance, dash_to_credits!(0.1));
+
+            let card_document_type = contract
+                .document_type_for_name("card")
+                .expect("expected a profile document type");
+
+            assert!(card_document_type.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = card_document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::DoNotFillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document.set("attack", 4.into());
+            document.set("defense", 7.into());
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document.clone(),
+                    card_document_type,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            assert_eq!(
+                processing_result
+                    .aggregated_fees()
+                    .clone()
+                    .into_balance_change(identity.id())
+                    .change(),
+                &BalanceChange::RemoveFromBalance {
+                    required_removed_balance: 138159000,
+                    desired_removed_balance: 141234660,
+                }
+            );
+
+            let original_creation_cost = 141234660;
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let seller_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected that identity exists");
+
+            // the seller already had 0.1 minus the processing fee and storage fee
+            assert_eq!(
+                seller_balance,
+                dash_to_credits!(0.1) - original_creation_cost
+            );
+
+            let sender_documents_sql_string =
+                format!("select * from card where $ownerId == '{}'", identity.id());
+
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
+                sender_documents_sql_string.as_str(),
+                &contract,
+                Some(&platform.config.drive),
+            )
+            .expect("expected document query");
+
+            let receiver_documents_sql_string =
+                format!("select * from card where $ownerId == '{}'", purchaser.id());
+
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
+                receiver_documents_sql_string.as_str(),
+                &contract,
+                Some(&platform.config.drive),
+            )
+            .expect("expected document query");
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(
+                    query_sender_identity_documents.clone(),
+                    None,
+                    false,
+                    None,
+                    None,
+                )
+                .expect("expected query result");
+
+            let query_receiver_results = platform
+                .drive
+                .query_documents(
+                    query_receiver_identity_documents.clone(),
+                    None,
+                    false,
+                    None,
+                    None,
+                )
+                .expect("expected query result");
+
+            // We expect the sender to have 1 document, and the receiver to have none
+            assert_eq!(query_sender_results.documents().len(), 1);
+
+            assert_eq!(query_receiver_results.documents().len(), 0);
+
+            // now let's modify the document
+
+            fast_forward_to_block(&platform, 500_000, 100, 3, 1, false); //next epoch
+
+            document.set("description", "chopsticks".into());
+            document.bump_revision();
+
+            let documents_batch_update_transition =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    document.clone(),
+                    card_document_type,
+                    &key,
+                    3,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition = documents_batch_update_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let platform_state = platform.state.load();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(
+                processing_result.invalid_paid_count(),
+                0,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(
+                processing_result.invalid_unpaid_count(),
+                0,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(
+                processing_result.valid_count(),
+                1,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(processing_result.aggregated_fees().storage_fee, 378000);
+
+            assert_eq!(
+                processing_result
+                    .aggregated_fees()
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(identity.id()),
+                None
+            );
+
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 2717400);
+
+            let seller_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected that identity exists");
+
+            // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
+            assert_eq!(
+                seller_balance,
+                dash_to_credits!(0.1) - original_creation_cost - 2717400 - 378000
+            );
+
+            // now let's update price, but first go to next epoch
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 2, false); //next epoch
+
+            document.bump_revision();
+
+            let documents_batch_update_price_transition =
+                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                    document.clone(),
+                    card_document_type,
+                    dash_to_credits!(0.1),
+                    &key,
+                    4,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition for the update price");
+
+            let documents_batch_transfer_serialized_transition =
+                documents_batch_update_price_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_transfer_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default_with_time(50000000),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(
+                processing_result.invalid_paid_count(),
+                0,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(
+                processing_result.invalid_unpaid_count(),
+                0,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            assert_eq!(processing_result.aggregated_fees().storage_fee, 216000); // we added 8 bytes for the price
+
+            assert_eq!(
+                processing_result
+                    .aggregated_fees()
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(identity.id()),
+                None
+            );
+
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 2721160);
+
+            let seller_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected that identity exists");
+
+            // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
+            assert_eq!(
+                seller_balance,
+                dash_to_credits!(0.1)
+                    - original_creation_cost
+                    - 2717400
+                    - 378000
+                    - 2721160
+                    - 216000
+            );
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(
+                    query_sender_identity_documents.clone(),
+                    None,
+                    false,
+                    None,
+                    None,
+                )
+                .expect("expected query result");
+
+            let query_receiver_results = platform
+                .drive
+                .query_documents(
+                    query_receiver_identity_documents.clone(),
+                    None,
+                    false,
+                    None,
+                    None,
+                )
+                .expect("expected query result");
+
+            // We expect the sender to still have their document, and the receiver to have none
+            assert_eq!(query_sender_results.documents().len(), 1);
+
+            assert_eq!(query_receiver_results.documents().len(), 0);
+
+            // The sender document should have the desired price
+
+            let mut document = query_sender_results.documents_owned().remove(0);
+
+            let price: Credits = document
+                .properties()
+                .get_integer("$price")
+                .expect("expected to get back price");
+
+            assert_eq!(dash_to_credits!(0.1), price);
+
+            // At this point we want to have the receiver purchase the document at the next epoch
+
+            fast_forward_to_block(&platform, 1_700_000_000, 1200, 42, 3, false); //next epoch
+
+            document.bump_revision();
+
+            let documents_batch_purchase_transition =
+                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                    document.clone(),
+                    card_document_type,
+                    purchaser.id(),
+                    dash_to_credits!(0.1), //same price as requested
+                    &recipient_key,
+                    1, // 1 because he's never done anything
+                    0,
+                    &recipient_signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition for the purchase");
+
+            let documents_batch_purchase_serialized_transition =
+                documents_batch_purchase_transition
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_purchase_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(50000000),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(
+                processing_result.invalid_paid_count(),
+                0,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(
+                processing_result.invalid_unpaid_count(),
+                0,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(
+                processing_result.valid_count(),
+                1,
+                "{:?}",
+                processing_result.execution_results()
+            );
+
+            assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
+
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 4339120);
+
+            assert_eq!(
+                processing_result
+                    .aggregated_fees()
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(identity.id()),
+                Some(53203452)
+            );
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_sender_identity_documents, None, false, None, None)
+                .expect("expected query result");
+
+            let query_receiver_results = platform
+                .drive
+                .query_documents(query_receiver_identity_documents, None, false, None, None)
+                .expect("expected query result");
+
+            // We expect the sender to have no documents, and the receiver to have 1
+            assert_eq!(query_sender_results.documents().len(), 0);
+
+            assert_eq!(query_receiver_results.documents().len(), 1);
+
+            let seller_balance = platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to get identity balance")
+                .expect("expected that identity exists");
+
+            // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
+            assert_eq!(
+                seller_balance,
+                dash_to_credits!(0.2) - original_creation_cost + 50272452
+            );
+
+            let buyers_balance = platform
+                .drive
+                .fetch_identity_balance(purchaser.id().to_buffer(), None, platform_version)
+                .expect("expected to get purchaser balance")
+                .expect("expected that purchaser exists");
+
+            // the buyer paid 0.1, but also storage and processing fees
+            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68950120);
         }
 
         #[test]
@@ -7259,7 +7786,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let documents_batch_create_serialized_transition = documents_batch_create_transition
                 .serialize_to_bytes()
@@ -7323,7 +7850,7 @@ mod tests {
                 &contract,
                 Some(&platform.config.drive),
             )
-                .expect("expected document query");
+            .expect("expected document query");
 
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
@@ -7333,7 +7860,7 @@ mod tests {
                 &contract,
                 Some(&platform.config.drive),
             )
-                .expect("expected document query");
+            .expect("expected document query");
 
             let query_sender_results = platform
                 .drive
@@ -7361,7 +7888,7 @@ mod tests {
             assert_eq!(query_sender_results.documents().len(), 1);
 
             assert_eq!(query_receiver_results.documents().len(), 0);
-            
+
             // now let's update price, but first go to next epoch
 
             fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
@@ -7382,7 +7909,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition for the update price");
+                .expect("expect to create documents batch transition for the update price");
 
             let documents_batch_transfer_serialized_transition =
                 documents_batch_update_price_transition
@@ -7500,7 +8027,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition for the purchase");
+                .expect("expect to create documents batch transition for the purchase");
 
             let documents_batch_purchase_serialized_transition =
                 documents_batch_purchase_transition
@@ -7580,7 +8107,7 @@ mod tests {
                 .expect("expected to get purchaser balance")
                 .expect("expected that purchaser exists");
 
-            // the buyer payed 0.1, but also storage and processing fees
+            // the buyer paid 0.1, but also storage and processing fees
             assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
         }
 
