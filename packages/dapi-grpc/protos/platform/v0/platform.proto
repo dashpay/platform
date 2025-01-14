@@ -61,7 +61,7 @@ service Platform {
   rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
   rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
-  rpc getActiveGroupActions(GetActiveGroupActionsRequest) returns (GetActiveGroupActionsResponse);
+//  rpc getActiveGroupActions(GetActiveGroupActionsRequest) returns (GetActiveGroupActionsResponse);
 //  rpc getClosedGroupActions(GetClosedGroupActionsRequest) returns (GetClosedGroupActionsResponse);
 }
 
