@@ -5,6 +5,7 @@ use crate::platform_types::snapshot::SnapshotFetchingSession;
 use dpp::version::PlatformVersion;
 use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 use tenderdash_abci::proto::abci as proto;
+use tenderdash_abci::proto::abci::response_offer_snapshot;
 
 pub fn offer_snapshot<'a, 'db: 'a, A, C: 'db>(
     app: &'a A,
@@ -57,7 +58,8 @@ where
             state_sync_info,
         );
         *session_write_guard = Some(session);
-        let response = proto::ResponseOfferSnapshot::default();
+        let mut response = proto::ResponseOfferSnapshot::default();
+        response.result = i32::from(response_offer_snapshot::Result::Accept);
         Ok(response)
     } else {
         // Already syncing another snapshot session
