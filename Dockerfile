@@ -260,7 +260,7 @@ WORKDIR /tmp/rocksdb
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
 
 # Support any CPU architecture
