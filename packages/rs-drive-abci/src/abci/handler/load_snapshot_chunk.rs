@@ -24,12 +24,12 @@ where
     let matched_snapshot = app
         .snapshot_manager()
         .get_snapshot_at_height(&*app.platform().drive.grove, request.height as i64)
-        .map_err(|_| AbciError::StateSyncInternalError("load_snapshot_chunk failed".to_string()))?
+        .map_err(|_| AbciError::StateSyncInternalError("load_snapshot_chunk failed: error matched snapshot".to_string()))?
         .ok_or_else(|| {
-            AbciError::StateSyncInternalError("load_snapshot_chunk failed".to_string())
+            AbciError::StateSyncInternalError("load_snapshot_chunk failed: empty mattched snapshot".to_string())
         })?;
     let db = GroveDb::open(&matched_snapshot.path).map_err(|e| {
-        AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed:{}", e))
+        AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed: error opening grove:{}", e))
     })?;
     let chunk = db
         .fetch_chunk(
@@ -39,7 +39,7 @@ where
             &PlatformVersion::latest().drive.grove_version,
         )
         .map_err(|e| {
-            AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed:{}", e))
+            AbciError::StateSyncInternalError(format!("load_snapshot_chunk failed: error fetching chunk{}", e))
         })?;
     let mut response = proto::ResponseLoadSnapshotChunk::default();
     response.chunk = chunk;
