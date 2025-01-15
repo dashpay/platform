@@ -93,7 +93,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             let key_request = IdentityKeysRequest {
                 identity_id: identity_credit_withdrawal.identity_id.to_buffer(),
                 request_type: KeyRequestType::RecentWithdrawalKeys,
-                limit: None,
+                limit: Some(1),
                 offset: None,
             };
             let key: Option<IdentityPublicKey> =
@@ -177,7 +177,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         let withdrawal_document = DocumentV0 {
             id: document_id,
             owner_id: identity_credit_withdrawal.identity_id,
-            properties: document_data.into_btree_string_map().unwrap(),
+            properties: document_data.into_btree_string_map()?,
             revision: Some(1),
             created_at: Some(block_info.time_ms),
             updated_at: Some(block_info.time_ms),
