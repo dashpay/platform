@@ -1,10 +1,6 @@
 ## [1.8.0-rc.1](https://github.com/dashpay/platform/compare/v1.8.0-dev.2...v1.8.0-rc.1) (2025-01-15)
 
 
-### ⚠ BREAKING CHANGES
-
-* **platform:** distribute prefunded specialized balances after vote (#2422)
-
 ### Features
 
 * **platform:** distribute prefunded specialized balances after vote ([#2422](https://github.com/dashpay/platform/issues/2422))
@@ -28,6 +24,8 @@
 * **drive:** increase withdrawal limits to 2000 Dash per day ([#2287](https://github.com/dashpay/platform/issues/2287))
 * fix test suite configuration script ([#2402](https://github.com/dashpay/platform/issues/2402))
 * resolve NPM audit warnings ([#2417](https://github.com/dashpay/platform/issues/2417))
+* update bls library ([#2424](https://github.com/dashpay/platform/issues/2424))
+
 
 
 ## [1.8.0-dev.2](https://github.com/dashpay/platform/compare/v1.8.0-dev.1...v1.8.0-dev.2) (2024-12-19)
