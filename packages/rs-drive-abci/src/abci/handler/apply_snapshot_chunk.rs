@@ -96,7 +96,7 @@ where
             )))?;
         }
         return Ok(proto::ResponseApplySnapshotChunk {
-            result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
+            result: proto::response_apply_snapshot_chunk::Result::CompleteSnapshot.into(),
             refetch_chunks: vec![],
             reject_senders: vec![],
             next_chunks: vec![],
