@@ -1061,6 +1061,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
+            options.core.log.debug.exclude.push('libevent', 'leveldb');
+
             options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
           });

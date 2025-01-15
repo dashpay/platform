@@ -110,7 +110,7 @@ export default {
       properties: {
         llmqType: {
           type: 'integer',
-          enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+          enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107, 111],
         },
         dkgInterval: {
           type: 'integer',
