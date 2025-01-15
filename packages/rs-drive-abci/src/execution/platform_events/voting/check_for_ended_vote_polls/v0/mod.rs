@@ -310,6 +310,7 @@ where
         // This means removing it and also removing all current votes
         if !vote_polls_with_info.is_empty() {
             self.clean_up_after_vote_polls_end(
+                block_info,
                 &vote_polls_with_info,
                 clean_up_testnet_corrupted_reference_issue,
                 transaction,

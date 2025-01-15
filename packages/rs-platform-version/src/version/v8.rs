@@ -19,7 +19,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v5::DRIVE_ABCI_VALIDATION_VERSIONS_V5;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v2::DRIVE_VERSION_V2;
+use crate::version::drive_versions::v3::DRIVE_VERSION_V3;
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
@@ -31,7 +31,8 @@ pub const PROTOCOL_VERSION_8: ProtocolVersion = 8;
 /// This version contains some fixes for withdrawals and nfts.
 pub const PLATFORM_V8: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_8,
-    drive: DRIVE_VERSION_V2,
+    //changed to V3 because of an error in add_prefunded_specialized_balance_operations
+    drive: DRIVE_VERSION_V3,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         // We changed `pool_withdrawals_into_transactions_queue` to v1 in order to add pool

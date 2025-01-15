@@ -17,7 +17,7 @@ use crate::version::drive_versions::{
 };
 use grovedb_version::version::v1::GROVE_V1;
 
-pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
+pub const DRIVE_VERSION_V3: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
@@ -89,8 +89,8 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
             fetch_single: 0,
             prove_single: 0,
             add_prefunded_specialized_balance: 0,
-            add_prefunded_specialized_balance_operations: 0,
-            deduct_from_prefunded_specialized_balance: 0,
+            add_prefunded_specialized_balance_operations: 1, //changed in v3
+            deduct_from_prefunded_specialized_balance: 1, //changed in v3
             deduct_from_prefunded_specialized_balance_operations: 0,
             estimated_cost_for_prefunded_specialized_balance_update: 0,
             empty_prefunded_specialized_balance: 0,
