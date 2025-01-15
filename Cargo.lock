@@ -541,12 +541,11 @@ dependencies = [
 
 [[package]]
 name = "blsful"
-version = "3.0.0-pre6"
+version = "3.0.0-pre8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b9de4566ea9f21109f6b3f11551b591ff22683ff47c3a30d97e2feb23257427"
+checksum = "384e5e9866cb7f830f06a6633ba998697d5a826e99e8c78376deaadd33cda7be"
 dependencies = [
  "anyhow",
- "arrayref",
  "blstrs_plus",
  "hex",
  "hkdf",
@@ -560,7 +559,7 @@ dependencies = [
  "sha2",
  "sha3",
  "subtle",
- "thiserror 1.0.64",
+ "thiserror 2.0.11",
  "uint-zigzag",
  "vsss-rs",
  "zeroize",
@@ -1235,8 +1234,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.34.0"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=0.34.0#4c61ab617ca9f86f84484607014a7e8e0baba960"
+version = "0.35.0"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.35.0#521a76bfd7eaa90d2d89dc576808ec5772544f07"
 dependencies = [
  "anyhow",
  "bech32",
@@ -1258,16 +1257,14 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=0.34.0#4c61ab617ca9f86f84484607014a7e8e0baba960"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.35.0#521a76bfd7eaa90d2d89dc576808ec5772544f07"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.15.13"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.13#88dfef0dc04cbe8f4b0d24e9aabfae8ca126c74a"
+version = "0.16.0"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.16.0#099e871a64bbff1faf9c1d56014b612a1da1f3e0"
 dependencies = [
- "dashcore-private",
  "dashcore-rpc-json",
- "env_logger 0.10.2",
  "hex",
  "jsonrpc",
  "log",
@@ -1277,8 +1274,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.15.13"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.13#88dfef0dc04cbe8f4b0d24e9aabfae8ca126c74a"
+version = "0.16.0"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.16.0#099e871a64bbff1faf9c1d56014b612a1da1f3e0"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1292,7 +1289,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.14.0"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=0.34.0#4c61ab617ca9f86f84484607014a7e8e0baba960"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.35.0#521a76bfd7eaa90d2d89dc576808ec5772544f07"
 dependencies = [
  "dashcore-private",
  "secp256k1",
@@ -1461,7 +1458,7 @@ dependencies = [
  "data-contracts",
  "derive_more",
  "dpp",
- "env_logger 0.11.5",
+ "env_logger",
  "getrandom",
  "hex",
  "indexmap 2.7.0",
@@ -1734,19 +1731,6 @@ checksum = "4f2c92ceda6ceec50f43169f9ee8424fe2db276791afde7b2cd8bc084cb376ab"
 dependencies = [
  "log",
  "regex",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
 ]
 
 [[package]]
@@ -4905,15 +4889,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "termtree"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4990,26 +4965,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.96",
-]
-
-[[package]]
-name = "thiserror-impl-no-std"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58e6318948b519ba6dc2b442a6d0b904ebfb8d411a3ad3e07843615a72249758"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "thiserror-no-std"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3ad459d94dd517257cc96add8a43190ee620011bb6e6cdc82dafd97dfafafea"
-dependencies = [
- "thiserror-impl-no-std",
 ]
 
 [[package]]
@@ -5572,9 +5527,9 @@ checksum = "7302ac74a033bf17b6e609ceec0f891ca9200d502d31f02dc7908d3d98767c9d"
 
 [[package]]
 name = "vsss-rs"
-version = "5.0.0-rc1"
+version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9860fb75908021ae4cc125917c9763134f7f236a716d181ed644627783230c5d"
+checksum = "fec4ebcc5594130c31b49594d55c0583fe80621f252f570b222ca4845cafd3cf"
 dependencies = [
  "crypto-bigint",
  "elliptic-curve",
@@ -5586,7 +5541,6 @@ dependencies = [
  "serde",
  "sha3",
  "subtle",
- "thiserror-no-std",
  "zeroize",
 ]
 
