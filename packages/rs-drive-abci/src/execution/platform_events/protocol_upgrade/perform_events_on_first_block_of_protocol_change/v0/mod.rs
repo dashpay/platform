@@ -72,7 +72,17 @@ impl<C> Platform<C> {
         }
 
         if previous_protocol_version < 8 && platform_version.protocol_version >= 8 {
-            self.transition_to_version_8(block_info, transaction, platform_version)?;
+            self.transition_to_version_8(block_info, transaction, platform_version)
+                .or_else(|e| {
+                    tracing::error!(
+                        error = ?e,
+                        "Error while transitioning to version 8: {e}"
+                    );
+
+                    // We ignore this transition errors because it's not changing the state stucture
+                    // and not critical for the system
+                    Ok::<(), Error>(())
+                })?;
         }
 
         Ok(())
@@ -129,7 +139,7 @@ impl<C> Platform<C> {
             .0
             .to_keys()
             .into_iter()
-            .map(|key| Identifier::try_from(key))
+            .map(Identifier::try_from)
             .collect::<Result<HashSet<_>, dpp::platform_value::Error>>()?;
 
         let path = vote_end_date_queries_tree_path_vec();
@@ -153,18 +163,13 @@ impl<C> Platform<C> {
             },
         };
 
-        let Ok((query_result_elements, _)) = self.drive.grove_get_path_query(
+        let (query_result_elements, _) = self.drive.grove_get_path_query(
             &current_votes_path_query,
             Some(transaction),
             QueryResultType::QueryElementResultType,
             &mut vec![],
             &platform_version.drive,
-        ) else {
-            tracing::error!(
-                "Transition to version 8 failed getting active contested resource votes"
-            );
-            return Ok(());
-        };
+        )?;
 
         let active_specialized_balances = query_result_elements
             .to_elements()
