@@ -91,7 +91,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMeth
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
         clean_up_after_vote_poll_end: 0,
-        clean_up_after_contested_resources_vote_poll_end: 0,
+        clean_up_after_contested_resources_vote_poll_end: 1,
         check_for_ended_vote_polls: 0,
         tally_votes_for_contested_document_resource_vote_poll: 0,
         award_document_to_winner: 0,

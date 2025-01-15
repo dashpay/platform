@@ -10,6 +10,7 @@ use crate::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_voting_path_vec,
 };
 use crate::error::identity::IdentityError;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::MAX_CREDITS;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -20,7 +21,7 @@ use std::collections::HashMap;
 impl Drive {
     /// The operations to add to the specialized balance
     #[inline(always)]
-    pub(super) fn add_prefunded_specialized_balance_operations_v0(
+    pub(super) fn add_prefunded_specialized_balance_operations_v1(
         &self,
         specialized_balance_id: Identifier,
         amount: u64,
@@ -37,12 +38,22 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
+
+        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
+            DirectQueryType::StatefulDirectQuery
+        } else {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: true,
+                query_target: QueryTargetValue(8),
+            }
+        };
+
         let path_holding_specialized_balances = prefunded_specialized_balances_for_voting_path();
         let previous_credits_in_specialized_balance = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
                 (&path_holding_specialized_balances).into(),
                 specialized_balance_id.as_slice(),
-                DirectQueryType::StatefulDirectQuery,
+                direct_query_type,
                 transaction,
                 &mut drive_operations,
                 &platform_version.drive,
