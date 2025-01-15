@@ -199,18 +199,4 @@ where
     ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
         handler::apply_snapshot_chunk(self, request).map_err(error_into_exception)
     }
-
-    fn list_snapshots(
-        &self,
-        request: proto::RequestListSnapshots,
-    ) -> Result<proto::ResponseListSnapshots, proto::ResponseException> {
-        handler::list_snapshots(self, request).map_err(error_into_exception)
-    }
-
-    fn load_snapshot_chunk(
-        &self,
-        request: proto::RequestLoadSnapshotChunk,
-    ) -> Result<proto::ResponseLoadSnapshotChunk, proto::ResponseException> {
-        handler::load_snapshot_chunk(self, request).map_err(error_into_exception)
-    }
 }
