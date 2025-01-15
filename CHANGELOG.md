@@ -29,66 +29,6 @@
 * fix test suite configuration script ([#2402](https://github.com/dashpay/platform/issues/2402))
 * resolve NPM audit warnings ([#2417](https://github.com/dashpay/platform/issues/2417))
 
-## [1.8.0-dev.2](https://github.com/dashpay/platform/compare/v1.7.1...v1.8.0-dev.2) (2024-12-19)
-
-
-### Bug Fixes
-
-* **dashmate:** local network starting issues ([#2394](https://github.com/dashpay/platform/issues/2394))
-* **dashmate:** some group commands fail with mtime not found ([#2400](https://github.com/dashpay/platform/issues/2400))
-
-
-### Performance Improvements
-
-* **dpp:** reduce JS binding size by 3x ([#2396](https://github.com/dashpay/platform/issues/2396))
-
-
-### Build System
-
-* bump wasm-bindgen to 0.2.99 ([#2395](https://github.com/dashpay/platform/issues/2395))
-
-
-### Code Refactoring
-
-* **dpp:** using deprecated param to init wasm module ([#2399](https://github.com/dashpay/platform/issues/2399))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 1.8.0-dev.2 ([#2404](https://github.com/dashpay/platform/issues/2404))
-
-## [1.8.0-dev.1](https://github.com/dashpay/platform/compare/v1.7.0...v1.8.0-dev.1) (2024-12-17)
-
-
-### ⚠ BREAKING CHANGES
-
-* **sdk:** allow setting CA cert (#1924)
-* update rust to 1.83 (#2393)
-
-### Features
-
-* **sdk:** allow setting CA cert ([#1924](https://github.com/dashpay/platform/issues/1924))
-
-
-### Tests
-
-* **sdk:** generate test vectors using testnet ([#2381](https://github.com/dashpay/platform/issues/2381))
-
-
-### Code Refactoring
-
-* **platform:** replace bls library ([#2257](https://github.com/dashpay/platform/issues/2257))
-
-
-### Build System
-
-* update rust to 1.83 ([#2393](https://github.com/dashpay/platform/issues/2393))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 1.8.0-dev.1 ([#2391](https://github.com/dashpay/platform/issues/2391))
-* remove deprecated check_network_version.sh ([#2084](https://github.com/dashpay/platform/issues/2084))
 
 ## [1.8.0-dev.2](https://github.com/dashpay/platform/compare/v1.8.0-dev.1...v1.8.0-dev.2) (2024-12-19)
 
