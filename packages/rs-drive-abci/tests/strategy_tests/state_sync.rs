@@ -50,7 +50,7 @@ mod tests {
         Ok(())
     }
 
-    fn get_target_folder() -> PathBuf {
+    /*fn get_target_folder() -> PathBuf {
         // Use the environment variable `CARGO_MANIFEST_DIR` to locate the current package
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
 
@@ -62,10 +62,11 @@ mod tests {
 
         // The `target` folder is located at the workspace root
         current_dir.join("target")
-    }
+    }*/
 
     fn get_target_tmp_folder() -> PathBuf {
-        get_target_folder().join("tmp")
+        PathBuf::from("/Users/odysseasg/Downloads/state_sync/").join("tmp")
+        //get_target_folder().join("tmp")
     }
 
     #[test]
