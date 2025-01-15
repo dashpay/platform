@@ -8,7 +8,6 @@ mod consensus;
 /// Convert state transition execution result into ABCI response
 pub mod execution_result;
 mod full;
-mod state_source;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
@@ -17,7 +16,6 @@ pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
-pub use state_source::StateSourceAbciApplication;
 
 /// Platform-based ABCI application
 pub trait PlatformApplication<C = DefaultCoreRPC> {

@@ -1,4 +1,4 @@
-use crate::abci::app::PlatformApplication;
+use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::handler;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::abci_application_server as grpc_abci_server;
 use tenderdash_abci::proto::tonic;
+use crate::platform_types::snapshot::SnapshotManager;
 
 /// AbciApp is an implementation of gRPC ABCI Application, as defined by Tenderdash.
 ///
@@ -22,6 +23,8 @@ where
     /// Platform
     platform: Arc<Platform<C>>,
     core_rpc: Arc<C>,
+    /// Snapshot manager
+    snapshot_manager: SnapshotManager,
 }
 
 impl<C> PlatformApplication<C> for CheckTxAbciApplication<C>
@@ -33,13 +36,30 @@ where
     }
 }
 
+impl<C> SnapshotManagerApplication for CheckTxAbciApplication<C>
+where
+    C: CoreRPCLike + Send + Sync + 'static,
+{
+    fn snapshot_manager(&self) -> &SnapshotManager {
+        &self.snapshot_manager
+    }
+}
+
 impl<C> CheckTxAbciApplication<C>
 where
     C: CoreRPCLike + Send + Sync + 'static,
 {
     /// Create new ABCI app
     pub fn new(platform: Arc<Platform<C>>, core_rpc: Arc<C>) -> Self {
-        Self { platform, core_rpc }
+        let snapshot_manager = SnapshotManager::new(
+            platform
+                .config
+                .state_sync_config
+                .checkpoints_path.clone(),
+            platform.config.state_sync_config.max_num_snapshots,
+            platform.config.state_sync_config.snapshots_frequency,
+        );
+        Self { platform, core_rpc, snapshot_manager }
     }
 }
 
@@ -91,6 +111,24 @@ where
         })?
         .await
         .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
+    }
+
+    async fn list_snapshots(
+        &self,
+        request: tonic::Request<proto::RequestListSnapshots>,
+    ) -> Result<tonic::Response<proto::ResponseListSnapshots>, tonic::Status> {
+        handler::list_snapshots(self, request.into_inner())
+            .map(tonic::Response::new)
+            .map_err(|e| tonic::Status::internal(format!("list_snapshots failed: {}", e)))
+    }
+
+    async fn load_snapshot_chunk(
+        &self,
+        request: tonic::Request<proto::RequestLoadSnapshotChunk>,
+    ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
+        handler::load_snapshot_chunk(self, request.into_inner())
+            .map(tonic::Response::new)
+            .map_err(|e| tonic::Status::internal(format!("load_snapshot_chunk failed: {}", e)))
     }
 }
 
