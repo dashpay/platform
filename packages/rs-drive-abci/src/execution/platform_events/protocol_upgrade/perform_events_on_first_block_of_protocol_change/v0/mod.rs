@@ -65,9 +65,13 @@ impl<C> Platform<C> {
                 transaction,
                 platform_version,
             )?;
-        } else if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
+        }
+
+        if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
             self.transition_to_version_6(block_info, transaction, platform_version)?;
-        } else if previous_protocol_version < 8 && platform_version.protocol_version >= 8 {
+        }
+
+        if previous_protocol_version < 8 && platform_version.protocol_version >= 8 {
             self.transition_to_version_8(block_info, transaction, platform_version)?;
         }
 
