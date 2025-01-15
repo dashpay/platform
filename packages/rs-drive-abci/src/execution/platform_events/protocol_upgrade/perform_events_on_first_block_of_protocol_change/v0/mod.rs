@@ -65,10 +65,10 @@ impl<C> Platform<C> {
                 transaction,
                 platform_version,
             )?;
-        }
-
-        if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
+        } else if previous_protocol_version < 6 && platform_version.protocol_version >= 6 {
             self.transition_to_version_6(block_info, transaction, platform_version)?;
+        } else if previous_protocol_version < 8 && platform_version.protocol_version >= 8 {
+            self.transition_to_version_8(block_info, transaction, platform_version)?;
         }
 
         Ok(())
@@ -140,7 +140,7 @@ impl<C> Platform<C> {
 
         query.default_subquery_branch.subquery = Some(sub_query.into());
 
-        PathQuery {
+        let current_votes_path_query = PathQuery {
             path,
             query: SizedQuery {
                 query,
@@ -150,7 +150,7 @@ impl<C> Platform<C> {
         };
 
         let Ok((query_result_elements, _)) = self.drive.grove_get_path_query(
-            &path_query,
+            &current_votes_path_query,
             Some(transaction),
             QueryResultType::QueryElementResultType,
             &mut vec![],

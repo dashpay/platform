@@ -71,10 +71,6 @@ impl Drive {
                 "trying to set prefunded specialized balance to over max credits amount (i64::MAX)",
             )));
         };
-        println!(
-            "adding specialized balance {}, now is {}",
-            amount, new_total
-        );
         let path_holding_total_credits_vec = prefunded_specialized_balances_for_voting_path_vec();
         let op = if had_previous_balance {
             QualifiedGroveDbOp::replace_op(
