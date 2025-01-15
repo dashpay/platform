@@ -1,3 +1,33 @@
+## [1.8.0-rc.1](https://github.com/dashpay/platform/compare/v1.8.0-dev.2...v1.8.0-rc.1) (2025-01-15)
+
+
+### Features
+
+* **platform:** distribute prefunded specialized balances after vote ([#2422](https://github.com/dashpay/platform/issues/2422))
+
+
+### Bug Fixes
+
+* **drive-abci:** document purchase on mutable document from different epoch had issue ([#2420](https://github.com/dashpay/platform/issues/2420))
+* **drive:** more than one key was returned when expecting only one result ([#2421](https://github.com/dashpay/platform/issues/2421))
+* **sdk:** failed to deserialize consensus error ([#2410](https://github.com/dashpay/platform/issues/2410))
+* try DriveDocumentQuery from DocumentQuery start field ([#2407](https://github.com/dashpay/platform/issues/2407))
+
+
+### Tests
+
+* unify identity versioned cost coverage ([#2416](https://github.com/dashpay/platform/issues/2416))
+
+
+### Miscellaneous Chores
+
+* **drive:** increase withdrawal limits to 2000 Dash per day ([#2287](https://github.com/dashpay/platform/issues/2287))
+* fix test suite configuration script ([#2402](https://github.com/dashpay/platform/issues/2402))
+* resolve NPM audit warnings ([#2417](https://github.com/dashpay/platform/issues/2417))
+* update bls library ([#2424](https://github.com/dashpay/platform/issues/2424))
+
+
+
 ## [1.8.0-dev.2](https://github.com/dashpay/platform/compare/v1.8.0-dev.1...v1.8.0-dev.2) (2024-12-19)
 
 ### ⚠ BREAKING CHANGES
