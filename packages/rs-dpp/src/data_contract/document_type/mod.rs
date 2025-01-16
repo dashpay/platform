@@ -65,6 +65,7 @@ mod property_names {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[ferment_macro::export]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }
