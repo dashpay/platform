@@ -22,7 +22,9 @@ use crate::version::v4::PLATFORM_V4;
 use crate::version::v5::PLATFORM_V5;
 use crate::version::v6::PLATFORM_V6;
 use crate::version::v7::PLATFORM_V7;
+use crate::version::v8::PLATFORM_V8;
 use crate::version::v9::PLATFORM_V9;
+
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
 
@@ -46,6 +48,7 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V5,
     PLATFORM_V6,
     PLATFORM_V7,
+    PLATFORM_V8,
     PLATFORM_V9,
 ];
 

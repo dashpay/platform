@@ -270,6 +270,10 @@ where
             })?; // This is a system error
 
         // Rebroadcast expired withdrawals if they exist
+        // We do that before we mark withdrawals as expired
+        // to rebroadcast them on the next block but not the same
+        // one
+        // TODO: It must be also only on core height change
         self.rebroadcast_expired_withdrawal_documents(
             &block_info,
             last_committed_platform_state,

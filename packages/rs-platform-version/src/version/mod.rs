@@ -1,5 +1,9 @@
 mod protocol_version;
+<<<<<<< HEAD
 use crate::version::v9::PROTOCOL_VERSION_9;
+=======
+use crate::version::v8::PROTOCOL_VERSION_8;
+>>>>>>> v1.8-dev
 pub use protocol_version::*;
 
 mod consensus_versions;
@@ -19,7 +23,8 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
-mod v9;
+pub mod v8;
+pub mod v9;
 
 pub type ProtocolVersion = u32;
 

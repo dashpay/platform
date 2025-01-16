@@ -25,6 +25,7 @@ pub mod drive_verify_method_versions;
 pub mod drive_vote_method_versions;
 pub mod v1;
 pub mod v2;
+pub mod v3;
 pub mod v4;
 
 #[derive(Clone, Debug, Default)]
@@ -92,6 +93,7 @@ pub struct DrivePrefundedSpecializedMethodVersions {
     pub deduct_from_prefunded_specialized_balance: FeatureVersion,
     pub deduct_from_prefunded_specialized_balance_operations: FeatureVersion,
     pub estimated_cost_for_prefunded_specialized_balance_update: FeatureVersion,
+    pub empty_prefunded_specialized_balance: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
