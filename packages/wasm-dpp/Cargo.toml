@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "1.7.0"
+version = "1.8.0"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -15,7 +15,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 # Meantime if you want to update wasm-bindgen you also need to update version in:
 #  - packages/wasm-dpp/scripts/build-wasm.sh
 #  - Dockerfile
-wasm-bindgen = { version = "=0.2.86" }
+wasm-bindgen = { version = "=0.2.99" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
 thiserror = { version = "1.0.63" }
@@ -49,11 +49,11 @@ hex = { version = "0.4" }
 paste = "1.0.14"
 anyhow = { version = "1.0.75" }
 # required, cargo-machete false positive
-wasm-bindgen-futures = "0.4.33"
+wasm-bindgen-futures = "0.4.49"
 async-trait = "0.1.59"
 bincode = "2.0.0-rc.3"
 [profile.release]
 lto = true
-opt-level = 's'
+opt-level = 'z'
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]

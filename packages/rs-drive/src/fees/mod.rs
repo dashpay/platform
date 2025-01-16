@@ -2,6 +2,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 
 mod calculate_fee;
+/// Operations
 pub mod op;
 
 /// Get overflow error

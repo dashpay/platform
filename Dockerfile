@@ -283,7 +283,7 @@ ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib
@@ -333,7 +333,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+    cargo binstall wasm-bindgen-cli@0.2.99 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \

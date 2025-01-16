@@ -1,14 +1,14 @@
 import { LLMQ_TYPE_TEST } from '../../constants.js';
+import wait from '../../util/wait.js';
 
 /**
  * Checks all mastrenodoes probes to incterconnected masternodes
  *
  * @param {RpcClient[]} rpcClients
- * @param {Function} bumpMockTime
  *
  * @return {Promise<boolean>}
  */
-async function checkProbes(rpcClients, bumpMockTime) {
+async function checkProbes(rpcClients) {
   let masternodes = await Promise.all(
     rpcClients.map((rpc) => {
       const promise = rpc.masternode('status');
@@ -30,8 +30,6 @@ async function checkProbes(rpcClients, bumpMockTime) {
       .find((connection) => connection.llmqType === LLMQ_TYPE_TEST);
 
     if (!llmqConnection) {
-      await bumpMockTime();
-
       return false;
     }
 
@@ -49,16 +47,12 @@ async function checkProbes(rpcClients, bumpMockTime) {
             // probe is not too old. Probes are retried after 50 minutes, while DKGs consider
             // a probe as failed after 60 minutes
             if (mnInfo.metaInfo.lastOutboundSuccessElapsed > 55 * 60) {
-              await bumpMockTime();
-
               return false;
             }
           // MN is expected to be offline, so let's only check that
           // the last probe is not too long ago
           } else if (mnInfo.metaInfo.lastOutboundAttemptElapsed > 55 * 60
             && mnInfo.metaInfo.lastOutboundSuccessElapsed > 55 * 60) {
-            await bumpMockTime();
-
             return false;
           }
         }
@@ -72,20 +66,21 @@ async function checkProbes(rpcClients, bumpMockTime) {
 /**
  *
  * @param {RpcClient[]} rpcClients
- * @param {Function} bumpMockTime
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
-export default async function waitForMasternodeProbes(rpcClients, bumpMockTime, timeout = 30000) {
+export default async function waitForMasternodeProbes(rpcClients, timeout = 30000) {
   const deadline = Date.now() + timeout;
 
   let isReady = false;
 
   while (!isReady) {
-    isReady = await checkProbes(rpcClients, bumpMockTime);
+    isReady = await checkProbes(rpcClients);
 
     if (Date.now() > deadline) {
       throw new Error(`waitForMasternodeProbes deadline of ${timeout} exceeded`);
     }
+
+    await wait(100);
   }
 }

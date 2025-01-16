@@ -31,14 +31,12 @@ async function checkQuorumConnections(rpcClient, expectedConnectionsCount) {
  *
  * @param {RpcClient[]} rpcClients
  * @param {number} expectedConnectionsCount
- * @param {Function} bumpMockTime
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
 export default async function waitForQuorumConnections(
   rpcClients,
   expectedConnectionsCount,
-  bumpMockTime,
   timeout = 300000,
 ) {
   const deadline = Date.now() + timeout;
@@ -58,8 +56,6 @@ export default async function waitForQuorumConnections(
     }));
 
     if (readyNodes.size < nodesToWait) {
-      await bumpMockTime();
-
       await wait(1000);
     }
 
