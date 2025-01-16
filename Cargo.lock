@@ -2098,8 +2098,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "axum",
  "bincode",
@@ -2129,8 +2129,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-costs"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2139,8 +2139,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -2151,11 +2151,12 @@ dependencies = [
 
 [[package]]
 name = "grovedb-merk"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "bincode",
  "blake3",
+ "byteorder",
  "colored",
  "ed",
  "grovedb-costs",
@@ -2173,16 +2174,16 @@ dependencies = [
 
 [[package]]
 name = "grovedb-path"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "hex",
 ]
 
 [[package]]
 name = "grovedb-storage"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2200,8 +2201,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-version"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "thiserror 2.0.11",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2209,8 +2210,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-visualize"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -2218,8 +2219,8 @@ dependencies = [
 
 [[package]]
 name = "grovedbg-types"
-version = "2.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a25cc077d2e425cab7dcba41e4611444857f62d7#a25cc077d2e425cab7dcba41e4611444857f62d7"
+version = "2.2.1"
+source = "git+https://github.com/dashpay/grovedb?rev=20705a37801c029358f863e0199a5229bc5952b8#20705a37801c029358f863e0199a5229bc5952b8"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
@@ -5044,7 +5045,7 @@ dependencies = [
  "platform-value",
  "platform-version",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.64",
 ]
 
 [[package]]

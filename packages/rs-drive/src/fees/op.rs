@@ -534,6 +534,7 @@ impl LowLevelDriveOperation {
     }
 }
 
+/// A trait for getting an empty tree operation based on the tree type
 pub trait LowLevelDriveOperationTreeTypeConverter {
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     fn empty_tree_operation_for_known_path_key(

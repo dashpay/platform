@@ -7267,7 +7267,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -7391,7 +7391,7 @@ mod tests {
             document.bump_revision();
 
             let documents_batch_update_transition =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                BatchTransition::new_document_replacement_transition_from_document(
                     document.clone(),
                     card_document_type,
                     &key,
@@ -7485,7 +7485,7 @@ mod tests {
             document.bump_revision();
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -7617,7 +7617,7 @@ mod tests {
             document.bump_revision();
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     purchaser.id(),
@@ -7778,7 +7778,7 @@ mod tests {
             document.set("defense", 7.into());
 
             let documents_batch_create_transition =
-                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                BatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
                     card_document_type,
                     entropy.0,
@@ -7901,7 +7901,7 @@ mod tests {
             document.set_revision(Some(2));
 
             let documents_batch_update_price_transition =
-                DocumentsBatchTransition::new_document_update_price_transition_from_document(
+                BatchTransition::new_document_update_price_transition_from_document(
                     document.clone(),
                     card_document_type,
                     dash_to_credits!(0.1),
@@ -8018,7 +8018,7 @@ mod tests {
             document.set_revision(Some(3));
 
             let documents_batch_purchase_transition =
-                DocumentsBatchTransition::new_document_purchase_transition_from_document(
+                BatchTransition::new_document_purchase_transition_from_document(
                     document.clone(),
                     card_document_type,
                     purchaser.id(),

@@ -12,8 +12,8 @@ use dpp::serialization::PlatformDeserializable;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
-use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -21,18 +21,18 @@ use drive::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
-use drive::drive::system::misc_path;
-use drive::drive::tokens::{
-    tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
-};
-use drive::drive::RootTree;
-use drive::grovedb_path::SubtreePath;
 use drive::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_voting_path,
     prefunded_specialized_balances_for_voting_path_vec,
 };
+use drive::drive::system::misc_path;
+use drive::drive::tokens::{
+    tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
+};
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
+use drive::drive::RootTree;
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction};
+use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
 use std::collections::HashSet;
 use std::ops::RangeFull;
@@ -123,7 +123,7 @@ impl<C> Platform<C> {
 
         Ok(())
     }
-    
+
     /// When transitioning to version 8 we need to empty some specialized balances
     fn transition_to_version_8(
         &self,
@@ -245,10 +245,10 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Adds all trees needed for tokens, also adds the token history system data contract
     ///
     /// This function is called during the transition from protocol version 5 to protocol version 6
@@ -267,7 +267,7 @@ impl<C> Platform<C> {
             &mut vec![],
             &platform_version.drive,
         )?;
-        
+
         let path = tokens_root_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
