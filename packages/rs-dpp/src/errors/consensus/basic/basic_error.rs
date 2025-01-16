@@ -192,9 +192,6 @@ pub enum BasicError {
     DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
 
     #[error(transparent)]
-    DataContractTokenConfigurationUpdateError(DataContractTokenConfigurationUpdateError),
-
-    #[error(transparent)]
     DataContractUniqueIndicesChangedError(DataContractUniqueIndicesChangedError),
 
     #[error(transparent)]
@@ -202,15 +199,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractHaveNewUniqueIndexError(DataContractHaveNewUniqueIndexError),
-
-    #[error(transparent)]
-    NonContiguousContractTokenPositionsError(NonContiguousContractTokenPositionsError),
-
-    #[error(transparent)]
-    NonContiguousContractGroupPositionsError(NonContiguousContractGroupPositionsError),
-
-    #[error(transparent)]
-    InvalidTokenBaseSupplyError(InvalidTokenBaseSupplyError),
 
     // Document
     #[error(transparent)]
@@ -423,6 +411,18 @@ pub enum BasicError {
 
     #[error(transparent)]
     ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
+
+    #[error(transparent)]
+    DataContractTokenConfigurationUpdateError(DataContractTokenConfigurationUpdateError),
+
+    #[error(transparent)]
+    NonContiguousContractTokenPositionsError(NonContiguousContractTokenPositionsError),
+
+    #[error(transparent)]
+    NonContiguousContractGroupPositionsError(NonContiguousContractGroupPositionsError),
+
+    #[error(transparent)]
+    InvalidTokenBaseSupplyError(InvalidTokenBaseSupplyError),
 
     #[error(transparent)]
     InvalidTokenIdError(InvalidTokenIdError),

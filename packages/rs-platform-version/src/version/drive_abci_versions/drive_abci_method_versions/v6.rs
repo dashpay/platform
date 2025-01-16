@@ -84,7 +84,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMeth
         build_untied_withdrawal_transactions_from_documents: 0,
         dequeue_and_build_unsigned_withdrawal_transactions: 0,
         fetch_transactions_block_inclusion_status: 0,
-        pool_withdrawals_into_transactions_queue: 0,
+        pool_withdrawals_into_transactions_queue: 1,
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
@@ -93,7 +93,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMeth
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
         clean_up_after_vote_poll_end: 0,
-        clean_up_after_contested_resources_vote_poll_end: 0,
+        clean_up_after_contested_resources_vote_poll_end: 1,
         check_for_ended_vote_polls: 0,
         tally_votes_for_contested_document_resource_vote_poll: 0,
         award_document_to_winner: 0,
