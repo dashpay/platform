@@ -49,12 +49,14 @@ mod offer_snapshot;
 mod prepare_proposal;
 mod process_proposal;
 mod verify_vote_extension;
+mod finalize_snapshot;
 
 pub use apply_snapshot_chunk::apply_snapshot_chunk;
 pub use check_tx::check_tx;
 pub use echo::echo;
 pub use extend_vote::extend_vote;
 pub use finalize_block::finalize_block;
+pub use finalize_snapshot::finalize_snapshot;
 pub use info::info;
 pub use init_chain::init_chain;
 pub use list_snapshots::list_snapshots;
