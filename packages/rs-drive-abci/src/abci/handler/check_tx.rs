@@ -151,10 +151,11 @@ where
             let handler_error = HandlerError::Internal(error.to_string());
 
             if tracing::enabled!(tracing::Level::ERROR) {
-                let st_hash = hex::encode(hash_single(tx));
+                let st_hash = hex::encode(hash_single(&tx));
 
                 tracing::error!(
                     ?error,
+                    st = hex::encode(tx),
                     st_hash,
                     check_tx_mode = r#type,
                     "Failed to check state transition ({}): {}",
