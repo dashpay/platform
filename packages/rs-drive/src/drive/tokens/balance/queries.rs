@@ -1,4 +1,4 @@
-use crate::drive::tokens::token_balances_path_vec;
+use crate::drive::tokens::paths::token_balances_path_vec;
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use grovedb::{PathQuery, SizedQuery};

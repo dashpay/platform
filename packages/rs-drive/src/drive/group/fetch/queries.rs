@@ -1,4 +1,4 @@
-use crate::drive::group::group_contract_path_vec;
+use crate::drive::group::paths::group_contract_path_vec;
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::GroupContractPosition;

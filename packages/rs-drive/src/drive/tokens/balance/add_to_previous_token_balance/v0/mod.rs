@@ -6,7 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
-use crate::drive::tokens::token_balances_path_vec;
+use crate::drive::tokens::paths::token_balances_path_vec;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

@@ -4,7 +4,7 @@ use crate::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::system::misc_path_vec;
-use crate::drive::tokens::{
+use crate::drive::tokens::paths::{
     tokens_root_path_vec, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
 };
 use crate::drive::{Drive, RootTree};

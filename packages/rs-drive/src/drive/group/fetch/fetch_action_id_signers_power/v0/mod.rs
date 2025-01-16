@@ -1,4 +1,4 @@
-use crate::drive::group::{group_action_path, ACTION_SIGNERS_KEY};
+use crate::drive::group::paths::{group_action_path, ACTION_SIGNERS_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

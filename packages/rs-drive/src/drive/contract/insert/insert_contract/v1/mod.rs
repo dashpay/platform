@@ -10,7 +10,7 @@ use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::balances::total_tokens_root_supply_path_vec;
-use crate::drive::tokens::{
+use crate::drive::tokens::paths::{
     token_balances_path_vec, token_balances_root_path, token_identity_infos_root_path,
 };
 use crate::error::contract::DataContractError;

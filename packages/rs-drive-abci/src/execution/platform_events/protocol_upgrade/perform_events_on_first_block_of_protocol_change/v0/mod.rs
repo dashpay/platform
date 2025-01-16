@@ -26,7 +26,7 @@ use drive::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_voting_path_vec,
 };
 use drive::drive::system::misc_path;
-use drive::drive::tokens::{
+use drive::drive::tokens::paths::{
     tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;

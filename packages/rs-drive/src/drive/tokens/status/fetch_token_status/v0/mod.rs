@@ -1,4 +1,4 @@
-use crate::drive::tokens::token_statuses_root_path;
+use crate::drive::tokens::paths::token_statuses_root_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

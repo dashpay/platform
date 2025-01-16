@@ -1,4 +1,4 @@
-use crate::drive::group::{
+use crate::drive::group::paths::{
     group_contract_path, group_path, group_root_path, GROUP_ACTIVE_ACTIONS_KEY,
     GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
 };

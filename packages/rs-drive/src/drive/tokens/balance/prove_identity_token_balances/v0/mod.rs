@@ -1,4 +1,4 @@
-use crate::drive::tokens::{tokens_root_path_vec, TOKEN_BALANCES_KEY};
+use crate::drive::tokens::paths::{tokens_root_path_vec, TOKEN_BALANCES_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

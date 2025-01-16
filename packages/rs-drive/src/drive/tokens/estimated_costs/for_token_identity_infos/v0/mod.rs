@@ -5,7 +5,7 @@ use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
 
-use crate::drive::tokens::{
+use crate::drive::tokens::paths::{
     token_identity_infos_path, token_identity_infos_root_path, tokens_root_path,
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;

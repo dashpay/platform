@@ -1,5 +1,5 @@
 use crate::drive::balances::total_tokens_root_supply_path;
-use crate::drive::tokens::{
+use crate::drive::tokens::paths::{
     token_balances_root_path, token_identity_infos_root_path, token_statuses_root_path,
 };
 use crate::drive::Drive;

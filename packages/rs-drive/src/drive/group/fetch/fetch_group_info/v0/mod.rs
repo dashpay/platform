@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::drive::group::{group_path, GROUP_INFO_KEY};
+use crate::drive::group::paths::{group_path, GROUP_INFO_KEY};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

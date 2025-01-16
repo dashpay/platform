@@ -7,7 +7,9 @@ use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
 
-use crate::drive::tokens::{token_balances_path, token_balances_root_path, tokens_root_path};
+use crate::drive::tokens::paths::{
+    token_balances_path, token_balances_root_path, tokens_root_path,
+};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees};
 use std::collections::HashMap;
