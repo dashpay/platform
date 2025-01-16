@@ -31,7 +31,6 @@
 * fix test suite configuration script ([#2402](https://github.com/dashpay/platform/issues/2402))
 * resolve NPM audit warnings ([#2417](https://github.com/dashpay/platform/issues/2417))
 * remove deprecated check_network_version.sh ([#2084](https://github.com/dashpay/platform/issues/2084))
-* **drive:** increase withdrawal limits to 2000 Dash per day ([#2287](https://github.com/dashpay/platform/issues/2287))
 * update bls library ([#2424](https://github.com/dashpay/platform/issues/2424))
 
 
