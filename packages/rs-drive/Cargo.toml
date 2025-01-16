@@ -105,7 +105,7 @@ server = [
   "dpp/system_contracts",
   "dpp/state-transitions",
   "fee-distribution",
-  "grovedb/minimal",
+  "grovedb/full", #to change to full
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",

@@ -48,7 +48,7 @@ pub const DRIVE_VERSION_V4: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V1,
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V2, // changed here to v2
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V2, // changed in v4
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
@@ -92,13 +92,14 @@ pub const DRIVE_VERSION_V4: DriveVersion = DriveVersion {
             fetch_single: 0,
             prove_single: 0,
             add_prefunded_specialized_balance: 0,
-            add_prefunded_specialized_balance_operations: 0,
-            deduct_from_prefunded_specialized_balance: 0,
+            add_prefunded_specialized_balance_operations: 1,
+            deduct_from_prefunded_specialized_balance: 1,
             deduct_from_prefunded_specialized_balance_operations: 0,
             estimated_cost_for_prefunded_specialized_balance_update: 0,
+            empty_prefunded_specialized_balance: 0,
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
-    grove_version: GROVE_V2,
+    grove_version: GROVE_V2, //changed in V4
 };

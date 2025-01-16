@@ -1,9 +1,5 @@
 mod protocol_version;
-<<<<<<< HEAD
 use crate::version::v9::PROTOCOL_VERSION_9;
-=======
-use crate::version::v8::PROTOCOL_VERSION_8;
->>>>>>> v1.8-dev
 pub use protocol_version::*;
 
 mod consensus_versions;
