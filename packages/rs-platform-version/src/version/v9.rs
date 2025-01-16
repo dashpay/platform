@@ -14,29 +14,29 @@ use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v5::DRIVE_ABCI_METHOD_VERSIONS_V5;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v6::DRIVE_ABCI_METHOD_VERSIONS_V6;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v4::DRIVE_ABCI_VALIDATION_VERSIONS_V4;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v3::DRIVE_VERSION_V3;
+use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
 use crate::version::system_limits::v1::SYSTEM_LIMITS_V1;
 use crate::version::ProtocolVersion;
 
-pub const PROTOCOL_VERSION_8: ProtocolVersion = 8;
+pub const PROTOCOL_VERSION_9: ProtocolVersion = 9;
 
 /// This version adds token support.
 //todo: make changes
-pub const PLATFORM_V8: PlatformVersion = PlatformVersion {
-    protocol_version: PROTOCOL_VERSION_8,
-    drive: DRIVE_VERSION_V3, // changed (for data contract insert)
+pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
+    protocol_version: PROTOCOL_VERSION_9,
+    drive: DRIVE_VERSION_V4, // changed (for data contract insert)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V5, // changed because of the genesis state
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V6, // changed because of the genesis state
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V4,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,

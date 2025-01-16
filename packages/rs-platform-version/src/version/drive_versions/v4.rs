@@ -19,7 +19,7 @@ use crate::version::drive_versions::{
 };
 use grovedb_version::version::v2::GROVE_V2;
 
-pub const DRIVE_VERSION_V3: DriveVersion = DriveVersion {
+pub const DRIVE_VERSION_V4: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {

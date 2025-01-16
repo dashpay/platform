@@ -13,7 +13,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 };
 
 // Introduced in Protocol version 8 for tokens
-pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMethodVersions {
+pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         init_chain: 0,
         check_tx: 0,
