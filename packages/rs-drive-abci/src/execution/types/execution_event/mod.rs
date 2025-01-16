@@ -162,7 +162,7 @@ impl<'a> ExecutionEvent<'a> {
                     )))
                 }
             }
-            StateTransitionAction::DocumentsBatchAction(document_batch_action) => {
+            StateTransitionAction::BatchAction(document_batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
                 let removed_balance = document_batch_action.all_used_balances()?;
                 let operations =

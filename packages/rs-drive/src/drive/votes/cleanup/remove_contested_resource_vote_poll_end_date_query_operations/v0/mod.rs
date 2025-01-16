@@ -8,7 +8,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::batch::KeyInfoPath;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -34,7 +34,7 @@ impl Drive {
         //     VotePoll Info 1   VotePoll Info 2                 VotePoll Info 3
 
         let delete_apply_type = BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
 
         for (vote_poll, end_date, _) in vote_polls {

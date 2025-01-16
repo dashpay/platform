@@ -24,7 +24,7 @@ use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use grovedb_costs::OperationCost;
 use integer_encoding::VarInt;
 use std::collections::HashMap;
@@ -95,8 +95,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::NormalTree,
                 flags_len: 0,
             }
         };
@@ -233,7 +233,7 @@ impl Drive {
                     BatchInsertApplyType::StatefulBatchInsert
                 } else {
                     BatchInsertApplyType::StatelessBatchInsert {
-                        in_tree_using_sums: false,
+                        in_tree_type: TreeType::NormalTree,
                         target: QueryTargetValue(reference_type_path.serialized_size() as u32),
                     }
                 };
@@ -419,7 +419,7 @@ impl Drive {
                         BatchInsertApplyType::StatefulBatchInsert
                     } else {
                         BatchInsertApplyType::StatelessBatchInsert {
-                            in_tree_using_sums: false,
+                            in_tree_type: TreeType::NormalTree,
                             target: QueryTargetValue(reference.serialized_size() as u32),
                         }
                     };

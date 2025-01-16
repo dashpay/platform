@@ -4,9 +4,11 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::consensus::basic::data_contract::{
-    InvalidDataContractIdError, InvalidDataContractVersionError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
+    NonContiguousContractTokenPositionsError,
 };
 use dpp::consensus::basic::BasicError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -65,6 +67,38 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                     .into(),
                 ],
             ));
+        }
+
+        let expected_position = 0;
+
+        for (token_contract_position, token_configuration) in self.data_contract().tokens() {
+            if expected_position != *token_contract_position {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![NonContiguousContractTokenPositionsError::new(
+                        expected_position,
+                        *token_contract_position,
+                    )
+                    .into()],
+                ));
+            }
+
+            if token_configuration.base_supply() > i64::MAX as u64 {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![
+                        InvalidTokenBaseSupplyError::new(token_configuration.base_supply()).into(),
+                    ],
+                ));
+            }
         }
 
         Ok(ConsensusValidationResult::default())

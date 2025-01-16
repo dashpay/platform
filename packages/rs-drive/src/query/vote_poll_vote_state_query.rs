@@ -4,6 +4,7 @@ use crate::drive::votes::paths::{
 };
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
@@ -16,6 +17,7 @@ use bincode::{Decode, Encode};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
+#[cfg(feature = "server")]
 use dpp::serialization::PlatformDeserializable;
 use dpp::voting::contender_structs::{
     ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,

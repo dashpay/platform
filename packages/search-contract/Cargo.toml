@@ -1,0 +1,13 @@
+[package]
+name = "token-history-contract"
+description = "Token history data contract schema and tools"
+version = "1.6.2"
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+
+[dependencies]
+thiserror = "1.0.64"
+platform-version = { path = "../rs-platform-version" }
+serde_json = { version = "1.0" }
+platform-value = { path = "../rs-platform-value" }

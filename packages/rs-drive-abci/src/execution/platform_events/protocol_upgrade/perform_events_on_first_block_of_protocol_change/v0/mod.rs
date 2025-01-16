@@ -13,6 +13,7 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -24,8 +25,14 @@ use drive::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_voting_path,
     prefunded_specialized_balances_for_voting_path_vec,
 };
+use drive::drive::system::misc_path;
+use drive::drive::tokens::paths::{
+    tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
+};
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
+use drive::drive::RootTree;
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction};
+use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
 use std::collections::HashSet;
 use std::ops::RangeFull;
@@ -79,10 +86,14 @@ impl<C> Platform<C> {
                         "Error while transitioning to version 8: {e}"
                     );
 
-                    // We ignore this transition errors because it's not changing the state stucture
+                    // We ignore this transition errors because it's not changing the state structure
                     // and not critical for the system
                     Ok::<(), Error>(())
                 })?;
+        }
+
+        if previous_protocol_version < 9 && platform_version.protocol_version >= 9 {
+            self.transition_to_version_9(block_info, transaction, platform_version)?;
         }
 
         Ok(())
@@ -234,6 +245,77 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
         }
+
+        Ok(())
+    }
+
+    /// Adds all trees needed for tokens, also adds the token history system data contract
+    ///
+    /// This function is called during the transition from protocol version 5 to protocol version 6
+    /// and higher to set up the wallet contract in the platform.
+    fn transition_to_version_9(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::GroupActions as u8],
+            Some(transaction),
+            None,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        let path = tokens_root_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_BALANCES_KEY],
+            Element::empty_big_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_IDENTITY_INFO_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_STATUS_INFO_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        let path = misc_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            TOTAL_TOKEN_SUPPLIES_STORAGE_KEY.as_slice(),
+            Element::empty_big_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        let contract =
+            load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+
+        self.drive.insert_contract(
+            &contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
 
         Ok(())
     }

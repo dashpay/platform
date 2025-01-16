@@ -2292,9 +2292,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::{
-        setup_drive_with_initial_state_structure, setup_system_data_contract,
-    };
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
@@ -2310,9 +2308,10 @@ mod tests {
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
         let platform_version = PlatformVersion::latest();
+
+        let (drive, _) = Drive::open(tmp_dir, None, Some(platform_version))
+            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -2342,9 +2341,10 @@ mod tests {
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
         let platform_version = PlatformVersion::latest();
+
+        let (drive, _) = Drive::open(tmp_dir, None, Some(platform_version))
+            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)

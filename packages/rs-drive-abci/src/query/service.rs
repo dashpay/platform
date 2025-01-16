@@ -10,7 +10,8 @@ use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse,
+    GetActiveGroupActionsRequest, GetActiveGroupActionsResponse, GetConsensusParamsRequest,
     GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
     GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
@@ -20,18 +21,22 @@ use dapi_grpc::platform::v0::{
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
+    GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
+    GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
-    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
-    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
+    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
     GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
@@ -609,6 +614,90 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    async fn get_identity_token_balances(
+        &self,
+        request: Request<GetIdentityTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentityTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_balances,
+            "query_identity_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identities_token_balances(
+        &self,
+        request: Request<GetIdentitiesTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_balances,
+            "query_identities_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identity_token_infos(
+        &self,
+        request: Request<GetIdentityTokenInfosRequest>,
+    ) -> Result<Response<GetIdentityTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_infos,
+            "query_identity_token_infos",
+        )
+        .await
+    }
+
+    async fn get_identities_token_infos(
+        &self,
+        request: Request<GetIdentitiesTokenInfosRequest>,
+    ) -> Result<Response<GetIdentitiesTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_infos,
+            "query_identities_token_infos",
+        )
+        .await
+    }
+
+    async fn get_token_statuses(
+        &self,
+        request: Request<GetTokenStatusesRequest>,
+    ) -> Result<Response<GetTokenStatusesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_statuses,
+            "get_token_statuses",
+        )
+        .await
+    }
+
+    async fn get_group_info(
+        &self,
+        request: Request<GetGroupInfoRequest>,
+    ) -> Result<Response<GetGroupInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_info,
+            "get_group_info",
+        )
+        .await
+    }
+
+    // async fn get_active_group_actions(
+    //     &self,
+    //     request: Request<GetActiveGroupActionsRequest>,
+    // ) -> Result<Response<GetActiveGroupActionsResponse>, Status> {
+    //     self.handle_blocking_query(
+    //         request,
+    //         Platform::<DefaultCoreRPC>::query_active_group_actions,
+    //         "get_active_group_actions",
+    //     )
+    //     .await
+    // }
 }
 
 fn query_error_into_status(error: QueryError) -> Status {

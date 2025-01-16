@@ -21,7 +21,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 pub enum StateTransitionType {
     #[default]
     DataContractCreate = 0,
-    DocumentsBatch = 1,
+    Batch = 1,
     IdentityCreate = 2,
     IdentityTopUp = 3,
     DataContractUpdate = 4,

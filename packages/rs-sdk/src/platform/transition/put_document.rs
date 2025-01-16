@@ -7,8 +7,8 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 
 #[async_trait::async_trait]
@@ -60,7 +60,7 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let settings = settings.unwrap_or_default();
 
-        let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
+        let transition = BatchTransition::new_document_creation_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             document_state_transition_entropy,

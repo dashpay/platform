@@ -98,8 +98,12 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::RegexError(_)) => 10247,
             Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10248,
             Self::ContestedUniqueIndexWithUniqueIndexError(_) => 10249,
+            Self::DataContractTokenConfigurationUpdateError { .. } => 10250,
+            Self::InvalidTokenBaseSupplyError(_) => 10251,
+            Self::NonContiguousContractGroupPositionsError(_) => 10252,
+            Self::NonContiguousContractTokenPositionsError(_) => 10253,
 
-            // Document Errors: 10400-10499
+            // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
             Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 10402,
@@ -119,6 +123,16 @@ impl ErrorWithCode for BasicError {
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
+
+            // Token Errors: 10450-10499
+            Self::InvalidTokenIdError(_) => 10450,
+            Self::InvalidTokenPositionError(_) => 10451,
+            Self::InvalidGroupPositionError(_) => 10452,
+            Self::InvalidActionIdError(_) => 10453,
+            Self::ContractHasNoTokensError(_) => 10454,
+            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10455,
+            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10456,
+            Self::TokenTransferToOurselfError(_) => 10457,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -162,6 +176,7 @@ impl ErrorWithCode for BasicError {
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
+            Self::GroupActionNotAllowedOnTransitionError(_) => 10701,
         }
     }
 }
@@ -201,7 +216,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractIsReadonlyError { .. } => 40001,
             Self::DataContractConfigUpdateError { .. } => 40002,
 
-            // Document Errors: 40100-40199
+            // Document Errors: 40100-40149
             Self::DocumentAlreadyPresentError { .. } => 40100,
             Self::DocumentNotFoundError { .. } => 40101,
             Self::DocumentOwnerIdMismatchError { .. } => 40102,
@@ -217,6 +232,12 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
             Self::DocumentContestNotPaidForError(_) => 40114,
+
+            // Token errors: 40150-40199
+            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40150,
+            Self::UnauthorizedTokenActionError(_) => 40151,
+            Self::IdentityTokenAccountFrozenError(_) => 40152,
+            Self::IdentityTokenAccountNotFrozenError(_) => 40153,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -235,6 +256,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractUpdatePermissionError(_) => 40213,
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
+            Self::RecipientIdentityDoesNotExistError(_) => 40216,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
@@ -252,6 +274,12 @@ impl ErrorWithCode for StateError {
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
+
+            // Group errors: 40800-40899
+            Self::IdentityNotMemberOfGroupError(_) => 40800,
+            Self::GroupActionDoesNotExistError(_) => 40801,
+            Self::GroupActionAlreadyCompletedError(_) => 40802,
+            Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
         }
     }
 }

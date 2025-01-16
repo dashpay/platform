@@ -88,6 +88,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &mut vec![],
             PlatformVersion::latest(),
         );

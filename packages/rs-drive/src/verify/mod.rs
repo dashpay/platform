@@ -12,6 +12,7 @@ pub mod system;
 
 /// Verifies that a state transition contents exist in the proof
 pub mod state_transition;
+mod tokens;
 pub mod voting;
 
 /// Represents the root hash of the grovedb tree

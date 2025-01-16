@@ -11,6 +11,8 @@ pub const DEFAULT_HASH_SIZE_U32: u32 = 32;
 /// Default float size
 pub const DEFAULT_FLOAT_SIZE: u32 = 8;
 /// u64 size
+pub const U64_SIZE_U32: u32 = 8;
+/// u64 size
 pub const U64_SIZE_U16: u16 = 8;
 /// u64 size
 pub const U64_SIZE_U8: u8 = 8;

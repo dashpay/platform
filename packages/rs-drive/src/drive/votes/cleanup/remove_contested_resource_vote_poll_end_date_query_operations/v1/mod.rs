@@ -12,7 +12,7 @@ use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -38,7 +38,7 @@ impl Drive {
         //     VotePoll Info 1   VotePoll Info 2                 VotePoll Info 3
 
         let delete_apply_type = BatchDeleteApplyType::StatefulBatchDelete {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
 
         let mut by_end_date: BTreeMap<TimestampMillis, Vec<Identifier>> = BTreeMap::new();
