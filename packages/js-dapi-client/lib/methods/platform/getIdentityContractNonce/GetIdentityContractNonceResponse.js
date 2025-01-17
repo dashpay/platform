@@ -1,7 +1,7 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
-const IDENTITY_CONTRACT_NONCE_VALUE_FILTER = 0xFFFFFFFFFF;
+const IDENTITY_CONTRACT_NONCE_VALUE_FILTER = BigInt(0xFFFFFFFFFF);
 
 class GetIdentityContractNonceResponse extends AbstractResponse {
   /**
@@ -28,8 +28,8 @@ class GetIdentityContractNonceResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
-    const identityContractNonce = proto.getV0()
-      .getIdentityContractNonce() & IDENTITY_CONTRACT_NONCE_VALUE_FILTER;
+    const identityContractNonce = BigInt(proto.getV0()
+      .getIdentityContractNonce()) & IDENTITY_CONTRACT_NONCE_VALUE_FILTER;
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
     );

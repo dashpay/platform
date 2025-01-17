@@ -8400,7 +8400,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityCont
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setIdentityContractNonce(value);
       break;
     case 2:

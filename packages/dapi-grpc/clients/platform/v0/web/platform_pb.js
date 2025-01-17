@@ -7948,6 +7948,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceRespons
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
+      throw new Error()
       var value = /** @type {number} */ (reader.readUint64());
       msg.setIdentityNonce(value);
       break;
