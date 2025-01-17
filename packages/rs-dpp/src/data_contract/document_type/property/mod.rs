@@ -285,12 +285,8 @@ impl DocumentPropertyType {
 
     /// The middle size rounded down halfway between min and max size
     pub fn middle_size(&self, platform_version: &PlatformVersion) -> Option<u16> {
-        let Some(min_size) = self.min_size() else {
-            return None;
-        };
-        let Some(max_size) = self.max_size() else {
-            return None;
-        };
+        let min_size = self.min_size()?;
+        let max_size = self.max_size()?;
         if platform_version.protocol_version > 8 {
             Some(((min_size as u32 + max_size as u32) / 2) as u16)
         } else {
@@ -300,12 +296,8 @@ impl DocumentPropertyType {
 
     /// The middle size rounded up halfway between min and max size
     pub fn middle_size_ceil(&self, platform_version: &PlatformVersion) -> Option<u16> {
-        let Some(min_size) = self.min_size() else {
-            return None;
-        };
-        let Some(max_size) = self.max_size() else {
-            return None;
-        };
+        let min_size = self.min_size()?;
+        let max_size = self.max_size()?;
         if platform_version.protocol_version > 8 {
             Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16)
         } else {
@@ -350,8 +342,8 @@ impl DocumentPropertyType {
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
-        let min_size = self.min_size().expect("expected min size");
-        let max_size = self.max_size().expect("expected max size");
+        let min_size = self.min_size().unwrap_or_default();
+        let max_size = self.max_size().unwrap_or_default();
         rng.gen_range(min_size..=max_size)
     }
 
