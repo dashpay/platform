@@ -48,6 +48,7 @@ pub trait DocumentInfoV0Methods {
         &self,
         key_path: &str,
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<u16, Error>;
     /// Gets the raw path for the given document type
     fn get_raw_for_document_type(
@@ -111,6 +112,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
         &self,
         key_path: &str,
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
@@ -128,11 +130,14 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                         key_path
                     )))
                 })?;
-                let estimated_size = property.property_type.middle_byte_size_ceil().ok_or({
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "document type must have a max size",
-                    ))
-                })?;
+                let estimated_size = property
+                    .property_type
+                    .middle_byte_size_ceil(platform_version)?
+                    .ok_or({
+                        Error::Drive(DriveError::CorruptedCodeExecution(
+                            "document type must have a max size",
+                        ))
+                    })?;
                 Ok(estimated_size)
             }
         }
@@ -217,8 +222,10 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                                 ))
                             })?;
 
-                        let estimated_middle_size =
-                            property.property_type.middle_byte_size_ceil().ok_or({
+                        let estimated_middle_size = property
+                            .property_type
+                            .middle_byte_size_ceil(platform_version)?
+                            .ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
                                     "document type must have a max size",
                                 ))

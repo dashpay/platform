@@ -107,7 +107,7 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type)?;
+                    .get_estimated_size_for_document_type(name, document_type, platform_version)?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
