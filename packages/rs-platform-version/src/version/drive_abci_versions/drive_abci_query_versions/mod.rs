@@ -30,6 +30,7 @@ pub struct DriveAbciQueryTokenVersions {
     pub identities_token_infos: FeatureVersionBounds,
     pub identity_token_infos: FeatureVersionBounds,
     pub token_statuses: FeatureVersionBounds,
+    pub token_total_supply: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

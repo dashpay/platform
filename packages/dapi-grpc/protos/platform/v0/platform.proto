@@ -60,7 +60,9 @@ service Platform {
   rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
   rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
   rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+  rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
+  rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
 //  rpc getActiveGroupActions(GetActiveGroupActionsRequest) returns (GetActiveGroupActionsResponse);
 //  rpc getClosedGroupActions(GetClosedGroupActionsRequest) returns (GetClosedGroupActionsResponse);
 }
@@ -1395,6 +1397,35 @@ message GetTokenStatusesResponse {
   }
   oneof version {
     GetTokenStatusesResponseV0 v0 = 1;
+  }
+}
+
+message GetTokenTotalSupplyRequest {
+  message GetTokenTotalSupplyRequestV0 {
+    bytes token_id = 1;
+    bool prove = 2;
+  }
+  oneof version {
+    GetTokenTotalSupplyRequestV0 v0 = 1;
+  }
+}
+
+message GetTokenTotalSupplyResponse {
+  message GetTokenTotalSupplyResponseV0 {
+    message TokenTotalSupplyEntry {
+      bytes token_id = 1;
+      uint64 total_aggregated_amount_in_user_accounts = 2;
+      uint64 total_system_amount = 3;
+    }
+
+    oneof result {
+      TokenTotalSupplyEntry token_total_supply = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetTokenTotalSupplyResponseV0 v0 = 1;
   }
 }
 

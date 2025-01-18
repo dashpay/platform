@@ -22,7 +22,8 @@ use dapi_grpc::platform::v0::{
     GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
     GetEvonodesProposedEpochBlocksResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -37,8 +38,8 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
     GetStatusRequest, GetStatusResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
-    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -675,6 +676,18 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_token_total_supply(
+        &self,
+        request: Request<GetTokenTotalSupplyRequest>,
+    ) -> Result<Response<GetTokenTotalSupplyResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_total_supply,
+            "get_token_total_supply",
+        )
+        .await
+    }
+
     async fn get_group_info(
         &self,
         request: Request<GetGroupInfoRequest>,
@@ -683,6 +696,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_group_info,
             "get_group_info",
+        )
+        .await
+    }
+
+    async fn get_group_infos(
+        &self,
+        request: Request<GetGroupInfosRequest>,
+    ) -> Result<Response<GetGroupInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_infos,
+            "get_group_infos",
         )
         .await
     }

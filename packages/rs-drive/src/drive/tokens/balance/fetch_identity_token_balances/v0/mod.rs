@@ -34,20 +34,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
-        let tokens_root = tokens_root_path_vec();
-
-        let mut query = Query::new();
-
-        for token_id in token_ids {
-            query.insert_key(token_id.to_vec());
-        }
-
-        query.set_subquery_path(vec![vec![TOKEN_BALANCES_KEY], identity_id.to_vec()]);
-
-        let path_query = PathQuery::new(
-            tokens_root,
-            SizedQuery::new(query, Some(token_ids.len() as u16), None),
-        );
+        let path_query = Drive::token_balances_for_identity_id_query(token_ids, identity_id);
 
         self.grove_get_raw_path_query_with_optional(
             &path_query,
