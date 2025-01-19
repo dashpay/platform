@@ -4,7 +4,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::balances::total_tokens_balance::TotalTokensBalance;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 

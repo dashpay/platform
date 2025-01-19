@@ -2,13 +2,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 mod v0;
 impl Drive {

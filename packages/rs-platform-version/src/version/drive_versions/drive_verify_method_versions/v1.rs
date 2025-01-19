@@ -1,6 +1,6 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
     DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
     DriveVerifySystemMethodVersions, DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
 };
@@ -28,6 +28,10 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_identity_contract_nonce: 0,
         verify_identities_contract_keys: 0,
         verify_identity_revision_for_identity_id: 0,
+    },
+    group: DriveVerifyGroupMethodVersions {
+        verify_group_info: 0,
+        verify_group_infos_in_contract: 0,
     },
     token: DriveVerifyTokenMethodVersions {
         verify_token_balances_for_identity_ids: 0,

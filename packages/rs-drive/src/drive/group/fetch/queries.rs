@@ -1,4 +1,4 @@
-use crate::drive::group::paths::group_contract_path_vec;
+use crate::drive::group::paths::{group_contract_path_vec, group_path_vec, GROUP_INFO_KEY};
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::GroupContractPosition;
@@ -11,11 +11,10 @@ impl Drive {
         contract_id: [u8; 32],
         group_contract_position: GroupContractPosition,
     ) -> PathQuery {
-        let group_contract_path = group_contract_path_vec(&contract_id);
-        PathQuery::new_single_key(
-            group_contract_path,
-            group_contract_position.to_be_bytes().to_vec(),
-        )
+        let group_path = group_path_vec(&contract_id, group_contract_position);
+        let mut path_query = PathQuery::new_single_key(group_path, GROUP_INFO_KEY.to_vec());
+        path_query.query.limit = Some(1);
+        path_query
     }
 
     /// The query for the group infos inside a contract.
@@ -35,6 +34,8 @@ impl Drive {
         } else {
             query.insert_item(QueryItem::RangeFull(RangeFull))
         }
+
+        query.set_subquery_key(GROUP_INFO_KEY.to_vec());
         PathQuery {
             path: group_contract_path,
             query: SizedQuery {

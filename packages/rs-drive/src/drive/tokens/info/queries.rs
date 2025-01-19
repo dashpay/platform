@@ -1,6 +1,5 @@
 use crate::drive::tokens::paths::{
-    token_identity_infos_path_vec, token_identity_infos_root_path_vec,
-    token_statuses_root_path_vec, tokens_root_path_vec, TOKEN_STATUS_INFO_KEY,
+    token_identity_infos_path_vec, token_identity_infos_root_path_vec, token_statuses_root_path_vec,
 };
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
