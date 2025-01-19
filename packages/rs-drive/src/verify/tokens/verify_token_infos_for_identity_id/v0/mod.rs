@@ -43,8 +43,8 @@ impl Drive {
                     let token_id: [u8; 32] = proved_key_value
                         .0
                         .get(2)
-                        .ok_or(Error::Proof(ProofError::IncorrectValueSize(
-                            "path should have at least 3 elements in returned proof",
+                        .ok_or(Error::Proof(ProofError::IncorrectProof(
+                            "path should have at least 3 elements in returned proof".to_string(),
                         )))?
                         .clone()
                         .try_into()
@@ -57,8 +57,8 @@ impl Drive {
                             Some(IdentityTokenInfo::deserialize_from_bytes(&value)?),
                         )),
                         None => Ok((token_id.into(), None)),
-                        _ => Err(Error::Proof(ProofError::IncorrectValueSize(
-                            "proof did not point to an item as expected for token info",
+                        _ => Err(Error::Proof(ProofError::IncorrectProof(
+                            "proof did not point to an item as expected for token info".to_string(),
                         ))),
                     }
                 })
