@@ -20,7 +20,7 @@ impl<C> Platform<C> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
-                    "could not decode identity token infos query".to_string(),
+                    "could not decode identity token statuses query".to_string(),
                 ),
             ));
         };

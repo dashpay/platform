@@ -5,8 +5,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::balances::total_tokens_balance::TotalTokensBalance;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
@@ -15,7 +15,7 @@ impl Drive {
     pub(super) fn calculate_total_tokens_balance_v0(
         &self,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<TotalTokensBalance, Error> {
         let mut drive_operations = vec![];
         let path_holding_total_credits = misc_path();
@@ -25,7 +25,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         let tokens_root_path = tokens_root_path();
@@ -36,7 +36,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         Ok(TotalTokensBalance {

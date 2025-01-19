@@ -16,7 +16,7 @@ impl<C> Platform<C> {
             // Verify sum trees
             let token_balance = self
                 .drive
-                .calculate_total_tokens_balance(Some(transaction), &platform_version.drive)
+                .calculate_total_tokens_balance(Some(transaction), platform_version)
                 .map_err(Error::Drive)?;
 
             if !token_balance.ok()? {

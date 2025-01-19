@@ -1,4 +1,3 @@
-use crate::drive::tokens::paths::{tokens_root_path_vec, TOKEN_BALANCES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -6,7 +5,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -34,20 +33,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<TokenAmount>>, Error> {
-        let tokens_root = tokens_root_path_vec();
-
-        let mut query = Query::new();
-
-        for token_id in token_ids {
-            query.insert_key(token_id.to_vec());
-        }
-
-        query.set_subquery_path(vec![vec![TOKEN_BALANCES_KEY], identity_id.to_vec()]);
-
-        let path_query = PathQuery::new(
-            tokens_root,
-            SizedQuery::new(query, Some(token_ids.len() as u16), None),
-        );
+        let path_query = Drive::token_balances_for_identity_id_query(token_ids, identity_id);
 
         self.grove_get_raw_path_query_with_optional(
             &path_query,
@@ -59,9 +45,9 @@ impl Drive {
         .into_iter()
         .map(|(path, _, element)| {
             let token_id: [u8; 32] = path
-                .get(1)
+                .get(2)
                 .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                    "returned path item should always have a second part at index 1".to_string(),
+                    "returned path item should always have a third part at index 2".to_string(),
                 )))?
                 .clone()
                 .try_into()

@@ -82,7 +82,7 @@ impl Drive {
             KeyInfoPath::from_known_path(vote_contested_resource_tree_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                // active poll "p", with "e" and "i" first so it should be on the second layer of the merk
+                // active poll "p", with "e" and "i" first, so it should be on the second layer of the merk
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },

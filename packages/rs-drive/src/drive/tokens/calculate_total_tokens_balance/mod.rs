@@ -6,6 +6,7 @@ use crate::error::Error;
 use dpp::balances::total_tokens_balance::TotalTokensBalance;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Calculates the total credits balance.
@@ -28,10 +29,15 @@ impl Drive {
     pub fn calculate_total_tokens_balance(
         &self,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<TotalTokensBalance, Error> {
-        match drive_version.methods.token.calculate_total_tokens_balance {
-            0 => self.calculate_total_tokens_balance_v0(transaction, drive_version),
+        match platform_version
+            .drive
+            .methods
+            .token
+            .calculate_total_tokens_balance
+        {
+            0 => self.calculate_total_tokens_balance_v0(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "calculate_total_tokens_balance".to_string(),
                 known_versions: vec![0],
