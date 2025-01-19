@@ -1,18 +1,19 @@
 use crate::drive::Drive;
-use grovedb::Element::SumItem;
+use grovedb::Element::Item;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
 use crate::verify::RootHash;
 
-use dpp::balances::credits::TokenAmount;
+use dpp::serialization::PlatformDeserializable;
+use dpp::tokens::info::IdentityTokenInfo;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    pub(super) fn verify_token_balances_for_identity_id_v0<
-        T: FromIterator<(I, Option<TokenAmount>)>,
+    pub(super) fn verify_token_infos_for_identity_id_v0<
+        T: FromIterator<(I, Option<IdentityTokenInfo>)>,
         I: From<[u8; 32]>,
     >(
         proof: &[u8],
@@ -21,7 +22,7 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
-        let path_query = Self::token_balances_for_identity_id_query(token_ids, identity_id);
+        let path_query = Self::token_infos_for_identity_id_query(token_ids, identity_id);
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
                 proof,
@@ -51,12 +52,13 @@ impl Drive {
                             Error::Proof(ProofError::IncorrectValueSize("token id size"))
                         })?;
                     match proved_key_value.2 {
-                        Some(SumItem(value, ..)) => {
-                            Ok((token_id.into(), Some(value as TokenAmount)))
-                        }
+                        Some(Item(value, ..)) => Ok((
+                            token_id.into(),
+                            Some(IdentityTokenInfo::deserialize_from_bytes(&value)?),
+                        )),
                         None => Ok((token_id.into(), None)),
                         _ => Err(Error::Proof(ProofError::IncorrectValueSize(
-                            "proof did not point to a sum item",
+                            "proof did not point to an item as expected for token info",
                         ))),
                     }
                 })

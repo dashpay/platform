@@ -22,6 +22,9 @@ pub type Credits = u64;
 /// Token Amount type
 pub type TokenAmount = u64;
 
+/// Signed Token Amount type
+pub type SignedTokenAmount = i64;
+
 /// Sum token amount
 pub type SumTokenAmount = i128;
 

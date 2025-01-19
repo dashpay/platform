@@ -48,6 +48,9 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_balances_for_identity_ids: FeatureVersion,
     pub verify_token_balances_for_identity_id: FeatureVersion,
     pub verify_token_infos_for_identity_ids: FeatureVersion,
+    pub verify_token_infos_for_identity_id: FeatureVersion,
+    pub verify_token_statuses: FeatureVersion,
+    pub verify_token_total_supply_and_aggregated_identity_balance: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

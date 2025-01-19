@@ -42,7 +42,7 @@ impl Drive {
         token_ids: &[[u8; 32]],
         identity_id: [u8; 32],
     ) -> PathQuery {
-        let tokens_root = tokens_root_path_vec();
+        let tokens_root = token_balances_root_path_vec();
 
         let mut query = Query::new();
 
@@ -50,7 +50,7 @@ impl Drive {
             query.insert_key(token_id.to_vec());
         }
 
-        query.set_subquery_path(vec![vec![TOKEN_BALANCES_KEY], identity_id.to_vec()]);
+        query.set_subquery_path(vec![identity_id.to_vec()]);
 
         PathQuery::new(
             tokens_root,
@@ -107,13 +107,14 @@ impl Drive {
         let tokens_root_path = token_balances_root_path_vec();
         let token_aggregated_identity_balances_query =
             PathQuery::new_single_key(tokens_root_path, token_id.to_vec());
-        let path_query = PathQuery::merge(
+        let mut path_query = PathQuery::merge(
             vec![
-                &token_supply_query,
                 &token_aggregated_identity_balances_query,
+                &token_supply_query,
             ],
             &platform_version.drive.grove_version,
         )?;
+        path_query.query.limit = Some(2);
         Ok(path_query)
     }
 }

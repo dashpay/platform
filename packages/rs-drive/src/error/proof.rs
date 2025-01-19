@@ -30,6 +30,13 @@ pub enum ProofError {
     #[error("incorrect proof error: {0}")]
     IncorrectProof(String),
 
+    /// The proof returned is said to be valid, data is what we asked for, but is not what was
+    /// expected, for example we ask for token balance, and we get that the token does not exist.
+    /// UnexpectedResultProof is most likely is a User error.
+    /// IncorrectProof is most likely a system error.
+    #[error("unexpected result in proof error: {0}")]
+    UnexpectedResultProof(String),
+
     /// The transition we are trying to prove was executed is invalid
     #[error("invalid transition error: {0}")]
     InvalidTransition(String),
@@ -85,5 +92,6 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::ErrorRetrievingContract(_) => 6010,
         ProofError::InvalidMetadata(_) => 6011,
         ProofError::MissingContextRequirement(_) => 6012,
+        ProofError::UnexpectedResultProof(_) => 6013,
     }
 }

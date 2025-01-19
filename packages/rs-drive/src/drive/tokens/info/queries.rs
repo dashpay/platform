@@ -1,4 +1,7 @@
-use crate::drive::tokens::paths::token_identity_infos_path_vec;
+use crate::drive::tokens::paths::{
+    token_identity_infos_path_vec, token_identity_infos_root_path_vec,
+    token_statuses_root_path_vec, tokens_root_path_vec, TOKEN_STATUS_INFO_KEY,
+};
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use grovedb::{PathQuery, SizedQuery};
@@ -30,6 +33,43 @@ impl Drive {
                 offset: None,
             },
         }
+    }
+
+    /// The query getting a token infos for one identity
+    pub fn token_infos_for_identity_id_query(
+        token_ids: &[[u8; 32]],
+        identity_id: [u8; 32],
+    ) -> PathQuery {
+        let tokens_root = token_identity_infos_root_path_vec();
+
+        let mut query = Query::new();
+
+        for token_id in token_ids {
+            query.insert_key(token_id.to_vec());
+        }
+
+        query.set_subquery_path(vec![identity_id.to_vec()]);
+
+        PathQuery::new(
+            tokens_root,
+            SizedQuery::new(query, Some(token_ids.len() as u16), None),
+        )
+    }
+
+    /// The query getting a token statuses
+    pub fn token_statuses_query(token_ids: &[[u8; 32]]) -> PathQuery {
+        let tokens_root = token_statuses_root_path_vec();
+
+        let mut query = Query::new();
+
+        for token_id in token_ids {
+            query.insert_key(token_id.to_vec());
+        }
+
+        PathQuery::new(
+            tokens_root,
+            SizedQuery::new(query, Some(token_ids.len() as u16), None),
+        )
     }
 
     /// The query getting token infos for identities in a range

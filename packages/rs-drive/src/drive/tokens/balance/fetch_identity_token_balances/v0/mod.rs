@@ -1,4 +1,3 @@
-use crate::drive::tokens::paths::{tokens_root_path_vec, TOKEN_BALANCES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -6,7 +5,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -46,9 +45,9 @@ impl Drive {
         .into_iter()
         .map(|(path, _, element)| {
             let token_id: [u8; 32] = path
-                .get(1)
+                .get(2)
                 .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                    "returned path item should always have a second part at index 1".to_string(),
+                    "returned path item should always have a third part at index 2".to_string(),
                 )))?
                 .clone()
                 .try_into()
