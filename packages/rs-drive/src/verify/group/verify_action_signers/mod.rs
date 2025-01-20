@@ -15,15 +15,15 @@ use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Verifies the proof of active_action information within a contract.
+    /// Verifies the proof of action signer information within a contract.
     ///
-    /// This method validates and extracts active_action information stored in a contract based on the provided proof.
-    /// It uses the proof to confirm the integrity and authenticity of the active_action data. The method supports
+    /// This method validates and extracts action signer information stored in a contract based on the provided proof.
+    /// It uses the proof to confirm the integrity and authenticity of the action signer data. The method supports
     /// different versions for backward compatibility and forwards the verification logic to the appropriate versioned implementation.
     ///
     /// # Type Parameters
-    /// - `T`: The output container type that implements `FromIterator`. This is used to collect the verified active_action information
-    ///        as pairs of [`GroupContractPosition`] and [`Group`].
+    /// - `T`: The output container type that implements `FromIterator`. This is used to collect the verified action signer information
+    ///        as pairs of [`Identifier`] and [`GroupMemberPower`].
     ///
     /// # Arguments
     /// - `proof`: A byte slice containing the cryptographic proof for the active_action information.
@@ -38,7 +38,6 @@ impl Drive {
     /// - `Ok((RootHash, T))`: On success, returns a tuple containing:
     ///   - `RootHash`: The root hash of the Merkle tree, confirming the proof's validity.
     ///   - `T`: A collection of verified active_action information as pairs of [`GroupContractPosition`] and [`Group`].
-    /// - `Err(Error)`: If verification fails, returns an [`Error`] indicating the cause of failure.
     ///
     /// # Errors
     /// - [`Error::Proof`]: If the proof is invalid, corrupted, or contains unexpected data structures.
@@ -58,7 +57,7 @@ impl Drive {
             .methods
             .verify
             .group
-            .verify_action_infos
+            .verify_action_signers
         {
             0 => Self::verify_action_signers_v0(
                 proof,
