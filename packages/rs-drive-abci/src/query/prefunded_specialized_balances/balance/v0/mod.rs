@@ -50,7 +50,7 @@ impl<C> Platform<C> {
 
             let Some(balance) = maybe_balance else {
                 return Ok(ValidationResult::new_with_error(QueryError::NotFound(
-                    "No Identity found".to_string(),
+                    "No Specialized balance found".to_string(),
                 )));
             };
 

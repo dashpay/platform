@@ -127,6 +127,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 deduct_from_prefunded_specialized_balance: 0,
                 deduct_from_prefunded_specialized_balance_operations: 0,
                 estimated_cost_for_prefunded_specialized_balance_update: 0,
+                empty_prefunded_specialized_balance: 0,
             },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,

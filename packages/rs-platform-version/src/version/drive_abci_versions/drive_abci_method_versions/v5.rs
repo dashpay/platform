@@ -84,14 +84,15 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMeth
         // quorums as workaround for Core v21 bug.
         pool_withdrawals_into_transactions_queue: 1,
         update_broadcasted_withdrawal_statuses: 0,
-        rebroadcast_expired_withdrawal_documents: 0,
+        // Rebroadcasting should also no longer use the first two quorums only
+        rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 0,
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
         clean_up_after_vote_poll_end: 0,
-        clean_up_after_contested_resources_vote_poll_end: 0,
+        clean_up_after_contested_resources_vote_poll_end: 1,
         check_for_ended_vote_polls: 0,
         tally_votes_for_contested_document_resource_vote_poll: 0,
         award_document_to_winner: 0,

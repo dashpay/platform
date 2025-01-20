@@ -42,7 +42,10 @@ pub mod system;
 mod asset_lock;
 #[cfg(feature = "server")]
 mod platform_state;
-pub(crate) mod prefunded_specialized_balances;
+
+/// Prefunded specialized balances module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod prefunded_specialized_balances;
 
 /// Vote module
 #[cfg(any(feature = "server", feature = "verify"))]
