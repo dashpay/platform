@@ -121,7 +121,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "prove_action_infos_and_add_operations".to_string(),
+                method: "prove_action_infos_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
