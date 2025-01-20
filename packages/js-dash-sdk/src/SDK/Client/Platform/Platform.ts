@@ -10,6 +10,8 @@ import createAssetLockTransaction from './createAssetLockTransaction';
 import broadcastDocument from './methods/documents/broadcast';
 import createDocument from './methods/documents/create';
 import transferDocument from './methods/documents/transfer';
+import updatePriceDocument from './methods/documents/updatePrice';
+import purchaseDocument from './methods/documents/purchase';
 import getDocument from './methods/documents/get';
 
 import publishContract from './methods/contracts/publish';
@@ -60,6 +62,8 @@ interface Records {
   broadcast: Function,
   create: Function,
   transfer: Function,
+  updatePrice: Function,
+  purchase: Function,
   get: Function,
 }
 
@@ -168,6 +172,8 @@ export class Platform {
       broadcast: broadcastDocument.bind(this),
       create: createDocument.bind(this),
       transfer: transferDocument.bind(this),
+      updatePrice: updatePriceDocument.bind(this),
+      purchase: purchaseDocument.bind(this),
       get: getDocument.bind(this),
     };
     this.contracts = {
