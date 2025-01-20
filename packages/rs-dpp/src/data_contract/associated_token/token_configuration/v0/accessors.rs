@@ -1,3 +1,4 @@
+use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
 };
@@ -22,7 +23,7 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
     }
 
     /// Returns the base supply.
-    fn base_supply(&self) -> u64 {
+    fn base_supply(&self) -> TokenAmount {
         self.base_supply
     }
 
@@ -37,7 +38,7 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
     }
 
     /// Returns the maximum supply.
-    fn max_supply(&self) -> Option<u64> {
+    fn max_supply(&self) -> Option<TokenAmount> {
         self.max_supply
     }
 
@@ -115,12 +116,12 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     }
 
     /// Sets the base supply.
-    fn set_base_supply(&mut self, base_supply: u64) {
+    fn set_base_supply(&mut self, base_supply: TokenAmount) {
         self.base_supply = base_supply;
     }
 
     /// Sets the maximum supply.
-    fn set_max_supply(&mut self, max_supply: Option<u64>) {
+    fn set_max_supply(&mut self, max_supply: Option<TokenAmount>) {
         self.max_supply = max_supply;
     }
 

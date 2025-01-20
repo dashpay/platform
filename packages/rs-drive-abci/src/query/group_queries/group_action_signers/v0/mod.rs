@@ -86,16 +86,21 @@ impl<C> Platform<C> {
                     action_id,
                     None,
                     platform_version,
-                )?.into_iter().map(|(signer_id, power)| {
-                GroupActionSigner {
+                )?
+                .into_iter()
+                .map(|(signer_id, power)| GroupActionSigner {
                     signer_id: signer_id.to_vec(),
                     power,
-                }
-            }).collect();
+                })
+                .collect();
             GetGroupActionSignersResponseV0 {
-                result: Some(get_group_action_signers_response_v0::Result::GroupActionSigners(
-                    GroupActionSigners { signers: group_action_signers },
-                )),
+                result: Some(
+                    get_group_action_signers_response_v0::Result::GroupActionSigners(
+                        GroupActionSigners {
+                            signers: group_action_signers,
+                        },
+                    ),
+                ),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };

@@ -38,10 +38,10 @@ fn default_decimals() -> u16 {
 pub struct TokenConfigurationV0 {
     pub conventions: TokenConfigurationConventionV0,
     /// The supply at the creation of the token
-    pub base_supply: u64,
+    pub base_supply: TokenAmount,
     /// The maximum supply the token can ever have
     #[serde(default)]
-    pub max_supply: Option<u64>,
+    pub max_supply: Option<TokenAmount>,
     /// Do we keep history, default is true.
     #[serde(default = "default_keeps_history")]
     pub keeps_history: bool,

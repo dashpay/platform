@@ -1,4 +1,7 @@
-use crate::drive::group::paths::{group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY, ACTION_SIGNERS_KEY};
+use crate::drive::group::paths::{
+    group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, ACTION_SIGNERS_KEY,
+    GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
+};
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::GroupContractPosition;
@@ -87,7 +90,7 @@ impl Drive {
         }
     }
 
-    /// Gets the active group actions
+    /// Gets the action signers query
     pub fn group_action_signers_query(
         contract_id: [u8; 32],
         group_contract_position: GroupContractPosition,

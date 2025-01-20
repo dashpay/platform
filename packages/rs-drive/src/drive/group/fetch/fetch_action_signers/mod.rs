@@ -2,36 +2,42 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use dpp::data_contract::group::GroupMemberPower;
 
 mod v0;
 
 impl Drive {
-    /// Fetches the `GroupAction` for the given action ID and group contract position.
+    /// Fetches the signers and their respective powers for a specific action in a group.
     ///
-    /// This function queries the GroveDB to fetch the `GroupAction` associated with a specific
-    /// group contract position and action ID. The method selects the appropriate version of
-    /// `fetch_action_id_info` based on the `platform_version` provided.
+    /// This method retrieves the list of signers for an action associated with a given contract,
+    /// group, and action status. It selects the appropriate version of the method based on the
+    /// provided platform version.
     ///
-    /// # Parameters
-    /// - `contract_id`: The identifier of the contract that the action belongs to.
-    /// - `group_contract_position`: The position of the group contract in the data structure.
-    /// - `action_id`: The identifier of the action whose `GroupAction` is being fetched.
-    /// - `transaction`: The transaction argument used for the query.
-    /// - `platform_version`: The version of the platform that determines the correct method version.
+    /// # Arguments
+    ///
+    /// * `contract_id` - The identifier of the contract associated with the action.
+    /// * `group_contract_position` - The position of the group within the contract.
+    /// * `action_status` - The status of the action (e.g., active or closed).
+    /// * `action_id` - The identifier of the action for which to fetch signers.
+    /// * `transaction` - An optional transaction argument for database operations.
+    /// * `platform_version` - The platform version to determine which method version to call.
     ///
     /// # Returns
-    /// - `Ok(GroupAction)`: The `GroupAction` for the specified action ID and contract position.
-    /// - `Err(Error)`: If an error occurs, a generic error is returned.
+    ///
+    /// A `Result` containing a `BTreeMap` where the keys are the signer identifiers and the values
+    /// are their respective powers, or an `Error` if the operation fails.
     ///
     /// # Errors
-    /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
+    ///
+    /// This method returns an `Error` if:
+    /// * The platform version is unknown.
+    /// * An internal issue occurs during the fetching process.
     pub fn fetch_action_signers(
         &self,
         contract_id: Identifier,
@@ -64,27 +70,33 @@ impl Drive {
         }
     }
 
-    /// Fetches the `GroupAction` and adds corresponding operations to the drive for the given action ID and group contract position.
+    /// Fetches the signers and their respective powers for a specific action and adds the
+    /// associated operations for database queries.
     ///
-    /// This function is similar to `fetch_action_id_info` but also adds operations to the drive for state changes or queries.
-    /// Additionally, it supports cost estimation by interacting with the layer information if provided.
+    /// This method extends the functionality of `fetch_action_signers` by including additional
+    /// database operations that can be executed as part of a larger transaction. The appropriate
+    /// version of the method is selected based on the provided platform version.
     ///
-    /// # Parameters
-    /// - `contract_id`: The identifier of the contract that the action belongs to.
-    /// - `group_contract_position`: The position of the group contract in the data structure.
-    /// - `action_id`: The identifier of the action whose `GroupAction` is being fetched.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `HashMap` containing
-    ///   layer information used for cost estimation.
-    /// - `transaction`: The transaction argument used for the query.
-    /// - `drive_operations`: A mutable reference to a vector that stores low-level drive operations.
-    /// - `platform_version`: The version of the platform that determines the correct method version.
+    /// # Arguments
+    ///
+    /// * `contract_id` - The identifier of the contract associated with the action.
+    /// * `group_contract_position` - The position of the group within the contract.
+    /// * `action_status` - The status of the action (e.g., active or closed).
+    /// * `action_id` - The identifier of the action for which to fetch signers.
+    /// * `transaction` - An optional transaction argument for database operations.
+    /// * `drive_operations` - A mutable vector to which low-level database operations will be added.
+    /// * `platform_version` - The platform version to determine which method version to call.
     ///
     /// # Returns
-    /// - `Ok(GroupAction)`: The `GroupAction` for the specified action ID and contract position, along with any added operations.
-    /// - `Err(Error)`: If an error occurs, a generic error is returned.
+    ///
+    /// A `Result` containing a `BTreeMap` where the keys are the signer identifiers and the values
+    /// are their respective powers, or an `Error` if the operation fails.
     ///
     /// # Errors
-    /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
+    ///
+    /// This method returns an `Error` if:
+    /// * The platform version is unknown.
+    /// * An internal issue occurs during the fetching process.
     pub(crate) fn fetch_action_signers_and_add_operations(
         &self,
         contract_id: Identifier,

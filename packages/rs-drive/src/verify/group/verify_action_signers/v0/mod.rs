@@ -6,11 +6,11 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
+use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use grovedb::GroveDb;
-use dpp::data_contract::group::GroupMemberPower;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -38,23 +38,32 @@ impl Drive {
         let values = proved_key_values
             .into_iter()
             .filter_map(|(_, key, element)| {
-                let id : Identifier = match key.try_into() { 
+                let id: Identifier = match key.try_into() {
                     Ok(id) => id,
-                    Err(_) => return Some(Err(Error::Proof(ProofError::IncorrectProof("identifier was not 32 bytes long".to_string())))),
+                    Err(_) => {
+                        return Some(Err(Error::Proof(ProofError::IncorrectProof(
+                            "identifier was not 32 bytes long".to_string(),
+                        ))))
+                    }
                 };
                 match element {
                     Some(SumItem(value, ..)) => {
-                        let signing_power : GroupMemberPower = match value.try_into() {
+                        let signing_power: GroupMemberPower = match value.try_into() {
                             Ok(signing_power) => signing_power,
-                            Err(_) => return Some(Err(Error::Proof(ProofError::IncorrectProof("signed power should be encodable on a u32 integer".to_string())))),
+                            Err(_) => {
+                                return Some(Err(Error::Proof(ProofError::IncorrectProof(
+                                    "signed power should be encodable on a u32 integer".to_string(),
+                                ))))
+                            }
                         };
 
                         Some(Ok((id, signing_power)))
-                    },
+                    }
                     None => None,
                     _ => Some(Err(Error::Proof(ProofError::IncorrectProof(
                         "element should be a sum item representing member signed power".to_string(),
-                    )).into())),
+                    ))
+                    .into())),
                 }
             })
             .collect::<Result<T, Error>>()?;

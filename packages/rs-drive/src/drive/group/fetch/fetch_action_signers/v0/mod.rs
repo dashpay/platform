@@ -1,16 +1,16 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::data_contract::group::GroupMemberPower;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
+use grovedb::Element::SumItem;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use grovedb::Element::SumItem;
-use dpp::data_contract::group::GroupMemberPower;
-use crate::error::drive::DriveError;
 
 impl Drive {
     pub(super) fn fetch_action_signers_v0(
@@ -60,16 +60,18 @@ impl Drive {
         .0
         .to_key_elements_btree_map()
         .into_iter()
-        .map(|(key, element)| {
-
-            match element {
-                SumItem(value, ..) => {
-                    Ok((key.try_into()?, value.try_into().map_err(|e| Error::Drive(DriveError::CorruptedDriveState("signed power should be encodable on a u32 integer".to_string())))?))
-                },
-                _ => Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "element should be a sum item representing member signed power".to_string(),
-                ))),
-            }
+        .map(|(key, element)| match element {
+            SumItem(value, ..) => Ok((
+                key.try_into()?,
+                value.try_into().map_err(|e| {
+                    Error::Drive(DriveError::CorruptedDriveState(
+                        "signed power should be encodable on a u32 integer".to_string(),
+                    ))
+                })?,
+            )),
+            _ => Err(Error::Drive(DriveError::CorruptedDriveState(
+                "element should be a sum item representing member signed power".to_string(),
+            ))),
         })
         .collect()
     }

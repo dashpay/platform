@@ -230,10 +230,7 @@ mod tests {
 
         assert_eq!(
             fetched_actions,
-            BTreeMap::from([
-                (identity_1_id, 1),
-                (identity_2_id, 1)
-            ]),
+            BTreeMap::from([(identity_1_id, 1), (identity_2_id, 1)]),
             "unexpected fetched powers"
         );
 
@@ -250,18 +247,17 @@ mod tests {
             .expect("should not error when proving active actions");
 
         // Verify proof
-        let proved_actions: BTreeMap<Identifier, GroupMemberPower> =
-            Drive::verify_action_signers(
-                proof.as_slice(),
-                contract_id,
-                group_contract_position,
-                GroupActionStatus::ActionActive,
-                action_id_1,
-                false,
-                platform_version,
-            )
-            .expect("expected proof verification to succeed")
-            .1;
+        let proved_actions: BTreeMap<Identifier, GroupMemberPower> = Drive::verify_action_signers(
+            proof.as_slice(),
+            contract_id,
+            group_contract_position,
+            GroupActionStatus::ActionActive,
+            action_id_1,
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed")
+        .1;
 
         // Assert proved actions match fetched actions
         assert_eq!(proved_actions, fetched_actions, "unexpected proved actions");
@@ -348,8 +344,8 @@ mod tests {
             false,
             platform_version,
         )
-            .expect("expected proof verification to succeed")
-            .1;
+        .expect("expected proof verification to succeed")
+        .1;
 
         // Assert no signers exist
         assert!(proved_signers.is_empty(), "expected no signers");
@@ -474,8 +470,8 @@ mod tests {
             false,
             platform_version,
         )
-            .expect("expected proof verification to succeed")
-            .1;
+        .expect("expected proof verification to succeed")
+        .1;
 
         // Assert proved signers match fetched signers
         assert_eq!(proved_signers, fetched_signers, "unexpected proved signers");
