@@ -1216,7 +1216,6 @@ dependencies = [
  "drive",
  "drive-proof-verifier",
  "envy",
- "ferment",
  "ferment-macro",
  "futures",
  "hex",
@@ -1470,7 +1469,6 @@ dependencies = [
  "derive_more",
  "dpp",
  "env_logger 0.11.6",
- "ferment",
  "ferment-macro",
  "getrandom",
  "hex",
@@ -1613,7 +1611,6 @@ dependencies = [
  "derive_more",
  "dpp",
  "drive",
- "ferment",
  "ferment-macro",
  "hex",
  "indexmap 2.7.0",
@@ -1855,17 +1852,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "ferment"
-version = "0.1.4"
-source = "git+https://github.com/dashpay/ferment?branch=feat%2Freorg#1255f4df19d303fb2d69fc1555efd2409a4b5277"
-dependencies = [
- "indexmap 2.7.0",
-]
-
-[[package]]
 name = "ferment-macro"
 version = "0.1.4"
-source = "git+https://github.com/dashpay/ferment?branch=feat%2Freorg#1255f4df19d303fb2d69fc1555efd2409a4b5277"
+source = "git+https://github.com/dashpay/ferment?branch=feat%2Flifetime-support#37a2aba1c6dfb8b860d684b9f03093cdd476b740"
 dependencies = [
  "quote",
  "syn 1.0.109",

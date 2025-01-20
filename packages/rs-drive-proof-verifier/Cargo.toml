@@ -45,7 +45,6 @@ serde_json = { version = "1.0.103", features = [
   "preserve_order",
 ], optional = true }
 hex = { version = "0.4.3" }
-ferment-macro = { git = "https://github.com/dashpay/ferment", branch = "feat/reorg", package = "ferment-macro" }
-ferment = { git = "https://github.com/dashpay/ferment", branch = "feat/reorg", package = "ferment" }
+ferment-macro = { git = "https://github.com/dashpay/ferment", branch = "feat/lifetime-support", package = "ferment-macro" }
 indexmap = { version = "2.6.0" }
 derive_more = { version = "1.0", features = ["from"] }
