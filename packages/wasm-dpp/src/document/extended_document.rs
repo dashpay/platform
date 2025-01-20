@@ -14,8 +14,8 @@ use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransferTransition;
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 
 use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
@@ -253,6 +253,60 @@ impl ExtendedDocumentWasm {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id: self.0.owner_id(),
             transitions: vec![transfer_transition.into()],
+            user_fee_increase: Default::default(),
+            signature_public_key_id: Default::default(),
+            signature: Default::default(),
+        }.into();
+
+        documents_batch_transition.into()
+    }
+
+    #[wasm_bindgen(js_name=createUpdatePriceStateTransition)]
+    pub fn create_update_price_state_transition(&mut self, amount: u32, identity_contract_nonce: IdentityNonce) -> DocumentsBatchTransitionWasm {
+        let mut cloned_document = self.0.document().clone();
+
+        cloned_document.set_revision(Some(cloned_document.revision().unwrap() + 1));
+
+        let update_price_transition = DocumentUpdatePriceTransition::from_document(
+            cloned_document,
+            self.0.document_type().unwrap(),
+            amount as u64,
+            identity_contract_nonce,
+            PlatformVersion::latest(),
+            None,
+            None,
+        ).unwrap();
+
+        let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
+            owner_id: self.0.owner_id(),
+            transitions: vec![update_price_transition.into()],
+            user_fee_increase: Default::default(),
+            signature_public_key_id: Default::default(),
+            signature: Default::default(),
+        }.into();
+
+        documents_batch_transition.into()
+    }
+
+    #[wasm_bindgen(js_name=createPurchaseStateTransition)]
+    pub fn create_update_purchase_transition(&mut self, buyer: IdentifierWrapper, amount: u32, identity_contract_nonce: IdentityNonce) -> DocumentsBatchTransitionWasm {
+        let mut cloned_document = self.0.document().clone();
+
+        cloned_document.set_revision(Some(cloned_document.revision().unwrap() + 1));
+
+        let purchase_transition = DocumentPurchaseTransition::from_document(
+            cloned_document,
+            self.0.document_type().unwrap(),
+            amount as u64,
+            identity_contract_nonce,
+            PlatformVersion::latest(),
+            None,
+            None,
+        ).unwrap();
+
+        let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
+            owner_id: buyer.into(),
+            transitions: vec![purchase_transition.into()],
             user_fee_increase: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
