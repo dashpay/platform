@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod action_event;
 pub mod group_action;
+pub mod group_action_status;
+
 #[derive(Debug, Clone, Copy, Encode, Decode, PartialEq)]
 pub enum GroupStateTransitionInfoStatus {
     GroupStateTransitionInfoProposer(GroupContractPosition),

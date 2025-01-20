@@ -1,3 +1,4 @@
+use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationConventionV0;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
@@ -13,13 +14,13 @@ pub trait TokenConfigurationV0Getters {
     fn conventions_mut(&mut self) -> &mut TokenConfigurationConventionV0;
 
     /// Returns the base supply.
-    fn base_supply(&self) -> u64;
+    fn base_supply(&self) -> TokenAmount;
     /// Returns the base supply.
     fn keeps_history(&self) -> bool;
     fn start_as_paused(&self) -> bool;
 
     /// Returns the maximum supply.
-    fn max_supply(&self) -> Option<u64>;
+    fn max_supply(&self) -> Option<TokenAmount>;
 
     /// Returns the max supply change rules.
     fn max_supply_change_rules(&self) -> &ChangeControlRules;
@@ -63,10 +64,10 @@ pub trait TokenConfigurationV0Setters {
     fn set_conventions(&mut self, conventions: TokenConfigurationConventionV0);
 
     /// Sets the base supply.
-    fn set_base_supply(&mut self, base_supply: u64);
+    fn set_base_supply(&mut self, base_supply: TokenAmount);
 
     /// Sets the maximum supply.
-    fn set_max_supply(&mut self, max_supply: Option<u64>);
+    fn set_max_supply(&mut self, max_supply: Option<TokenAmount>);
 
     /// Sets the max supply change rules.
     fn set_max_supply_change_rules(&mut self, rules: ChangeControlRules);

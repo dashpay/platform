@@ -7,6 +7,7 @@ pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
+    pub group: DriveVerifyGroupMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
@@ -41,6 +42,13 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_contract_nonce: FeatureVersion,
     pub verify_identities_contract_keys: FeatureVersion,
     pub verify_identity_revision_for_identity_id: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyGroupMethodVersions {
+    pub verify_group_info: FeatureVersion,
+    pub verify_group_infos_in_contract: FeatureVersion,
+    pub verify_action_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

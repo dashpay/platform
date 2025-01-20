@@ -1,7 +1,5 @@
 use crate::drive::balances::total_tokens_root_supply_path_vec;
-use crate::drive::tokens::paths::{
-    token_balances_path_vec, token_balances_root_path_vec, tokens_root_path_vec, TOKEN_BALANCES_KEY,
-};
+use crate::drive::tokens::paths::{token_balances_path_vec, token_balances_root_path_vec};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};

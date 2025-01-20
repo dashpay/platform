@@ -37,6 +37,8 @@ pub struct DriveAbciQueryTokenVersions {
 pub struct DriveAbciQueryGroupVersions {
     pub group_info: FeatureVersionBounds,
     pub group_infos: FeatureVersionBounds,
+    pub group_actions: FeatureVersionBounds,
+    pub group_action_signers: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

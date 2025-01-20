@@ -1,5 +1,6 @@
 mod accessors;
 
+use crate::balances::credits::TokenAmount;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
@@ -37,10 +38,10 @@ fn default_decimals() -> u16 {
 pub struct TokenConfigurationV0 {
     pub conventions: TokenConfigurationConventionV0,
     /// The supply at the creation of the token
-    pub base_supply: u64,
+    pub base_supply: TokenAmount,
     /// The maximum supply the token can ever have
     #[serde(default)]
-    pub max_supply: Option<u64>,
+    pub max_supply: Option<TokenAmount>,
     /// Do we keep history, default is true.
     #[serde(default = "default_keeps_history")]
     pub keeps_history: bool,
@@ -216,5 +217,10 @@ impl TokenConfigurationV0 {
             main_control_group: None,
             main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
         }
+    }
+
+    pub fn with_base_supply(mut self, base_supply: TokenAmount) -> Self {
+        self.base_supply = base_supply;
+        self
     }
 }

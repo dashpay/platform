@@ -15,7 +15,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 
 impl Drive {
-    pub(super) fn fetch_action_id_info_v0(
+    pub(super) fn fetch_active_action_info_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
@@ -45,7 +45,7 @@ impl Drive {
         Ok(group_action)
     }
 
-    pub(super) fn fetch_action_id_info_and_add_operations_v0(
+    pub(super) fn fetch_active_action_info_and_add_operations_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,

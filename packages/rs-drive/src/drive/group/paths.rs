@@ -69,7 +69,7 @@ pub fn group_path_vec(
 
 /// Group action path
 
-pub fn group_action_root_path<'a>(
+pub fn group_active_action_root_path<'a>(
     contract_id: &'a [u8],
     group_contract_position_bytes: &'a [u8],
 ) -> [&'a [u8]; 4] {
@@ -83,7 +83,7 @@ pub fn group_action_root_path<'a>(
 
 /// Group action path vector
 
-pub fn group_action_root_path_vec(
+pub fn group_active_action_root_path_vec(
     contract_id: &[u8],
     group_contract_position: GroupContractPosition,
 ) -> Vec<Vec<u8>> {

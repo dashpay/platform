@@ -197,7 +197,9 @@ mod tests {
             groups: Default::default(),
             tokens: BTreeMap::from([(
                 0,
-                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+                TokenConfiguration::V0(
+                    TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+                ),
             )]),
         });
 

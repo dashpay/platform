@@ -2,14 +2,9 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use dpp::balances::credits::TokenAmount;
-use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
-use dpp::balances::total_tokens_balance::TotalTokensBalance;
-
 use crate::error::Error;
-
 use crate::verify::RootHash;
-
+use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::version::PlatformVersion;
 
 impl Drive {
