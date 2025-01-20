@@ -21,7 +21,7 @@ describe('Dash - NonceManager', () => {
 
   describe('Identity nonce', () => {
     it('should set and get identity nonce', async () => {
-      nonceManager.setIdentityNonce(identityId, 1);
+      nonceManager.setIdentityNonce(identityId, 1n);
       expect(await nonceManager.getIdentityNonce(identityId)).to.be.equal(1);
       expect(dapiClientMock.platform.getIdentityNonce).to.not.be.called();
     });
@@ -51,13 +51,14 @@ describe('Dash - NonceManager', () => {
       const currentNonce = await nonceManager.getIdentityNonce(identityId);
       expect(nextNonce)
         .to.equal(currentNonce)
-        .to.equal(prevNonce + 1);
+        // @ts-ignore
+        .to.equal(prevNonce + 1n);
     });
   });
 
   describe('Identity contract nonce', () => {
     it('should set and get identity contract nonce', async () => {
-      nonceManager.setIdentityContractNonce(identityId, contractId, 1);
+      nonceManager.setIdentityContractNonce(identityId, contractId, 1n);
       expect(await nonceManager.getIdentityContractNonce(identityId, contractId))
         .to.be.equal(1);
       expect(dapiClientMock.platform.getIdentityContractNonce).to.not.be.called();
@@ -91,7 +92,8 @@ describe('Dash - NonceManager', () => {
       const currentNonce = await nonceManager.getIdentityContractNonce(identityId, contractId);
       expect(nextNonce)
         .to.equal(currentNonce)
-        .to.equal(prevNonce + 1);
+        // @ts-ignore
+        .to.equal(prevNonce + 1n);
     });
   });
 });
