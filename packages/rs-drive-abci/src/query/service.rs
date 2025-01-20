@@ -712,17 +712,17 @@ impl PlatformService for QueryService {
         .await
     }
 
-    // async fn get_active_group_actions(
-    //     &self,
-    //     request: Request<GetActiveGroupActionsRequest>,
-    // ) -> Result<Response<GetActiveGroupActionsResponse>, Status> {
-    //     self.handle_blocking_query(
-    //         request,
-    //         Platform::<DefaultCoreRPC>::query_active_group_actions,
-    //         "get_active_group_actions",
-    //     )
-    //     .await
-    // }
+    async fn get_active_group_actions(
+        &self,
+        request: Request<GetActiveGroupActionsRequest>,
+    ) -> Result<Response<GetActiveGroupActionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_active_group_actions,
+            "get_active_group_actions",
+        )
+        .await
+    }
 }
 
 fn query_error_into_status(error: QueryError) -> Status {

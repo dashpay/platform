@@ -32,6 +32,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     group: DriveVerifyGroupMethodVersions {
         verify_group_info: 0,
         verify_group_infos_in_contract: 0,
+        verify_active_action_infos: 0,
     },
     token: DriveVerifyTokenMethodVersions {
         verify_token_balances_for_identity_ids: 0,

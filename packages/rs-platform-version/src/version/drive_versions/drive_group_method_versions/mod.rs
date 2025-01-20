@@ -13,17 +13,19 @@ pub struct DriveGroupMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveGroupFetchMethodVersions {
     pub fetch_action_id_signers_power: FeatureVersion,
-    pub fetch_action_id_info: FeatureVersion,
+    pub fetch_active_action_info: FeatureVersion,
     pub fetch_action_id_info_keep_serialized: FeatureVersion,
     pub fetch_action_id_has_signer: FeatureVersion,
     pub fetch_group_info: FeatureVersion,
     pub fetch_group_infos: FeatureVersion,
+    pub fetch_active_action_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveGroupProveMethodVersions {
     pub prove_group_info: FeatureVersion,
     pub prove_group_infos: FeatureVersion,
+    pub prove_active_action_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

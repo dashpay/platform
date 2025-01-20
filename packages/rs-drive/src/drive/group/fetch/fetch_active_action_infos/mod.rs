@@ -5,10 +5,10 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
 use dpp::identifier::Identifier;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use dpp::prelude::StartAtIncluded;
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 mod v0;
 
@@ -32,30 +32,32 @@ impl Drive {
     ///
     /// # Errors
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
-    pub fn fetch_action_id_info(
+    pub fn fetch_active_action_infos(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
-        action_id: Identifier,
+        start_action_id: Option<(Identifier, StartAtIncluded)>,
+        limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupAction, Error> {
+    ) -> Result<BTreeMap<Identifier, GroupAction>, Error> {
         match platform_version
             .drive
             .methods
             .group
             .fetch
-            .fetch_action_id_info
+            .fetch_active_action_infos
         {
-            0 => self.fetch_action_id_info_v0(
+            0 => self.fetch_active_action_infos_v0(
                 contract_id,
                 group_contract_position,
-                action_id,
+                start_action_id,
+                limit,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_action_id_info".to_string(),
+                method: "fetch_active_action_infos".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -83,36 +85,34 @@ impl Drive {
     ///
     /// # Errors
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
-    pub(crate) fn fetch_action_id_info_and_add_operations(
+    pub(crate) fn fetch_active_action_infos_and_add_operations(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
-        action_id: Identifier,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        start_action_id: Option<(Identifier, StartAtIncluded)>,
+        limit: Option<u16>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<GroupAction, Error> {
+    ) -> Result<BTreeMap<Identifier, GroupAction>, Error> {
         match platform_version
             .drive
             .methods
             .group
             .fetch
-            .fetch_action_id_info
+            .fetch_active_action_infos
         {
-            0 => self.fetch_action_id_info_and_add_operations_v0(
+            0 => self.fetch_active_action_infos_and_add_operations_v0(
                 contract_id,
                 group_contract_position,
-                action_id,
-                estimated_costs_only_with_layer_info,
+                start_action_id,
+                limit,
                 transaction,
                 drive_operations,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_action_id_signers_and_add_operations".to_string(),
+                method: "fetch_active_action_infos_and_add_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

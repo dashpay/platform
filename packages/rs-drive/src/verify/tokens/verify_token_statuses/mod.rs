@@ -2,7 +2,6 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use dpp::tokens::info::IdentityTokenInfo;
 use dpp::tokens::status::TokenStatus;
 
 use crate::error::Error;
