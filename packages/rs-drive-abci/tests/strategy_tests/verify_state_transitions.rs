@@ -113,6 +113,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             contracts: vec![],
             documents: vec![],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         if let Some(action) = action {

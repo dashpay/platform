@@ -130,16 +130,27 @@ pub fn contract_lookup_fn_for_contract<'a>(
     Box::new(func)
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the votes given out by an identity
-pub mod contested_resource_votes_given_by_identity_query;
 #[cfg(any(feature = "server", feature = "verify"))]
+pub mod contested_resource_votes_given_by_identity_query;
 /// A query to get contested documents before they have been awarded
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_contested_document_query;
 
-#[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the block counts of proposers in an epoch
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod proposer_block_count_query;
+
+/// A query to get the identity's token balance
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod identity_token_balance_drive_query;
+/// A query to get the identity's token info
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod identity_token_info_drive_query;
+
+/// A query to get the token's status
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod token_status_drive_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Represents a starting point for a query based on a specific document.

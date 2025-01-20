@@ -12,7 +12,6 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::tokens::token_event::TokenEvent;
-    use drive::query::PathQuery;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
@@ -68,7 +67,7 @@ mod tests {
             .collect();
 
         let contract = created_contract.data_contract_mut();
-        let mut token_configuration = contract
+        let token_configuration = contract
             .token_configuration_mut(0)
             .expect("expected to get token configuration");
         token_configuration.set_minting_allow_choosing_destination(true);
@@ -216,7 +215,7 @@ mod tests {
             .collect();
 
         let contract = created_contract.data_contract_mut();
-        let mut token_configuration = contract
+        let token_configuration = contract
             .token_configuration_mut(0)
             .expect("expected to get token configuration");
         token_configuration.set_minting_allow_choosing_destination(true);

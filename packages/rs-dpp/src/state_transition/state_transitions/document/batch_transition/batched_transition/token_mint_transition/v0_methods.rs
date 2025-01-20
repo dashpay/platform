@@ -1,7 +1,6 @@
 use platform_value::Identifier;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
