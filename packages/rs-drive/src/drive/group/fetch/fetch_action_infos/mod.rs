@@ -16,14 +16,16 @@ mod v0;
 impl Drive {
     /// Fetches the `GroupAction` for the given action ID and group contract position.
     ///
-    /// This function queries the GroveDB to fetch the `GroupAction` associated with a specific
-    /// group contract position and action ID. The method selects the appropriate version of
-    /// `fetch_action_id_info` based on the `platform_version` provided.
+    /// This function queries the GroveDB to fetch `GroupAction`s associated with a specific
+    /// group contract position and `action_status`. The method selects the appropriate version of
+    /// `fetch_action_infos` based on the `platform_version` provided.
     ///
     /// # Parameters
     /// - `contract_id`: The identifier of the contract that the action belongs to.
     /// - `group_contract_position`: The position of the group contract in the data structure.
-    /// - `action_id`: The identifier of the action whose `GroupAction` is being fetched.
+    /// - `action_status`: The status of the group actions to fetch.
+    /// - `start_action_id`: An optional starting action ID and inclusion flag.
+    /// - `limit`: An optional limit on the number of group actions to fetch.
     /// - `transaction`: The transaction argument used for the query.
     /// - `platform_version`: The version of the platform that determines the correct method version.
     ///
