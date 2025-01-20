@@ -57,7 +57,7 @@ impl Drive {
             .methods
             .verify
             .group
-            .verify_action_infos
+            .verify_action_signers
         {
             0 => Self::verify_action_signers_v0(
                 proof,
