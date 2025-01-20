@@ -69,15 +69,15 @@ impl Drive {
 
     /// Fetches the `GroupAction` and adds corresponding operations to the drive for the given action ID and group contract position.
     ///
-    /// This function is similar to `fetch_action_id_info` but also adds operations to the drive for state changes or queries.
-    /// Additionally, it supports cost estimation by interacting with the layer information if provided.
+    /// This function is similar to `fetch_action_infos` but also adds operations to the drive for state changes or queries.
+    /// It fetches `GroupAction`s based on the specified `action_status`. Additionally, it supports cost estimation by interacting with the layer information if provided.
     ///
     /// # Parameters
     /// - `contract_id`: The identifier of the contract that the action belongs to.
     /// - `group_contract_position`: The position of the group contract in the data structure.
-    /// - `action_id`: The identifier of the action whose `GroupAction` is being fetched.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `HashMap` containing
-    ///   layer information used for cost estimation.
+    /// - `action_status`: The status of the group actions to fetch.
+    /// - `start_action_id`: An optional starting action ID and inclusion flag.
+    /// - `limit`: An optional limit on the number of group actions to fetch.
     /// - `transaction`: The transaction argument used for the query.
     /// - `drive_operations`: A mutable reference to a vector that stores low-level drive operations.
     /// - `platform_version`: The version of the platform that determines the correct method version.
