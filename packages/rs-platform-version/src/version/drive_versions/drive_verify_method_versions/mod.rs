@@ -49,6 +49,7 @@ pub struct DriveVerifyGroupMethodVersions {
     pub verify_group_info: FeatureVersion,
     pub verify_group_infos_in_contract: FeatureVersion,
     pub verify_action_infos: FeatureVersion,
+    pub verify_action_signers: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -59,6 +60,9 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_infos_for_identity_id: FeatureVersion,
     pub verify_token_statuses: FeatureVersion,
     pub verify_token_total_supply_and_aggregated_identity_balance: FeatureVersion,
+    pub verify_token_balance_for_identity_id: FeatureVersion,
+    pub verify_token_info_for_identity_id: FeatureVersion,
+    pub verify_token_status: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

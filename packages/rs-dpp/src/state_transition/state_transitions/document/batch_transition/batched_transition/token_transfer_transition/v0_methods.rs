@@ -153,4 +153,24 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransition {
             ),
         }
     }
+
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    ) {
+        match self {
+            TokenTransferTransition::V0(v0) => (
+                v0.public_note.clone(),
+                v0.shared_encrypted_note.clone(),
+                v0.private_encrypted_note.clone(),
+            ),
+        }
+    }
 }

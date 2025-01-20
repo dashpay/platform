@@ -6,4 +6,6 @@ pub enum TokenError {
     TokenNotFoundAtPositionError,
     #[error("The contract version does not allow tokens")]
     TokenNotFoundOnContractVersion,
+    #[error("There is minting recipient set")]
+    TokenNoMintingRecipient,
 }

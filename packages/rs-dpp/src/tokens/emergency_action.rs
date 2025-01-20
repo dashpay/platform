@@ -18,6 +18,9 @@ pub enum TokenEmergencyAction {
 }
 
 impl TokenEmergencyAction {
+    pub fn paused(&self) -> bool {
+        matches!(self, TokenEmergencyAction::Pause)
+    }
     pub fn resulting_status(
         &self,
         platform_version: &PlatformVersion,

@@ -95,6 +95,19 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
             Vec<u8>,
         )>,
     );
+
+    /// Returns all notes (public, shared, and private) as cloned values in a tuple.
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    );
 }
 
 impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
@@ -190,6 +203,24 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
             self.public_note,
             self.shared_encrypted_note,
             self.private_encrypted_note,
+        )
+    }
+
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+        Option<(
+            RootEncryptionKeyIndex,
+            DerivationEncryptionKeyIndex,
+            Vec<u8>,
+        )>,
+    ) {
+        (
+            self.public_note.clone(),
+            self.shared_encrypted_note.clone(),
+            self.private_encrypted_note.clone(),
         )
     }
 }

@@ -71,6 +71,17 @@ impl Drive {
         )
     }
 
+    /// The query getting a token statuses
+    pub fn token_status_query(token_id: [u8; 32]) -> PathQuery {
+        let tokens_root = token_statuses_root_path_vec();
+
+        let mut query = Query::new();
+
+        query.insert_key(token_id.to_vec());
+
+        PathQuery::new(tokens_root, SizedQuery::new(query, Some(1), None))
+    }
+
     /// The query getting token infos for identities in a range
     pub fn token_infos_for_range_query(
         token_id: [u8; 32],
