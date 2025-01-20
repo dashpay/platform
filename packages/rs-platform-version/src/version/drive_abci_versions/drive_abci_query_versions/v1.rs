@@ -214,5 +214,10 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
+        group_action_signers: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
 };

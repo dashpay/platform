@@ -64,6 +64,7 @@ service Platform {
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
   rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
   rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
+  rpc getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1663,5 +1664,46 @@ message GetGroupActionsResponse {
   }
   oneof version {
     GetGroupActionsResponseV0 v0 = 1;
+  }
+}
+
+
+message GetGroupActionSignersRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // Request the active actions
+    CLOSED = 1; // Request the closed actions
+  }
+
+  message GetGroupActionSignersRequestV0 {
+    bytes contract_id = 1;
+    uint32 group_contract_position = 2;
+    ActionStatus status = 3;
+    bytes action_id = 4;
+    bool prove = 5;
+  }
+  oneof version {
+    GetGroupActionSignersRequestV0 v0 = 1;
+  }
+}
+
+message GetGroupActionSignersResponse {
+  message GetGroupActionSignersResponseV0 {
+    message GroupActionSigner {
+      bytes signer_id = 1;
+      uint32 power = 2;
+    }
+    message GroupActionSigners {
+      repeated GroupActionSigner signers = 1;
+    }
+
+    oneof result {
+      GroupActionSigners group_action_signers = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetGroupActionSignersResponseV0 v0 = 1;
   }
 }

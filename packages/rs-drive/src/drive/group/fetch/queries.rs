@@ -1,7 +1,4 @@
-use crate::drive::group::paths::{
-    group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, GROUP_ACTIVE_ACTIONS_KEY,
-    GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
-};
+use crate::drive::group::paths::{group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY, ACTION_SIGNERS_KEY};
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::GroupContractPosition;
@@ -85,6 +82,36 @@ impl Drive {
             query: SizedQuery {
                 query,
                 limit,
+                offset: None,
+            },
+        }
+    }
+
+    /// Gets the active group actions
+    pub fn group_action_signers_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
+        action_id: [u8; 32],
+    ) -> PathQuery {
+        let mut group_actions_path = group_path_vec(&contract_id, group_contract_position);
+        match action_status {
+            GroupActionStatus::ActionActive => {
+                group_actions_path.push(GROUP_ACTIVE_ACTIONS_KEY.to_vec())
+            }
+            GroupActionStatus::ActionClosed => {
+                group_actions_path.push(GROUP_CLOSED_ACTIONS_KEY.to_vec())
+            }
+        }
+        group_actions_path.push(action_id.to_vec());
+        group_actions_path.push(ACTION_SIGNERS_KEY.to_vec());
+        let query = Query::new_range_full();
+
+        PathQuery {
+            path: group_actions_path,
+            query: SizedQuery {
+                query,
+                limit: None,
                 offset: None,
             },
         }

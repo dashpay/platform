@@ -22,7 +22,6 @@ use drive::drive::identity::withdrawals::paths::{
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::{
-    prefunded_specialized_balances_for_voting_path,
     prefunded_specialized_balances_for_voting_path_vec,
 };
 use drive::drive::system::misc_path;
