@@ -2,24 +2,27 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::GroupContractPosition;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    pub(super) fn prove_active_action_infos_v0(
+    pub(super) fn prove_action_infos_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        self.prove_active_action_infos_operations_v0(
+        self.prove_action_infos_operations_v0(
             contract_id,
             group_contract_position,
+            action_status,
             start_action_id,
             limit,
             transaction,
@@ -28,19 +31,21 @@ impl Drive {
         )
     }
 
-    pub(super) fn prove_active_action_infos_operations_v0(
+    pub(super) fn prove_action_infos_operations_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path_query = Drive::group_active_action_infos_query(
+        let path_query = Drive::group_action_infos_query(
             contract_id.to_buffer(),
             group_contract_position,
+            action_status,
             start_action_id.map(|(s, i)| (s.to_buffer(), i)),
             limit,
         );
@@ -77,7 +82,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn should_prove_active_action_infos_with_multiple_actions() {
+    fn should_prove_action_infos_with_multiple_actions() {
         let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
@@ -203,9 +208,10 @@ mod tests {
 
         // Fetch actions directly
         let fetched_actions = drive
-            .fetch_active_action_infos(
+            .fetch_action_infos(
                 contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 None,
                 Some(10),
                 None,
@@ -224,9 +230,10 @@ mod tests {
 
         // Prove actions
         let proof = drive
-            .prove_active_action_infos_v0(
+            .prove_action_infos_v0(
                 contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 None,
                 Some(10),
                 None,
@@ -236,10 +243,11 @@ mod tests {
 
         // Verify proof
         let proved_actions: BTreeMap<Identifier, GroupAction> =
-            Drive::verify_active_action_infos_in_contract(
+            Drive::verify_action_infos_in_contract(
                 proof.as_slice(),
                 contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 None,
                 Some(10),
                 false,
@@ -253,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn should_prove_no_active_action_infos_for_non_existent_contract() {
+    fn should_prove_no_action_infos_for_non_existent_contract() {
         let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
@@ -263,9 +271,10 @@ mod tests {
 
         // Prove actions for non-existent contract
         let proof = drive
-            .prove_active_action_infos_v0(
+            .prove_action_infos_v0(
                 non_existent_contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 None,
                 Some(10),
                 None,
@@ -275,10 +284,11 @@ mod tests {
 
         // Verify proof
         let proved_actions: BTreeMap<Identifier, GroupAction> =
-            Drive::verify_active_action_infos_in_contract(
+            Drive::verify_action_infos_in_contract(
                 proof.as_slice(),
                 non_existent_contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 None,
                 Some(10),
                 false,
@@ -296,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn should_fetch_and_prove_active_action_infos_with_start_action_id() {
+    fn should_fetch_and_prove_action_infos_with_start_action_id() {
         let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
@@ -472,9 +482,10 @@ mod tests {
 
         // Fetch actions starting from action_id_2
         let fetched_actions = drive
-            .fetch_active_action_infos(
+            .fetch_action_infos(
                 contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 Some((action_id_2, true)),
                 Some(2),
                 None,
@@ -493,9 +504,10 @@ mod tests {
 
         // Prove actions starting from action_id_2
         let proof = drive
-            .prove_active_action_infos_v0(
+            .prove_action_infos_v0(
                 contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 Some((action_id_2, true)),
                 Some(2),
                 None,
@@ -505,10 +517,11 @@ mod tests {
 
         // Verify proof
         let proved_actions: BTreeMap<Identifier, GroupAction> =
-            Drive::verify_active_action_infos_in_contract(
+            Drive::verify_action_infos_in_contract(
                 proof.as_slice(),
                 contract_id,
                 group_contract_position,
+                GroupActionStatus::ActionActive,
                 Some((action_id_2, true)),
                 Some(2),
                 false,

@@ -8,6 +8,7 @@ use crate::verify::RootHash;
 
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use dpp::serialization::PlatformDeserializable;
@@ -15,20 +16,20 @@ use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    pub(super) fn verify_active_action_infos_in_contract_v0<
-        T: FromIterator<(Identifier, GroupAction)>,
-    >(
+    pub(super) fn verify_action_infos_in_contract_v0<T: FromIterator<(Identifier, GroupAction)>>(
         proof: &[u8],
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
-        let path_query = Drive::group_active_action_infos_query(
+        let path_query = Drive::group_action_infos_query(
             contract_id.to_buffer(),
             group_contract_position,
+            action_status,
             start_action_id.map(|(s, i)| (s.to_buffer(), i)),
             limit,
         );
@@ -62,7 +63,7 @@ impl Drive {
                     }
                     None => None,
                     Some(element) => Some(Err(Error::Proof(ProofError::IncorrectProof(format!(
-                        "active_action should be in an item, however a {} was returned",
+                        "group action should be in an item, however a {} was returned",
                         element.type_str()
                     ))))),
                 }

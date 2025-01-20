@@ -48,7 +48,7 @@ pub struct DriveVerifyIdentityMethodVersions {
 pub struct DriveVerifyGroupMethodVersions {
     pub verify_group_info: FeatureVersion,
     pub verify_group_infos_in_contract: FeatureVersion,
-    pub verify_active_action_infos: FeatureVersion,
+    pub verify_action_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

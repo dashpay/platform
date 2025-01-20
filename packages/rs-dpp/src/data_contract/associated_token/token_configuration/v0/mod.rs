@@ -1,5 +1,6 @@
 mod accessors;
 
+use crate::balances::credits::TokenAmount;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
@@ -216,5 +217,10 @@ impl TokenConfigurationV0 {
             main_control_group: None,
             main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
         }
+    }
+
+    pub fn with_base_supply(mut self, base_supply: TokenAmount) -> Self {
+        self.base_supply = base_supply;
+        self
     }
 }

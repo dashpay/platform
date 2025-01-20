@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use dpp::serialization::PlatformDeserializable;
@@ -14,18 +15,20 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
-    pub(super) fn fetch_active_action_infos_v0(
+    pub(super) fn fetch_action_infos_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<Identifier, GroupAction>, Error> {
-        self.fetch_active_action_infos_and_add_operations_v0(
+        self.fetch_action_infos_and_add_operations_v0(
             contract_id,
             group_contract_position,
+            action_status,
             start_action_id,
             limit,
             transaction,
@@ -34,19 +37,21 @@ impl Drive {
         )
     }
 
-    pub(super) fn fetch_active_action_infos_and_add_operations_v0(
+    pub(super) fn fetch_action_infos_and_add_operations_v0(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<Identifier, GroupAction>, Error> {
-        let path_query = Drive::group_active_action_infos_query(
+        let path_query = Drive::group_action_infos_query(
             contract_id.to_buffer(),
             group_contract_position,
+            action_status,
             start_action_id.map(|(s, i)| (s.to_buffer(), i)),
             limit,
         );

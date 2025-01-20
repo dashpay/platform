@@ -10,8 +10,7 @@ use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse,
-    GetActiveGroupActionsRequest, GetActiveGroupActionsResponse, GetConsensusParamsRequest,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
     GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
     GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
@@ -21,9 +20,9 @@ use dapi_grpc::platform::v0::{
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -712,14 +711,14 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_active_group_actions(
+    async fn get_group_actions(
         &self,
-        request: Request<GetActiveGroupActionsRequest>,
-    ) -> Result<Response<GetActiveGroupActionsResponse>, Status> {
+        request: Request<GetGroupActionsRequest>,
+    ) -> Result<Response<GetGroupActionsResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_active_group_actions,
-            "get_active_group_actions",
+            Platform::<DefaultCoreRPC>::query_group_actions,
+            "get_group_actions",
         )
         .await
     }

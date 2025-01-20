@@ -3,6 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 
@@ -44,10 +45,11 @@ impl Drive {
     /// - [`Error::Proof`]: If the proof is invalid, corrupted, or contains unexpected data structures.
     /// - [`Error::Drive(DriveError::UnknownVersionMismatch)`]: If the method is called with an unsupported platform version.
     /// - Any other errors propagated from the versioned implementation.
-    pub fn verify_active_action_infos_in_contract<T: FromIterator<(Identifier, GroupAction)>>(
+    pub fn verify_action_infos_in_contract<T: FromIterator<(Identifier, GroupAction)>>(
         proof: &[u8],
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         verify_subset_of_proof: bool,
@@ -58,19 +60,20 @@ impl Drive {
             .methods
             .verify
             .group
-            .verify_active_action_infos
+            .verify_action_infos
         {
-            0 => Self::verify_active_action_infos_in_contract_v0(
+            0 => Self::verify_action_infos_in_contract_v0(
                 proof,
                 contract_id,
                 group_contract_position,
+                action_status,
                 start_action_id,
                 limit,
                 verify_subset_of_proof,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_active_action_infos_in_contract".to_string(),
+                method: "verify_action_infos_in_contract".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

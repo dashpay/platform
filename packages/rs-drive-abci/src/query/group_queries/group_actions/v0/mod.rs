@@ -3,15 +3,21 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_active_group_actions_request::GetActiveGroupActionsRequestV0;
-use dapi_grpc::platform::v0::get_active_group_actions_response::{
-    get_active_group_actions_response_v0, GetActiveGroupActionsResponseV0,
+use dapi_grpc::platform::v0::get_group_actions_request::GetGroupActionsRequestV0;
+use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{
+    emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent,
+    EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent,
+    PersonalEncryptedNote, SharedEncryptedNote, TokenEvent as TokenEventResponse, TransferEvent,
+    UnfreezeEvent,
 };
-use dapi_grpc::platform::v0::get_active_group_actions_response::get_active_group_actions_response_v0::{BurnEvent, DestroyFrozenFundsEvent, emergency_action_event, EmergencyActionEvent, FreezeEvent, group_action_event, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent, PersonalEncryptedNote, SharedEncryptedNote, token_event, TransferEvent, UnfreezeEvent, TokenEvent as TokenEventResponse};
+use dapi_grpc::platform::v0::get_group_actions_response::{
+    get_group_actions_response_v0, GetGroupActionsResponseV0,
+};
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::action_event;
 use dpp::group::group_action::GroupAction;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_event::TokenEvent;
@@ -20,18 +26,19 @@ use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 
 impl<C> Platform<C> {
-    pub(super) fn query_active_group_actions_v0(
+    pub(super) fn query_group_actions_v0(
         &self,
-        GetActiveGroupActionsRequestV0 {
+        GetGroupActionsRequestV0 {
             contract_id,
             group_contract_position,
+            status,
             start_at_action_id,
             count,
             prove,
-        }: GetActiveGroupActionsRequestV0,
+        }: GetGroupActionsRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetActiveGroupActionsResponseV0>, Error> {
+    ) -> Result<QueryValidationResult<GetGroupActionsResponseV0>, Error> {
         let config = &self.config.drive;
         let contract_id: Identifier =
             check_validation_result_with_data!(contract_id.try_into().map_err(|_| {
@@ -84,18 +91,26 @@ impl<C> Platform<C> {
             }
         };
 
+        let group_status: GroupActionStatus =
+            check_validation_result_with_data!(status.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "group action status must be Active or Closed".to_string(),
+                )
+            }));
+
         let response = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_active_action_infos(
+            let proof = check_validation_result_with_data!(self.drive.prove_action_infos(
                 contract_id,
                 group_contract_position as GroupContractPosition,
+                group_status,
                 maybe_start_at_action_id,
                 Some(limit),
                 None,
                 platform_version,
             ));
 
-            GetActiveGroupActionsResponseV0 {
-                result: Some(get_active_group_actions_response_v0::Result::Proof(
+            GetGroupActionsResponseV0 {
+                result: Some(get_group_actions_response_v0::Result::Proof(
                     self.response_proof_v0(platform_state, proof),
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state)),
@@ -103,9 +118,10 @@ impl<C> Platform<C> {
         } else {
             let group_actions = self
                 .drive
-                .fetch_active_action_infos(
+                .fetch_action_infos(
                     contract_id,
                     group_contract_position as GroupContractPosition,
+                    group_status,
                     maybe_start_at_action_id,
                     Some(limit),
                     None,
@@ -213,8 +229,8 @@ impl<C> Platform<C> {
                     }
                 })
                 .collect();
-            GetActiveGroupActionsResponseV0 {
-                result: Some(get_active_group_actions_response_v0::Result::GroupActions(
+            GetGroupActionsResponseV0 {
+                result: Some(get_group_actions_response_v0::Result::GroupActions(
                     GroupActions { group_actions },
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state)),

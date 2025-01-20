@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use grovedb::TransactionArg;
@@ -32,10 +33,11 @@ impl Drive {
     ///
     /// # Errors
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
-    pub fn fetch_active_action_infos(
+    pub fn fetch_action_infos(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
@@ -46,18 +48,19 @@ impl Drive {
             .methods
             .group
             .fetch
-            .fetch_active_action_infos
+            .fetch_action_infos
         {
-            0 => self.fetch_active_action_infos_v0(
+            0 => self.fetch_action_infos_v0(
                 contract_id,
                 group_contract_position,
+                action_status,
                 start_action_id,
                 limit,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_active_action_infos".to_string(),
+                method: "fetch_action_infos".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -85,10 +88,11 @@ impl Drive {
     ///
     /// # Errors
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
-    pub(crate) fn fetch_active_action_infos_and_add_operations(
+    pub(crate) fn fetch_action_infos_and_add_operations(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
@@ -100,11 +104,12 @@ impl Drive {
             .methods
             .group
             .fetch
-            .fetch_active_action_infos
+            .fetch_action_infos
         {
-            0 => self.fetch_active_action_infos_and_add_operations_v0(
+            0 => self.fetch_action_infos_and_add_operations_v0(
                 contract_id,
                 group_contract_position,
+                action_status,
                 start_action_id,
                 limit,
                 transaction,
@@ -112,7 +117,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_active_action_infos_and_add_operations".to_string(),
+                method: "fetch_action_infos_and_add_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

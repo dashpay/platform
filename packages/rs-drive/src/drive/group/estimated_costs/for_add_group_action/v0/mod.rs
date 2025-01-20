@@ -1,8 +1,8 @@
 use crate::drive::Drive;
 
 use crate::drive::group::paths::{
-    group_action_path, group_action_root_path, group_action_signers_path, group_contract_path,
-    group_path, group_root_path,
+    group_action_path, group_action_signers_path, group_active_action_root_path,
+    group_contract_path, group_path, group_root_path,
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::GroupContractPosition;
@@ -127,7 +127,7 @@ impl Drive {
         );
 
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_path(group_action_root_path(
+            KeyInfoPath::from_known_path(group_active_action_root_path(
                 contract_id.as_slice(),
                 &group_contract_position.to_be_bytes(),
             )),

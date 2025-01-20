@@ -63,8 +63,7 @@ service Platform {
   rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
   rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
-  rpc getActiveGroupActions(GetActiveGroupActionsRequest) returns (GetActiveGroupActionsResponse);
-//  rpc getClosedGroupActions(GetClosedGroupActionsRequest) returns (GetClosedGroupActionsResponse);
+  rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1512,26 +1511,32 @@ message GetGroupInfosResponse {
   }
 }
 
-message GetActiveGroupActionsRequest {
+message GetGroupActionsRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // Request the active actions
+    CLOSED = 1; // Request the closed actions
+  }
+
   message StartAtActionId {
     bytes start_action_id = 1;
     bool start_action_id_included = 2;
   }
     
-  message GetActiveGroupActionsRequestV0 {
+  message GetGroupActionsRequestV0 {
     bytes contract_id = 1;
     uint32 group_contract_position = 2;
-    optional StartAtActionId start_at_action_id = 3;
-    optional uint32 count = 4;
-    bool prove = 5;
+    ActionStatus status = 3;
+    optional StartAtActionId start_at_action_id = 4;
+    optional uint32 count = 5;
+    bool prove = 6;
   }
   oneof version {
-    GetActiveGroupActionsRequestV0 v0 = 1;
+    GetGroupActionsRequestV0 v0 = 1;
   }
 }
 
-message GetActiveGroupActionsResponse {
-  message GetActiveGroupActionsResponseV0 {
+message GetGroupActionsResponse {
+  message GetGroupActionsResponseV0 {
     // Mint event
     message MintEvent {
       uint64 amount = 1; // Amount to mint
@@ -1657,6 +1662,6 @@ message GetActiveGroupActionsResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version {
-    GetActiveGroupActionsResponseV0 v0 = 1;
+    GetGroupActionsResponseV0 v0 = 1;
   }
 }

@@ -1,10 +1,11 @@
 use crate::drive::group::paths::{
-    group_action_root_path_vec, group_closed_action_root_path_vec, group_contract_path_vec,
-    group_path_vec, ACTION_INFO_KEY, GROUP_INFO_KEY,
+    group_contract_path_vec, group_path_vec, ACTION_INFO_KEY, GROUP_ACTIVE_ACTIONS_KEY,
+    GROUP_CLOSED_ACTIONS_KEY, GROUP_INFO_KEY,
 };
 use crate::drive::Drive;
 use crate::query::{Query, QueryItem};
 use dpp::data_contract::GroupContractPosition;
+use dpp::group::group_action_status::GroupActionStatus;
 use grovedb::{PathQuery, SizedQuery};
 use std::ops::RangeFull;
 
@@ -50,13 +51,22 @@ impl Drive {
     }
 
     /// Gets the active group actions
-    pub fn group_active_action_infos_query(
+    pub fn group_action_infos_query(
         contract_id: [u8; 32],
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_at: Option<([u8; 32], bool)>,
         limit: Option<u16>,
     ) -> PathQuery {
-        let group_actions_path = group_action_root_path_vec(&contract_id, group_contract_position);
+        let mut group_actions_path = group_path_vec(&contract_id, group_contract_position);
+        match action_status {
+            GroupActionStatus::ActionActive => {
+                group_actions_path.push(GROUP_ACTIVE_ACTIONS_KEY.to_vec())
+            }
+            GroupActionStatus::ActionClosed => {
+                group_actions_path.push(GROUP_CLOSED_ACTIONS_KEY.to_vec())
+            }
+        }
         let mut query = Query::new_with_direction(true);
         if let Some((start_at, start_at_included)) = start_at {
             if start_at_included {
@@ -69,36 +79,6 @@ impl Drive {
         }
 
         query.set_subquery_key(ACTION_INFO_KEY.to_vec());
-
-        PathQuery {
-            path: group_actions_path,
-            query: SizedQuery {
-                query,
-                limit,
-                offset: None,
-            },
-        }
-    }
-
-    /// Gets the active group actions
-    pub fn group_closed_action_infos_query(
-        contract_id: [u8; 32],
-        group_contract_position: GroupContractPosition,
-        start_at: Option<([u8; 32], bool)>,
-        limit: Option<u16>,
-    ) -> PathQuery {
-        let group_actions_path =
-            group_closed_action_root_path_vec(&contract_id, group_contract_position);
-        let mut query = Query::new_with_direction(true);
-        if let Some((start_at, start_at_included)) = start_at {
-            if start_at_included {
-                query.insert_item(QueryItem::RangeFrom(start_at.to_vec()..))
-            } else {
-                query.insert_item(QueryItem::RangeAfter(start_at.to_vec()..))
-            }
-        } else {
-            query.insert_item(QueryItem::RangeFull(RangeFull))
-        }
 
         PathQuery {
             path: group_actions_path,

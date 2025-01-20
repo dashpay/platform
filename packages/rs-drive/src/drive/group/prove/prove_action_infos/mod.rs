@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::GroupContractPosition;
+use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::prelude::StartAtIncluded;
 use grovedb::TransactionArg;
@@ -33,10 +34,11 @@ impl Drive {
     /// # Errors
     /// - [`Error::Drive(DriveError::UnknownVersionMismatch)`]: If the method is called with an unsupported platform version.
     /// - Any other errors propagated from the versioned implementation.
-    pub fn prove_active_action_infos(
+    pub fn prove_action_infos(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
@@ -47,18 +49,19 @@ impl Drive {
             .methods
             .group
             .prove
-            .prove_active_action_infos
+            .prove_action_infos
         {
-            0 => self.prove_active_action_infos_v0(
+            0 => self.prove_action_infos_v0(
                 contract_id,
                 group_contract_position,
+                action_status,
                 start_action_id,
                 limit,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "prove_active_action_infos".to_string(),
+                method: "prove_action_infos".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -67,7 +70,7 @@ impl Drive {
 
     /// Generates a proof of active action information within a specific group of a contract and adds operations.
     ///
-    /// This method extends the functionality of `prove_active_action_infos` by additionally allowing
+    /// This method extends the functionality of `prove_action_infos` by additionally allowing
     /// operations to be added to a provided `drive_operations` list. It produces a cryptographic proof
     /// of active action information associated with a specific group in the given contract and supports
     /// different versions for backward compatibility.
@@ -89,10 +92,11 @@ impl Drive {
     /// # Errors
     /// - [`Error::Drive(DriveError::UnknownVersionMismatch)`]: If the method is called with an unsupported platform version.
     /// - Any other errors propagated from the versioned implementation.
-    pub(crate) fn prove_active_action_infos_operations(
+    pub(crate) fn prove_action_infos_operations(
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
+        action_status: GroupActionStatus,
         start_action_id: Option<(Identifier, StartAtIncluded)>,
         limit: Option<u16>,
         transaction: TransactionArg,
@@ -104,11 +108,12 @@ impl Drive {
             .methods
             .group
             .prove
-            .prove_active_action_infos
+            .prove_action_infos
         {
-            0 => self.prove_active_action_infos_operations_v0(
+            0 => self.prove_action_infos_operations_v0(
                 contract_id,
                 group_contract_position,
+                action_status,
                 start_action_id,
                 limit,
                 transaction,
@@ -116,7 +121,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "prove_active_action_infos_and_add_operations".to_string(),
+                method: "prove_action_infos_and_add_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
