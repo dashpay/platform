@@ -71,6 +71,22 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
             ));
         }
 
+        let groups = self.data_contract().groups();
+        if !groups.is_empty() {
+            let validation_result = DataContract::validate_groups(groups, platform_version)?;
+
+            if !validation_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
+            }
+        }
+
         let expected_position = 0;
 
         for (token_contract_position, token_configuration) in self.data_contract().tokens() {

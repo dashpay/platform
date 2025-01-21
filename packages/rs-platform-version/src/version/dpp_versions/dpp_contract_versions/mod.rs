@@ -23,6 +23,7 @@ pub struct DataContractMethodVersions {
     pub validate_document: FeatureVersion,
     pub validate_update: FeatureVersion,
     pub schema: FeatureVersion,
+    pub validate_groups: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

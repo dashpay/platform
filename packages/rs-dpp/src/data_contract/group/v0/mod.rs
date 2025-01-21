@@ -1,9 +1,17 @@
+use crate::consensus::basic::data_contract::{
+    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    GroupTotalPowerLessThanRequiredError,
+};
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
+use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
+use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -64,5 +72,84 @@ impl GroupV0Setters for GroupV0 {
 
     fn set_required_power(&mut self, required_power: GroupRequiredPower) {
         self.required_power = required_power;
+    }
+}
+
+impl GroupMethodsV0 for GroupV0 {
+    /// Validates the group to ensure:
+    /// - The sum of all group member powers is equal to or greater than the required power.
+    /// - No group member has a power of 0.
+    /// - The group does not exceed the maximum allowed members (256).
+    ///
+    /// # Returns
+    /// - `Ok(SimpleConsensusValidationResult)` if the group is valid.
+    /// - `Err(ProtocolError)` if validation fails due to an invalid group configuration.
+    fn validate(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let max_group_members = platform_version.system_limits.max_contract_group_size;
+        const GROUP_POWER_LIMIT: GroupMemberPower = u16::MAX as GroupMemberPower;
+
+        // Check the number of members does not exceed the maximum allowed
+        if self.members.len() as u32 > max_group_members {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                GroupExceedsMaxMembersError::new(max_group_members).into(),
+            ));
+        }
+
+        let mut total_power: GroupMemberPower = 0;
+
+        let mut total_power_without_unilateral_members: GroupMemberPower = 0;
+
+        // Iterate over members to validate their power and calculate the total power
+        for (&member, &power) in &self.members {
+            if power == 0 {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    GroupMemberHasPowerOfZeroError::new(member).into(),
+                ));
+            }
+            if power > GROUP_POWER_LIMIT {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    GroupMemberHasPowerOverLimitError::new(member, power, GROUP_POWER_LIMIT).into(),
+                ));
+            }
+            if power > self.required_power {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    GroupMemberHasPowerOverLimitError::new(member, power, self.required_power)
+                        .into(),
+                ));
+            }
+            total_power = total_power
+                .checked_add(power)
+                .ok_or_else(|| ProtocolError::Overflow("Total power overflowed"))?;
+
+            if power < self.required_power {
+                total_power_without_unilateral_members = total_power_without_unilateral_members
+                    .checked_add(power)
+                    .ok_or_else(|| ProtocolError::Overflow("Total power overflowed"))?;
+            }
+        }
+
+        // Check if the total power meets the required power
+        if total_power < self.required_power {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                GroupTotalPowerLessThanRequiredError::new(total_power, self.required_power).into(),
+            ));
+        }
+
+        // Check if the total power without unilateral members meets the required power
+        if total_power_without_unilateral_members < self.required_power {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError::new(
+                    total_power_without_unilateral_members,
+                    self.required_power,
+                )
+                .into(),
+            ));
+        }
+
+        // If all validations pass, return an empty validation result
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

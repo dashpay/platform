@@ -11,7 +11,9 @@ use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
     DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    GroupPositionDoesNotExistError, IncompatibleDataContractSchemaError,
+    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
     IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidGroupPositionError,
@@ -453,6 +455,23 @@ pub enum BasicError {
 
     #[error(transparent)]
     GroupActionNotAllowedOnTransitionError(GroupActionNotAllowedOnTransitionError),
+
+    #[error(transparent)]
+    GroupExceedsMaxMembersError(GroupExceedsMaxMembersError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOfZeroError(GroupMemberHasPowerOfZeroError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOverLimitError(GroupMemberHasPowerOverLimitError),
+
+    #[error(transparent)]
+    GroupTotalPowerLessThanRequiredError(GroupTotalPowerLessThanRequiredError),
+
+    #[error(transparent)]
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(
+        GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

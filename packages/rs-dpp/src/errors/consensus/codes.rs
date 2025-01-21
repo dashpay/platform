@@ -107,6 +107,11 @@ impl ErrorWithCode for BasicError {
             Self::InvalidGroupPositionError(_) => 10350,
             Self::GroupPositionDoesNotExistError(_) => 10351,
             Self::GroupActionNotAllowedOnTransitionError(_) => 10352,
+            Self::GroupTotalPowerLessThanRequiredError(_) => 10353,
+            Self::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_) => 10354,
+            Self::GroupExceedsMaxMembersError(_) => 10355,
+            Self::GroupMemberHasPowerOfZeroError(_) => 10356,
+            Self::GroupMemberHasPowerOverLimitError(_) => 10357,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
