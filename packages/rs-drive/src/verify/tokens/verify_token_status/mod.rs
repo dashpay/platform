@@ -11,33 +11,34 @@ use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Verifies the status of a single token using a cryptographic proof.
+    /// Verifies the status of a token using a provided cryptographic proof.
     ///
-    /// This method validates the cryptographic proof to retrieve the status of the specified token ID.
-    /// It dispatches to version-specific implementations based on the provided platform version.
+    /// This function takes a cryptographic proof, a token ID, and other parameters to verify
+    /// the existence and status of a token in the data structure. It delegates the verification
+    /// process to the appropriate versioned implementation based on the platform version.
     ///
     /// # Parameters
-    /// - `proof`: The cryptographic proof to verify.
-    /// - `token_id`: The token ID to verify.
-    /// - `verify_subset_of_proof`: Whether to verify only a subset of the proof.
-    /// - `platform_version`: The current platform version.
+    ///
+    /// - `proof`: A slice of bytes representing the cryptographic proof of the token's status.
+    /// - `token_id`: A 32-byte identifier representing the unique ID of the token.
+    /// - `verify_subset_of_proof`: A boolean indicating whether to verify a subset of the provided proof.
+    /// - `platform_version`: A reference to the [PlatformVersion] object that specifies which version
+    ///   of the function implementation to invoke.
     ///
     /// # Returns
-    /// - `Ok((RootHash, T))`:
-    ///   - `RootHash`: The verified root hash of the database.
-    ///   - `T`: A collection of `(token ID, token status)` pairs.
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok((RootHash, Option<TokenStatus>))`: A tuple where:
+    ///   - `RootHash`: The root hash of the data structure at the time the proof was created.
+    ///   - `Option<TokenStatus>`: The status of the token if it exists, or `None` if the token does not exist.
+    /// - `Err(Error)`: An error if the verification fails due to an invalid proof, incorrect data, or version mismatch.
     ///
     /// # Errors
-    /// - `Error::Drive(DriveError::UnknownVersionMismatch)`:
-    ///   - Occurs when the platform version does not match any known version for this method.
-    /// - `Error::Proof(ProofError::WrongElementCount)`:
-    ///   - If the number of elements in the proof does not match the number of token IDs.
-    /// - `Error::Proof(ProofError::IncorrectValueSize)`:
-    ///   - If the token ID size or proof value size is invalid.
-    /// - `Error::Proof(ProofError::DeserializationFailed)`:
-    ///   - If the token status cannot be deserialized from the proof.
-    /// - `Error::Proof(ProofError::InvalidItemType)`:
-    ///   - If the proof element is not an expected item type (e.g., `Item`).
+    ///
+    /// This function can return an `Error` in the following cases:
+    /// - The proof is invalid or corrupted.
+    /// - The token's status data is missing or inconsistent.
+    /// - The platform version does not match any of the known implementations.
     pub fn verify_token_status(
         proof: &[u8],
         token_id: [u8; 32],

@@ -12,34 +12,36 @@ use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Verifies token information for a specific identity using a cryptographic proof.
+    /// Verifies the token information for a specific identity using a cryptographic proof.
     ///
-    /// This method retrieves information about the specified tokens for a given identity ID from the
-    /// cryptographic proof. It dispatches to version-specific implementations based on the platform version.
+    /// This function verifies the association between a token and an identity by processing the provided
+    /// cryptographic proof. It checks the existence and correctness of the token's information in the
+    /// context of the specified identity.
     ///
     /// # Parameters
-    /// - `proof`: The cryptographic proof to verify.
-    /// - `token_ids`: A list of token IDs to verify (each a 32-byte array).
-    /// - `identity_id`: The unique identifier of the identity (32-byte array).
-    /// - `verify_subset_of_proof`: Whether to verify only a subset of the proof.
-    /// - `platform_version`: The current platform version.
+    ///
+    /// - `proof`: A slice of bytes containing the cryptographic proof of the token's information.
+    /// - `token_id`: A 32-byte identifier representing the unique ID of the token to verify.
+    /// - `identity_id`: A 32-byte identifier representing the identity associated with the token.
+    /// - `verify_subset_of_proof`: A boolean indicating whether to verify only a subset of the provided proof.
+    /// - `platform_version`: A reference to the [PlatformVersion] object specifying which implementation
+    ///   version of the function to invoke.
     ///
     /// # Returns
-    /// - `Ok((RootHash, T))`:
-    ///   - `RootHash`: The verified root hash of the database.
-    ///   - `T`: A collection of `(token ID, token info)` pairs.
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok((RootHash, Option<IdentityTokenInfo>))`: A tuple where:
+    ///   - `RootHash`: The root hash of the data structure at the time the proof was generated.
+    ///   - `Option<IdentityTokenInfo>`: The token information if it exists, or `None` if the token information
+    ///     is absent.
+    /// - `Err(Error)`: An error if the verification fails due to an invalid proof, incorrect data, or version mismatch.
     ///
     /// # Errors
-    /// - `Error::Drive(DriveError::UnknownVersionMismatch)`:
-    ///   - Occurs when the platform version does not match any known version for this method.
-    /// - `Error::Proof(ProofError::WrongElementCount)`:
-    ///   - If the number of elements in the proof does not match the number of token IDs.
-    /// - `Error::Proof(ProofError::IncorrectValueSize)`:
-    ///   - If the token ID size or proof value size is invalid.
-    /// - `Error::Proof(ProofError::DeserializationFailed)`:
-    ///   - If the token info cannot be deserialized from the proof.
-    /// - `Error::Proof(ProofError::InvalidItemType)`:
-    ///   - If the proof element is not an expected item type (e.g., `Item`).
+    ///
+    /// This function may return an `Error` in the following cases:
+    /// - The provided proof is invalid or corrupted.
+    /// - The token's information is missing, inconsistent, or does not match the proof.
+    /// - The specified platform version does not match any known or supported implementations.
     pub fn verify_token_info_for_identity_id(
         proof: &[u8],
         token_id: [u8; 32],
