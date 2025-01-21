@@ -3,7 +3,17 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use bincode::{Encode, Decode};
+use data_contracts::SystemDataContract;
+use crate::balances::credits::TokenAmount;
+use crate::block::block_info::BlockInfo;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::DataContract;
+use crate::data_contract::document_type::DocumentTypeRef;
+use crate::document::Document;
 use crate::prelude::IdentityNonce;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
@@ -12,6 +22,14 @@ use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionRes
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
+use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
+use crate::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
+use crate::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
+use crate::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
+use crate::tokens::token_event::TokenEvent;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(
@@ -141,6 +159,33 @@ pub trait TokenTransitionV0Methods {
     fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier>;
 
     fn can_calculate_action_id(&self) -> bool;
+    /// Historical document type name for the token history contract
+    fn historical_document_type_name(&self) -> &str;
+    /// Historical document type for the token history contract
+    fn historical_document_type<'a>(
+        &self,
+        token_history_contract: &'a DataContract,
+    ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
+    /// Historical document id
+    fn historical_document_id(
+        &self,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+    ) -> Identifier;
+    fn associated_token_event(
+        &self,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<TokenEvent, ProtocolError>;
+    /// Historical document id
+    fn build_historical_document(
+        &self,
+        token_historical_contract: &DataContract,
+        token_id: Identifier,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+        block_info: &BlockInfo,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<Document, ProtocolError>;
 }
 
 impl TokenTransitionV0Methods for TokenTransition {
@@ -214,5 +259,107 @@ impl TokenTransitionV0Methods for TokenTransition {
 
     fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
         self.base_mut().set_identity_contract_nonce(nonce);
+    }
+
+    /// Historical document type name for the token history contract
+    fn historical_document_type_name(&self) -> &str {
+        match self {
+            TokenTransition::Burn(_) => "burn",
+            TokenTransition::Mint(_) => "mint",
+            TokenTransition::Transfer(_) => "transfer",
+            TokenTransition::Freeze(_) => "freeze",
+            TokenTransition::Unfreeze(_) => "unfreeze",
+            TokenTransition::EmergencyAction(_) => "emergencyAction",
+            TokenTransition::DestroyFrozenFunds(_) => "destroyFrozenFunds",
+        }
+    }
+
+    /// Historical document type for the token history contract
+    fn historical_document_type<'a>(
+        &self,
+        token_history_contract: &'a DataContract,
+    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+        Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
+    }
+
+    /// Historical document id
+    fn historical_document_id(
+        &self,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+    ) -> Identifier {
+        let name = self.historical_document_type_name();
+        Document::generate_document_id_v0(
+            &SystemDataContract::TokenHistory.id(),
+            &owner_id,
+            name,
+            owner_nonce.to_be_bytes().as_slice(),
+        )
+    }
+
+    /// Historical document id
+    fn build_historical_document(
+        &self,
+        token_historical_contract: &DataContract,
+        token_id: Identifier,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+        block_info: &BlockInfo,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<Document, ProtocolError> {
+        self.associated_token_event(token_configuration)?
+            .build_historical_document_owned(
+                token_historical_contract,
+                token_id,
+                owner_id,
+                owner_nonce,
+                block_info,
+            )
+    }
+
+    fn associated_token_event(
+        &self,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<TokenEvent, ProtocolError> {
+        Ok(match self {
+            TokenTransition::Burn(burn) => {
+                TokenEvent::Burn(burn.burn_amount(), burn.public_note().cloned())
+            }
+            TokenTransition::Mint(mint) => {
+                let recipient = match mint.issued_to_identity_id() {
+                    None => token_configuration.new_tokens_destination_identity().ok_or(ProtocolError::NotSupported("either the mint destination must be set or the contract must have a destination set for new tokens".to_string()))?,
+                    Some(recipient) => recipient,
+                };
+                TokenEvent::Mint(mint.amount(), recipient, mint.public_note().cloned())
+            }
+            TokenTransition::Transfer(transfer) => {
+                let (public_note, shared_encrypted_note, private_encrypted_note) = transfer.notes();
+                TokenEvent::Transfer(
+                    transfer.recipient_id(),
+                    public_note,
+                    shared_encrypted_note,
+                    private_encrypted_note,
+                    transfer.amount(),
+                )
+            }
+            TokenTransition::Freeze(freeze) => {
+                TokenEvent::Freeze(freeze.frozen_identity_id(), freeze.public_note().cloned())
+            }
+            TokenTransition::Unfreeze(unfreeze) => TokenEvent::Unfreeze(
+                unfreeze.frozen_identity_id(),
+                unfreeze.public_note().cloned(),
+            ),
+            TokenTransition::EmergencyAction(emergency_action) => TokenEvent::EmergencyAction(
+                emergency_action.emergency_action(),
+                emergency_action.public_note().cloned(),
+            ),
+            TokenTransition::DestroyFrozenFunds(destroy) => {
+                TokenEvent::DestroyFrozenFunds(
+                    destroy.frozen_identity_id(),
+                    TokenAmount::MAX, // we do not know how much will be destroyed
+                    destroy.public_note().cloned(),
+                )
+            }
+        })
     }
 }

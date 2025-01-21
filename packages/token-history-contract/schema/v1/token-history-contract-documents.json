@@ -460,7 +460,7 @@
             "tokenId": "asc"
           },
           {
-            "amount": "asc"
+            "destroyedAmount": "asc"
           }
         ]
       },
@@ -498,7 +498,7 @@
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
       },
-      "amount": {
+      "destroyedAmount": {
         "type": "integer",
         "minimum": 0,
         "description": "The amount that was frost burned",
@@ -508,7 +508,7 @@
     "required": [
       "tokenId",
       "frozenIdentityId",
-      "amount",
+      "destroyedAmount",
       "$createdAt",
       "$createdAtBlockHeight"
     ],

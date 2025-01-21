@@ -164,7 +164,7 @@ impl TokenEvent {
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
                     ("frozenIdentityId".to_string(), frozen_identity_id.into()),
-                    ("amount".to_string(), amount.into()),
+                    ("destroyedAmount".to_string(), amount.into()),
                 ]);
                 if let Some(note) = public_note {
                     properties.insert("note".to_string(), note.into());

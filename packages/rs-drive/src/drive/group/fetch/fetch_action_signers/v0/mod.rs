@@ -63,7 +63,7 @@ impl Drive {
         .map(|(key, element)| match element {
             SumItem(value, ..) => Ok((
                 key.try_into()?,
-                value.try_into().map_err(|e| {
+                value.try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedDriveState(
                         "signed power should be encodable on a u32 integer".to_string(),
                     ))

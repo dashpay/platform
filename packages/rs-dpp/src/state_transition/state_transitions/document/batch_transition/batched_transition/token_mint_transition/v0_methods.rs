@@ -1,6 +1,8 @@
 use platform_value::Identifier;
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::prelude::IdentityNonce;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -62,6 +64,15 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
     fn issued_to_identity_id(&self) -> Option<Identifier> {
         match self {
             TokenMintTransition::V0(v0) => v0.issued_to_identity_id(),
+        }
+    }
+
+    fn recipient_id(
+        &self,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<Identifier, ProtocolError> {
+        match self {
+            TokenMintTransition::V0(v0) => v0.recipient_id(token_configuration),
         }
     }
 

@@ -1,10 +1,14 @@
 use platform_value::Identifier;
+use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use crate::state_transition::batch_transition::TokenMintTransition;
+use crate::tokens::errors::TokenError;
 
 impl TokenBaseTransitionAccessors for TokenMintTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
@@ -38,6 +42,10 @@ pub trait TokenMintTransitionV0Methods:
 
     /// Returns the `issued_to_identity_id` field of the `TokenMintTransitionV0`.
     fn issued_to_identity_id(&self) -> Option<Identifier>;
+    fn recipient_id(
+        &self,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<Identifier, ProtocolError>;
 
     /// Sets the value of the `issued_to_identity_id` field in the `TokenMintTransitionV0`.
     fn set_issued_to_identity_id(&mut self, issued_to_identity_id: Option<Identifier>);
@@ -67,6 +75,23 @@ impl TokenMintTransitionV0Methods for TokenMintTransitionV0 {
     fn issued_to_identity_id(&self) -> Option<Identifier> {
         self.issued_to_identity_id
     }
+
+    fn recipient_id(
+        &self,
+        token_configuration: &TokenConfiguration,
+    ) -> Result<Identifier, ProtocolError> {
+        match self.issued_to_identity_id() {
+            None => {
+                token_configuration
+                    .new_tokens_destination_identity()
+                    .ok_or(ProtocolError::Token(
+                        TokenError::TokenNoMintingRecipient.into(),
+                    ))
+            }
+            Some(recipient) => Ok(recipient),
+        }
+    }
+
     fn set_issued_to_identity_id(&mut self, issued_to_identity_id: Option<Identifier>) {
         self.issued_to_identity_id = issued_to_identity_id;
     }

@@ -446,10 +446,27 @@ message GetProofsRequest {
       oneof request_type { ContestedResourceVoteStatusRequest contested_resource_vote_status_request = 1; }
     }
 
+    message IdentityTokenBalanceRequest {
+      bytes token_id = 1;
+      bytes identity_id = 2;
+    }
+
+    message IdentityTokenInfoRequest {
+      bytes token_id = 1;
+      bytes identity_id = 2;
+    }
+
+    message TokenStatusRequest {
+      bytes token_id = 1;
+    }
+
     repeated IdentityRequest identities = 1;  // List of identity requests
     repeated ContractRequest contracts = 2;   // List of contract requests
     repeated DocumentRequest documents = 3;   // List of document requests
     repeated VoteStatusRequest votes = 4;
+    repeated IdentityTokenBalanceRequest identity_token_balances = 5;
+    repeated IdentityTokenInfoRequest identity_token_infos = 6;
+    repeated TokenStatusRequest token_statuses = 7;
   }
 
   oneof version { GetProofsRequestV0 v0 = 1; }
