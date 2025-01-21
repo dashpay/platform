@@ -18,9 +18,9 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use drive::state_transition_action::batch::BatchTransitionAction;
-use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
-use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
-use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
+use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
@@ -41,16 +41,16 @@ use drive::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::error::execution::ExecutionError;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
-use crate::execution::validation::state_transition::batch::action_validation::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_burn_transition_action::TokenBurnTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_mint_transition_action::TokenMintTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_transfer_transition_action::TokenTransferTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_mint_transition_action::TokenMintTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {

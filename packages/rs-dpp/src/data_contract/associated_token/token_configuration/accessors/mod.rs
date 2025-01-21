@@ -1,5 +1,6 @@
 pub mod v0;
 
+use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
 };
@@ -7,8 +8,10 @@ use crate::data_contract::associated_token::token_configuration::v0::TokenConfig
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
+use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use platform_value::Identifier;
+use std::collections::BTreeSet;
 
 /// Implementing TokenConfigurationV0Getters for TokenConfiguration
 impl TokenConfigurationV0Getters for TokenConfiguration {
@@ -27,7 +30,7 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns the base supply.
-    fn base_supply(&self) -> u64 {
+    fn base_supply(&self) -> TokenAmount {
         match self {
             TokenConfiguration::V0(v0) => v0.base_supply(),
         }
@@ -139,6 +142,13 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     fn main_control_group_can_be_modified(&self) -> &AuthorizedActionTakers {
         match self {
             TokenConfiguration::V0(v0) => v0.main_control_group_can_be_modified(),
+        }
+    }
+
+    /// Returns all group positions used in the token configuration
+    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+        match self {
+            TokenConfiguration::V0(v0) => v0.all_used_group_positions(),
         }
     }
 }

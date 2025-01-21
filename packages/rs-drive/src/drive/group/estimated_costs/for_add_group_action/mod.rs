@@ -3,11 +3,12 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
     /// Adds estimation costs for adding a group action based on the specified contract and version.

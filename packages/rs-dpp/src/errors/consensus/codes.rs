@@ -103,6 +103,11 @@ impl ErrorWithCode for BasicError {
             Self::NonContiguousContractGroupPositionsError(_) => 10252,
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
 
+            // Group Errors: 10350-10399
+            Self::InvalidGroupPositionError(_) => 10350,
+            Self::GroupPositionDoesNotExistError(_) => 10351,
+            Self::GroupActionNotAllowedOnTransitionError(_) => 10352,
+
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
@@ -127,12 +132,11 @@ impl ErrorWithCode for BasicError {
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
             Self::InvalidTokenPositionError(_) => 10451,
-            Self::InvalidGroupPositionError(_) => 10452,
-            Self::InvalidActionIdError(_) => 10453,
-            Self::ContractHasNoTokensError(_) => 10454,
-            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10455,
-            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10456,
-            Self::TokenTransferToOurselfError(_) => 10457,
+            Self::InvalidActionIdError(_) => 10452,
+            Self::ContractHasNoTokensError(_) => 10453,
+            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10454,
+            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10455,
+            Self::TokenTransferToOurselfError(_) => 10456,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -176,7 +180,6 @@ impl ErrorWithCode for BasicError {
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
-            Self::GroupActionNotAllowedOnTransitionError(_) => 10701,
         }
     }
 }

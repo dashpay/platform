@@ -5,10 +5,13 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::v0::{
     TokenConfigurationConventionV0, TokenConfigurationV0,
 };
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
+use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use platform_value::Identifier;
+use std::collections::BTreeSet;
 
 /// Implementing `TokenConfigurationV0Getters` for `TokenConfigurationV0`
 impl TokenConfigurationV0Getters for TokenConfigurationV0 {
@@ -105,6 +108,47 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
     /// Returns the main control group can be modified.
     fn main_control_group_can_be_modified(&self) -> &AuthorizedActionTakers {
         &self.main_control_group_can_be_modified
+    }
+
+    /// Returns all group positions used in the token configuration
+    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition> {
+        let mut group_positions = BTreeSet::new();
+
+        // Add the main control group if it exists
+        if let Some(main_group_position) = self.main_control_group {
+            group_positions.insert(main_group_position);
+        }
+
+        // Helper function to extract group positions from `AuthorizedActionTakers`
+        let mut add_from_authorized_action_takers = |authorized_takers: &AuthorizedActionTakers| {
+            if let AuthorizedActionTakers::Group(group_position) = authorized_takers {
+                group_positions.insert(*group_position);
+            }
+        };
+
+        // Add positions from change control rules
+        let mut add_from_change_control_rules = |rules: &ChangeControlRules| {
+            add_from_authorized_action_takers(rules.authorized_to_make_change_action_takers());
+            add_from_authorized_action_takers(
+                rules.authorized_to_change_authorized_action_takers_action_takers(),
+            );
+        };
+
+        // Apply the helper to all fields containing `ChangeControlRules`
+        add_from_change_control_rules(&self.max_supply_change_rules);
+        add_from_change_control_rules(&self.new_tokens_destination_identity_rules);
+        add_from_change_control_rules(&self.minting_allow_choosing_destination_rules);
+        add_from_change_control_rules(&self.manual_minting_rules);
+        add_from_change_control_rules(&self.manual_burning_rules);
+        add_from_change_control_rules(&self.freeze_rules);
+        add_from_change_control_rules(&self.unfreeze_rules);
+        add_from_change_control_rules(&self.destroy_frozen_funds_rules);
+        add_from_change_control_rules(&self.emergency_action_rules);
+
+        // Add positions from the `main_control_group_can_be_modified` field
+        add_from_authorized_action_takers(&self.main_control_group_can_be_modified);
+
+        group_positions
     }
 }
 

@@ -1,1 +1,2 @@
+mod validate_token_configuration_groups_exist;
 mod validate_token_configuration_update;

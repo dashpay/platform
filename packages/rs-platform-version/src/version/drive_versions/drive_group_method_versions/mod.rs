@@ -39,4 +39,5 @@ pub struct DriveGroupInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveGroupCostEstimationMethodVersions {
     pub for_add_group_action: FeatureVersion,
+    pub for_add_group: FeatureVersion,
 }

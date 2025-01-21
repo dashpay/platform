@@ -2,8 +2,10 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationConventionV0;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
+use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use platform_value::Identifier;
+use std::collections::BTreeSet;
 
 /// Accessor trait for getters of `TokenConfigurationV0`
 pub trait TokenConfigurationV0Getters {
@@ -56,6 +58,9 @@ pub trait TokenConfigurationV0Getters {
 
     /// Returns the main control group can be modified.
     fn main_control_group_can_be_modified(&self) -> &AuthorizedActionTakers;
+
+    /// Returns all group positions used in the token configuration
+    fn all_used_group_positions(&self) -> BTreeSet<GroupContractPosition>;
 }
 
 /// Accessor trait for setters of `TokenConfigurationV0`

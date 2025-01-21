@@ -18,6 +18,14 @@ pub enum ChangeControlRules {
 }
 
 impl ChangeControlRules {
+    // this is normal it's repeated
+    pub fn authorized_to_change_authorized_action_takers_action_takers(
+        &self,
+    ) -> &AuthorizedActionTakers {
+        match self {
+            ChangeControlRules::V0(v0) => &v0.authorized_to_change_authorized_action_takers,
+        }
+    }
     pub fn authorized_to_make_change_action_takers(&self) -> &AuthorizedActionTakers {
         match self {
             ChangeControlRules::V0(v0) => &v0.authorized_to_make_change,
