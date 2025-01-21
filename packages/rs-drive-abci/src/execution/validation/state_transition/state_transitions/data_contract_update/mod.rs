@@ -81,6 +81,11 @@ mod tests {
 
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use assert_matches::assert_matches;
+    use dpp::consensus::basic::BasicError;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::group::v0::GroupV0;
+    use dpp::data_contract::group::Group;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
@@ -664,5 +669,636 @@ mod tests {
                 && error.document_type_name() == "card"
                 && error.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
         ));
+    }
+
+    mod group_tests {
+        use super::*;
+        #[test]
+        fn test_data_contract_update_can_not_remove_groups() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // Create an initial data contract with groups
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            data_contract.set_owner_id(identity.id());
+
+            {
+                // Add groups to the contract
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+                groups.insert(
+                    1,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+            }
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // Create an updated contract with one group removed
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            {
+                // Remove a group from the updated contract
+                let groups = updated_data_contract.groups_mut().expect("expected groups");
+                groups.remove(&1).expect("expected to remove group");
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![data_contract_update_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Extract the error and check the message
+            if let [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                    error,
+                )),
+                _,
+            )] = processing_result.execution_results().as_slice()
+            {
+                assert_eq!(
+                    error.action(),
+                    "remove group",
+                    "expected error message to match 'remove group'"
+                );
+                assert_eq!(
+                    error.data_contract_id(),
+                    data_contract.id(),
+                    "expected the error to reference the correct data contract ID"
+                );
+            } else {
+                panic!("Expected a DataContractUpdateActionNotAllowedError");
+            }
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_update_can_not_alter_group() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // Create an initial data contract with groups
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            data_contract.set_owner_id(identity.id());
+
+            {
+                // Add groups to the contract
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+                groups.insert(
+                    1,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+            }
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // Create an updated contract with one group removed
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            {
+                // Remove a group from the updated contract
+                let groups = updated_data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    1,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 2)].into(),
+                        required_power: 2,
+                    }),
+                );
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![data_contract_update_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Extract the error and check the message
+            if let [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                    error,
+                )),
+                _,
+            )] = processing_result.execution_results().as_slice()
+            {
+                assert_eq!(
+                    error.action(),
+                    "change group at position 1 is not allowed",
+                    "expected error message to match 'change group at position 1 is not allowed'"
+                );
+                assert_eq!(
+                    error.data_contract_id(),
+                    data_contract.id(),
+                    "expected the error to reference the correct data contract ID"
+                );
+            } else {
+                panic!("Expected a DataContractUpdateActionNotAllowedError");
+            }
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_update_can_not_add_new_group_with_gap() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // Create an initial data contract with groups
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            data_contract.set_owner_id(identity.id());
+
+            {
+                // Add groups to the contract
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+                groups.insert(
+                    1,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+            }
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // Create an updated contract with one group removed
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            {
+                // Remove a group from the updated contract
+                let groups = updated_data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    3,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 2)].into(),
+                        required_power: 2,
+                    }),
+                );
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![data_contract_update_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::NonContiguousContractGroupPositionsError(_)
+                    ),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_update_can_add_new_group() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let (identity_2, _, _) = setup_identity(&mut platform, 928, dash_to_credits!(0.1));
+
+            let (identity_3, _, _) = setup_identity(&mut platform, 8, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // Create an initial data contract with groups
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            data_contract.set_owner_id(identity.id());
+
+            {
+                // Add groups to the contract
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [
+                            (identity.id(), 1),
+                            (identity_2.id(), 1),
+                            (identity_3.id(), 1),
+                        ]
+                        .into(),
+                        required_power: 3,
+                    }),
+                );
+                groups.insert(
+                    1,
+                    Group::V0(GroupV0 {
+                        members: [
+                            (identity.id(), 1),
+                            (identity_2.id(), 2),
+                            (identity_3.id(), 1),
+                        ]
+                        .into(),
+                        required_power: 3,
+                    }),
+                );
+            }
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // Create an updated contract with one group removed
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            {
+                // Remove a group from the updated contract
+                let groups = updated_data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    2,
+                    Group::V0(GroupV0 {
+                        members: [
+                            (identity.id(), 1),
+                            (identity_2.id(), 2),
+                            (identity_3.id(), 2),
+                        ]
+                        .into(),
+                        required_power: 3,
+                    }),
+                );
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![data_contract_update_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+    }
+
+    mod token_tests {
+        use super::*;
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        #[test]
+        fn test_data_contract_update_can_not_add_new_token() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // Create an initial data contract with groups
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            data_contract.set_owner_id(identity.id());
+
+            {
+                // Add groups to the contract
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+                groups.insert(
+                    1,
+                    Group::V0(GroupV0 {
+                        members: [(identity.id(), 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+            }
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // Create an updated contract with one group removed
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            updated_data_contract.add_token(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            );
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let data_contract_update_serialized_transition = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![data_contract_update_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Extract the error and check the message
+            if let [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                    error,
+                )),
+                _,
+            )] = processing_result.execution_results().as_slice()
+            {
+                assert_eq!(
+                    error.action(),
+                    "add token at position 0",
+                    "expected error message to match 'add token at position 0'"
+                );
+                assert_eq!(
+                    error.data_contract_id(),
+                    data_contract.id(),
+                    "expected the error to reference the correct data contract ID"
+                );
+            } else {
+                panic!("Expected a DataContractUpdateActionNotAllowedError");
+            }
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
     }
 }

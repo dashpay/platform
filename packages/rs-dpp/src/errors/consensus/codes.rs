@@ -223,6 +223,8 @@ impl ErrorWithCode for StateError {
             Self::DataContractAlreadyPresentError { .. } => 40000,
             Self::DataContractIsReadonlyError { .. } => 40001,
             Self::DataContractConfigUpdateError { .. } => 40002,
+            Self::DataContractUpdatePermissionError(_) => 40003,
+            Self::DataContractUpdateActionNotAllowedError(_) => 40004,
 
             // Document Errors: 40100-40149
             Self::DocumentAlreadyPresentError { .. } => 40100,
@@ -261,7 +263,6 @@ impl ErrorWithCode for StateError {
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
-            Self::DataContractUpdatePermissionError(_) => 40213,
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,

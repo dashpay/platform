@@ -16,13 +16,13 @@ use crate::consensus::basic::data_contract::{
     GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
     IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
-    InvalidDocumentTypeRequiredSecurityLevelError, InvalidGroupPositionError,
-    InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    InvalidTokenBaseSupplyError, NonContiguousContractGroupPositionsError,
-    NonContiguousContractTokenPositionsError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
+    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
+    NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -73,8 +73,8 @@ use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
-    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenIdError,
-    InvalidTokenPositionError, TokenTransferToOurselfError,
+    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidGroupPositionError,
+    InvalidTokenIdError, InvalidTokenPositionError, TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;

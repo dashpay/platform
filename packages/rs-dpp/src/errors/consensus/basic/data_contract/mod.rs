@@ -23,7 +23,6 @@ mod invalid_data_contract_id_error;
 mod invalid_data_contract_version_error;
 mod invalid_document_type_name_error;
 mod invalid_document_type_required_security_level;
-mod invalid_group_position_error;
 mod invalid_index_property_type_error;
 mod invalid_indexed_property_constraint_error;
 #[cfg(feature = "json-schema-validation")]
@@ -73,7 +72,6 @@ pub use group_position_does_not_exist_error::*;
 pub use group_total_power_has_less_than_required_power_error::*;
 pub use incompatible_document_type_schema_error::*;
 pub use invalid_document_type_name_error::*;
-pub use invalid_group_position_error::*;
 pub use invalid_token_base_supply_error::*;
 pub use non_contiguous_contract_group_positions_error::*;
 pub use non_contiguous_contract_token_positions_error::*;

@@ -340,6 +340,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::IdentityTokenAccountNotFrozenError(e) => {
             generic_consensus_error!(IdentityTokenAccountNotFrozenError, e).into()
         }
+        StateError::DataContractUpdateActionNotAllowedError(e) => {
+            generic_consensus_error!(DataContractUpdateActionNotAllowedError, e).into()
+        }
     }
 }
 
@@ -645,6 +648,28 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::GroupActionNotAllowedOnTransitionError(e) => {
             generic_consensus_error!(GroupActionNotAllowedOnTransitionError, e).into()
+        }
+        BasicError::GroupPositionDoesNotExistError(e) => {
+            generic_consensus_error!(GroupPositionDoesNotExistError, e).into()
+        }
+        BasicError::GroupExceedsMaxMembersError(e) => {
+            generic_consensus_error!(GroupExceedsMaxMembersError, e).into()
+        }
+        BasicError::GroupMemberHasPowerOfZeroError(e) => {
+            generic_consensus_error!(GroupMemberHasPowerOfZeroError, e).into()
+        }
+        BasicError::GroupMemberHasPowerOverLimitError(e) => {
+            generic_consensus_error!(GroupMemberHasPowerOverLimitError, e).into()
+        }
+        BasicError::GroupTotalPowerLessThanRequiredError(e) => {
+            generic_consensus_error!(GroupTotalPowerLessThanRequiredError, e).into()
+        }
+        BasicError::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(e) => {
+            generic_consensus_error!(
+                GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+                e
+            )
+            .into()
         }
     }
 }
