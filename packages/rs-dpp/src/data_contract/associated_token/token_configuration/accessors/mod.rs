@@ -8,7 +8,6 @@ use crate::data_contract::associated_token::token_configuration::v0::TokenConfig
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
-use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use platform_value::Identifier;
 use std::collections::BTreeSet;

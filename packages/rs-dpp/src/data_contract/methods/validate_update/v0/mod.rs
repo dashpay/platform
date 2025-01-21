@@ -8,7 +8,6 @@ use crate::consensus::state::data_contract::data_contract_update_permission_erro
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
-use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
