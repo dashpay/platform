@@ -1137,7 +1137,7 @@ pub(crate) fn continue_chain_for_strategy(
             verify_state_transitions_were_or_were_not_executed(
                 &abci_app,
                 &root_app_hash,
-                &state_transaction_results,
+                state_transaction_results.as_slice(),
                 &expected_validation_errors,
                 platform_version,
             );
