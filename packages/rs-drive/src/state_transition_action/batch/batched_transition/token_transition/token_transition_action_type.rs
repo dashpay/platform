@@ -17,6 +17,7 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
             TokenTransitionAction::DestroyFrozenFundsAction(_) => {
                 TokenTransitionActionType::DestroyFrozenFunds
             }
+            TokenTransitionAction::ConfigUpdateAction(_) => TokenTransitionActionType::ConfigUpdate,
         }
     }
 }

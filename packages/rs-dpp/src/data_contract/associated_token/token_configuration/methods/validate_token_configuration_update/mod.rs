@@ -1,7 +1,7 @@
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
-use crate::multi_identity_events::ActionTaker;
+use crate::group::action_taker::{ActionGoal, ActionTaker};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -15,9 +15,9 @@ impl TokenConfiguration {
         &self,
         new_config: &TokenConfiguration,
         contract_owner_id: &Identifier,
-        main_group: Option<&Group>,
         groups: &BTreeMap<GroupContractPosition, Group>,
         action_taker: &ActionTaker,
+        goal: ActionGoal,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -29,9 +29,9 @@ impl TokenConfiguration {
             0 => Ok(self.validate_token_config_update_v0(
                 new_config,
                 contract_owner_id,
-                main_group,
                 groups,
                 action_taker,
+                goal,
             )),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_token_config_update".to_string(),

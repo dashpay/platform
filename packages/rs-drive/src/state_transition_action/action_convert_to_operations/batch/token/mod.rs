@@ -1,4 +1,5 @@
 mod token_burn_transition;
+mod token_config_update_transition;
 mod token_destroy_frozen_funds_transition;
 mod token_emergency_action_transition;
 mod token_freeze_transition;

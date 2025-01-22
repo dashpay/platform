@@ -13,6 +13,8 @@ pub mod token_transfer_transition_action;
 /// token_unfreeze_transition_action
 pub mod token_unfreeze_transition_action;
 
+/// token_config_update_transition_action
+pub mod token_config_update_transition_action;
 /// token_destroy_frozen_funds_transition_action
 pub mod token_destroy_frozen_funds_transition_action;
 /// token_emergency_action_transition_action
@@ -27,9 +29,11 @@ use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DataContract, IdentityNonce};
 use dpp::ProtocolError;
+use platform_version::version::PlatformVersion;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::{TokenConfigUpdateTransitionAction, TokenConfigUpdateTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::{TokenFreezeTransitionAction, TokenFreezeTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::{TokenUnfreezeTransitionAction, TokenUnfreezeTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
@@ -57,6 +61,8 @@ pub enum TokenTransitionAction {
     EmergencyActionAction(TokenEmergencyActionTransitionAction),
     /// destroy frozen funds action
     DestroyFrozenFundsAction(TokenDestroyFrozenFundsTransitionAction),
+    /// update the token configuration
+    ConfigUpdateAction(TokenConfigUpdateTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -70,6 +76,7 @@ impl TokenTransitionAction {
             TokenTransitionAction::UnfreezeAction(action) => action.base(),
             TokenTransitionAction::EmergencyActionAction(action) => action.base(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base(),
+            TokenTransitionAction::ConfigUpdateAction(action) => action.base(),
         }
     }
 
@@ -83,6 +90,7 @@ impl TokenTransitionAction {
             TokenTransitionAction::UnfreezeAction(action) => action.base_owned(),
             TokenTransitionAction::EmergencyActionAction(action) => action.base_owned(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base_owned(),
+            TokenTransitionAction::ConfigUpdateAction(action) => action.base_owned(),
         }
     }
 
@@ -96,6 +104,7 @@ impl TokenTransitionAction {
             TokenTransitionAction::UnfreezeAction(_) => "unfreeze",
             TokenTransitionAction::EmergencyActionAction(_) => "emergencyAction",
             TokenTransitionAction::DestroyFrozenFundsAction(_) => "destroyFrozenFunds",
+            TokenTransitionAction::ConfigUpdateAction(_) => "configUpdate",
         }
     }
 
@@ -130,6 +139,7 @@ impl TokenTransitionAction {
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
         block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
         self.associated_token_event()
             .build_historical_document_owned(
@@ -138,6 +148,7 @@ impl TokenTransitionAction {
                 owner_id,
                 owner_nonce,
                 block_info,
+                platform_version,
             )
             .map_err(Error::Protocol)
     }

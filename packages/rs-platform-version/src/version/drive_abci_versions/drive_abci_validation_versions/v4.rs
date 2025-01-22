@@ -139,6 +139,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 token_burn_transition_state_validation: 0,
                 token_transfer_transition_state_validation: 0,
                 token_base_transition_structure_validation: 0,
+                token_base_transition_state_validation: 0,
                 token_freeze_transition_structure_validation: 0,
                 token_unfreeze_transition_structure_validation: 0,
                 token_freeze_transition_state_validation: 0,
@@ -147,6 +148,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 token_destroy_frozen_funds_transition_state_validation: 0,
                 token_emergency_action_transition_structure_validation: 0,
                 token_emergency_action_transition_state_validation: 0,
+                token_config_update_transition_structure_validation: 0,
+                token_config_update_transition_state_validation: 0,
+                token_base_transition_group_action_validation: 0,
             },
         },
         has_nonce_validation: 1, // <---- changed this

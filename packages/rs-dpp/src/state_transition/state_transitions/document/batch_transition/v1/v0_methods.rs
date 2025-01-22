@@ -7,13 +7,14 @@ use crate::fee::Credits;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::SecurityLevel;
+use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::{
-    DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
-    SenderKeyIndex,
+    DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex,
 };
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::{

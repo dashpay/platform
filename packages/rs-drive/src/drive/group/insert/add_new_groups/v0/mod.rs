@@ -94,6 +94,15 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_add_groups(
+                contract_id.to_buffer(),
+                groups,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let group_tree_path = group_root_path();

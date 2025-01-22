@@ -20,6 +20,7 @@ pub struct DataContractValidationVersions {
     pub validate_index_naming_duplicates: FeatureVersion,
     pub validate_not_defined_properties: FeatureVersion,
     pub validate_property_definition: FeatureVersion,
+    pub validate_token_config_groups_exist: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

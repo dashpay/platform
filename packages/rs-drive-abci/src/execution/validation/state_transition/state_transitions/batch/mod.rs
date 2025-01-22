@@ -11169,11 +11169,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -11274,11 +11273,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -11390,11 +11388,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -11502,11 +11499,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -11700,11 +11696,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -11908,11 +11903,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -12202,11 +12196,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -12495,11 +12488,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -12613,11 +12605,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -12816,11 +12807,10 @@ mod tests {
                             token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                                 ChangeControlRulesV0 {
                                     authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                    authorized_to_change_authorized_action_takers:
-                                        AuthorizedActionTakers::NoOne,
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
                                     changing_authorized_action_takers_to_no_one_allowed: false,
-                                    changing_authorized_action_takers_to_contract_owner_allowed:
-                                        false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
                                 },
                             ));
                         }),
@@ -13559,10 +13549,10 @@ mod tests {
                         token_configuration.set_manual_minting_rules(ChangeControlRules::V0(
                             ChangeControlRulesV0 {
                                 authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                                authorized_to_change_authorized_action_takers:
-                                    AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
                                 changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
                             },
                         ));
                     }),
@@ -13773,10 +13763,10 @@ mod tests {
                         token_configuration.set_freeze_rules(ChangeControlRules::V0(
                             ChangeControlRulesV0 {
                                 authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-                                authorized_to_change_authorized_action_takers:
-                                    AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
                                 changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
                             },
                         ));
                     }),
@@ -13872,19 +13862,19 @@ mod tests {
                         token_configuration.set_freeze_rules(ChangeControlRules::V0(
                             ChangeControlRulesV0 {
                                 authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-                                authorized_to_change_authorized_action_takers:
-                                    AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
                                 changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
                             },
                         ));
                         token_configuration.set_unfreeze_rules(ChangeControlRules::V0(
                             ChangeControlRulesV0 {
                                 authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-                                authorized_to_change_authorized_action_takers:
-                                    AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
                                 changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
                             },
                         ));
                     }),
@@ -14042,19 +14032,19 @@ mod tests {
                         token_configuration.set_freeze_rules(ChangeControlRules::V0(
                             ChangeControlRulesV0 {
                                 authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-                                authorized_to_change_authorized_action_takers:
-                                    AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
                                 changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
                             },
                         ));
                         token_configuration.set_unfreeze_rules(ChangeControlRules::V0(
                             ChangeControlRulesV0 {
                                 authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-                                authorized_to_change_authorized_action_takers:
-                                    AuthorizedActionTakers::NoOne,
+                                admin_action_takers: AuthorizedActionTakers::NoOne,
                                 changing_authorized_action_takers_to_no_one_allowed: false,
-                                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                                changing_admin_action_takers_to_no_one_allowed: false,
+                                self_changing_admin_action_takers_allowed: false,
                             },
                         ));
                     }),

@@ -4,6 +4,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
@@ -33,6 +34,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
@@ -335,6 +337,7 @@ impl Drive {
                                 identity_contract_nonce,
                                 &BlockInfo::default(),
                                 token_config,
+                                platform_version,
                             )?;
                             let (root_hash, document) = query.verify_proof(
                                 false,
@@ -499,6 +502,39 @@ impl Drive {
                                             format!("proof contained token status saying this token is {}paused, but we expected {}paused", if token_status.paused() {""} else {"not "}, if emergency_action_transition.emergency_action().paused() {""} else {"not "}))));
                                     }
                                     Ok((root_hash, VerifiedTokenStatus(token_status)))
+                                }
+                                TokenTransition::ConfigUpdate(update) => {
+                                    let (root_hash, Some(updated_contract)) =
+                                        Drive::verify_contract(
+                                            proof,
+                                            Some(contract.config().keeps_history()),
+                                            false,
+                                            false,
+                                            contract.id().into_buffer(),
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
+                                    };
+                                    let mut expected_config = token_config.clone();
+                                    expected_config.apply_token_configuration_item(
+                                        update.update_token_configuration_item().clone(),
+                                    );
+                                    let new_token_config = updated_contract.expected_token_configuration(
+                                        token_transition.base().token_contract_position(),
+                                    ).map_err(|_| {
+                                        Error::Proof(ProofError::CorruptedProof("returned proof does not have a token configuration, which should not be possible".to_string()))
+                                    })?;
+
+                                    if new_token_config != &expected_config {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!(
+                                                "expected token configuration does not match the token configuration from the proof: expected {}, found {}",
+                                                expected_config, new_token_config
+                                            ))));
+                                    }
+                                    Ok((root_hash, VerifiedDataContract(updated_contract)))
                                 }
                             }
                         }

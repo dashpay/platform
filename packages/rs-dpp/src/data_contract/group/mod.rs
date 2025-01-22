@@ -1,14 +1,19 @@
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
+use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::v0::GroupV0;
 use crate::errors::ProtocolError;
+use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub mod accessors;
+pub(crate) mod methods;
 pub mod v0;
+
 pub type RequiredSigners = u8;
 
 pub type GroupMemberPower = u32;
@@ -78,6 +83,17 @@ impl GroupV0Setters for Group {
     fn set_required_power(&mut self, required_power: GroupRequiredPower) {
         match self {
             Group::V0(group_v0) => group_v0.set_required_power(required_power),
+        }
+    }
+}
+
+impl GroupMethodsV0 for Group {
+    fn validate(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self {
+            Group::V0(group_v0) => group_v0.validate(platform_version),
         }
     }
 }
