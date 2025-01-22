@@ -31,7 +31,7 @@ use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransi
 use std::iter::Map;
 use std::slice::Iter;
 
-use crate::state_transition::batch_transition::{BatchTransitionV1, TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
+use crate::state_transition::batch_transition::{BatchTransitionV1, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{
     BatchTransition, DocumentDeleteTransition,
@@ -44,22 +44,43 @@ use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use crate::balances::credits::TokenAmount;
+#[cfg(feature = "state-transition-signing")]
+use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+#[cfg(feature = "state-transition-signing")]
 use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
@@ -889,6 +910,76 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             identity_public_key,
             signer,
             Some(|_, _| Ok(SecurityLevel::HIGH)),
+        )?;
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_config_update_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        update_token_configuration_item: TokenConfigurationChangeItem,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _config_update_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let mut config_update_transition =
+            TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+                base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                    identity_contract_nonce,
+                    token_contract_position,
+                    data_contract_id,
+                    token_id,
+                    using_group_info: None,
+                }),
+                update_token_configuration_item,
+                public_note,
+            });
+
+        if let Some(using_group_info_status) = using_group_info {
+            match using_group_info_status {
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                    group_contract_position,
+                ) => {
+                    let action_id = config_update_transition.calculate_action_id(owner_id);
+                    config_update_transition
+                        .base_mut()
+                        .set_using_group_info(Some(GroupStateTransitionInfo {
+                            group_contract_position,
+                            action_id,
+                            action_is_proposer: true,
+                        }))
+                }
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => {
+                    config_update_transition
+                        .base_mut()
+                        .set_using_group_info(Some(info))
+                }
+            }
+        }
+
+        let batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(config_update_transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+            .into();
+        let mut state_transition: StateTransition = batch_transition.into();
+        state_transition.sign_external(
+            identity_public_key,
+            signer,
+            Some(|_, _| Ok(SecurityLevel::CRITICAL)),
         )?;
         Ok(state_transition)
     }
