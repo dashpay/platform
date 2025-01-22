@@ -4707,7 +4707,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setHeight(value);
       break;
     case 2:
@@ -4719,7 +4719,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       msg.setEpoch(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setTimeMs(value);
       break;
     case 5:
@@ -7948,7 +7948,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceRespons
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setIdentityNonce(value);
       break;
     case 2:
@@ -8852,7 +8852,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceRes
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     case 2:
@@ -9445,11 +9445,11 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentit
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setRevision(value);
       break;
     default:
@@ -14037,7 +14037,7 @@ proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonod
       msg.setProTxHash(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setCount(value);
       break;
     default:
@@ -15794,7 +15794,7 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalan
       msg.setIdentityId(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     default:
@@ -20575,7 +20575,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHis
       msg.setOffset(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setStartAtMs(value);
       break;
     case 5:
@@ -21218,7 +21218,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHi
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setDate(value);
       break;
     case 2:
@@ -28950,7 +28950,7 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
       msg.setNumber(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setFirstBlockHeight(value);
       break;
     case 3:
@@ -28958,7 +28958,7 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
       msg.setFirstCoreBlockHeight(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setStartTime(value);
       break;
     case 5:
@@ -31206,7 +31206,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setStartTimeMs(value);
       break;
     case 2:
@@ -31366,7 +31366,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setEndTimeMs(value);
       break;
     case 2:
@@ -32059,7 +32059,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndD
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setTimestamp(value);
       break;
     case 2:
@@ -33771,7 +33771,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
       msg.setWonByIdentityId(value);
       break;
     case 3:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setFinishedAtBlockHeight(value);
       break;
     case 4:
@@ -33779,7 +33779,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
       msg.setFinishedAtCoreBlockHeight(value);
       break;
     case 5:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setFinishedAtBlockTimeMs(value);
       break;
     case 6:
@@ -38775,7 +38775,7 @@ proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefun
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     case 2:
@@ -39533,7 +39533,7 @@ proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCredit
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setCredits(value);
       break;
     case 2:
@@ -42465,15 +42465,15 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.deser
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setLocal(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBlock(value);
       break;
     case 3:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setGenesis(value);
       break;
     case 4:
@@ -42982,7 +42982,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.dese
       msg.setLatestAppHash(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setLatestBlockHeight(value);
       break;
     case 5:
@@ -42994,11 +42994,11 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.dese
       msg.setEarliestAppHash(value);
       break;
     case 7:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setEarliestBlockHeight(value);
       break;
     case 9:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setMaxPeerBlockHeight(value);
       break;
     case 10:
@@ -43643,11 +43643,11 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setTotalSyncedTime(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setRemainingTime(value);
       break;
     case 3:
@@ -43655,23 +43655,23 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
       msg.setTotalSnapshots(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setChunkProcessAvgTime(value);
       break;
     case 5:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setSnapshotHeight(value);
       break;
     case 6:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setSnapshotChunksCount(value);
       break;
     case 7:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBackfilledBlocks(value);
       break;
     case 8:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {number} */ (reader.readUint64String());
       msg.setBackfillBlocksTotal(value);
       break;
     default:
