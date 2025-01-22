@@ -3,7 +3,6 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use bincode::{Encode, Decode};
-use data_contracts::SystemDataContract;
 use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
@@ -32,6 +31,11 @@ use crate::state_transition::batch_transition::token_mint_transition::v0::v0_met
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use crate::tokens::token_event::TokenEvent;
+
+pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
+    45, 67, 89, 21, 34, 216, 145, 78, 156, 243, 17, 58, 202, 190, 13, 92, 61, 40, 122, 201, 84, 99,
+    187, 110, 233, 128, 63, 48, 172, 29, 210, 108,
+];
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(
@@ -301,7 +305,7 @@ impl TokenTransitionV0Methods for TokenTransition {
     ) -> Identifier {
         let name = self.historical_document_type_name();
         Document::generate_document_id_v0(
-            &SystemDataContract::TokenHistory.id(),
+            &(TOKEN_HISTORY_ID_BYTES.into()),
             &owner_id,
             name,
             owner_nonce.to_be_bytes().as_slice(),
