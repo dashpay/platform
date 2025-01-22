@@ -102,12 +102,6 @@ pub mod grove_apply_batch;
 /// Apply batch grove operation with additional costs
 pub mod grove_apply_batch_with_add_costs;
 
-/// Apply partial batch grove operation
-pub mod grove_apply_partial_batch;
-
-/// Apply partial batch grove operation with additional costs
-pub mod grove_apply_partial_batch_with_add_costs;
-
 /// Get cost of grove batch operations
 pub mod grove_batch_operations_costs;
 
