@@ -23,6 +23,9 @@ use crate::prelude::{
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+use crate::state_transition::batch_transition::token_transfer_transition::{
+    PrivateEncryptedNote, SharedEncryptedNote,
+};
 use crate::state_transition::batch_transition::BatchTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransitionV1};
@@ -559,12 +562,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
         amount: TokenAmount,
         recipient_id: Identifier,
         public_note: Option<String>,
-        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        private_encrypted_note: Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        shared_encrypted_note: Option<SharedEncryptedNote>,
+        private_encrypted_note: Option<PrivateEncryptedNote>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

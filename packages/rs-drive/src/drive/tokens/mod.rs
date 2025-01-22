@@ -47,7 +47,6 @@ pub mod unfreeze;
 pub mod calculate_total_tokens_balance;
 
 /// Token status module, like if the token is paused
-#[cfg(feature = "server")]
 pub mod status;
 
 /// Token paths

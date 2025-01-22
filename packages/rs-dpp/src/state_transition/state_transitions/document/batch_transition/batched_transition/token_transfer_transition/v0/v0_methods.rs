@@ -3,6 +3,7 @@ use crate::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryp
 use crate::state_transition::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransitionV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
 
 impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
@@ -44,16 +45,13 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     fn set_public_note(&mut self, public_note: Option<String>);
 
     /// Returns the `shared_encrypted_note` field of the `TokenTransferTransitionV0`.
-    fn shared_encrypted_note(&self) -> Option<&(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>;
+    fn shared_encrypted_note(&self) -> Option<&SharedEncryptedNote>;
 
     /// Returns the owned `shared_encrypted_note` field of the `TokenTransferTransitionV0`.
-    fn shared_encrypted_note_owned(self) -> Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>;
+    fn shared_encrypted_note_owned(self) -> Option<SharedEncryptedNote>;
 
     /// Sets the value of the `shared_encrypted_note` field in the `TokenTransferTransitionV0`.
-    fn set_shared_encrypted_note(
-        &mut self,
-        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-    );
+    fn set_shared_encrypted_note(&mut self, shared_encrypted_note: Option<SharedEncryptedNote>);
 
     /// Returns the `private_encrypted_note` field of the `TokenTransferTransitionV0`.
     fn private_encrypted_note(
@@ -74,26 +72,15 @@ pub trait TokenTransferTransitionV0Methods: TokenBaseTransitionAccessors {
     )>;
 
     /// Sets the value of the `private_encrypted_note` field in the `TokenTransferTransitionV0`.
-    fn set_private_encrypted_note(
-        &mut self,
-        private_encrypted_note: Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
-    );
+    fn set_private_encrypted_note(&mut self, private_encrypted_note: Option<PrivateEncryptedNote>);
 
     /// Returns all notes (public, shared, and private) as owned values in a tuple.
     fn notes_owned(
         self,
     ) -> (
         Option<String>,
-        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        Option<SharedEncryptedNote>,
+        Option<PrivateEncryptedNote>,
     );
 
     /// Returns all notes (public, shared, and private) as cloned values in a tuple.
@@ -142,18 +129,15 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
         self.public_note = public_note;
     }
 
-    fn shared_encrypted_note(&self) -> Option<&(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)> {
+    fn shared_encrypted_note(&self) -> Option<&SharedEncryptedNote> {
         self.shared_encrypted_note.as_ref()
     }
 
-    fn shared_encrypted_note_owned(self) -> Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)> {
+    fn shared_encrypted_note_owned(self) -> Option<SharedEncryptedNote> {
         self.shared_encrypted_note
     }
 
-    fn set_shared_encrypted_note(
-        &mut self,
-        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-    ) {
+    fn set_shared_encrypted_note(&mut self, shared_encrypted_note: Option<SharedEncryptedNote>) {
         self.shared_encrypted_note = shared_encrypted_note;
     }
 
@@ -177,14 +161,7 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
         self.private_encrypted_note
     }
 
-    fn set_private_encrypted_note(
-        &mut self,
-        private_encrypted_note: Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
-    ) {
+    fn set_private_encrypted_note(&mut self, private_encrypted_note: Option<PrivateEncryptedNote>) {
         self.private_encrypted_note = private_encrypted_note;
     }
 
@@ -192,12 +169,8 @@ impl TokenTransferTransitionV0Methods for TokenTransferTransitionV0 {
         self,
     ) -> (
         Option<String>,
-        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        Option<SharedEncryptedNote>,
+        Option<PrivateEncryptedNote>,
     ) {
         (
             self.public_note,

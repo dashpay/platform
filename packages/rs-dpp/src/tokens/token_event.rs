@@ -13,12 +13,13 @@ use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 pub type TokenEventPublicNote = Option<String>;
-pub type TokenEventSharedEncryptedNote = Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>;
+pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;
 pub type TokenEventPersonalEncryptedNote = Option<(
     RootEncryptionKeyIndex,
     DerivationEncryptionKeyIndex,
     Vec<u8>,
 )>;
+use crate::state_transition::batch_transition::token_transfer_transition::SharedEncryptedNote;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::ProtocolError;
 

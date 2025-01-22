@@ -58,7 +58,7 @@ use crate::state_transition::batch_transition::token_destroy_frozen_funds_transi
 use crate::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
 use crate::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
-use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
+use crate::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote, TokenTransferTransitionV0};
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
@@ -560,12 +560,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         amount: TokenAmount,
         recipient_id: Identifier,
         public_note: Option<String>,
-        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        private_encrypted_note: Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        shared_encrypted_note: Option<SharedEncryptedNote>,
+        private_encrypted_note: Option<PrivateEncryptedNote>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

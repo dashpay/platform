@@ -292,6 +292,96 @@ type PlatformgetCurrentQuorumsInfo = {
   readonly responseType: typeof platform_pb.GetCurrentQuorumsInfoResponse;
 };
 
+type PlatformgetIdentityTokenBalances = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityTokenBalancesRequest;
+  readonly responseType: typeof platform_pb.GetIdentityTokenBalancesResponse;
+};
+
+type PlatformgetIdentitiesTokenBalances = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentitiesTokenBalancesRequest;
+  readonly responseType: typeof platform_pb.GetIdentitiesTokenBalancesResponse;
+};
+
+type PlatformgetIdentityTokenInfos = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityTokenInfosRequest;
+  readonly responseType: typeof platform_pb.GetIdentityTokenInfosResponse;
+};
+
+type PlatformgetIdentitiesTokenInfos = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentitiesTokenInfosRequest;
+  readonly responseType: typeof platform_pb.GetIdentitiesTokenInfosResponse;
+};
+
+type PlatformgetTokenStatuses = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetTokenStatusesRequest;
+  readonly responseType: typeof platform_pb.GetTokenStatusesResponse;
+};
+
+type PlatformgetTokenTotalSupply = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetTokenTotalSupplyRequest;
+  readonly responseType: typeof platform_pb.GetTokenTotalSupplyResponse;
+};
+
+type PlatformgetGroupInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetGroupInfoRequest;
+  readonly responseType: typeof platform_pb.GetGroupInfoResponse;
+};
+
+type PlatformgetGroupInfos = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetGroupInfosRequest;
+  readonly responseType: typeof platform_pb.GetGroupInfosResponse;
+};
+
+type PlatformgetGroupActions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetGroupActionsRequest;
+  readonly responseType: typeof platform_pb.GetGroupActionsResponse;
+};
+
+type PlatformgetGroupActionSigners = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetGroupActionSignersRequest;
+  readonly responseType: typeof platform_pb.GetGroupActionSignersResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -326,6 +416,16 @@ export class Platform {
   static readonly getPathElements: PlatformgetPathElements;
   static readonly getStatus: PlatformgetStatus;
   static readonly getCurrentQuorumsInfo: PlatformgetCurrentQuorumsInfo;
+  static readonly getIdentityTokenBalances: PlatformgetIdentityTokenBalances;
+  static readonly getIdentitiesTokenBalances: PlatformgetIdentitiesTokenBalances;
+  static readonly getIdentityTokenInfos: PlatformgetIdentityTokenInfos;
+  static readonly getIdentitiesTokenInfos: PlatformgetIdentitiesTokenInfos;
+  static readonly getTokenStatuses: PlatformgetTokenStatuses;
+  static readonly getTokenTotalSupply: PlatformgetTokenTotalSupply;
+  static readonly getGroupInfo: PlatformgetGroupInfo;
+  static readonly getGroupInfos: PlatformgetGroupInfos;
+  static readonly getGroupActions: PlatformgetGroupActions;
+  static readonly getGroupActionSigners: PlatformgetGroupActionSigners;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -647,6 +747,96 @@ export class PlatformClient {
   getCurrentQuorumsInfo(
     requestMessage: platform_pb.GetCurrentQuorumsInfoRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetCurrentQuorumsInfoResponse|null) => void
+  ): UnaryResponse;
+  getIdentityTokenBalances(
+    requestMessage: platform_pb.GetIdentityTokenBalancesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityTokenBalancesResponse|null) => void
+  ): UnaryResponse;
+  getIdentityTokenBalances(
+    requestMessage: platform_pb.GetIdentityTokenBalancesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityTokenBalancesResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesTokenBalances(
+    requestMessage: platform_pb.GetIdentitiesTokenBalancesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesTokenBalancesResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesTokenBalances(
+    requestMessage: platform_pb.GetIdentitiesTokenBalancesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesTokenBalancesResponse|null) => void
+  ): UnaryResponse;
+  getIdentityTokenInfos(
+    requestMessage: platform_pb.GetIdentityTokenInfosRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityTokenInfosResponse|null) => void
+  ): UnaryResponse;
+  getIdentityTokenInfos(
+    requestMessage: platform_pb.GetIdentityTokenInfosRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityTokenInfosResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesTokenInfos(
+    requestMessage: platform_pb.GetIdentitiesTokenInfosRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesTokenInfosResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesTokenInfos(
+    requestMessage: platform_pb.GetIdentitiesTokenInfosRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesTokenInfosResponse|null) => void
+  ): UnaryResponse;
+  getTokenStatuses(
+    requestMessage: platform_pb.GetTokenStatusesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenStatusesResponse|null) => void
+  ): UnaryResponse;
+  getTokenStatuses(
+    requestMessage: platform_pb.GetTokenStatusesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenStatusesResponse|null) => void
+  ): UnaryResponse;
+  getTokenTotalSupply(
+    requestMessage: platform_pb.GetTokenTotalSupplyRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenTotalSupplyResponse|null) => void
+  ): UnaryResponse;
+  getTokenTotalSupply(
+    requestMessage: platform_pb.GetTokenTotalSupplyRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenTotalSupplyResponse|null) => void
+  ): UnaryResponse;
+  getGroupInfo(
+    requestMessage: platform_pb.GetGroupInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupInfoResponse|null) => void
+  ): UnaryResponse;
+  getGroupInfo(
+    requestMessage: platform_pb.GetGroupInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupInfoResponse|null) => void
+  ): UnaryResponse;
+  getGroupInfos(
+    requestMessage: platform_pb.GetGroupInfosRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupInfosResponse|null) => void
+  ): UnaryResponse;
+  getGroupInfos(
+    requestMessage: platform_pb.GetGroupInfosRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupInfosResponse|null) => void
+  ): UnaryResponse;
+  getGroupActions(
+    requestMessage: platform_pb.GetGroupActionsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionsResponse|null) => void
+  ): UnaryResponse;
+  getGroupActions(
+    requestMessage: platform_pb.GetGroupActionsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionsResponse|null) => void
+  ): UnaryResponse;
+  getGroupActionSigners(
+    requestMessage: platform_pb.GetGroupActionSignersRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getGroupActionSigners(
+    requestMessage: platform_pb.GetGroupActionSignersRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionSignersResponse|null) => void
   ): UnaryResponse;
 }
 

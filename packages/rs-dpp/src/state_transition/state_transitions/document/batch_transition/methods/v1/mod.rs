@@ -7,6 +7,9 @@ use crate::prelude::{
     SenderKeyIndex, UserFeeIncrease,
 };
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::token_transfer_transition::{
+    PrivateEncryptedNote, SharedEncryptedNote,
+};
 use crate::state_transition::StateTransition;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::version::FeatureVersion;
@@ -63,12 +66,8 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         amount: TokenAmount,
         recipient_id: Identifier,
         public_note: Option<String>,
-        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        private_encrypted_note: Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        shared_encrypted_note: Option<SharedEncryptedNote>,
+        private_encrypted_note: Option<PrivateEncryptedNote>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

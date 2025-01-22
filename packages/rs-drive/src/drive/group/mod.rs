@@ -8,3 +8,5 @@ mod insert;
 pub mod paths;
 #[cfg(feature = "server")]
 mod prove;
+/// Group queries
+pub mod queries;
