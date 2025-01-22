@@ -1,8 +1,7 @@
 [package]
 name = "wasm-sdk"
-version = "0.1.0"
 edition = "2021"
-rust-version.workspace = true
+# rust-version.workspace = true
 publish = false
 [lib]
 crate-type = ["cdylib"]
