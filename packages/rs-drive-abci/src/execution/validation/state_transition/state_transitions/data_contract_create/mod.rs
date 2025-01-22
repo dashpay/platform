@@ -503,9 +503,10 @@ mod tests {
             token_config.set_manual_minting_rules(ChangeControlRules::V0(ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::Group(0),
                 // We have no group at position 1, we should get an error
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::MainGroup,
+                admin_action_takers: AuthorizedActionTakers::MainGroup,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }));
         }
 
@@ -787,10 +788,10 @@ mod tests {
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
                         // We have no group at position 1, we should get an error
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::Group(1),
+                        admin_action_takers: AuthorizedActionTakers::Group(1),
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -900,10 +901,10 @@ mod tests {
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
                         // We have no group at position 1, we should get an error
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -1033,10 +1034,10 @@ mod tests {
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
                         // We have no group at position 1, we should get an error
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -1164,10 +1165,10 @@ mod tests {
                 token_config.set_manual_minting_rules(ChangeControlRules::V0(
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -1293,10 +1294,10 @@ mod tests {
                 token_config.set_manual_minting_rules(ChangeControlRules::V0(
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -1423,10 +1424,10 @@ mod tests {
                 token_config.set_manual_minting_rules(ChangeControlRules::V0(
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -1552,10 +1553,10 @@ mod tests {
                 token_config.set_manual_minting_rules(ChangeControlRules::V0(
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }
@@ -1681,10 +1682,10 @@ mod tests {
                 token_config.set_manual_minting_rules(ChangeControlRules::V0(
                     ChangeControlRulesV0 {
                         authorized_to_make_change: AuthorizedActionTakers::Group(0),
-                        authorized_to_change_authorized_action_takers:
-                            AuthorizedActionTakers::MainGroup,
+                        admin_action_takers: AuthorizedActionTakers::MainGroup,
                         changing_authorized_action_takers_to_no_one_allowed: false,
-                        changing_authorized_action_takers_to_contract_owner_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
                     },
                 ));
             }

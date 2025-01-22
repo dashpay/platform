@@ -13,7 +13,7 @@ impl TokenConfiguration {
         groups: &BTreeMap<GroupContractPosition, Group>,
     ) -> SimpleConsensusValidationResult {
         // Initialize validation result
-        let mut validation_result = SimpleConsensusValidationResult::new();
+        let validation_result = SimpleConsensusValidationResult::new();
 
         // Collect all group positions used in the token configuration
         let group_positions = self.all_used_group_positions();

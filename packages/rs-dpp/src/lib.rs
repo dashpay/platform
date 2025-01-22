@@ -41,7 +41,6 @@ pub mod block;
 /// Core subsidy
 pub mod core_subsidy;
 pub mod fee;
-pub mod multi_identity_events;
 pub mod nft;
 pub mod prefunded_specialized_balance;
 pub mod serialization;

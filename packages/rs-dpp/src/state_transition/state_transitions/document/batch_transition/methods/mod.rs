@@ -28,6 +28,7 @@ use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransitionV1};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]

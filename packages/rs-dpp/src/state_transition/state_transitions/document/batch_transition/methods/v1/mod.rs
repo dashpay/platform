@@ -1,17 +1,28 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
+#[cfg(feature = "state-transition-signing")]
 use crate::group::GroupStateTransitionInfoStatus;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::{
     DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
     SenderKeyIndex, UserFeeIncrease,
 };
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0 {

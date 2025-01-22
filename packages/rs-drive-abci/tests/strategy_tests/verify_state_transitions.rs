@@ -576,6 +576,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                                 .as_ref()
                                                 .expect("expected last commited block info")
                                                 .basic_info(),
+                                            platform_version,
                                         )
                                         .expect("expected to build historical document");
 

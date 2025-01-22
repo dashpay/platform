@@ -4,8 +4,8 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
 };
-use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationConventionV0;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
@@ -15,16 +15,22 @@ use std::collections::BTreeSet;
 /// Implementing TokenConfigurationV0Getters for TokenConfiguration
 impl TokenConfigurationV0Getters for TokenConfiguration {
     /// Returns a reference to the conventions.
-    fn conventions(&self) -> &TokenConfigurationConventionV0 {
+    fn conventions(&self) -> &TokenConfigurationConvention {
         match self {
             TokenConfiguration::V0(v0) => v0.conventions(),
         }
     }
 
     /// Returns a mutable reference to the conventions.
-    fn conventions_mut(&mut self) -> &mut TokenConfigurationConventionV0 {
+    fn conventions_mut(&mut self) -> &mut TokenConfigurationConvention {
         match self {
             TokenConfiguration::V0(v0) => v0.conventions_mut(),
+        }
+    }
+
+    fn conventions_change_rules(&self) -> &ChangeControlRules {
+        match self {
+            TokenConfiguration::V0(v0) => v0.conventions_change_rules(),
         }
     }
 
@@ -155,9 +161,16 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
 /// Implementing TokenConfigurationV0Setters for TokenConfiguration
 impl TokenConfigurationV0Setters for TokenConfiguration {
     /// Sets the conventions.
-    fn set_conventions(&mut self, conventions: TokenConfigurationConventionV0) {
+    fn set_conventions(&mut self, conventions: TokenConfigurationConvention) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_conventions(conventions),
+        }
+    }
+
+    /// Sets the conventions change rules.
+    fn set_conventions_change_rules(&mut self, rules: ChangeControlRules) {
+        match self {
+            TokenConfiguration::V0(v0) => v0.set_conventions_change_rules(rules),
         }
     }
 

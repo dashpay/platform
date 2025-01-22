@@ -207,7 +207,8 @@ impl DataContract {
             }
 
             if self.tokens() != new_data_contract.tokens() {
-                for (token_position, old_token) in self.tokens() {
+                for (token_position, old_token_config) in self.tokens() {
+                    // Check if a token has been removed
                     if !new_data_contract.tokens().contains_key(token_position) {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             DataContractUpdateActionNotAllowedError::new(
@@ -218,20 +219,21 @@ impl DataContract {
                         ));
                     }
 
-                    // todo
-                    // if let Some(new_token) = new_data_contract.tokens().get(token_position) {
-                    //     let token_validation_result =
-                    //         old_token.validate_token_config_update(new_token, &new_data_contract.owner_id(), old_token.main , new_data_contract.groups(),  platform_version)?;
-                    //
-                    //     if !token_validation_result.is_valid() {
-                    //         return Ok(SimpleConsensusValidationResult::new_with_errors(
-                    //             token_validation_result.errors,
-                    //         ));
-                    //     }
-                    // }
+                    // Check if a token configuration has been changed
+                    if let Some(new_token_config) = new_data_contract.tokens().get(token_position) {
+                        if old_token_config != new_token_config {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                DataContractUpdateActionNotAllowedError::new(
+                                    self.id(),
+                                    format!("update token at position {}", token_position),
+                                )
+                                .into(),
+                            ));
+                        }
+                    }
                 }
 
-                // Check for added tokens
+                // Check if a token has been added
                 for token_position in new_data_contract.tokens().keys() {
                     if !self.tokens().contains_key(token_position) {
                         return Ok(SimpleConsensusValidationResult::new_with_error(

@@ -105,6 +105,7 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_burn_transition_state_validation: FeatureVersion,
     pub token_transfer_transition_state_validation: FeatureVersion,
     pub token_base_transition_structure_validation: FeatureVersion,
+    pub token_base_transition_state_validation: FeatureVersion,
     pub token_freeze_transition_structure_validation: FeatureVersion,
     pub token_unfreeze_transition_structure_validation: FeatureVersion,
     pub token_freeze_transition_state_validation: FeatureVersion,
@@ -113,6 +114,9 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_destroy_frozen_funds_transition_state_validation: FeatureVersion,
     pub token_emergency_action_transition_structure_validation: FeatureVersion,
     pub token_emergency_action_transition_state_validation: FeatureVersion,
+    pub token_config_update_transition_structure_validation: FeatureVersion,
+    pub token_config_update_transition_state_validation: FeatureVersion,
+    pub token_base_transition_group_action_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

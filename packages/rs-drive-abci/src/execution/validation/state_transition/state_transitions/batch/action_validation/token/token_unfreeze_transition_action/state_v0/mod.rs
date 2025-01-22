@@ -5,7 +5,7 @@ use dpp::consensus::state::token::{IdentityTokenAccountNotFrozenError, Unauthori
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::multi_identity_events::ActionTaker;
+use dpp::group::action_taker::{ActionGoal, ActionTaker};
 use dpp::prelude::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -79,27 +79,19 @@ impl TokenUnfreezeTransitionActionStateValidationV0 for TokenUnfreezeTransitionA
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;
         let rules = token_configuration.unfreeze_rules();
-        let main_control_group = token_configuration
-            .main_control_group()
-            .map(|position| contract.expected_group(position))
-            .transpose()?;
-
-        if !rules.can_make_change(
-            &contract.owner_id(),
+        let main_control_group = token_configuration.main_control_group();
+        let validation_result = self.base().validate_group_action(
+            rules,
+            owner_id,
+            contract.owner_id(),
             main_control_group,
             contract.groups(),
-            &ActionTaker::SingleIdentity(owner_id),
-        ) {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
-                    UnauthorizedTokenActionError::new(
-                        self.token_id(),
-                        owner_id,
-                        "unfreeze".to_string(),
-                        rules.authorized_to_make_change_action_takers().clone(),
-                    ),
-                )),
-            ));
+            "unfreeze".to_string(),
+            token_configuration,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
         }
 
         Ok(SimpleConsensusValidationResult::new())

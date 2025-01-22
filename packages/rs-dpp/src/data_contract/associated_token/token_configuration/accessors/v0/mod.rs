@@ -1,5 +1,5 @@
 use crate::balances::credits::TokenAmount;
-use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationConventionV0;
+use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
@@ -9,10 +9,12 @@ use std::collections::BTreeSet;
 /// Accessor trait for getters of `TokenConfigurationV0`
 pub trait TokenConfigurationV0Getters {
     /// Returns a reference to the conventions.
-    fn conventions(&self) -> &TokenConfigurationConventionV0;
+    fn conventions(&self) -> &TokenConfigurationConvention;
 
     /// Returns a mutable reference to the conventions.
-    fn conventions_mut(&mut self) -> &mut TokenConfigurationConventionV0;
+    fn conventions_mut(&mut self) -> &mut TokenConfigurationConvention;
+    /// Returns the new tokens destination identity rules.
+    fn conventions_change_rules(&self) -> &ChangeControlRules;
 
     /// Returns the base supply.
     fn base_supply(&self) -> TokenAmount;
@@ -65,7 +67,10 @@ pub trait TokenConfigurationV0Getters {
 /// Accessor trait for setters of `TokenConfigurationV0`
 pub trait TokenConfigurationV0Setters {
     /// Sets the conventions.
-    fn set_conventions(&mut self, conventions: TokenConfigurationConventionV0);
+    fn set_conventions(&mut self, conventions: TokenConfigurationConvention);
+
+    /// Sets the conventions change rules.
+    fn set_conventions_change_rules(&mut self, rules: ChangeControlRules);
 
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: TokenAmount);

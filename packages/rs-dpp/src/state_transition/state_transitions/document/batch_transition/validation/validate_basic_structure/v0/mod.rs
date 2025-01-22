@@ -152,6 +152,7 @@ impl BatchTransition {
                 TokenTransition::Unfreeze(_) => {}
                 TokenTransition::DestroyFrozenFunds(_) => {}
                 TokenTransition::EmergencyAction(_) => {}
+                TokenTransition::ConfigUpdate(_) => {}
             }
 
             // We need to verify that the action id given matches the expected action id

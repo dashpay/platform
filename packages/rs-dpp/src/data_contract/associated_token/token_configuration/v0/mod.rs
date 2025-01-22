@@ -1,6 +1,8 @@
 mod accessors;
 
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
@@ -8,35 +10,15 @@ use crate::data_contract::GroupContractPosition;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct TokenConfigurationLocalizationsV0 {
-    pub should_capitalize: bool,
-    pub singular_form: String,
-    pub plural_form: String,
-}
-
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenConfigurationConventionV0 {
-    #[serde(default)]
-    pub localizations: BTreeMap<String, TokenConfigurationLocalizationsV0>,
-    #[serde(default = "default_decimals")]
-    pub decimals: u16,
-}
-
-// Default function for `decimals`
-fn default_decimals() -> u16 {
-    8 // Default value for decimals
-}
-
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationV0 {
-    pub conventions: TokenConfigurationConventionV0,
+    pub conventions: TokenConfigurationConvention,
+    /// Who can change the conventions
+    #[serde(default = "default_change_control_rules")]
+    pub conventions_change_rules: ChangeControlRules,
     /// The supply at the creation of the token
     pub base_supply: TokenAmount,
     /// The maximum supply the token can ever have
@@ -96,18 +78,20 @@ fn default_starts_as_paused() -> bool {
 fn default_change_control_rules() -> ChangeControlRules {
     ChangeControlRules::V0(ChangeControlRulesV0 {
         authorized_to_make_change: AuthorizedActionTakers::NoOne,
-        authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+        admin_action_takers: AuthorizedActionTakers::NoOne,
         changing_authorized_action_takers_to_no_one_allowed: false,
-        changing_authorized_action_takers_to_contract_owner_allowed: false,
+        changing_admin_action_takers_to_no_one_allowed: false,
+        self_changing_admin_action_takers_allowed: false,
     })
 }
 
 fn default_contract_owner_change_control_rules() -> ChangeControlRules {
     ChangeControlRules::V0(ChangeControlRulesV0 {
         authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-        authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+        admin_action_takers: AuthorizedActionTakers::NoOne,
         changing_authorized_action_takers_to_no_one_allowed: false,
-        changing_authorized_action_takers_to_contract_owner_allowed: false,
+        changing_admin_action_takers_to_no_one_allowed: false,
+        self_changing_admin_action_takers_allowed: false,
     })
 }
 
@@ -115,8 +99,9 @@ impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV0 {{\n  conventions: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
+            self.conventions_change_rules,
             self.base_supply,
             self.max_supply,
             self.keeps_history,
@@ -141,77 +126,94 @@ impl fmt::Display for TokenConfigurationV0 {
 impl TokenConfigurationV0 {
     pub fn default_most_restrictive() -> Self {
         Self {
-            conventions: TokenConfigurationConventionV0 {
+            conventions: TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
                 localizations: Default::default(),
                 decimals: 8,
-            },
+            }),
+            conventions_change_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }
+            .into(),
             base_supply: 100000,
             max_supply: None,
             keeps_history: true,
             start_as_paused: false,
             max_supply_change_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             new_tokens_destination_identity: None,
             new_tokens_destination_identity_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             minting_allow_choosing_destination: true,
             minting_allow_choosing_destination_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             manual_minting_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             manual_burning_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             freeze_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             unfreeze_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             destroy_frozen_funds_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             emergency_action_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                authorized_to_change_authorized_action_takers: AuthorizedActionTakers::NoOne,
+                admin_action_takers: AuthorizedActionTakers::NoOne,
                 changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_authorized_action_takers_to_contract_owner_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
             }
             .into(),
             main_control_group: None,

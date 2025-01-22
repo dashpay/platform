@@ -86,7 +86,7 @@ impl DriveHighLevelBatchOperationConverter for TokenUnfreezeTransitionAction {
                             token_id: self.token_id(),
                             owner_id,
                             nonce: identity_contract_nonce,
-                            event: TokenEvent::Freeze(
+                            event: TokenEvent::Unfreeze(
                                 self.frozen_identity_id(),
                                 self.public_note_owned(),
                             ),

@@ -37,6 +37,7 @@ impl Drive {
             owner_id,
             owner_nonce,
             block_info,
+            platform_version,
         )?;
 
         let operations = self.add_document_for_contract_operations(

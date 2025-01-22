@@ -7,6 +7,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 pub mod action_event;
+pub mod action_taker;
 pub mod group_action;
 pub mod group_action_status;
 
