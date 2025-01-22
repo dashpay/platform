@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "$comment": "Maximum is the latest protocol version"
+    },
+    "type": {
+      "type": "integer",
+      "const": 6
+    },
+    "identityId": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 32,
+      "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier"
+    },
+    "amount": {
+      "type": "integer",
+      "description": "The amount to be withdrawn",
+      "minimum": 1000
+    },
+    "coreFeePerByte": {
+      "type": "integer",
+      "description": "This is the fee that you are willing to spend for this transaction in Duffs/Byte",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "pooling": {
+      "type": "integer",
+      "description": "This indicated the level at which Platform should try to pool this transaction",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "outputScript": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 23,
+      "maxItems": 25
+    },
+    "signature": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 65,
+      "maxItems": 65
+    },
+    "signaturePublicKeyId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Target identity revision"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "identityId",
+    "amount",
+    "coreFeePerByte",
+    "pooling",
+    "outputScript",
+    "signature",
+    "signaturePublicKeyId",
+    "revision"
+  ]
+}
