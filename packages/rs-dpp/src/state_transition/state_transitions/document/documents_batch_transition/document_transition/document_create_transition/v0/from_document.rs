@@ -16,14 +16,8 @@ impl DocumentCreateTransitionV0 {
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
-        let prefunded_voting_balance = None;
-
-        #[cfg(feature = "contested-documents")]
-        {
-            if let Some(vote_poll) = document_type.contested_vote_poll_for_document(&document) {
-                prefunded_voting_balance = Some(vote_poll);
-            }
-        }
+        let prefunded_voting_balance =
+            document_type.prefunded_voting_balance_for_document(&document, platform_version)?;
         Ok(DocumentCreateTransitionV0 {
             base: DocumentBaseTransition::from_document(
                 &document,
