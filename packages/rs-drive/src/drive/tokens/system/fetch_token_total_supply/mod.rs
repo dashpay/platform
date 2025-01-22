@@ -9,6 +9,8 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     /// Fetches token's total supply
@@ -26,6 +28,29 @@ impl Drive {
             .token_total_supply
         {
             0 => self.fetch_token_total_supply_v0(token_id, transaction, platform_version),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_token_total_supply".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+    /// Fetches token's total supply and returns cost of doing so
+    pub fn fetch_token_total_supply_with_cost(
+        &self,
+        token_id: [u8; 32],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<TokenAmount>, FeeResult), Error> {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .fetch
+            .token_total_supply
+        {
+            0 => self.fetch_token_total_supply_with_cost_v0(token_id, block_info, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_token_total_supply".to_string(),
                 known_versions: vec![0],

@@ -2,7 +2,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::UnauthorizedTokenActionError;
+use dpp::consensus::state::token::{TokenMintPastMaxSupplyError, UnauthorizedTokenActionError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -12,6 +12,7 @@ use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::{TokenMintTransitionAction, TokenMintTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
+use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use crate::error::Error;
@@ -71,8 +72,43 @@ impl TokenMintTransitionActionStateValidationV0 for TokenMintTransitionAction {
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
-
-        // todo verify that minting would not break max supply
+        
+        if let Some(max_supply) = token_configuration.max_supply() {
+            // We have a max supply, let's get the current supply
+            let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(self.token_id().to_buffer(), block_info, transaction, platform_version)?;
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+            if let Some(token_total_supply) = token_total_supply {
+                if let Some(total_supply_after_mint) = token_total_supply.checked_add(self.mint_amount()) {
+                    if total_supply_after_mint > max_supply {
+                        // We are trying to set a max supply smaller than the token total supply
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(
+                                TokenMintPastMaxSupplyError::new(
+                                    self.token_id(),
+                                    self.mint_amount(),
+                                    token_total_supply,
+                                    max_supply,
+                                ),
+                            )),
+                        ));
+                    }
+                } else {
+                    // if we overflow we would also always go over max supply
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(
+                            TokenMintPastMaxSupplyError::new(
+                                self.token_id(),
+                                self.mint_amount(),
+                                token_total_supply,
+                                max_supply,
+                            ),
+                        )),
+                    ));
+                }
+            } else {
+                return Err(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("token {} total supply not found", self.token_id())))));
+            }
+        }
 
         // We need to verify that the receiver is a valid identity
 

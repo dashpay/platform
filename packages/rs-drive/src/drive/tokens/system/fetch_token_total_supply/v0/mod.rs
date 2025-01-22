@@ -9,6 +9,8 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     pub(super) fn fetch_token_total_supply_v0(
@@ -26,6 +28,33 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )
+    }
+
+    pub(super) fn fetch_token_total_supply_with_cost_v0(
+        &self,
+        token_id: [u8; 32],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<TokenAmount>, FeeResult), Error> {
+        let mut drive_operations = vec![];
+
+        let token_amount = self.fetch_token_total_supply_add_to_operations_v0(
+            token_id,
+            &mut None,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+        Ok((token_amount, fees))
     }
 
     pub(super) fn fetch_token_total_supply_add_to_operations_v0(

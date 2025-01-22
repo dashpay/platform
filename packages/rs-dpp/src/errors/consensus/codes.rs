@@ -104,14 +104,13 @@ impl ErrorWithCode for BasicError {
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
 
             // Group Errors: 10350-10399
-            Self::InvalidGroupPositionError(_) => 10350,
-            Self::GroupPositionDoesNotExistError(_) => 10351,
-            Self::GroupActionNotAllowedOnTransitionError(_) => 10352,
-            Self::GroupTotalPowerLessThanRequiredError(_) => 10353,
-            Self::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_) => 10354,
-            Self::GroupExceedsMaxMembersError(_) => 10355,
-            Self::GroupMemberHasPowerOfZeroError(_) => 10356,
-            Self::GroupMemberHasPowerOverLimitError(_) => 10357,
+            Self::GroupPositionDoesNotExistError(_) => 10350,
+            Self::GroupActionNotAllowedOnTransitionError(_) => 10351,
+            Self::GroupTotalPowerLessThanRequiredError(_) => 10352,
+            Self::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_) => 10353,
+            Self::GroupExceedsMaxMembersError(_) => 10354,
+            Self::GroupMemberHasPowerOfZeroError(_) => 10355,
+            Self::GroupMemberHasPowerOverLimitError(_) => 10356,
 
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
@@ -248,6 +247,10 @@ impl ErrorWithCode for StateError {
             Self::UnauthorizedTokenActionError(_) => 40151,
             Self::IdentityTokenAccountFrozenError(_) => 40152,
             Self::IdentityTokenAccountNotFrozenError(_) => 40153,
+            Self::TokenSettingMaxSupplyToLessThanCurrentSupplyError(_) => 40154,
+            Self::TokenMintPastMaxSupplyError(_) => 40155,
+            Self::NewTokensDestinationIdentityDoesNotExistError(_) => 40156,
+            Self::InvalidGroupPositionError(_) => 40157,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
