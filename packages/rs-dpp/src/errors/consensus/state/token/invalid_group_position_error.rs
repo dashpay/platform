@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error(
     "Invalid group position: {invalid_group_position}. {max_group_message}",
-    max_group_message = if let Some(max) = .max_group_position {
+    max_group_message = if let Some(max) = self.max_group_position {
         format!("The maximum allowed group position is {}", max)
     } else {
         "No maximum group position limit is set.".to_string()
