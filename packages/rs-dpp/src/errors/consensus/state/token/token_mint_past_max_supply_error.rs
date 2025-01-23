@@ -1,3 +1,4 @@
+use crate::balances::credits::TokenAmount;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
@@ -5,7 +6,6 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
-use crate::balances::credits::TokenAmount;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
@@ -22,7 +22,12 @@ pub struct TokenMintPastMaxSupplyError {
 }
 
 impl TokenMintPastMaxSupplyError {
-    pub fn new(token_id: Identifier, amount: TokenAmount, current_supply: TokenAmount, max_supply: TokenAmount) -> Self {
+    pub fn new(
+        token_id: Identifier,
+        amount: TokenAmount,
+        current_supply: TokenAmount,
+        max_supply: TokenAmount,
+    ) -> Self {
         Self {
             token_id,
             amount,
@@ -42,7 +47,7 @@ impl TokenMintPastMaxSupplyError {
     pub fn current_supply(&self) -> TokenAmount {
         self.current_supply
     }
-    
+
     pub fn max_supply(&self) -> TokenAmount {
         self.max_supply
     }

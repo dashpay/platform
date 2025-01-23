@@ -42,7 +42,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -232,13 +232,26 @@ pub enum StateError {
     DataContractUpdateActionNotAllowedError(DataContractUpdateActionNotAllowedError),
 
     #[error(transparent)]
-    TokenSettingMaxSupplyToLessThanCurrentSupplyError(TokenSettingMaxSupplyToLessThanCurrentSupplyError),
+    TokenSettingMaxSupplyToLessThanCurrentSupplyError(
+        TokenSettingMaxSupplyToLessThanCurrentSupplyError,
+    ),
 
     #[error(transparent)]
     TokenMintPastMaxSupplyError(TokenMintPastMaxSupplyError),
 
     #[error(transparent)]
     NewTokensDestinationIdentityDoesNotExistError(NewTokensDestinationIdentityDoesNotExistError),
+
+    #[error(transparent)]
+    NewAuthorizedActionTakerIdentityDoesNotExistError(
+        NewAuthorizedActionTakerIdentityDoesNotExistError,
+    ),
+
+    #[error(transparent)]
+    NewAuthorizedActionTakerGroupDoesNotExistError(NewAuthorizedActionTakerGroupDoesNotExistError),
+
+    #[error(transparent)]
+    NewAuthorizedActionTakerMainGroupNotSetError(NewAuthorizedActionTakerMainGroupNotSetError),
 
     #[error(transparent)]
     InvalidGroupPositionError(InvalidGroupPositionError),

@@ -250,7 +250,10 @@ impl ErrorWithCode for StateError {
             Self::TokenSettingMaxSupplyToLessThanCurrentSupplyError(_) => 40154,
             Self::TokenMintPastMaxSupplyError(_) => 40155,
             Self::NewTokensDestinationIdentityDoesNotExistError(_) => 40156,
-            Self::InvalidGroupPositionError(_) => 40157,
+            Self::NewAuthorizedActionTakerIdentityDoesNotExistError(_) => 40157,
+            Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40158,
+            Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
+            Self::InvalidGroupPositionError(_) => 40160,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

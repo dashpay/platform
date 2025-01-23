@@ -73,8 +73,8 @@ impl AllowedAsMultiPartyAction for TokenEmergencyActionTransitionV0 {
         TokenEmergencyActionTransition::calculate_action_id_with_fields(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
-            *emergency_action,
             base.identity_contract_nonce(),
+            *emergency_action,
         )
     }
 }

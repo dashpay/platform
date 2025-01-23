@@ -15,6 +15,7 @@ pub enum AuthorizedActionTakers {
     #[default]
     NoOne,
     ContractOwner,
+    Identity(Identifier),
     MainGroup,
     Group(GroupContractPosition),
 }
@@ -26,6 +27,7 @@ impl fmt::Display for AuthorizedActionTakers {
             AuthorizedActionTakers::ContractOwner => write!(f, "ContractOwner"),
             AuthorizedActionTakers::MainGroup => write!(f, "MainGroup"),
             AuthorizedActionTakers::Group(position) => write!(f, "Group(Position: {})", position),
+            AuthorizedActionTakers::Identity(identifier) => write!(f, "Identity({})", identifier),
         }
     }
 }
@@ -49,6 +51,12 @@ impl AuthorizedActionTakers {
                 ActionTaker::SpecifiedIdentities(action_takers) => {
                     action_takers.contains(contract_owner_id)
                 }
+            },
+
+            // Only an identity is allowed
+            AuthorizedActionTakers::Identity(identity) => match action_taker {
+                ActionTaker::SingleIdentity(action_taker) => action_taker == identity,
+                ActionTaker::SpecifiedIdentities(action_takers) => action_takers.contains(identity),
             },
 
             // MainGroup allows multiparty actions with specific power requirements

@@ -101,7 +101,9 @@ impl TokenBaseTransitionActionStateValidationV0 for TokenBaseTransitionAction {
             // We have already checked when converting into an action that we are a member of the Group
             // Now we need to just check that the group is the actual group set by the contract
             match rules.authorized_to_make_change_action_takers() {
-                AuthorizedActionTakers::NoOne | AuthorizedActionTakers::ContractOwner => {
+                AuthorizedActionTakers::NoOne
+                | AuthorizedActionTakers::ContractOwner
+                | AuthorizedActionTakers::Identity(_) => {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
                             UnauthorizedTokenActionError::new(

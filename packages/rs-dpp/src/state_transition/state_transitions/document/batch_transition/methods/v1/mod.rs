@@ -1,6 +1,8 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
+use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+#[cfg(feature = "state-transition-signing")]
 use crate::group::GroupStateTransitionInfoStatus;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
@@ -24,8 +26,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "state-transition-signing")]
-use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 
 pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]

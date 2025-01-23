@@ -974,7 +974,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             signature_public_key_id: 0,
             signature: Default::default(),
         }
-            .into();
+        .into();
         let mut state_transition: StateTransition = batch_transition.into();
         state_transition.sign_external(
             identity_public_key,

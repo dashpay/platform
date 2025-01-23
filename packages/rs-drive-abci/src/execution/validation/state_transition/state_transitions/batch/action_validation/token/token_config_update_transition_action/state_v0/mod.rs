@@ -1,11 +1,12 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{InvalidGroupPositionError, NewTokensDestinationIdentityDoesNotExistError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError};
+use dpp::consensus::state::token::{InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::group::action_taker::{ActionGoal, ActionTaker};
 use dpp::prelude::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -89,53 +90,290 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
                 )),
             ));
         }
-        
+
         match self.update_token_configuration_item() {
             TokenConfigurationChangeItem::MaxSupply(Some(max_supply)) => {
                 // If we are setting a max supply we need to make sure it isn't less than the
                 // current supply of the token
-                let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(self.token_id().to_buffer(), block_info, transaction, platform_version)?;
+                let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(
+                    self.token_id().to_buffer(),
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?;
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
                 if let Some(token_total_supply) = token_total_supply {
                     if token_total_supply > *max_supply {
                         // We are trying to set a max supply smaller than the token total supply
                         return Ok(SimpleConsensusValidationResult::new_with_error(
-                            ConsensusError::StateError(StateError::TokenSettingMaxSupplyToLessThanCurrentSupplyError(
-                                TokenSettingMaxSupplyToLessThanCurrentSupplyError::new(
-                                    self.token_id(),
-                                    *max_supply,
-                                    token_total_supply,
+                            ConsensusError::StateError(
+                                StateError::TokenSettingMaxSupplyToLessThanCurrentSupplyError(
+                                    TokenSettingMaxSupplyToLessThanCurrentSupplyError::new(
+                                        self.token_id(),
+                                        *max_supply,
+                                        token_total_supply,
+                                    ),
                                 ),
-                            )),
+                            ),
                         ));
                     }
                 } else {
-                    return Err(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("token {} total supply not found", self.token_id())))));
+                    return Err(Error::Drive(drive::error::Error::Drive(
+                        DriveError::CorruptedDriveState(format!(
+                            "token {} total supply not found",
+                            self.token_id()
+                        )),
+                    )));
                 }
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(identity_id)) => {
                 // We need to make sure the identity exists
-                let (identity_balance, fee) = platform.drive.fetch_identity_balance_with_costs(identity_id.to_buffer(), block_info, true, transaction, platform_version)?;
+                let (identity_balance, fee) = platform.drive.fetch_identity_balance_with_costs(
+                    identity_id.to_buffer(),
+                    block_info,
+                    true,
+                    transaction,
+                    platform_version,
+                )?;
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
                 if identity_balance.is_none() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::NewTokensDestinationIdentityDoesNotExistError(
-                            NewTokensDestinationIdentityDoesNotExistError::new(
-                                *identity_id
+                        ConsensusError::StateError(
+                            StateError::NewTokensDestinationIdentityDoesNotExistError(
+                                NewTokensDestinationIdentityDoesNotExistError::new(*identity_id),
+                            ),
+                        ),
+                    ));
+                }
+            }
+            TokenConfigurationChangeItem::MainControlGroup(Some(control_group)) => {
+                if !self
+                    .data_contract_fetch_info()
+                    .contract
+                    .groups()
+                    .contains_key(control_group)
+                {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::InvalidGroupPositionError(
+                            InvalidGroupPositionError::new(
+                                self.data_contract_fetch_info()
+                                    .contract
+                                    .groups()
+                                    .keys()
+                                    .last()
+                                    .copied(),
+                                *control_group,
                             ),
                         )),
                     ));
                 }
             }
-            TokenConfigurationChangeItem::MainControlGroup(Some(control_group)) => {
-                if !self.data_contract_fetch_info().contract.groups().contains_key(control_group) {
+            TokenConfigurationChangeItem::ConventionsControlGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::ConventionsAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::MaxSupplyControlGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::MaxSupplyAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::ManualMintingAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::ManualBurning(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::ManualBurningAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::Freeze(AuthorizedActionTakers::Identity(identity_id))
+            | TokenConfigurationChangeItem::FreezeAdminGroup(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::Unfreeze(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::UnfreezeAdminGroup(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::DestroyFrozenFunds(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::EmergencyAction(AuthorizedActionTakers::Identity(
+                identity_id,
+            ))
+            | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            ) => {
+                let (identity_balance, fee) = platform.drive.fetch_identity_balance_with_costs(
+                    identity_id.to_buffer(),
+                    block_info,
+                    true,
+                    transaction,
+                    platform_version,
+                )?;
+                execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+                if identity_balance.is_none() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::InvalidGroupPositionError(
-                            InvalidGroupPositionError::new(
-                                self.data_contract_fetch_info().contract.groups().keys().last().copied().unwrap_or_default(),
-                                *control_group,
+                        ConsensusError::StateError(
+                            StateError::NewAuthorizedActionTakerIdentityDoesNotExistError(
+                                NewAuthorizedActionTakerIdentityDoesNotExistError::new(
+                                    *identity_id,
+                                ),
                             ),
-                        )),
+                        ),
+                    ));
+                }
+            }
+            TokenConfigurationChangeItem::ConventionsControlGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::ConventionsAdminGroup(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::MaxSupplyControlGroup(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::MaxSupplyAdminGroup(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::ManualMintingAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::ManualBurning(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::ManualBurningAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::Freeze(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::FreezeAdminGroup(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::Unfreeze(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::UnfreezeAdminGroup(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::DestroyFrozenFunds(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::EmergencyAction(AuthorizedActionTakers::Group(
+                group_contract_position,
+            ))
+            | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            ) => {
+                if !self
+                    .data_contract_fetch_info()
+                    .contract
+                    .groups()
+                    .contains_key(group_contract_position)
+                {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::NewAuthorizedActionTakerGroupDoesNotExistError(
+                                NewAuthorizedActionTakerGroupDoesNotExistError::new(
+                                    *group_contract_position,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            }
+            TokenConfigurationChangeItem::ConventionsControlGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::ConventionsAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::MaxSupplyControlGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::MaxSupplyAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::ManualMintingAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::ManualBurning(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::ManualBurningAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::Freeze(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::FreezeAdminGroup(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::Unfreeze(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::UnfreezeAdminGroup(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::DestroyFrozenFunds(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::EmergencyAction(AuthorizedActionTakers::MainGroup)
+            | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            ) => {
+                if token_configuration.main_control_group().is_none() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::NewAuthorizedActionTakerMainGroupNotSetError(
+                                NewAuthorizedActionTakerMainGroupNotSetError::new(),
+                            ),
+                        ),
                     ));
                 }
             }

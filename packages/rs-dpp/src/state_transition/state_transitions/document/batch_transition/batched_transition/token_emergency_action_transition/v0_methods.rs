@@ -72,14 +72,14 @@ impl TokenEmergencyActionTransition {
     pub fn calculate_action_id_with_fields(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
-        emergency_action: TokenEmergencyAction,
         identity_contract_nonce: IdentityNonce,
+        emergency_action: TokenEmergencyAction,
     ) -> Identifier {
         let mut bytes = b"action_token_emergency_action".to_vec();
         bytes.extend_from_slice(token_id);
         bytes.extend_from_slice(owner_id);
-        bytes.extend_from_slice(&[emergency_action as u8]);
         bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
+        bytes.extend_from_slice(&[emergency_action as u8]);
 
         hash_double(bytes).into()
     }

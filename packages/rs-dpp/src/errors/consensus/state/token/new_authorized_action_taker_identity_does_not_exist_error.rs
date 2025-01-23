@@ -9,13 +9,13 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("The specified new tokens destination identity {identity_id} does not exist")]
+#[error("The specified new authorized action taker identity {identity_id} does not exist")]
 #[platform_serialize(unversioned)]
-pub struct NewTokensDestinationIdentityDoesNotExistError {
+pub struct NewAuthorizedActionTakerIdentityDoesNotExistError {
     identity_id: Identifier,
 }
 
-impl NewTokensDestinationIdentityDoesNotExistError {
+impl NewAuthorizedActionTakerIdentityDoesNotExistError {
     pub fn new(identity_id: Identifier) -> Self {
         Self { identity_id }
     }
@@ -25,10 +25,8 @@ impl NewTokensDestinationIdentityDoesNotExistError {
     }
 }
 
-impl From<NewTokensDestinationIdentityDoesNotExistError> for ConsensusError {
-    fn from(err: NewTokensDestinationIdentityDoesNotExistError) -> Self {
-        Self::StateError(StateError::NewTokensDestinationIdentityDoesNotExistError(
-            err,
-        ))
+impl From<NewAuthorizedActionTakerIdentityDoesNotExistError> for ConsensusError {
+    fn from(err: NewAuthorizedActionTakerIdentityDoesNotExistError) -> Self {
+        Self::StateError(StateError::NewAuthorizedActionTakerIdentityDoesNotExistError(err))
     }
 }

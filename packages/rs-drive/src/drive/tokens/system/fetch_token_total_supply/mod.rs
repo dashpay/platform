@@ -5,12 +5,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     /// Fetches token's total supply
@@ -50,7 +50,12 @@ impl Drive {
             .fetch
             .token_total_supply
         {
-            0 => self.fetch_token_total_supply_with_cost_v0(token_id, block_info, transaction, platform_version),
+            0 => self.fetch_token_total_supply_with_cost_v0(
+                token_id,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_token_total_supply".to_string(),
                 known_versions: vec![0],

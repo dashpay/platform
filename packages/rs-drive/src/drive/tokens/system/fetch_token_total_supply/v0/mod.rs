@@ -5,12 +5,12 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::TokenAmount;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     pub(super) fn fetch_token_total_supply_v0(

@@ -1,28 +1,31 @@
+use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-use crate::consensus::state::state_error::StateError;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Invalid group position {}, max {}",
-    invalid_group_position,
-    max_group_position
+    "Invalid group position: {invalid_group_position}. {max_group_message}",
+    max_group_message = if let Some(max) = .max_group_position {
+        format!("The maximum allowed group position is {}", max)
+    } else {
+        "No maximum group position limit is set.".to_string()
+    }
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidGroupPositionError {
-    max_group_position: GroupContractPosition,
+    max_group_position: Option<GroupContractPosition>,
     invalid_group_position: GroupContractPosition,
 }
 
 impl InvalidGroupPositionError {
     pub fn new(
-        max_group_position: GroupContractPosition,
+        max_group_position: Option<GroupContractPosition>,
         invalid_group_position: GroupContractPosition,
     ) -> Self {
         Self {
@@ -31,7 +34,7 @@ impl InvalidGroupPositionError {
         }
     }
 
-    pub fn max_group_position(&self) -> GroupContractPosition {
+    pub fn max_group_position(&self) -> Option<GroupContractPosition> {
         self.max_group_position
     }
 
