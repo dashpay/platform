@@ -13,13 +13,6 @@ pub type CoreGrpcClient = CoreClient<Channel>;
 // #[derive(Default, Clone, Debug)]
 pub type TokioBackonSleeper = backon::TokioSleeper;
 
-// impl backon::Sleeper for TonicBackonSleeper {
-//     type Sleep = <backon::TokioSleeper as backon::Sleeper>::Sleep;
-//     fn sleep(&self, dur: Duration) -> Self::Sleep {
-//         self.0.sleep(dur)
-//     }
-// }
-
 /// Create channel (connection) for gRPC transport.
 pub fn create_channel(
     uri: Uri,

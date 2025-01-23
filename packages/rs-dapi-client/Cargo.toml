@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 
-default = []
+default = ["offline-testing"]
 
 mocks = [
     "dep:sha2",
@@ -18,7 +18,7 @@ mocks = [
 # dump requests and responses to file
 dump = ["mocks"]
 # skip tests that require connection to the platform; enabled by default
-online-testing = []
+offline-testing = []
 
 # non-wasm dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
