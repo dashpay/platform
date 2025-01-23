@@ -6,7 +6,7 @@ use dashcore::blockdata::opcodes;
 use std::fmt;
 use std::ops::Deref;
 
-use dashcore::{ScriptBuf as DashcoreScript, ScriptBuf};
+use dashcore::ScriptBuf;
 use platform_value::string_encoding::{self, Encoding};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -18,11 +18,11 @@ use crate::errors::ProtocolError;
 use bincode::de::read::Reader;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
-// #[ferment_macro::export]
-pub struct CoreScript(pub DashcoreScript);
+#[ferment_macro::export]
+pub struct CoreScript(pub ScriptBuf);
 
 impl CoreScript {
-    pub fn new(script: DashcoreScript) -> Self {
+    pub fn new(script: ScriptBuf) -> Self {
         CoreScript(script)
     }
 
@@ -78,7 +78,7 @@ impl From<Vec<u8>> for CoreScript {
 }
 
 impl Deref for CoreScript {
-    type Target = DashcoreScript;
+    type Target = ScriptBuf;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -131,7 +131,7 @@ impl<'de> BorrowDecode<'de> for CoreScript {
         }
 
         // Convert Vec<u8> to Box<[u8]> and create a DashCoreScript instance
-        let dash_core_script = DashcoreScript(bytes);
+        let dash_core_script = ScriptBuf(bytes);
 
         // Create a CoreScript instance using the decoded DashCoreScript
         Ok(CoreScript(dash_core_script))
