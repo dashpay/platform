@@ -1,19 +1,14 @@
 use dash_sdk::dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::{IdentityPublicKey, KeyID};
-use dash_sdk::dpp::metadata::Metadata;
 use dash_sdk::dpp::platform_value::ReplacementType;
 use dash_sdk::dpp::serialization::PlatformDeserializable;
-use dash_sdk::dpp::serialization::PlatformSerializable;
 use dash_sdk::dpp::serialization::ValueConvertible;
 
-use crate::error::{to_js_error, WasmError};
+use crate::error::to_js_error;
 use dash_sdk::dashcore_rpc::dashcore::hashes::serde::Serialize;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::{DataContract, Identity};
-use dash_sdk::Error;
 use platform_value::string_encoding::Encoding;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;

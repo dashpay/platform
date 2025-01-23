@@ -95,6 +95,9 @@ offline-testing = ["mocks"]
 # Requires configuration of Dash Platform connectivity.
 # See [README.md] for more details.
 #
+# Without this feature enabled, tests will use test vectors from `tests/vectors/` instead of connecting to live 
+# Dash Platform.
+#
 # If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 network-testing = ["mocks"]
 

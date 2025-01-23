@@ -13,15 +13,15 @@ use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
 use dash_sdk::sdk::AddressList;
-use dash_sdk::{Error, Sdk, SdkBuilder};
+use dash_sdk::{Sdk, SdkBuilder};
 use platform_value::platform_value;
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsError;
-use web_sys::{console, js_sys, window};
+use web_sys::{console, js_sys};
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -70,7 +70,7 @@ impl WasmSdkBuilder {
     }
 
     pub fn new_testnet() -> Self {
-        WasmSdkBuilder(SdkBuilder::new_testnet())
+        WasmSdkBuilder(SdkBuilder::new_testnet()).with_context_provider(WasmContext {})
     }
 
     pub fn build(self) -> Result<WasmSdk, JsError> {
@@ -113,6 +113,8 @@ pub async fn data_contract_fetch(
 
 #[wasm_bindgen]
 pub async fn identity_put(sdk: &WasmSdk) {
+    // This is just a mock implementation to show how to use the SDK and ensure proper linking
+    // of all required dependencies. This function is not supposed to work.
     let id = Identifier::from_bytes(&[0; 32]).expect("create identifier");
 
     let identity = Identity::V0(IdentityV0 {
@@ -148,7 +150,7 @@ pub async fn epoch_testing() {
         .build()
         .expect("build sdk");
 
-    let ei = ExtendedEpochInfo::fetch(&sdk, 0)
+    let _ei = ExtendedEpochInfo::fetch(&sdk, 0)
         .await
         .expect("fetch extended epoch info")
         .expect("extended epoch info not found");
@@ -163,7 +165,7 @@ pub async fn docs_testing(sdk: &WasmSdk) {
         .create(id, 1, platform_value!({}), None, None)
         .expect("create data contract");
 
-    let dc = DataContract::fetch(&sdk, id)
+    let dc = DataContract::fetch(sdk, id)
         .await
         .expect("fetch data contract")
         .expect("data contract not found");
@@ -201,6 +203,6 @@ impl Signer for MockSigner {
         _identity_public_key: &dash_sdk::platform::IdentityPublicKey,
         _data: &[u8],
     ) -> Result<dash_sdk::dpp::platform_value::BinaryData, dash_sdk::dpp::ProtocolError> {
-        todo!()
+        todo!("signature creation is not implemented due to lack of dash platform wallet support in wasm")
     }
 }

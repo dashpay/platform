@@ -1,8 +1,6 @@
 use dash_sdk::dpp::dashcore::Network;
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -129,6 +127,7 @@ pub async fn verify_data_contract() -> Option<DataContractWasm> {
 
 #[wasm_bindgen]
 pub async fn verify_documents() -> Vec<DocumentWasm> {
+    // TODO: this is a dummy implementation, replace with actual verification
     let data_contract =
         DataContract::versioned_deserialize(&[13, 13, 13], false, PlatformVersion::latest())
             .expect("create data contract");

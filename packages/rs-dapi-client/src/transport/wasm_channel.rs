@@ -101,6 +101,10 @@ impl backon::Sleeper for WasmBackonSleeper {
 ///
 /// This is a workaround using oneshot channel to synchronize.
 /// It spawns a local task that sends the result of the future to the channel.
+///
+/// ## Panics
+///
+/// It panics if the receiver is dropped (e.g. `f` panics or is cancelled) before the sender sends the result.
 fn into_send<'a, F: Future + 'static>(f: F) -> BoxFuture<'a, F::Output>
 where
     F::Output: Send,
@@ -109,6 +113,7 @@ where
     spawn_local(async move {
         tx.send(f.await).ok();
     });
+
     rx.unwrap_or_else(|e| panic!("Failed to receive result: {:?}", e))
         .boxed()
 }

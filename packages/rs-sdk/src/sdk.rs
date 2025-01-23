@@ -838,10 +838,9 @@ impl SdkBuilder {
     ///
     /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
-        // TODO this is just some test mainnet node, we need to implement proper lookup of nodes
-        let addresses = AddressList::from_str("https://34.223.102.43:443")
-            .expect("hardcoded mainnet addresses must be valid");
-        Self::new(addresses).with_network(Network::Dash)
+        unimplemented!(
+            "Mainnet address list not implemented yet. Use new() and provide address list."
+        )
     }
 
     /// Configure network type.

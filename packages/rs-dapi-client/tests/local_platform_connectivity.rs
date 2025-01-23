@@ -1,4 +1,4 @@
-#[cfg(not(feature = "offline-testing"))]
+#[cfg(feature = "online-testing")]
 mod tests {
     use dapi_grpc::{
         platform::v0::{

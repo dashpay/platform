@@ -4,8 +4,8 @@ version = "1.8.0"
 edition = "2021"
 
 [features]
-# TODO we should not enable deps features in default
-default = ["mocks", "offline-testing"]
+
+default = []
 
 mocks = [
     "dep:sha2",
@@ -18,7 +18,7 @@ mocks = [
 # dump requests and responses to file
 dump = ["mocks"]
 # skip tests that require connection to the platform; enabled by default
-offline-testing = []
+online-testing = []
 
 # non-wasm dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
