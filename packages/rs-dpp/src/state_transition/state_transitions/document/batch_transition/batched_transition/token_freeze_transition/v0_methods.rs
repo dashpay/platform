@@ -71,14 +71,14 @@ impl TokenFreezeTransition {
     pub fn calculate_action_id_with_fields(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
-        target_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
+        target_id: &[u8; 32],
     ) -> Identifier {
         let mut bytes = b"action_token_freeze".to_vec();
         bytes.extend_from_slice(token_id);
         bytes.extend_from_slice(owner_id);
-        bytes.extend_from_slice(target_id);
         bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
+        bytes.extend_from_slice(target_id);
 
         hash_double(bytes).into()
     }

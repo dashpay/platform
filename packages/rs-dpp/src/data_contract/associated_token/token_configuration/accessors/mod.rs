@@ -56,7 +56,7 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns the maximum supply.
-    fn max_supply(&self) -> Option<u64> {
+    fn max_supply(&self) -> Option<TokenAmount> {
         match self {
             TokenConfiguration::V0(v0) => v0.max_supply(),
         }

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::group::action_event::GroupActionEvent;
@@ -78,6 +79,7 @@ impl DriveHighLevelBatchOperationConverter for TokenConfigUpdateTransitionAction
 
                 if self.base().perform_action() {
                     let mut contract = self.data_contract_fetch_info().contract.clone();
+                    contract.increment_version();
                     let mut token_configuration = self.base().token_configuration()?.clone();
                     token_configuration.apply_token_configuration_item(
                         self.update_token_configuration_item().clone(),

@@ -5,7 +5,7 @@ use crate::state_transition::batch_transition::token_base_transition::token_base
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
-use crate::util::hash::hash_double;
+use crate::state_transition::batch_transition::TokenConfigUpdateTransition;
 
 impl TokenBaseTransitionAccessors for TokenConfigUpdateTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
@@ -76,12 +76,11 @@ impl AllowedAsMultiPartyAction for TokenConfigUpdateTransitionV0 {
             ..
         } = self;
 
-        let mut bytes = b"action_token_config_update".to_vec();
-        bytes.extend_from_slice(base.token_id().as_bytes());
-        bytes.extend_from_slice(owner_id.as_bytes());
-        bytes.extend_from_slice(&base.identity_contract_nonce().to_be_bytes());
-        bytes.extend_from_slice(&[update_token_configuration_item.u8_item_index()]);
-
-        hash_double(bytes).into()
+        TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            base.token_id().as_bytes(),
+            owner_id.as_bytes(),
+            base.identity_contract_nonce(),
+            update_token_configuration_item.u8_item_index(),
+        )
     }
 }

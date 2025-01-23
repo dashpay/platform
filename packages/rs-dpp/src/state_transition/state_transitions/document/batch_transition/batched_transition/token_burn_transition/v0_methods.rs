@@ -1,9 +1,12 @@
 use platform_value::Identifier;
+use crate::balances::credits::TokenAmount;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransition;
 use crate::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
+use crate::util::hash::hash_double;
 
 impl TokenBaseTransitionAccessors for TokenBurnTransition {
     fn base(&self) -> &TokenBaseTransition {
@@ -62,5 +65,22 @@ impl AllowedAsMultiPartyAction for TokenBurnTransition {
         match self {
             TokenBurnTransition::V0(v0) => v0.calculate_action_id(owner_id),
         }
+    }
+}
+
+impl TokenBurnTransition {
+    pub fn calculate_action_id_with_fields(
+        token_id: &[u8; 32],
+        owner_id: &[u8; 32],
+        identity_contract_nonce: IdentityNonce,
+        burn_amount: TokenAmount,
+    ) -> Identifier {
+        let mut bytes = b"action_token_burn".to_vec();
+        bytes.extend_from_slice(token_id);
+        bytes.extend_from_slice(owner_id);
+        bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
+        bytes.extend_from_slice(&burn_amount.to_be_bytes());
+
+        hash_double(bytes).into()
     }
 }

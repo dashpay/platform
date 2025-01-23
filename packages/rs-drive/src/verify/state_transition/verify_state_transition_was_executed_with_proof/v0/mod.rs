@@ -32,7 +32,7 @@ use dpp::state_transition::batch_transition::document_replace_transition::Docume
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods, TOKEN_HISTORY_ID_BYTES};
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
@@ -44,7 +44,6 @@ use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_m
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenBalanceAbsence, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
-use dpp::system_data_contracts::SystemDataContract;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -319,7 +318,7 @@ impl Drive {
                         let keeps_historical_document = token_config.keeps_history();
                         if keeps_historical_document {
                             let query = SingleDocumentDriveQuery {
-                                contract_id: SystemDataContract::TokenHistory.id().to_buffer(),
+                                contract_id: TOKEN_HISTORY_ID_BYTES,
                                 document_type_name,
                                 document_type_keeps_history: false,
                                 document_id: token_transition
