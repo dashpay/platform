@@ -1,6 +1,6 @@
 [package]
 name = "dash-sdk"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 edition = "2021"
 
 [dependencies]
@@ -24,7 +24,7 @@ thiserror = "1.0.64"
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+ciborium = { version = "0.2.2" }
 serde = { version = "1.0.197", default-features = false, features = [
   "rc",
 ], optional = true }

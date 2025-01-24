@@ -1,3 +1,62 @@
+## [1.8.0](https://github.com/dashpay/platform/compare/v1.7.1...v1.8.0) (2025-01-16)
+
+
+### Features
+
+* **platform:** distribute prefunded specialized balances after vote ([#2422](https://github.com/dashpay/platform/issues/2422))
+* **platform:** using new rust based bls library ([#2424](https://github.com/dashpay/platform/issues/2424))
+
+
+### Bug Fixes
+
+* **drive-abci:** document purchase on mutable document from different epoch had issue ([#2420](https://github.com/dashpay/platform/issues/2420))
+* **drive:** more than one key was returned when expecting only one result ([#2421](https://github.com/dashpay/platform/issues/2421))
+* **sdk:** failed to deserialize consensus error ([#2410](https://github.com/dashpay/platform/issues/2410))
+* try DriveDocumentQuery from DocumentQuery start field ([#2407](https://github.com/dashpay/platform/issues/2407))
+* **drive-abci** rebroadcasting should not only take first 2 quorums too ([#2425](https://github.com/dashpay/platform/issues/2425))
+* **dashmate:** local network starting issues ([#2394](https://github.com/dashpay/platform/issues/2394))
+* **dashmate:** some group commands fail with mtime not found ([#2400](https://github.com/dashpay/platform/issues/2400))
+* emergency hard fork to fix masternode voting ([#2397](https://github.com/dashpay/platform/issues/2397))
+
+
+### Tests
+
+* unify identity versioned cost coverage ([#2416](https://github.com/dashpay/platform/issues/2416))
+* **sdk:** generate test vectors using testnet ([#2381](https://github.com/dashpay/platform/issues/2381))
+
+
+### Miscellaneous Chores
+
+* **drive:** increase withdrawal limits to 2000 Dash per day ([#2287](https://github.com/dashpay/platform/issues/2287))
+* fix test suite configuration script ([#2402](https://github.com/dashpay/platform/issues/2402))
+* resolve NPM audit warnings ([#2417](https://github.com/dashpay/platform/issues/2417))
+* remove deprecated check_network_version.sh ([#2084](https://github.com/dashpay/platform/issues/2084))
+* update bls library ([#2424](https://github.com/dashpay/platform/issues/2424))
+
+
+### Code Refactoring
+
+* **platform:** replace bls library ([#2257](https://github.com/dashpay/platform/issues/2257))
+* **dpp:** using deprecated param to init wasm module ([#2399](https://github.com/dashpay/platform/issues/2399))
+
+
+### Performance Improvements
+
+* **dpp:** reduce JS binding size by 3x ([#2396](https://github.com/dashpay/platform/issues/2396))
+
+
+### Continuous Integration
+
+* fix artifact upload issue on release build ([#2389](https://github.com/dashpay/platform/issues/2389))
+
+
+### Build System
+
+* bump wasm-bindgen to 0.2.99 ([#2395](https://github.com/dashpay/platform/issues/2395))
+* update rust to 1.83 ([#2393](https://github.com/dashpay/platform/issues/2393))
+
+
+
 ## [1.8.0-rc.1](https://github.com/dashpay/platform/compare/v1.8.0-dev.2...v1.8.0-rc.1) (2025-01-15)
 
 

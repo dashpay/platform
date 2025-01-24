@@ -738,7 +738,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "toml",
 ]
@@ -760,29 +760,14 @@ dependencies = [
 
 [[package]]
 name = "ciborium"
-version = "0.2.0"
-source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
-dependencies = [
- "ciborium-io 0.2.0",
- "ciborium-ll 0.2.0",
- "serde",
-]
-
-[[package]]
-name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
 dependencies = [
- "ciborium-io 0.2.2",
- "ciborium-ll 0.2.2",
+ "ciborium-io",
+ "ciborium-ll",
  "serde",
 ]
-
-[[package]]
-name = "ciborium-io"
-version = "0.2.0"
-source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
 
 [[package]]
 name = "ciborium-io"
@@ -792,21 +777,12 @@ checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
 
 [[package]]
 name = "ciborium-ll"
-version = "0.2.0"
-source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
-dependencies = [
- "ciborium-io 0.2.0",
- "half 1.8.3",
-]
-
-[[package]]
-name = "ciborium-ll"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
 dependencies = [
- "ciborium-io 0.2.2",
- "half 2.4.1",
+ "ciborium-io",
+ "half",
 ]
 
 [[package]]
@@ -1011,7 +987,7 @@ checksum = "f2b12d017a929603d80db1831cd3a24082f8137ce19c69e6447f54f5fc8d692f"
 dependencies = [
  "anes",
  "cast",
- "ciborium 0.2.2",
+ "ciborium",
  "clap",
  "criterion-plot",
  "is-terminal",
@@ -1131,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1147,7 +1123,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "dapi-grpc",
  "heck 0.5.0",
@@ -1192,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1201,7 +1177,7 @@ dependencies = [
  "base64 0.22.1",
  "bip37-bloom-filter",
  "chrono",
- "ciborium 0.2.0",
+ "ciborium",
  "clap",
  "dapi-grpc",
  "dapi-grpc-macros",
@@ -1298,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1308,7 +1284,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1434,7 +1410,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1444,7 +1420,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1454,7 +1430,7 @@ dependencies = [
  "bs58",
  "byteorder",
  "chrono",
- "ciborium 0.2.0",
+ "ciborium",
  "dashcore",
  "data-contracts",
  "derive_more",
@@ -1494,7 +1470,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1503,7 +1479,7 @@ dependencies = [
  "bs58",
  "byteorder",
  "chrono",
- "ciborium 0.2.0",
+ "ciborium",
  "criterion",
  "derive_more",
  "dpp",
@@ -1535,7 +1511,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1545,7 +1521,7 @@ dependencies = [
  "bls-signatures",
  "bs58",
  "chrono",
- "ciborium 0.2.0",
+ "ciborium",
  "clap",
  "console-subscriber",
  "dapi-grpc",
@@ -1590,7 +1566,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1812,7 +1788,7 @@ checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2247,12 +2223,6 @@ dependencies = [
 
 [[package]]
 name = "half"
-version = "1.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
-
-[[package]]
-name = "half"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dd08c532ae367adf81c312a4580bc67f1d0fe8bc9c460520283f4c0ff277888"
@@ -2397,11 +2367,11 @@ dependencies = [
 
 [[package]]
 name = "home"
-version = "0.5.9"
+version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3d1354bf6b7235cb4a0576c2619fd4ed18183f689b12b006a0ee7329eeff9a5"
+checksum = "589533453244b0995c858700322199b2becb13b627df2851f64a2775d024abcf"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2750,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -2932,7 +2902,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3537,7 +3507,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3545,7 +3515,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3555,12 +3525,12 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
  "bs58",
- "ciborium 0.2.0",
+ "ciborium",
  "hex",
  "indexmap 2.7.0",
  "lazy_static",
@@ -3576,7 +3546,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "quote",
  "syn 2.0.96",
@@ -3584,7 +3554,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3595,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4090,7 +4060,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "backon",
  "chrono",
@@ -4589,7 +4559,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4674,7 +4644,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "bincode",
  "dpp",
@@ -5562,7 +5532,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -5654,7 +5624,7 @@ checksum = "943aab3fdaaa029a6e0271b35ea10b72b943135afe9bffca82384098ad0e06a6"
 
 [[package]]
 name = "wasm-dpp"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5890,7 +5860,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.8.0-rc.2"
+version = "1.8.0"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",

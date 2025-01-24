@@ -222,7 +222,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .methods
             .max_size
         {
-            0 => Ok(self.max_size_v0()),
+            0 => self.max_size_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "max_size".to_string(),
                 known_versions: vec![0],
@@ -239,7 +239,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .methods
             .estimated_size
         {
-            0 => Ok(self.estimated_size_v0()),
+            0 => self.estimated_size_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "estimated_size".to_string(),
                 known_versions: vec![0],
