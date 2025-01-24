@@ -71,8 +71,8 @@ impl AllowedAsMultiPartyAction for TokenUnfreezeTransitionV0 {
         TokenUnfreezeTransition::calculate_action_id_with_fields(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
-            frozen_identity_id.as_bytes(),
             base.identity_contract_nonce(),
+            frozen_identity_id.as_bytes(),
         )
     }
 }

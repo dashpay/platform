@@ -1,6 +1,7 @@
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::{
@@ -10,6 +11,7 @@ use crate::prelude::{
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 pub type TokenEventPublicNote = Option<String>;
@@ -20,6 +22,7 @@ pub type TokenEventPersonalEncryptedNote = Option<(
     Vec<u8>,
 )>;
 use crate::state_transition::batch_transition::token_transfer_transition::SharedEncryptedNote;
+use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::ProtocolError;
 
@@ -44,6 +47,7 @@ pub enum TokenEvent {
         TokenAmount,
     ),
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
+    ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
 }
 
 impl TokenEvent {
@@ -56,6 +60,7 @@ impl TokenEvent {
             TokenEvent::DestroyFrozenFunds(_, _, _) => "destroyFrozenFunds",
             TokenEvent::Transfer(_, _, _, _, _) => "transfer",
             TokenEvent::EmergencyAction(_, _) => "emergencyAction",
+            TokenEvent::ConfigUpdate(_, _) => "configUpdate",
         }
     }
 
@@ -73,6 +78,7 @@ impl TokenEvent {
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
         block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         let document_id = Document::generate_document_id_v0(
             &token_history_contract.id(),
@@ -176,6 +182,25 @@ impl TokenEvent {
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
                     ("action".to_string(), (action as u8).into()),
+                ]);
+                if let Some(note) = public_note {
+                    properties.insert("note".to_string(), note.into());
+                }
+                properties
+            }
+            TokenEvent::ConfigUpdate(configuration_change_item, public_note) => {
+                let mut properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    (
+                        "changeItemType".to_string(),
+                        configuration_change_item.u8_item_index().into(),
+                    ),
+                    (
+                        "changeItem".to_string(),
+                        configuration_change_item
+                            .serialize_consume_to_bytes_with_platform_version(platform_version)?
+                            .into(),
+                    ),
                 ]);
                 if let Some(note) = public_note {
                     properties.insert("note".to_string(), note.into());

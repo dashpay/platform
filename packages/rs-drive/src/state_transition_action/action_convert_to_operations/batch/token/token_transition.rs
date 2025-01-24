@@ -7,6 +7,7 @@ use dpp::prelude::Identifier;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::version::PlatformVersion;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::TokenBurnTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::TokenConfigUpdateTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::TokenFreezeTransitionActionAccessorsV0;
@@ -51,6 +52,8 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
                     platform_version,
                 )
             }
+            TokenTransitionAction::ConfigUpdateAction(token_config_update) => token_config_update
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
         }
     }
 }
@@ -100,6 +103,10 @@ impl TokenTransitionAction {
                     destroy_action.public_note().cloned(),
                 )
             }
+            TokenTransitionAction::ConfigUpdateAction(config_update) => TokenEvent::ConfigUpdate(
+                config_update.update_token_configuration_item().clone(),
+                config_update.public_note().cloned(),
+            ),
         }
     }
 }

@@ -1,7 +1,14 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
+#[cfg(feature = "state-transition-signing")]
+use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+#[cfg(feature = "state-transition-signing")]
 use crate::group::GroupStateTransitionInfoStatus;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::{
     DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
     SenderKeyIndex, UserFeeIncrease,
@@ -10,11 +17,17 @@ use crate::state_transition::batch_transition::accessors::DocumentsBatchTransiti
 use crate::state_transition::batch_transition::token_transfer_transition::{
     PrivateEncryptedNote, SharedEncryptedNote,
 };
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0 {
@@ -151,6 +164,25 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
         delete_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_config_update_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        update_token_configuration_item: TokenConfigurationChangeItem,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        config_update_feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 }

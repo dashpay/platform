@@ -7,7 +7,6 @@ mod add_transaction_history_operations;
 pub mod apply_status;
 
 /// Manages operations related to balance handling.
-#[cfg(any(feature = "server", feature = "verify"))]
 pub mod balance;
 
 /// Implements functionality for burning tokens.
@@ -23,7 +22,6 @@ pub mod estimated_costs;
 pub mod freeze;
 
 /// Identity token info module, like if someone is frozen
-#[cfg(any(feature = "server", feature = "verify"))]
 pub mod info;
 
 /// Implements minting operations for creating new tokens.

@@ -8076,6 +8076,34 @@ export namespace GetGroupActionsResponse {
       export const ActionType: ActionTypeMap;
     }
 
+    export class TokenConfigUpdateEvent extends jspb.Message {
+      getTokenConfigUpdateItem(): Uint8Array | string;
+      getTokenConfigUpdateItem_asU8(): Uint8Array;
+      getTokenConfigUpdateItem_asB64(): string;
+      setTokenConfigUpdateItem(value: Uint8Array | string): void;
+
+      hasPublicNote(): boolean;
+      clearPublicNote(): void;
+      getPublicNote(): string;
+      setPublicNote(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): TokenConfigUpdateEvent.AsObject;
+      static toObject(includeInstance: boolean, msg: TokenConfigUpdateEvent): TokenConfigUpdateEvent.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: TokenConfigUpdateEvent, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): TokenConfigUpdateEvent;
+      static deserializeBinaryFromReader(message: TokenConfigUpdateEvent, reader: jspb.BinaryReader): TokenConfigUpdateEvent;
+    }
+
+    export namespace TokenConfigUpdateEvent {
+      export type AsObject = {
+        tokenConfigUpdateItem: Uint8Array | string,
+        publicNote: string,
+      }
+    }
+
     export class GroupActionEvent extends jspb.Message {
       hasTokenEvent(): boolean;
       clearTokenEvent(): void;
@@ -8254,6 +8282,11 @@ export namespace GetGroupActionsResponse {
       getEmergencyAction(): GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent | undefined;
       setEmergencyAction(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent): void;
 
+      hasTokenConfigUpdate(): boolean;
+      clearTokenConfigUpdate(): void;
+      getTokenConfigUpdate(): GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEvent | undefined;
+      setTokenConfigUpdate(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEvent): void;
+
       getTypeCase(): TokenEvent.TypeCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): TokenEvent.AsObject;
@@ -8274,6 +8307,7 @@ export namespace GetGroupActionsResponse {
         destroyFrozenFunds?: GetGroupActionsResponse.GetGroupActionsResponseV0.DestroyFrozenFundsEvent.AsObject,
         transfer?: GetGroupActionsResponse.GetGroupActionsResponseV0.TransferEvent.AsObject,
         emergencyAction?: GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.AsObject,
+        tokenConfigUpdate?: GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEvent.AsObject,
       }
 
       export enum TypeCase {
@@ -8285,6 +8319,7 @@ export namespace GetGroupActionsResponse {
         DESTROY_FROZEN_FUNDS = 5,
         TRANSFER = 6,
         EMERGENCY_ACTION = 7,
+        TOKEN_CONFIG_UPDATE = 8,
       }
     }
 

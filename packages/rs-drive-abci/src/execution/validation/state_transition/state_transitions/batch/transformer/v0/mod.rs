@@ -55,6 +55,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::TokenBurnTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::TokenConfigUpdateTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::TokenEmergencyActionTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::TokenFreezeTransitionAction;
@@ -570,6 +571,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             }
             TokenTransition::EmergencyAction(emergency_action) => {
                 let (batched_action, fee_result) = TokenEmergencyActionTransitionAction::try_from_borrowed_token_emergency_action_transition_with_contract_lookup(drive, owner_id, emergency_action, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::ConfigUpdate(token_config_update) => {
+                let (batched_action, fee_result) = TokenConfigUpdateTransitionAction::try_from_borrowed_token_config_update_transition_with_contract_lookup(drive, owner_id, token_config_update, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 

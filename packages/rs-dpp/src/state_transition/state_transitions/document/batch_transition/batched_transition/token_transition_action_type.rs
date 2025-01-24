@@ -12,6 +12,7 @@ pub enum TokenTransitionActionType {
     Unfreeze,
     DestroyFrozenFunds,
     EmergencyAction,
+    ConfigUpdate,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -24,6 +25,7 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Unfreeze => "Unfreeze",
             TokenTransitionActionType::DestroyFrozenFunds => "DestroyFrozenFunds",
             TokenTransitionActionType::EmergencyAction => "EmergencyAction",
+            TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
         };
         write!(f, "{}", action_str)
     }
@@ -43,6 +45,7 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::Unfreeze(_) => TokenTransitionActionType::Unfreeze,
             TokenTransition::DestroyFrozenFunds(_) => TokenTransitionActionType::DestroyFrozenFunds,
             TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
+            TokenTransition::ConfigUpdate(_) => TokenTransitionActionType::ConfigUpdate,
         }
     }
 }

@@ -1,8 +1,9 @@
 use crate::consensus::basic::data_contract::DataContractTokenConfigurationUpdateError;
+use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
-use crate::multi_identity_events::ActionTaker;
+use crate::group::action_taker::{ActionGoal, ActionTaker};
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -13,24 +14,35 @@ impl TokenConfiguration {
         &self,
         new_config: &TokenConfiguration,
         contract_owner_id: &Identifier,
-        main_group: Option<&Group>,
         groups: &BTreeMap<GroupContractPosition, Group>,
         action_taker: &ActionTaker,
+        goal: ActionGoal,
     ) -> SimpleConsensusValidationResult {
         let old = self.as_cow_v0();
         let new = new_config.as_cow_v0();
 
         // Check immutable fields: conventions
-        if old.conventions != new.conventions {
-            return SimpleConsensusValidationResult::new_with_error(
-                DataContractTokenConfigurationUpdateError::new(
-                    "update".to_string(),
-                    "conventions".to_string(),
-                    self.clone(),
-                    new_config.clone(),
-                )
-                .into(),
-            );
+        if old.conventions != new.conventions
+            || old.conventions_change_rules != new.conventions_change_rules
+        {
+            if !old.conventions_change_rules.can_change_to(
+                &new.conventions_change_rules,
+                contract_owner_id,
+                self.main_control_group(),
+                groups,
+                action_taker,
+                goal,
+            ) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "conventions or conventionsRules".to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
         }
 
         // Check immutable fields: base_supply
@@ -53,9 +65,10 @@ impl TokenConfiguration {
             if !old.max_supply_change_rules.can_change_to(
                 &new.max_supply_change_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -77,9 +90,10 @@ impl TokenConfiguration {
             if !old.new_tokens_destination_identity_rules.can_change_to(
                 &new.new_tokens_destination_identity_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -102,9 +116,10 @@ impl TokenConfiguration {
             if !old.minting_allow_choosing_destination_rules.can_change_to(
                 &new.minting_allow_choosing_destination_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -124,9 +139,10 @@ impl TokenConfiguration {
             if !old.manual_minting_rules.can_change_to(
                 &new.manual_minting_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -145,9 +161,10 @@ impl TokenConfiguration {
             if !old.manual_burning_rules.can_change_to(
                 &new.manual_burning_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -166,9 +183,10 @@ impl TokenConfiguration {
             if !old.freeze_rules.can_change_to(
                 &new.freeze_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -187,9 +205,10 @@ impl TokenConfiguration {
             if !old.unfreeze_rules.can_change_to(
                 &new.unfreeze_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -208,9 +227,10 @@ impl TokenConfiguration {
             if !old.destroy_frozen_funds_rules.can_change_to(
                 &new.destroy_frozen_funds_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -229,9 +249,10 @@ impl TokenConfiguration {
             if !old.emergency_action_rules.can_change_to(
                 &new.emergency_action_rules,
                 contract_owner_id,
-                main_group,
+                self.main_control_group(),
                 groups,
                 action_taker,
+                goal,
             ) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
@@ -249,7 +270,13 @@ impl TokenConfiguration {
         if old.main_control_group != new.main_control_group {
             if !old
                 .main_control_group_can_be_modified
-                .allowed_for_action_taker(contract_owner_id, main_group, groups, action_taker)
+                .allowed_for_action_taker(
+                    contract_owner_id,
+                    self.main_control_group(),
+                    groups,
+                    action_taker,
+                    goal,
+                )
             {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(

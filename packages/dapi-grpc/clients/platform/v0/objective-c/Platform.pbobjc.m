@@ -130,6 +130,7 @@ GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupA
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncryptedNote);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_SharedEncryptedNote);
+GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent);
@@ -17272,6 +17273,63 @@ BOOL GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent_Acti
   }
 }
 
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent
+
+@implementation GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent
+
+@dynamic tokenConfigUpdateItem;
+@dynamic hasPublicNote, publicNote;
+
+typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *tokenConfigUpdateItem;
+  NSString *publicNote;
+} GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "tokenConfigUpdateItem",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent_FieldNumber_TokenConfigUpdateItem,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent__storage_, tokenConfigUpdateItem),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "publicNote",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent_FieldNumber_PublicNote,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent__storage_, publicNote),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
 
 @implementation GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
@@ -17572,6 +17630,7 @@ void GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent_ClearTypeOn
 @dynamic destroyFrozenFunds;
 @dynamic transfer;
 @dynamic emergencyAction;
+@dynamic tokenConfigUpdate;
 
 typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_ {
   uint32_t _has_storage_[2];
@@ -17582,6 +17641,7 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
   GetGroupActionsResponse_GetGroupActionsResponseV0_DestroyFrozenFundsEvent *destroyFrozenFunds;
   GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent *transfer;
   GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent *emergencyAction;
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent *tokenConfigUpdate;
 } GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_;
 
 // This method is threadsafe because it is initially called
@@ -17650,6 +17710,15 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
         .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_EmergencyAction,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, emergencyAction),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "tokenConfigUpdate",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent),
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_TokenConfigUpdate,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, tokenConfigUpdate),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

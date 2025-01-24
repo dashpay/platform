@@ -1622,6 +1622,12 @@ message GetGroupActionsResponse {
       optional string public_note = 2; // Public note
     }
 
+    // Token config update event
+    message TokenConfigUpdateEvent {
+      bytes token_config_update_item = 1; // Token config update item
+      optional string public_note = 2; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -1661,6 +1667,7 @@ message GetGroupActionsResponse {
         DestroyFrozenFundsEvent destroy_frozen_funds = 5; // Destroy frozen funds
         TransferEvent transfer = 6;     // Transfer event details
         EmergencyActionEvent emergency_action = 7; // Emergency action details
+        TokenConfigUpdateEvent  token_config_update = 8; // Token configuration update details
       }
     }
 

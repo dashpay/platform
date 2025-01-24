@@ -11,9 +11,11 @@ use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
     DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
     NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
@@ -71,8 +73,8 @@ use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
-    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidGroupPositionError,
-    InvalidTokenIdError, InvalidTokenPositionError, TokenTransferToOurselfError,
+    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenIdError,
+    InvalidTokenPositionError, TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
@@ -437,7 +439,7 @@ pub enum BasicError {
     ContractHasNoTokensError(ContractHasNoTokensError),
 
     #[error(transparent)]
-    InvalidGroupPositionError(InvalidGroupPositionError),
+    GroupPositionDoesNotExistError(GroupPositionDoesNotExistError),
 
     #[error(transparent)]
     InvalidActionIdError(InvalidActionIdError),
@@ -450,6 +452,23 @@ pub enum BasicError {
 
     #[error(transparent)]
     GroupActionNotAllowedOnTransitionError(GroupActionNotAllowedOnTransitionError),
+
+    #[error(transparent)]
+    GroupExceedsMaxMembersError(GroupExceedsMaxMembersError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOfZeroError(GroupMemberHasPowerOfZeroError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOverLimitError(GroupMemberHasPowerOverLimitError),
+
+    #[error(transparent)]
+    GroupTotalPowerLessThanRequiredError(GroupTotalPowerLessThanRequiredError),
+
+    #[error(transparent)]
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(
+        GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

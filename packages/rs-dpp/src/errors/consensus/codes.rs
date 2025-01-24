@@ -103,6 +103,15 @@ impl ErrorWithCode for BasicError {
             Self::NonContiguousContractGroupPositionsError(_) => 10252,
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
 
+            // Group Errors: 10350-10399
+            Self::GroupPositionDoesNotExistError(_) => 10350,
+            Self::GroupActionNotAllowedOnTransitionError(_) => 10351,
+            Self::GroupTotalPowerLessThanRequiredError(_) => 10352,
+            Self::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_) => 10353,
+            Self::GroupExceedsMaxMembersError(_) => 10354,
+            Self::GroupMemberHasPowerOfZeroError(_) => 10355,
+            Self::GroupMemberHasPowerOverLimitError(_) => 10356,
+
             // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
@@ -127,12 +136,11 @@ impl ErrorWithCode for BasicError {
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
             Self::InvalidTokenPositionError(_) => 10451,
-            Self::InvalidGroupPositionError(_) => 10452,
-            Self::InvalidActionIdError(_) => 10453,
-            Self::ContractHasNoTokensError(_) => 10454,
-            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10455,
-            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10456,
-            Self::TokenTransferToOurselfError(_) => 10457,
+            Self::InvalidActionIdError(_) => 10452,
+            Self::ContractHasNoTokensError(_) => 10453,
+            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10454,
+            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10455,
+            Self::TokenTransferToOurselfError(_) => 10456,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -176,7 +184,6 @@ impl ErrorWithCode for BasicError {
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
-            Self::GroupActionNotAllowedOnTransitionError(_) => 10701,
         }
     }
 }
@@ -215,6 +222,8 @@ impl ErrorWithCode for StateError {
             Self::DataContractAlreadyPresentError { .. } => 40000,
             Self::DataContractIsReadonlyError { .. } => 40001,
             Self::DataContractConfigUpdateError { .. } => 40002,
+            Self::DataContractUpdatePermissionError(_) => 40003,
+            Self::DataContractUpdateActionNotAllowedError(_) => 40004,
 
             // Document Errors: 40100-40149
             Self::DocumentAlreadyPresentError { .. } => 40100,
@@ -238,6 +247,13 @@ impl ErrorWithCode for StateError {
             Self::UnauthorizedTokenActionError(_) => 40151,
             Self::IdentityTokenAccountFrozenError(_) => 40152,
             Self::IdentityTokenAccountNotFrozenError(_) => 40153,
+            Self::TokenSettingMaxSupplyToLessThanCurrentSupplyError(_) => 40154,
+            Self::TokenMintPastMaxSupplyError(_) => 40155,
+            Self::NewTokensDestinationIdentityDoesNotExistError(_) => 40156,
+            Self::NewAuthorizedActionTakerIdentityDoesNotExistError(_) => 40157,
+            Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40158,
+            Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
+            Self::InvalidGroupPositionError(_) => 40160,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -253,7 +269,6 @@ impl ErrorWithCode for StateError {
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
-            Self::DataContractUpdatePermissionError(_) => 40213,
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
             Self::RecipientIdentityDoesNotExistError(_) => 40216,

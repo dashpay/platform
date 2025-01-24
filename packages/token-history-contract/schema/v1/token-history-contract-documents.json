@@ -576,5 +576,76 @@
       "$createdAtBlockHeight"
     ],
     "additionalProperties": false
+  },
+  "configUpdate": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "changeItemType": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byChangeItemType",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "changeItemType": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "changeItemType": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The action we are performing",
+        "position": 1
+      },
+      "changeItem": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 1,
+        "description": "The change item in serialized form",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "changeItemType",
+      "changeItem",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
   }
 }

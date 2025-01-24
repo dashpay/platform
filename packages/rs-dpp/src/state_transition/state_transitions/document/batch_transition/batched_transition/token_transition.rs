@@ -3,7 +3,7 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use bincode::{Encode, Decode};
-use data_contracts::SystemDataContract;
+use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,7 +14,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -23,6 +23,7 @@ use crate::state_transition::batch_transition::token_base_transition::token_base
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
+use crate::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
 use crate::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use crate::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
@@ -30,6 +31,11 @@ use crate::state_transition::batch_transition::token_mint_transition::v0::v0_met
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use crate::tokens::token_event::TokenEvent;
+
+pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
+    45, 67, 89, 21, 34, 216, 145, 78, 156, 243, 17, 58, 202, 190, 13, 92, 61, 40, 122, 201, 84, 99,
+    187, 110, 233, 128, 63, 48, 172, 29, 210, 108,
+];
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(
@@ -57,6 +63,9 @@ pub enum TokenTransition {
 
     #[display("TokenEmergencyActionTransition({})", "_0")]
     EmergencyAction(TokenEmergencyActionTransition),
+
+    #[display("TokenConfigUpdateTransition({})", "_0")]
+    ConfigUpdate(TokenConfigUpdateTransition),
 }
 
 impl BatchTransitionResolversV0 for TokenTransition {
@@ -185,6 +194,7 @@ pub trait TokenTransitionV0Methods {
         owner_nonce: IdentityNonce,
         block_info: &BlockInfo,
         token_configuration: &TokenConfiguration,
+        platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
 }
 
@@ -198,6 +208,7 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Unfreeze(t) => t.base(),
             TokenTransition::DestroyFrozenFunds(t) => t.base(),
             TokenTransition::EmergencyAction(t) => t.base(),
+            TokenTransition::ConfigUpdate(t) => t.base(),
         }
     }
 
@@ -210,6 +221,7 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Unfreeze(t) => t.base_mut(),
             TokenTransition::DestroyFrozenFunds(t) => t.base_mut(),
             TokenTransition::EmergencyAction(t) => t.base_mut(),
+            TokenTransition::ConfigUpdate(t) => t.base_mut(),
         }
     }
 
@@ -226,6 +238,7 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Transfer(_) => None,
             TokenTransition::DestroyFrozenFunds(t) => Some(t.calculate_action_id(owner_id)),
             TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::ConfigUpdate(t) => Some(t.calculate_action_id(owner_id)),
         }
     }
 
@@ -236,7 +249,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::Freeze(_)
             | TokenTransition::Unfreeze(_)
             | TokenTransition::DestroyFrozenFunds(_)
-            | TokenTransition::EmergencyAction(_) => true,
+            | TokenTransition::EmergencyAction(_)
+            | TokenTransition::ConfigUpdate(_) => true,
             TokenTransition::Transfer(_) => false,
         }
     }
@@ -271,6 +285,7 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Unfreeze(_) => "unfreeze",
             TokenTransition::EmergencyAction(_) => "emergencyAction",
             TokenTransition::DestroyFrozenFunds(_) => "destroyFrozenFunds",
+            TokenTransition::ConfigUpdate(_) => "configUpdate",
         }
     }
 
@@ -290,7 +305,7 @@ impl TokenTransitionV0Methods for TokenTransition {
     ) -> Identifier {
         let name = self.historical_document_type_name();
         Document::generate_document_id_v0(
-            &SystemDataContract::TokenHistory.id(),
+            &(TOKEN_HISTORY_ID_BYTES.into()),
             &owner_id,
             name,
             owner_nonce.to_be_bytes().as_slice(),
@@ -306,6 +321,7 @@ impl TokenTransitionV0Methods for TokenTransition {
         owner_nonce: IdentityNonce,
         block_info: &BlockInfo,
         token_configuration: &TokenConfiguration,
+        platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         self.associated_token_event(token_configuration)?
             .build_historical_document_owned(
@@ -314,6 +330,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 owner_id,
                 owner_nonce,
                 block_info,
+                platform_version,
             )
     }
 
@@ -353,13 +370,17 @@ impl TokenTransitionV0Methods for TokenTransition {
                 emergency_action.emergency_action(),
                 emergency_action.public_note().cloned(),
             ),
-            TokenTransition::DestroyFrozenFunds(destroy) => {
+            TokenTransition::DestroyFrozenFunds(destroy_frozen_funds) => {
                 TokenEvent::DestroyFrozenFunds(
-                    destroy.frozen_identity_id(),
+                    destroy_frozen_funds.frozen_identity_id(),
                     TokenAmount::MAX, // we do not know how much will be destroyed
-                    destroy.public_note().cloned(),
+                    destroy_frozen_funds.public_note().cloned(),
                 )
             }
+            TokenTransition::ConfigUpdate(config_update) => TokenEvent::ConfigUpdate(
+                config_update.update_token_configuration_item().clone(),
+                config_update.public_note().cloned(),
+            ),
         })
     }
 }

@@ -17,6 +17,7 @@ pub use self::batched_transition::{
     document_delete_transition::DocumentDeleteTransition, document_replace_transition,
     document_replace_transition::DocumentReplaceTransition, token_base_transition,
     token_burn_transition, token_burn_transition::TokenBurnTransition,
+    token_config_update_transition, token_config_update_transition::TokenConfigUpdateTransition,
     token_destroy_frozen_funds_transition,
     token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition,
     token_emergency_action_transition,

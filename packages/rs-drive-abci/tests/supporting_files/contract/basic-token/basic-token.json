@@ -8,6 +8,7 @@
     "0": {
       "$format_version": "0",
       "conventions": {
+        "$format_version": "0",
         "decimals": 8
       },
       "baseSupply": 100000,

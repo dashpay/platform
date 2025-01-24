@@ -7,8 +7,8 @@ use dapi_grpc::platform::v0::get_group_actions_request::GetGroupActionsRequestV0
 use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{
     emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent,
     EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent,
-    PersonalEncryptedNote, SharedEncryptedNote, TokenEvent as TokenEventResponse, TransferEvent,
-    UnfreezeEvent,
+    PersonalEncryptedNote, SharedEncryptedNote, TokenConfigUpdateEvent,
+    TokenEvent as TokenEventResponse, TransferEvent, UnfreezeEvent,
 };
 use dapi_grpc::platform::v0::get_group_actions_response::{
     get_group_actions_response_v0, GetGroupActionsResponseV0,
@@ -19,6 +19,7 @@ use dpp::group::action_event;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::validation::ValidationResult;
@@ -128,9 +129,9 @@ impl<C> Platform<C> {
                     platform_version,
                 )?
                 .into_iter()
-                .map(|(action_id, group_action)| {
+                .filter_map(|(action_id, group_action)| {
                     // Convert the fetched GroupAction into a GroupActionEntry
-                    GroupActionEntry {
+                    Some(GroupActionEntry {
                         action_id: action_id.to_vec(),
                         event: Some(GroupActionEvent {
                             event_type: Some(match group_action {
@@ -222,11 +223,19 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
+                                        TokenEvent::ConfigUpdate(token_configuration_change_item, public_note) => {
+                                            group_action_event::EventType::TokenEvent(TokenEventResponse {
+                                                r#type: Some(token_event::Type::TokenConfigUpdate(TokenConfigUpdateEvent {
+                                                    token_config_update_item: token_configuration_change_item.serialize_consume_to_bytes_with_platform_version(platform_version).ok()?,
+                                                    public_note,
+                                                })),
+                                            })
+                                        }
                                     },
                                 },
                             }),
                         }),
-                    }
+                    })
                 })
                 .collect();
             GetGroupActionsResponseV0 {

@@ -241,27 +241,6 @@ macro_rules! call_errorable_method_identity_signed {
     };
 }
 
-// TODO unused macros below
-// macro_rules! call_static_method {
-//     ($state_transition:expr, $method:ident ) => {
-//         match $state_transition {
-//             StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
-//             StateTransition::DataContractUpdate(_) => DataContractUpdateTransition::$method(),
-//             StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
-//             StateTransition::IdentityCreate(_) => IdentityCreateTransition::$method(),
-//             StateTransition::IdentityTopUp(_) => IdentityTopUpTransition::$method(),
-//             StateTransition::IdentityCreditWithdrawal(_) => {
-//                 IdentityCreditWithdrawalTransition::$method()
-//             }
-//             StateTransition::IdentityUpdate(_) => IdentityUpdateTransition::$method(),
-//             StateTransition::IdentityCreditTransfer(_) => {
-//                 IdentityCreditTransferTransition::$method()
-//             }
-//             StateTransition::MasternodeVote(_) => MasternodeVote::$method(),
-//         }
-//     };
-// }
-
 #[derive(
     Debug,
     Clone,
@@ -378,6 +357,9 @@ impl StateTransition {
                         }
                         BatchedTransitionRef::Token(TokenTransition::EmergencyAction(_)) => {
                             "TokenEmergencyAction"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(_)) => {
+                            "TokenConfigUpdate"
                         }
                     };
                     document_transition_types.push(document_transition_name);
@@ -761,93 +743,3 @@ impl StateTransition {
             })
     }
 }
-//
-// impl StateTransition {
-//     fn signature_property_paths(&self) -> Vec<&'static str> {
-//         call_static_method!(self, signature_property_paths)
-//     }
-//
-//     fn identifiers_property_paths(&self) -> Vec<&'static str> {
-//         call_static_method!(self, identifiers_property_paths)
-//     }
-//
-//     fn binary_property_paths(&self) -> Vec<&'static str> {
-//         call_static_method!(self, binary_property_paths)
-//     }
-//
-//     pub fn get_owner_id(&self) -> &Identifier {
-//         call_method!(self, get_owner_id)
-//     }
-// }
-//
-// impl StateTransitionFieldTypes for StateTransition {
-//     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-//         if skip_signature {
-//             Ok(hash::hash_to_vec(self.signable_bytes()?))
-//         } else {
-//             Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(self)?))
-//         }
-//     }
-//
-//     #[cfg(feature = "state-transition-cbor-conversion")]
-//     fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
-//         call_method!(self, to_cbor_buffer, true)
-//     }
-//
-//     #[cfg(feature = "state-transition-json-conversion")]
-//     fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
-//         call_method!(self, to_json, skip_signature)
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_object(
-//         &self,
-//         skip_signature: bool,
-//     ) -> Result<platform_value::Value, crate::ProtocolError> {
-//         call_method!(self, to_object, skip_signature)
-//     }
-//
-//     fn signature_property_paths() -> Vec<&'static str> {
-//         panic!("Static call is not supported")
-//     }
-//
-//     fn identifiers_property_paths() -> Vec<&'static str> {
-//         panic!("Static call is not supported")
-//     }
-//
-//     fn binary_property_paths() -> Vec<&'static str> {
-//         panic!("Static call is not supported")
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-//         call_method!(self, to_cleaned_object, skip_signature)
-//     }
-// }
-//
-// impl StateTransitionLike for StateTransition {
-//     fn state_transition_protocol_version(&self) -> FeatureVersion {
-//         call_method!(self, state_transition_protocol_version)
-//     }
-//     /// returns the type of State Transition
-//     fn state_transition_type(&self) -> StateTransitionType {
-//         call_method!(self, state_transition_type)
-//     }
-//     /// returns the signature as a byte-array
-//     fn signature(&self) -> &BinaryData {
-//         call_method!(self, signature)
-//     }
-//
-//     /// set a new signature
-//     fn set_signature(&mut self, signature: BinaryData) {
-//         call_method!(self, set_signature, signature)
-//     }
-//
-//     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-//         call_method!(self, set_signature_bytes, signature)
-//     }
-//
-//     fn modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
-//         call_method!(self, modified_data_ids)
-//     }
-// }
