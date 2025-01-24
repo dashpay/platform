@@ -78,7 +78,8 @@ use crate::state_transition::batch_transition::token_emergency_action_transition
 use crate::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
-use crate::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote, TokenTransferTransitionV0};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]

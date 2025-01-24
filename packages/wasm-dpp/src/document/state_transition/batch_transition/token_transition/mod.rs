@@ -1,4 +1,5 @@
 mod burn;
+mod config;
 mod destory;
 mod emergency;
 mod freeze;
@@ -7,6 +8,7 @@ mod transfer;
 mod unfreeze;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
+use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destory::TokenDestroyFrozenFundsTransitionWasm;
 use crate::batch_transition::token_transition::emergency::TokenEmergencyActionTransitionWasm;
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
@@ -31,6 +33,7 @@ pub enum TokenTransitionType {
     Unfreeze,
     DestroyFrozenFunds,
     EmergencyAction,
+    ConfigUpdate,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -43,6 +46,7 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::Unfreeze(_) => TokenTransitionType::Unfreeze,
             TokenTransition::DestroyFrozenFunds(_) => TokenTransitionType::DestroyFrozenFunds,
             TokenTransition::EmergencyAction(_) => TokenTransitionType::EmergencyAction,
+            TokenTransition::ConfigUpdate(_) => TokenTransitionType::ConfigUpdate,
         }
     }
 }
@@ -104,6 +108,9 @@ impl TokenTransitionWasm {
             }
             TokenTransition::EmergencyAction(emergency_action) => {
                 TokenEmergencyActionTransitionWasm::from(emergency_action.clone()).into()
+            }
+            TokenTransition::ConfigUpdate(config_update) => {
+                TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
             }
         }
     }
