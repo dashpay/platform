@@ -15,7 +15,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 
 /// A builder to configure minting tokens.
-pub struct DestroyFrozenTokensBuilder<'a> {
+pub struct DestroyFrozenTokensStateTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
     actor_id: Identifier,
@@ -26,7 +26,7 @@ pub struct DestroyFrozenTokensBuilder<'a> {
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> DestroyFrozenTokensBuilder<'a> {
+impl<'a> DestroyFrozenTokensStateTransitionBuilder<'a> {
     /// Start building a mint tokens request for the provided DataContract.
     pub fn new(
         data_contract: &'a DataContract,

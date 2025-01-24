@@ -17,7 +17,7 @@ use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 
 /// A builder to configure minting tokens.
-pub struct TokenEmergencyActionBuilder<'a> {
+pub struct TokenEmergencyActionStateTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
     actor_id: Identifier,
@@ -28,7 +28,7 @@ pub struct TokenEmergencyActionBuilder<'a> {
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> TokenEmergencyActionBuilder<'a> {
+impl<'a> TokenEmergencyActionStateTransitionBuilder<'a> {
     /// Start building a mint tokens request for the provided DataContract.
     pub fn pause(
         data_contract: &'a DataContract,

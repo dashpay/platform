@@ -19,7 +19,7 @@ use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// A builder to configure minting tokens.
-pub struct TransferTokensBuilder<'a> {
+pub struct TransferTokensStateTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
     issuer_id: Identifier,
@@ -32,7 +32,7 @@ pub struct TransferTokensBuilder<'a> {
     user_fee_increase: Option<UserFeeIncrease>,
 }
 
-impl<'a> TransferTokensBuilder<'a> {
+impl<'a> TransferTokensStateTransitionBuilder<'a> {
     /// Start building a mint tokens request for the provided DataContract.
     pub fn new(
         data_contract: &'a DataContract,
