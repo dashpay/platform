@@ -330,6 +330,11 @@ where
             });
     }
 
+    tracing::info!(
+        platform_state = ?state,
+        "Platform state finalize_snapshot",
+    );
+
     let tx = app.platform().drive.grove.start_transaction();
     
     app.platform().store_platform_state(&state, Some(&tx), &PlatformVersion::latest())?;

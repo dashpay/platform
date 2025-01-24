@@ -22,6 +22,11 @@ where
 
     let platform_state = app.platform().state.load();
 
+    tracing::info!(
+        platform_state = ?platform_state,
+        "Platform state info"
+    );
+
     let last_block_height = platform_state.last_committed_block_height() as i64;
 
     // Verify that Platform State corresponds to Drive commited state
