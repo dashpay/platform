@@ -30,6 +30,8 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
 
     const requestV0 = new GetProofsRequestV0();
 
+    let dataContractsCache = {};
+
     if (stateTransition.isDocumentStateTransition()) {
       const {
         DocumentRequest,
@@ -60,21 +62,27 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
             case TokenTransitionType.Mint: {
               // Fetch data contract to determine correct recipient identity
               const dataContractId = batchedTransition.getDataContractId();
+              const dataContractIdString = dataContractId.toString();
 
-              const dataContractRequestV0 = new GetDataContractRequest.GetDataContractRequestV0({
-                id: dataContractId.toBuffer(),
-              });
+              if (!dataContractsCache[dataContractIdString]) {
+                const dataContractRequestV0 = new GetDataContractRequest.GetDataContractRequestV0({
+                  id: dataContractId.toBuffer(),
+                });
 
-              const dataContractRequest = new GetDataContractRequest();
-              dataContractRequest.setV0(dataContractRequestV0);
+                const dataContractRequest = new GetDataContractRequest();
+                dataContractRequest.setV0(dataContractRequestV0);
 
-              const dataContractResponse = await driveClient.getDataContract(dataContractRequest);
+                const dataContractResponse = await driveClient.getDataContract(dataContractRequest);
 
-              const dataContractBuffer = Buffer.from(
-                dataContractResponse.getV0().getDataContract_asU8(),
-              );
+                const dataContractBuffer = Buffer.from(
+                  dataContractResponse.getV0().getDataContract_asU8(),
+                );
 
-              const dataContract = await dpp.dataContract.createFromBuffer(dataContractBuffer);
+                dataContractsCache[dataContractIdString] = await dpp.dataContract
+                  .createFromBuffer(dataContractBuffer);
+              }
+
+              const dataContract = dataContractsCache[dataContractIdString];
 
               const tokenConfiguration = dataContract.getTokenConfiguration(
                 batchedTransition.getTokenContractPosition(),
