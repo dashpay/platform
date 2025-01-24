@@ -72,7 +72,7 @@ impl<'a> UnfreezeTokensStateTransitionBuilder<'a> {
         self
     }
 
-    pub async fn broadcast(
+    pub async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
@@ -110,6 +110,20 @@ impl<'a> UnfreezeTokensStateTransitionBuilder<'a> {
             None,
             None,
         )?;
+
+        Ok(state_transition)
+    }
+
+    pub async fn broadcast(
+        &self,
+        sdk: &Sdk,
+        identity_public_key: &IdentityPublicKey,
+        signer: &impl Signer,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, Error> {
+        let state_transition = self
+            .sign(sdk, identity_public_key, signer, platform_version)
+            .await?;
 
         state_transition.broadcast(sdk, self.settings).await?;
 

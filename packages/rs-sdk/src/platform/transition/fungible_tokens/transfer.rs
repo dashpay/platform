@@ -89,7 +89,7 @@ impl<'a> TransferTokensStateTransitionBuilder<'a> {
         self
     }
 
-    pub async fn broadcast(
+    pub async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
@@ -120,7 +120,7 @@ impl<'a> TransferTokensStateTransitionBuilder<'a> {
             self.public_note.clone(),
             self.shared_encrypted_note.clone(),
             self.private_encrypted_note.clone(),
-            &identity_public_key,
+            identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),
             signer,
@@ -129,6 +129,20 @@ impl<'a> TransferTokensStateTransitionBuilder<'a> {
             None,
             None,
         )?;
+
+        Ok(state_transition)
+    }
+
+    pub async fn broadcast(
+        &self,
+        sdk: &Sdk,
+        identity_public_key: &IdentityPublicKey,
+        signer: &impl Signer,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, Error> {
+        let state_transition = self
+            .sign(sdk, identity_public_key, signer, platform_version)
+            .await?;
 
         state_transition.broadcast(sdk, self.settings).await?;
 
