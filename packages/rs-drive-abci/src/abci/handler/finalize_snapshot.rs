@@ -1,7 +1,38 @@
-use tenderdash_abci::proto::abci as proto;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{PubkeyHash, QuorumHash};
+use dashcore_rpc::dashcore::blsful::Bls12381G2Impl;
+use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumListResult, MasternodeListDiff, MasternodeListItem, MasternodeType, QuorumType};
+use indexmap::IndexMap;
+use tenderdash_abci::proto::{abci as proto, ToMillis};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::tenderdash_nostd::types::LightBlock;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::{Epoch, EPOCH_0};
+use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use dpp::core_types::validator::v0::ValidatorV0;
+use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
+use dpp::core_types::validator_set::ValidatorSet;
+use dpp::dashcore::bls_sig_utils::BLSPublicKey;
+use dpp::dashcore::ProTxHash;
+use dpp::platform_value::Bytes32;
+use dpp::version::version::ProtocolVersion;
+use dpp::version::PlatformVersion;
+use crate::abci::AbciError;
 use crate::abci::app::{PlatformApplication};
 use crate::error::Error;
+use crate::error::execution::ExecutionError;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+use crate::platform_types::epoch_info::EpochInfo;
+use crate::platform_types::epoch_info::v0::EpochInfoV0;
+use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::v0::{PlatformStateForSavingV1, PlatformStateV0, PlatformStateV0Methods};
+use crate::platform_types::signature_verification_quorum_set::{SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving, ThresholdBlsPublicKey};
 use crate::rpc::core::CoreRPCLike;
+use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetForSaving::V1;
+use crate::platform_types::validator_set::v0::ValidatorSetMethodsV0;
 
 pub fn finalize_snapshot<A, C>(
     app: &A,
@@ -11,8 +42,291 @@ where
     A: PlatformApplication<C>,
     C: CoreRPCLike,
 {
-    //let mut new_state = PlatformState::v
-    //let x = app.platform().state.load();
-    let mut new_state = (*app.platform().state.load()).clone();
+    let config = &app.platform().config;
+
+    let snapshot_block = request
+        .snapshot_block
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Block".to_string())))?;
+
+    let snapshot_signed_header = snapshot_block
+        .signed_header
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Signed Header".to_string())))?;
+
+    let snapshot_header = snapshot_signed_header
+        .header
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Header".to_string())))?;
+
+    if snapshot_header.proposer_pro_tx_hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Proposer Tx Hash Size".to_string())));
+    }
+    let mut snapshot_proposer_pro_tx_hash_32 = [0u8; 32];
+    snapshot_proposer_pro_tx_hash_32.copy_from_slice(&snapshot_header.proposer_pro_tx_hash[..32]);
+
+    let snapshot_header_version = snapshot_header
+        .version
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Header Version".to_string())))?;
+
+    let snapshot_header_time = snapshot_header
+        .time
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Header Timestamp".to_string())))?;
+
+    let snapshot_block_time = snapshot_header_time
+        .to_millis()
+        .map_err(|_| Error::Abci(AbciError::BadRequest("Invalid Snapshot Header Timestamp".to_string())))?;
+
+    let snapshot_header_last_block_id = snapshot_header
+        .last_block_id
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Header Last BlockId".to_string())))?;
+
+    if snapshot_header_last_block_id.hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Header Last Block Hash Size".to_string())));
+    }
+    let mut snapshot_header_last_block_id_hash_32 = [0u8; 32];
+    snapshot_header_last_block_id_hash_32.copy_from_slice(&snapshot_header_last_block_id.hash[..32]);
+
+    if snapshot_header.validators_hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Header Validator Hash Size".to_string())));
+    }
+    let mut snapshot_header_validator_hash_32 = [0u8; 32];
+    snapshot_header_validator_hash_32.copy_from_slice(&snapshot_header.validators_hash[..32]);
+
+    if snapshot_header.next_validators_hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Header Next Validator Hash Size".to_string())));
+    }
+    let mut snapshot_header_next_validator_hash_32 = [0u8; 32];
+    snapshot_header_next_validator_hash_32.copy_from_slice(&snapshot_header.next_validators_hash[..32]);
+
+    let snapshot_commit = snapshot_signed_header
+        .commit
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Commit".to_string())))?;
+
+    let snapshot_commit_block_id = snapshot_commit
+        .block_id
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Commit".to_string())))?;
+
+    if snapshot_commit_block_id.hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Commit Block Hash Size".to_string())));
+    }
+    let mut snapshot_commit_block_hash_32 = [0u8; 32];
+    snapshot_commit_block_hash_32.copy_from_slice(&snapshot_commit_block_id.hash[..32]);
+
+    let snapshot_validator_set = snapshot_block
+        .validator_set
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Validator Set".to_string())))?;
+
+
+    let snapshot_validator_set_proposer = snapshot_validator_set
+        .proposer
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Proposer".to_string())))?;
+
+    let snapshot_validator_set_threshold_public_key = snapshot_validator_set
+        .threshold_public_key
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Threshold Public Key".to_string())))?;
+
+    let genesis_block = request
+        .genesis_block
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Genesis Block".to_string())))?;
+
+    let genesis_signed_header = genesis_block
+        .signed_header
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Genesis Signed Header".to_string())))?;
+
+    let genesis_header = snapshot_signed_header
+        .header
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Genesis Header".to_string())))?;
+
+    let genesis_header_time = genesis_header
+        .time
+        .as_ref()
+        .ok_or(Error::Abci(AbciError::BadRequest("Empty Genesis Header Timestamp".to_string())))?;
+
+    let genesis_block_time = genesis_header_time
+        .to_millis()
+        .map_err(|_| Error::Abci(AbciError::BadRequest("Invalid Genesis Header Timestamp".to_string())))?;
+
+    let genesis_block_info = BlockInfo {
+        time_ms: genesis_block_time,
+        height: 1,
+        core_height: genesis_header.core_chain_locked_height,
+        epoch: EPOCH_0,
+    };
+
+    let snapshot_block_state_info = BlockStateInfoV0 {
+        height: snapshot_header.height as u64,
+        round: snapshot_commit.round as u32,
+        block_time_ms: snapshot_block_time,
+        previous_block_time_ms: None,
+        proposer_pro_tx_hash: snapshot_proposer_pro_tx_hash_32,
+        core_chain_locked_height: snapshot_header.core_chain_locked_height,
+        block_hash: Some(snapshot_commit_block_hash_32),
+        app_hash: None,
+    };
+
+    let current_epoch_info = EpochInfoV0::from_genesis_time_and_block_info(
+        genesis_block_time,
+        &snapshot_block_state_info,
+        config.execution.epoch_time_length_s,
+    )?;
+
+    let current_protocol_version_in_consensus = snapshot_header_version.app as u32;
+    let next_epoch_protocol_version = snapshot_header.proposed_app_version as u32;
+    let current_validator_set_quorum_hash = QuorumHash::from_byte_array(snapshot_header_validator_hash_32);
+    let next_validator_set_quorum_hash = QuorumHash::from_byte_array(snapshot_header_next_validator_hash_32);
+
+    let mn_list_diff = app.platform().core_rpc.get_protx_diff_with_masternodes(Some(1), snapshot_header.core_chain_locked_height)?;
+
+    let (full_masternode_list, hpmn_masternode_list) = build_masternode_lists(&mn_list_diff)?;
+
+    let state_0 = PlatformStateV0 {
+        genesis_block_info: Some(genesis_block_info),
+        last_committed_block_info: None,
+        current_protocol_version_in_consensus,
+        next_epoch_protocol_version,
+        current_validator_set_quorum_hash,
+        next_validator_set_quorum_hash: Some(next_validator_set_quorum_hash),
+        patched_platform_version: None,
+        validator_sets: Default::default(),
+        chain_lock_validating_quorums: SignatureVerificationQuorumSet::from(
+            SignatureVerificationQuorumSet::new(
+                &config.chain_lock,
+                PlatformVersion::get(current_protocol_version_in_consensus)?,
+            )?
+        ),
+        instant_lock_validating_quorums: SignatureVerificationQuorumSet::from(
+            SignatureVerificationQuorumSet::new(
+                &config.instant_lock,
+                PlatformVersion::get(current_protocol_version_in_consensus)?,
+            )?
+        ),
+        full_masternode_list,
+        hpmn_masternode_list,
+        previous_fee_versions: Default::default(),
+    };
+
+    let mut state = PlatformState::V0(state_0);
+
+    {
+        let mut extended_quorum_list = app.platform().core_rpc.get_quorum_listextended(Some(snapshot_header.core_chain_locked_height))?;
+
+        let validator_set_quorum_type = config.validator_set.quorum_type;
+        let chain_lock_quorum_type = config.chain_lock.quorum_type;
+        let instant_lock_quorum_type = config.instant_lock.quorum_type;
+
+        let validator_quorums_list: BTreeMap<_, _> = extended_quorum_list
+            .quorums_by_type
+            .remove(&validator_set_quorum_type)
+            .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                format!(
+                    "expected quorums of type {}, but did not receive any from Dash Core",
+                    validator_set_quorum_type
+                ),
+            )))?
+            .into_iter()
+            .collect();
+
+        // Fetch quorum info and their keys from the RPC for new quorums
+        let mut quorum_infos = validator_quorums_list
+            .into_iter()
+            .map(|(key, _)| {
+                let quorum_info_result = app.platform().core_rpc.get_quorum_info(
+                    validator_set_quorum_type,
+                    &key,
+                    None,
+                )?;
+                Ok((key, quorum_info_result))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        // Sort by height and then by hash
+        quorum_infos.sort_by(|a, b| {
+            let height_cmp = a.1.height.cmp(&b.1.height);
+            if height_cmp == std::cmp::Ordering::Equal {
+                a.0.cmp(&b.0) // Compare hashes if heights are equal
+            } else {
+                height_cmp
+            }
+        });
+
+        // Map to validator sets
+        let new_validator_sets = quorum_infos
+            .into_iter()
+            .map(|(quorum_hash, info_result)| {
+                let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
+                    info_result,
+                    &state,
+                )?);
+                Ok((quorum_hash, validator_set))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        state.validator_sets_mut().extend(new_validator_sets);
+
+        // Sort all validator sets into deterministic order by core block height of creation
+        state
+            .validator_sets_mut()
+            .sort_by(|_, quorum_a, _, quorum_b| {
+                let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
+                if primary_comparison == std::cmp::Ordering::Equal {
+                    quorum_b
+                        .quorum_hash()
+                        .cmp(quorum_a.quorum_hash())
+                        .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
+                } else {
+                    primary_comparison
+                }
+            });
+    }
+
+    let tx = app.platform().drive.grove.start_transaction();
+    
+    app.platform().store_platform_state(&state, Some(&tx), &PlatformVersion::latest())?;
+
+    let _ = app.platform().drive.grove.commit_transaction(tx);
+
+    app.platform().state.store(Arc::new(state));
+
     Ok(Default::default())
+}
+
+fn build_masternode_lists(
+    mn_list_diff: &MasternodeListDiff,
+) -> Result<(BTreeMap<ProTxHash, MasternodeListItem>, BTreeMap<ProTxHash, MasternodeListItem>), Error> {
+    let MasternodeListDiff {
+        added_mns,
+        ..
+    } = &mn_list_diff;
+
+    let added_hpmns = added_mns.iter().filter_map(|masternode| {
+        if masternode.node_type == MasternodeType::Evo {
+            Some((masternode.pro_tx_hash, masternode.clone()))
+        } else {
+            None
+        }
+    });
+
+    let added_masternodes = added_mns
+        .iter()
+        .map(|masternode| (masternode.pro_tx_hash, masternode.clone()));
+
+    let mut hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem> = Default::default();
+    hpmn_masternode_list.extend(added_hpmns);
+
+    let mut full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem> = Default::default();
+    full_masternode_list.extend(added_masternodes);
+
+    Ok((full_masternode_list, hpmn_masternode_list))
 }
