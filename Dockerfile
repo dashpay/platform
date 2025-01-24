@@ -464,9 +464,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
+        export FEATURES_FLAG="--no-default-features" ; \
         export OUT_DIRECTORY=release ; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
+        export FEATURES_FLAG="--no-default-features --features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
