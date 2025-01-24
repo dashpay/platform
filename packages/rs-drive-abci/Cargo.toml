@@ -15,7 +15,7 @@ license = "MIT"
 [dependencies]
 arc-swap = "1.7.0"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
