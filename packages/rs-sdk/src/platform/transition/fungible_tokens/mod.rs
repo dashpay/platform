@@ -1,6 +1,6 @@
 pub mod burn;
 pub mod destroy;
-pub mod emergency;
+pub mod emergency_action;
 pub mod freeze;
 pub mod mint;
 pub mod transfer;

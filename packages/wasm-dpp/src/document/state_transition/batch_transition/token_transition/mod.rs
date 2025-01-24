@@ -1,7 +1,7 @@
 mod burn;
 mod config;
 mod destory;
-mod emergency;
+mod emergency_action;
 mod freeze;
 mod mint;
 mod transfer;
@@ -10,7 +10,7 @@ mod unfreeze;
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destory::TokenDestroyFrozenFundsTransitionWasm;
-use crate::batch_transition::token_transition::emergency::TokenEmergencyActionTransitionWasm;
+use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
