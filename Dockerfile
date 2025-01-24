@@ -158,7 +158,7 @@ ENV NODE_ENV=${NODE_ENV}
 #
 # This stage is used to install sccache and configure it.
 # Later on, one should source /root/env before building to use sccache.
-# 
+#
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
 # ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. This is to prevent leaking secrets to the final image. The secrets are
 # loaded using docker buildx `--secret` flag and need to be explicitly mounted with `--mount=type=secret,id=SECRET_ID`.
@@ -205,7 +205,7 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
         # ACTIONS_RUNTIME_TOKEN is a secret so we quote it here, and it will be loaded when `source /root/env` is run
         echo 'export ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/GHA)"' >> /root/env
-    
+
     ### AWS S3 ###
     elif [ -n "${SCCACHE_BUCKET}" ]; then
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
@@ -218,11 +218,11 @@ RUN --mount=type=secret,id=AWS <<EOS
         mkdir --mode=0700 -p "$HOME/.aws"
         ln -s /run/secrets/AWS "$HOME/.aws/credentials"
         echo "export AWS_SHARED_CREDENTIALS_FILE=$HOME/.aws/credentials" >> /root/env
-        
+
         # Check if AWS credentials file is mounted correctly, eg. --mount=type=secret,id=AWS
-        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || { 
-            echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}; did you use RUN --mount=type=secret,id=AWS ?"; 
-            exit 1; 
+        echo '[ -e "${AWS_SHARED_CREDENTIALS_FILE}" ] || {
+            echo "$(id -u): Cannot read ${AWS_SHARED_CREDENTIALS_FILE}; did you use RUN --mount=type=secret,id=AWS ?";
+            exit 1;
         }' >> /root/env
 
     ### memcached ###
@@ -233,9 +233,9 @@ RUN --mount=type=secret,id=AWS <<EOS
         echo "Error: cannot determine sccache cache backend" >&2
         exit 1
     fi
-    
+
     echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
-    
+
     # Configure compilers to use sccache
     echo "export CXX='sccache clang++'" >> /root/env
     echo "export CC='sccache clang'" >> /root/env
