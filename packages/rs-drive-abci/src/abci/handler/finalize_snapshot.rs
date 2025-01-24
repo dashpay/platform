@@ -84,6 +84,18 @@ where
         .as_ref()
         .ok_or(Error::Abci(AbciError::BadRequest("Empty Snapshot Header Last BlockId".to_string())))?;
 
+    if snapshot_header.app_hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Header App Hash Size".to_string())));
+    }
+    let mut snapshot_header_app_hash_32 = [0u8; 32];
+    snapshot_header_app_hash_32.copy_from_slice(&snapshot_header.app_hash[..32]);
+
+    if snapshot_header.proposer_pro_tx_hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Header Proposer ProTx Hash Size".to_string())));
+    }
+    let mut snapshot_header_proposer_pro_tx_hash_32 = [0u8; 32];
+    snapshot_header_proposer_pro_tx_hash_32.copy_from_slice(&snapshot_header.proposer_pro_tx_hash[..32]);
+
     if snapshot_header_last_block_id.hash.len() != 32 {
         return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Header Last Block Hash Size".to_string())));
     }
@@ -117,6 +129,18 @@ where
     }
     let mut snapshot_commit_block_hash_32 = [0u8; 32];
     snapshot_commit_block_hash_32.copy_from_slice(&snapshot_commit_block_id.hash[..32]);
+
+    if snapshot_commit.quorum_hash.len() != 32 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Commit Quorum Hash Size".to_string())));
+    }
+    let mut snapshot_commit_quorum_hash_32 = [0u8; 32];
+    snapshot_commit_quorum_hash_32.copy_from_slice(&snapshot_commit.quorum_hash[..32]);
+
+    if snapshot_commit.threshold_block_signature.len() != 96 {
+        return Err(Error::Abci(AbciError::BadRequestDataSize("Invalid Snapshot Commit Threshold Block Signature Size".to_string())));
+    }
+    let mut snapshot_commit_threshold_block_sig_96 = [0u8; 96];
+    snapshot_commit_threshold_block_sig_96.copy_from_slice(&snapshot_commit.threshold_block_signature[..96]);
 
     let snapshot_validator_set = snapshot_block
         .validator_set
@@ -191,9 +215,24 @@ where
 
     let (full_masternode_list, hpmn_masternode_list) = build_masternode_lists(&mn_list_diff)?;
 
+    let last_committed_block_info = ExtendedBlockInfoV0 {
+        basic_info: BlockInfo {
+            time_ms: snapshot_block_time,
+            height: snapshot_header.height as u64,
+            core_height: snapshot_header.core_chain_locked_height,
+            epoch: Epoch::new(current_epoch_info.current_epoch_index)?,
+        },
+        app_hash: snapshot_header_app_hash_32,
+        quorum_hash: snapshot_commit_quorum_hash_32,
+        block_id_hash: snapshot_commit_block_hash_32,
+        proposer_pro_tx_hash: snapshot_header_proposer_pro_tx_hash_32,
+        signature: snapshot_commit_threshold_block_sig_96,
+        round: snapshot_commit.round as u32,
+    };
+    
     let state_0 = PlatformStateV0 {
         genesis_block_info: Some(genesis_block_info),
-        last_committed_block_info: None,
+        last_committed_block_info: Some(ExtendedBlockInfo::from(last_committed_block_info)),
         current_protocol_version_in_consensus,
         next_epoch_protocol_version,
         current_validator_set_quorum_hash,
