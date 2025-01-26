@@ -4,8 +4,10 @@ const {
     GetIdentityKeysRequest,
     KeyRequestType,
     SpecificKeys,
+    AllKeys,
   },
 } = require('@dashevo/dapi-grpc');
+
 const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
 
 const GetIdentityKeysResponse = require('./GetIdentityKeysResponse');
@@ -28,17 +30,23 @@ function getIdentityKeysFactory(grpcTransport) {
   async function getIdentityKeys(identityId, keyIds, limit = 100, options = {}) {
     const { GetIdentityKeysRequestV0 } = GetIdentityKeysRequest;
     const getIdentityKeysRequest = new GetIdentityKeysRequest();
+    const requestType = new KeyRequestType();
 
     if (Buffer.isBuffer(identityId)) {
       // eslint-disable-next-line no-param-reassign
       identityId = Buffer.from(identityId);
     }
 
+    if (keyIds) {
+      requestType.setSpecificKeys(new SpecificKeys().setKeyIdsList(keyIds));
+    } else {
+      requestType.setAllKeys(new AllKeys());
+    }
+
     getIdentityKeysRequest.setV0(
       new GetIdentityKeysRequestV0()
         .setIdentityId(identityId)
-        .setRequestType(new KeyRequestType()
-          .setSpecificKeys(new SpecificKeys().setKeyIdsList(keyIds)))
+        .setRequestType(requestType)
         .setLimit(new UInt32Value([limit]))
         .setProve(!!options.prove),
     );
