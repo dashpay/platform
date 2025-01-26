@@ -1,24 +1,12 @@
-use std::convert::TryInto;
-use std::default::Default;
-
-use serde::{Deserialize, Serialize};
-
-use wasm_bindgen::__rt::Ref;
-use wasm_bindgen::prelude::*;
-
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
-
+use crate::utils::{generic_of_js_val, WithJsError};
 use crate::{
     buffer::Buffer,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     identity::IdentityPublicKeyWasm, with_js_error,
 };
-
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-
-use crate::utils::{generic_of_js_val, WithJsError};
-
-use crate::errors::from_dpp_err;
 use dpp::errors::consensus::signature::SignatureError;
 use dpp::errors::consensus::ConsensusError;
 use dpp::errors::ProtocolError;
@@ -34,6 +22,10 @@ use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::version::PlatformVersion;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
+use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+use std::default::Default;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
 #[derive(Clone)]
@@ -93,11 +85,10 @@ impl IdentityUpdateTransitionWasm {
             keys_to_add = keys
                 .iter()
                 .map(|value| {
-                    let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                        generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                            value,
-                            "IdentityPublicKeyWithWitness",
-                        )?;
+                    let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                        value,
+                        "IdentityPublicKeyWithWitness",
+                    )?;
                     Ok(public_key.clone().into())
                 })
                 .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;

@@ -1,6 +1,5 @@
 use std::default::Default;
 
-use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::BlsAdapter;
@@ -101,11 +100,10 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                        value,
-                        "IdentityPublicKeyWithWitness",
-                    )?;
+                let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                    value,
+                    "IdentityPublicKeyWithWitness",
+                )?;
                 Ok(public_key.clone().into())
             })
             .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
@@ -120,11 +118,10 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                        value,
-                        "IdentityPublicKeyWithWitness",
-                    )?;
+                let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                    value,
+                    "IdentityPublicKeyWithWitness",
+                )?;
                 Ok(public_key.clone().into())
             })
             .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
