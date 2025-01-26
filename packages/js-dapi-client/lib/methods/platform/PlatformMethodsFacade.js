@@ -16,6 +16,8 @@ const getIdentityKeysFactory = require('./getIdentityKeys/getIdentityKeysFactory
 const getTotalCreditsInPlatformFactory = require('./getTotalCreditsInPlatform/getTotalCreditsInPlatformFactory');
 const getStatusFactory = require('./getStatus/getStatusFactory');
 const getIdentityBalanceFactory = require('./getIdentityBalance/getIdentityBalanceFactory');
+const getContestedResourceVoteStateFactory = require('./getContestedResourceVoteState/getContestedResourceVoteStateFactory');
+const getContestedResourcesFactory = require('./getContestedResources/getContestedResourceFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -42,6 +44,8 @@ class PlatformMethodsFacade {
     this.getTotalCreditsInPlatform = getTotalCreditsInPlatformFactory(grpcTransport);
     this.getStatus = getStatusFactory(grpcTransport);
     this.getIdentityBalance = getIdentityBalanceFactory(grpcTransport);
+    this.getContestedResourceVoteState = getContestedResourceVoteStateFactory(grpcTransport);
+    this.getContestedResources = getContestedResourcesFactory(grpcTransport);
   }
 }
 
