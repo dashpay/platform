@@ -50,16 +50,20 @@ impl DocumentTransitionWasm {
         match &self.0 {
             DocumentTransition::Create(document_create_transition) => {
                 let json_value = document_create_transition.data().to_json_value().unwrap();
-                json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
+                json_value
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .unwrap()
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 let json_value = document_replace_transition.data().to_json_value().unwrap();
-                json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
+                json_value
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .unwrap()
             }
             DocumentTransition::Delete(document_delete_transition) => JsValue::null(),
             DocumentTransition::Transfer(document_transfer_transition) => JsValue::null(),
             DocumentTransition::UpdatePrice(document_update_price_transition) => JsValue::null(),
-            DocumentTransition::Purchase(document_purchase_transition) => JsValue::null()
+            DocumentTransition::Purchase(document_purchase_transition) => JsValue::null(),
         }
     }
 
@@ -82,7 +86,9 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getIdentityContractNonce)]
     pub fn get_identity_contract_nonce(&self) -> JsValue {
-        match self.0.base() { DocumentBaseTransition::V0(v0) => JsValue::from(v0.identity_contract_nonce) }
+        match self.0.base() {
+            DocumentBaseTransition::V0(v0) => JsValue::from(v0.identity_contract_nonce),
+        }
     }
 
     #[wasm_bindgen(js_name=getRevision)]
@@ -120,7 +126,7 @@ impl DocumentTransitionWasm {
                 let prefunded_voting_balance = create_transition.prefunded_voting_balance().clone();
 
                 if prefunded_voting_balance.is_none() {
-                    return Ok(JsValue::null())
+                    return Ok(JsValue::null());
                 }
 
                 let (index_name, credits) = prefunded_voting_balance.unwrap();

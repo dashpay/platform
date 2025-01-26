@@ -4,9 +4,9 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 
 use dpp::document::INITIAL_REVISION;
 
-use wasm_bindgen::prelude::*;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DocumentCreateTransition)]
 #[derive(Debug, Clone)]
@@ -107,9 +107,7 @@ impl DocumentCreateTransitionWasm {
         let prefunded_voting_balance = self.inner.prefunded_voting_balance().clone();
 
         match prefunded_voting_balance {
-            None => {
-                Ok(JsValue::null())
-            },
+            None => Ok(JsValue::null()),
             Some((index_name, credits)) => {
                 let js_object = js_sys::Object::new();
 

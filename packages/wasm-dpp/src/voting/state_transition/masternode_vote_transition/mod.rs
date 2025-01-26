@@ -244,12 +244,9 @@ impl MasternodeVoteTransitionWasm {
                 Reflect::set(
                     &js_object,
                     &"choice".into(),
-                    &vote
-                        .resource_vote_choice()
-                        .clone()
-                        .to_string()
-                        .into(),
-                ).unwrap();
+                    &vote.resource_vote_choice().clone().to_string().into(),
+                )
+                .unwrap();
 
                 match vote.vote_poll() {
                     VotePoll::ContestedDocumentResourceVotePoll(
@@ -259,7 +256,8 @@ impl MasternodeVoteTransitionWasm {
                             contested_document_resource_vote_poll.contract_id.clone(),
                         );
 
-                        Reflect::set(&js_object, &"contractId".into(), &contract_id.into()).unwrap();
+                        Reflect::set(&js_object, &"contractId".into(), &contract_id.into())
+                            .unwrap();
                         Reflect::set(
                             &js_object,
                             &"documentTypeName".into(),
@@ -268,7 +266,7 @@ impl MasternodeVoteTransitionWasm {
                                 .clone()
                                 .into(),
                         )
-                            .unwrap();
+                        .unwrap();
                         Reflect::set(
                             &js_object,
                             &"indexName".into(),
@@ -277,7 +275,7 @@ impl MasternodeVoteTransitionWasm {
                                 .clone()
                                 .into(),
                         )
-                            .unwrap();
+                        .unwrap();
 
                         let config = bincode::config::standard()
                             .with_big_endian()
@@ -300,7 +298,7 @@ impl MasternodeVoteTransitionWasm {
                         Some(js_object)
                     }
                 }
-            },
+            }
         }
     }
 
