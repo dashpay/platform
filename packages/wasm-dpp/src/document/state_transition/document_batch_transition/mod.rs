@@ -98,6 +98,16 @@ impl DocumentsBatchTransitionWasm {
         self.0.owner_id().to_owned().into()
     }
 
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase() as u16
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
     #[wasm_bindgen(js_name=getTransitions)]
     pub fn get_transitions(&self) -> js_sys::Array {
         let array = js_sys::Array::new();
