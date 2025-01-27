@@ -12,6 +12,13 @@ use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+pub type SharedEncryptedNote = (SenderKeyIndex, RecipientKeyIndex, Vec<u8>);
+pub type PrivateEncryptedNote = (
+    RootEncryptionKeyIndex,
+    DerivationEncryptionKeyIndex,
+    Vec<u8>,
+);
+
 mod property_names {
     pub const AMOUNT: &str = "$amount";
     pub const RECIPIENT_OWNER_ID: &str = "recipientOwnerId";
@@ -53,15 +60,11 @@ pub struct TokenTransferTransitionV0 {
         feature = "state-transition-serde-conversion",
         serde(rename = "sharedEncryptedNote")
     )]
-    pub shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
+    pub shared_encrypted_note: Option<SharedEncryptedNote>,
     /// An optional private encrypted note
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
         serde(rename = "privateEncryptedNote")
     )]
-    pub private_encrypted_note: Option<(
-        RootEncryptionKeyIndex,
-        DerivationEncryptionKeyIndex,
-        Vec<u8>,
-    )>,
+    pub private_encrypted_note: Option<PrivateEncryptedNote>,
 }

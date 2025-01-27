@@ -50,7 +50,7 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
-use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+pub use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;

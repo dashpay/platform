@@ -30,6 +30,8 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 use crate::batch_transition::batched_transition::BatchedTransitionWasm;
+use crate::batch_transition::document_transition::DocumentTransitionWasm;
+use crate::batch_transition::token_transition::TokenTransitionWasm;
 use dpp::state_transition::StateTransitionIdentitySigned;
 
 mod batched_transition;
@@ -106,8 +108,11 @@ impl BatchTransitionWasm {
         let array = js_sys::Array::new();
 
         for tr in self.0.transitions_iter() {
-            let transition: BatchedTransitionWasm = tr.to_owned_transition().into();
-            array.push(&transition.into());
+            let js_value = match tr.to_owned_transition() {
+                BatchedTransition::Token(doc) => TokenTransitionWasm::from(doc).into(),
+                BatchedTransition::Document(tok) => DocumentTransitionWasm::from(tok).into(),
+            };
+            array.push(&js_value);
         }
 
         array

@@ -3,6 +3,7 @@ use derive_more::From;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
+use dpp::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
 
 /// transformer module
 pub mod transformer;
@@ -61,22 +62,19 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction 
         }
     }
 
-    fn shared_encrypted_note(&self) -> Option<&(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)> {
+    fn shared_encrypted_note(&self) -> Option<&SharedEncryptedNote> {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.shared_encrypted_note(),
         }
     }
 
-    fn shared_encrypted_note_owned(self) -> Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)> {
+    fn shared_encrypted_note_owned(self) -> Option<SharedEncryptedNote> {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.shared_encrypted_note_owned(),
         }
     }
 
-    fn set_shared_encrypted_note(
-        &mut self,
-        shared_encrypted_note: Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-    ) {
+    fn set_shared_encrypted_note(&mut self, shared_encrypted_note: Option<SharedEncryptedNote>) {
         match self {
             TokenTransferTransitionAction::V0(v0) => {
                 v0.set_shared_encrypted_note(shared_encrypted_note)
@@ -108,14 +106,7 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction 
         }
     }
 
-    fn set_private_encrypted_note(
-        &mut self,
-        private_encrypted_note: Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
-    ) {
+    fn set_private_encrypted_note(&mut self, private_encrypted_note: Option<PrivateEncryptedNote>) {
         match self {
             TokenTransferTransitionAction::V0(v0) => {
                 v0.set_private_encrypted_note(private_encrypted_note)
@@ -127,12 +118,8 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction 
         &self,
     ) -> (
         Option<String>,
-        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        Option<SharedEncryptedNote>,
+        Option<PrivateEncryptedNote>,
     ) {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.notes(),
@@ -143,12 +130,8 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionAction 
         self,
     ) -> (
         Option<String>,
-        Option<(SenderKeyIndex, RecipientKeyIndex, Vec<u8>)>,
-        Option<(
-            RootEncryptionKeyIndex,
-            DerivationEncryptionKeyIndex,
-            Vec<u8>,
-        )>,
+        Option<SharedEncryptedNote>,
+        Option<PrivateEncryptedNote>,
     ) {
         match self {
             TokenTransferTransitionAction::V0(v0) => v0.notes_owned(),
