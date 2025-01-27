@@ -113,5 +113,15 @@ where
             })?;
     }
 
+    let platform_state = app.platform().state.load();
+
+    let block_height = platform_state.last_committed_block_height();
+
+    tracing::info!(
+        block_height,
+        platform_state = ?platform_state,
+        "state_finalize_block"
+    );
+
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }

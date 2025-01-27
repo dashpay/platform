@@ -330,9 +330,12 @@ where
             });
     }
 
+    let block_height = state.last_committed_block_height();
+
     tracing::info!(
+        block_height,
         platform_state = ?state,
-        "Platform state finalize_snapshot",
+        "state_finalize_snapshot",
     );
 
     let tx = app.platform().drive.grove.start_transaction();
