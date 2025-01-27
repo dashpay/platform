@@ -1,10 +1,12 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
+
 impl TokenConfigurationV0 {
     /// Determines whether a `TokenConfigurationChangeItem` can be applied to this token configuration.
     ///
@@ -74,13 +76,41 @@ impl TokenConfigurationV0 {
                     goal,
                 )
             }
+            TokenConfigurationChangeItem::PerpetualDistribution(_) => self
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .can_make_change(contract_owner_id, main_group, groups, action_taker, goal),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(control_group) => self
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .can_change_authorized_action_takers(
+                    control_group,
+                    contract_owner_id,
+                    main_group,
+                    groups,
+                    action_taker,
+                    goal,
+                ),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(admin_group) => self
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .can_change_admin_action_takers(
+                    admin_group,
+                    contract_owner_id,
+                    main_group,
+                    groups,
+                    action_taker,
+                    goal,
+                ),
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(_) => self
-                .new_tokens_destination_identity_rules
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
                 .can_make_change(contract_owner_id, main_group, groups, action_taker, goal),
             TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
                 control_group,
             ) => self
-                .new_tokens_destination_identity_rules
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
                 .can_change_authorized_action_takers(
                     control_group,
                     contract_owner_id,
@@ -90,7 +120,8 @@ impl TokenConfigurationV0 {
                     goal,
                 ),
             TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(admin_group) => {
-                self.new_tokens_destination_identity_rules
+                self.distribution_rules
+                    .new_tokens_destination_identity_rules()
                     .can_change_admin_action_takers(
                         admin_group,
                         contract_owner_id,
@@ -101,12 +132,14 @@ impl TokenConfigurationV0 {
                     )
             }
             TokenConfigurationChangeItem::MintingAllowChoosingDestination(_) => self
-                .minting_allow_choosing_destination_rules
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
                 .can_make_change(contract_owner_id, main_group, groups, action_taker, goal),
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                 control_group,
             ) => self
-                .minting_allow_choosing_destination_rules
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
                 .can_change_authorized_action_takers(
                     control_group,
                     contract_owner_id,
@@ -118,7 +151,8 @@ impl TokenConfigurationV0 {
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
                 admin_group,
             ) => self
-                .minting_allow_choosing_destination_rules
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
                 .can_change_admin_action_takers(
                     admin_group,
                     contract_owner_id,

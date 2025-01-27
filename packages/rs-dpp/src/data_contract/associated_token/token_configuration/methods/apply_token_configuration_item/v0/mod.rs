@@ -1,5 +1,9 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::{
+    TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
+};
+
 impl TokenConfigurationV0 {
     /// Applies a `TokenConfigurationChangeItem` to this token configuration.
     ///
@@ -35,31 +39,51 @@ impl TokenConfigurationV0 {
                     .set_admin_action_takers(admin_group);
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(identity) => {
-                self.new_tokens_destination_identity = identity;
+                self.distribution_rules
+                    .set_new_tokens_destination_identity(identity);
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
                 control_group,
             ) => {
-                self.new_tokens_destination_identity_rules
+                self.distribution_rules
+                    .new_tokens_destination_identity_rules_mut()
                     .set_authorized_to_make_change_action_takers(control_group);
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(admin_group) => {
-                self.new_tokens_destination_identity_rules
+                self.distribution_rules
+                    .new_tokens_destination_identity_rules_mut()
                     .set_admin_action_takers(admin_group);
             }
             TokenConfigurationChangeItem::MintingAllowChoosingDestination(allow) => {
-                self.minting_allow_choosing_destination = allow;
+                self.distribution_rules
+                    .set_minting_allow_choosing_destination(allow);
             }
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                 control_group,
             ) => {
-                self.minting_allow_choosing_destination_rules
+                self.distribution_rules
+                    .minting_allow_choosing_destination_rules_mut()
                     .set_authorized_to_make_change_action_takers(control_group);
             }
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
                 admin_group,
             ) => {
-                self.minting_allow_choosing_destination_rules
+                self.distribution_rules
+                    .minting_allow_choosing_destination_rules_mut()
+                    .set_admin_action_takers(admin_group);
+            }
+            TokenConfigurationChangeItem::PerpetualDistribution(perpetual_distribution) => {
+                self.distribution_rules
+                    .set_perpetual_distribution(perpetual_distribution);
+            }
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(control_group) => {
+                self.distribution_rules
+                    .perpetual_distribution_rules_mut()
+                    .set_authorized_to_make_change_action_takers(control_group);
+            }
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(admin_group) => {
+                self.distribution_rules
+                    .perpetual_distribution_rules_mut()
                     .set_admin_action_takers(admin_group);
             }
             TokenConfigurationChangeItem::ManualMinting(control_group) => {

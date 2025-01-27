@@ -9,6 +9,7 @@ use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::DataContract;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
@@ -344,7 +345,7 @@ impl TokenTransitionV0Methods for TokenTransition {
             }
             TokenTransition::Mint(mint) => {
                 let recipient = match mint.issued_to_identity_id() {
-                    None => token_configuration.new_tokens_destination_identity().ok_or(ProtocolError::NotSupported("either the mint destination must be set or the contract must have a destination set for new tokens".to_string()))?,
+                    None => token_configuration.distribution_rules().new_tokens_destination_identity().copied().ok_or(ProtocolError::NotSupported("either the mint destination must be set or the contract must have a destination set for new tokens".to_string()))?,
                     Some(recipient) => recipient,
                 };
                 TokenEvent::Mint(mint.amount(), recipient, mint.public_note().cloned())

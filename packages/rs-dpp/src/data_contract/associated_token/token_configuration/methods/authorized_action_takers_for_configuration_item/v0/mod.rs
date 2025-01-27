@@ -1,5 +1,6 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 impl TokenConfigurationV0 {
     /// Returns the authorized action takers for a specific `TokenConfigurationChangeItem`.
@@ -21,10 +22,9 @@ impl TokenConfigurationV0 {
                 .conventions_change_rules
                 .authorized_to_make_change_action_takers()
                 .clone(),
-            TokenConfigurationChangeItem::ConventionsControlGroup(_) => self
-                .conventions_change_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
+            TokenConfigurationChangeItem::ConventionsControlGroup(_) => {
+                self.conventions_change_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::ConventionsAdminGroup(_) => {
                 self.conventions_change_rules.admin_action_takers().clone()
             }
@@ -32,77 +32,92 @@ impl TokenConfigurationV0 {
                 .max_supply_change_rules
                 .authorized_to_make_change_action_takers()
                 .clone(),
-            TokenConfigurationChangeItem::MaxSupplyControlGroup(_) => self
-                .max_supply_change_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(_) => {
+                self.max_supply_change_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::MaxSupplyAdminGroup(_) => {
                 self.max_supply_change_rules.admin_action_takers().clone()
             }
+            TokenConfigurationChangeItem::PerpetualDistribution(_) => self
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .authorized_to_make_change_action_takers()
+                .clone(),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(_) => self
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .admin_action_takers()
+                .clone(),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(_) => self
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .admin_action_takers()
+                .clone(),
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(_) => self
-                .new_tokens_destination_identity_rules
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
                 .authorized_to_make_change_action_takers()
                 .clone(),
             TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(_) => self
-                .new_tokens_destination_identity_rules
-                .authorized_to_make_change_action_takers()
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
+                .admin_action_takers()
                 .clone(),
             TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(_) => self
-                .new_tokens_destination_identity_rules
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
                 .admin_action_takers()
                 .clone(),
             TokenConfigurationChangeItem::MintingAllowChoosingDestination(_) => self
-                .minting_allow_choosing_destination_rules
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
                 .authorized_to_make_change_action_takers()
                 .clone(),
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(_) => self
-                .minting_allow_choosing_destination_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(_) => self
-                .minting_allow_choosing_destination_rules
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
                 .admin_action_takers()
                 .clone(),
-            TokenConfigurationChangeItem::ManualMinting(_) => self
-                .manual_minting_rules
-                .authorized_to_make_change_action_takers()
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(_) => self
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
+                .admin_action_takers()
                 .clone(),
+            TokenConfigurationChangeItem::ManualMinting(_) => {
+                self.manual_minting_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::ManualMintingAdminGroup(_) => {
                 self.manual_minting_rules.admin_action_takers().clone()
             }
-            TokenConfigurationChangeItem::ManualBurning(_) => self
-                .manual_burning_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
+            TokenConfigurationChangeItem::ManualBurning(_) => {
+                self.manual_burning_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::ManualBurningAdminGroup(_) => {
                 self.manual_burning_rules.admin_action_takers().clone()
             }
-            TokenConfigurationChangeItem::Freeze(_) => self
-                .freeze_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
+            TokenConfigurationChangeItem::Freeze(_) => {
+                self.freeze_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::FreezeAdminGroup(_) => {
                 self.freeze_rules.admin_action_takers().clone()
             }
-            TokenConfigurationChangeItem::Unfreeze(_) => self
-                .unfreeze_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
+            TokenConfigurationChangeItem::Unfreeze(_) => {
+                self.unfreeze_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::UnfreezeAdminGroup(_) => {
                 self.unfreeze_rules.admin_action_takers().clone()
             }
             TokenConfigurationChangeItem::DestroyFrozenFunds(_) => self
                 .destroy_frozen_funds_rules
-                .authorized_to_make_change_action_takers()
+                .admin_action_takers()
                 .clone(),
             TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(_) => self
                 .destroy_frozen_funds_rules
                 .admin_action_takers()
                 .clone(),
-            TokenConfigurationChangeItem::EmergencyAction(_) => self
-                .emergency_action_rules
-                .authorized_to_make_change_action_takers()
-                .clone(),
+            TokenConfigurationChangeItem::EmergencyAction(_) => {
+                self.emergency_action_rules.admin_action_takers().clone()
+            }
             TokenConfigurationChangeItem::EmergencyActionAdminGroup(_) => {
                 self.emergency_action_rules.admin_action_takers().clone()
             }

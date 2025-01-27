@@ -10202,6 +10202,7 @@ mod tests {
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
         use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
         use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationLocalizationsV0;
+        use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
         use dpp::data_contract::change_control_rules::ChangeControlRules;
@@ -10686,7 +10687,9 @@ mod tests {
                         &mut platform,
                         identity.id(),
                         Some(|token_configuration: &mut TokenConfiguration| {
-                            token_configuration.set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .distribution_rules_mut()
+                                .set_minting_allow_choosing_destination(false);
                         }),
                         None,
                         platform_version,
@@ -10784,7 +10787,9 @@ mod tests {
                         &mut platform,
                         identity.id(),
                         Some(|token_configuration: &mut TokenConfiguration| {
-                            token_configuration.set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .distribution_rules_mut()
+                                .set_minting_allow_choosing_destination(false);
                         }),
                         None,
                         platform_version,
@@ -10879,7 +10884,9 @@ mod tests {
                         &mut platform,
                         identity.id(),
                         Some(|token_configuration: &mut TokenConfiguration| {
-                            token_configuration.set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .distribution_rules_mut()
+                                .set_minting_allow_choosing_destination(false);
                         }),
                         None,
                         platform_version,
@@ -10967,8 +10974,11 @@ mod tests {
                         &mut platform,
                         identity.id(),
                         Some(|token_configuration: &mut TokenConfiguration| {
-                            token_configuration.set_minting_allow_choosing_destination(false);
                             token_configuration
+                                .distribution_rules_mut()
+                                .set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .distribution_rules_mut()
                                 .set_new_tokens_destination_identity(Some(identity.id()));
                         }),
                         None,
@@ -11067,8 +11077,11 @@ mod tests {
                         &mut platform,
                         identity.id(),
                         Some(|token_configuration: &mut TokenConfiguration| {
-                            token_configuration.set_minting_allow_choosing_destination(false);
                             token_configuration
+                                .distribution_rules_mut()
+                                .set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .distribution_rules_mut()
                                 .set_new_tokens_destination_identity(Some(identity.id()));
                         }),
                         None,
@@ -11164,8 +11177,11 @@ mod tests {
                         &mut platform,
                         identity.id(),
                         Some(|token_configuration: &mut TokenConfiguration| {
-                            token_configuration.set_minting_allow_choosing_destination(false);
                             token_configuration
+                                .distribution_rules_mut()
+                                .set_minting_allow_choosing_destination(false);
+                            token_configuration
+                                .distribution_rules_mut()
                                 .set_new_tokens_destination_identity(Some(identity.id()));
                         }),
                         None,
@@ -15008,8 +15024,6 @@ mod tests {
                     let (identity, signer, key) =
                         setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-                    let identity_2_id = Identifier::random_with_rng(&mut rng);
-
                     let (contract, token_id) = create_token_contract_with_owner_identity(
                         &mut platform,
                         identity.id(),
@@ -15102,8 +15116,6 @@ mod tests {
 
                     let (identity, signer, key) =
                         setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
-
-                    let identity_2_id = Identifier::random_with_rng(&mut rng);
 
                     let (contract, token_id) = create_token_contract_with_owner_identity(
                         &mut platform,

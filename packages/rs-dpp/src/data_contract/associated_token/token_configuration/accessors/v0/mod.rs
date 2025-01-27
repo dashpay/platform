@@ -1,9 +1,9 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
-use platform_value::Identifier;
 use std::collections::BTreeSet;
 
 /// Accessor trait for getters of `TokenConfigurationV0`
@@ -28,15 +28,11 @@ pub trait TokenConfigurationV0Getters {
     /// Returns the max supply change rules.
     fn max_supply_change_rules(&self) -> &ChangeControlRules;
 
-    /// Returns the new tokens destination identity.
-    fn new_tokens_destination_identity(&self) -> Option<Identifier>;
+    /// Returns the distribution rules.
+    fn distribution_rules(&self) -> &TokenDistributionRules;
 
-    /// Returns the new tokens destination identity rules.
-    fn new_tokens_destination_identity_rules(&self) -> &ChangeControlRules;
-    /// Returns whether minting allows choosing a destination.
-    fn minting_allow_choosing_destination(&self) -> bool;
-    /// Returns the rules for minting destination selection.
-    fn minting_allow_choosing_destination_rules(&self) -> &ChangeControlRules;
+    /// Returns a mutable reference to the distribution rules.
+    fn distribution_rules_mut(&mut self) -> &mut TokenDistributionRules;
 
     /// Returns the manual minting rules.
     fn manual_minting_rules(&self) -> &ChangeControlRules;
@@ -81,11 +77,8 @@ pub trait TokenConfigurationV0Setters {
     /// Sets the max supply change rules.
     fn set_max_supply_change_rules(&mut self, rules: ChangeControlRules);
 
-    /// Sets the new tokens destination identity.
-    fn set_new_tokens_destination_identity(&mut self, id: Option<Identifier>);
-
-    /// Sets the new tokens destination identity rules.
-    fn set_new_tokens_destination_identity_rules(&mut self, rules: ChangeControlRules);
+    /// Sets the distribution rules.
+    fn set_distribution_rules(&mut self, rules: TokenDistributionRules);
 
     /// Sets the manual minting rules.
     fn set_manual_minting_rules(&mut self, rules: ChangeControlRules);
@@ -108,8 +101,4 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers);
-    /// Sets whether minting allows choosing a destination.
-    fn set_minting_allow_choosing_destination(&mut self, value: bool);
-    /// Sets the rules for minting destination selection.
-    fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules);
 }

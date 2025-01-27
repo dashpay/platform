@@ -3,12 +3,13 @@ mod accessors;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+use crate::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
 use bincode::{Decode, Encode};
-use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -34,14 +35,9 @@ pub struct TokenConfigurationV0 {
     /// Even if set no one can ever change this under the base supply
     #[serde(default = "default_change_control_rules")]
     pub max_supply_change_rules: ChangeControlRules,
-    #[serde(default)]
-    pub new_tokens_destination_identity: Option<Identifier>,
-    #[serde(default = "default_change_control_rules")]
-    pub new_tokens_destination_identity_rules: ChangeControlRules,
-    #[serde(default = "default_minting_allow_choosing_destination")]
-    pub minting_allow_choosing_destination: bool,
-    #[serde(default = "default_change_control_rules")]
-    pub minting_allow_choosing_destination_rules: ChangeControlRules,
+    /// The distribution rules for the token
+    #[serde(default = "default_token_distribution_rules")]
+    pub distribution_rules: TokenDistributionRules,
     #[serde(default = "default_contract_owner_change_control_rules")]
     pub manual_minting_rules: ChangeControlRules,
     #[serde(default = "default_contract_owner_change_control_rules")]
@@ -60,11 +56,6 @@ pub struct TokenConfigurationV0 {
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
 }
 
-// Default function for `minting_allow_choosing_destination` to return `true`
-fn default_minting_allow_choosing_destination() -> bool {
-    true
-}
-
 // Default function for `keeps_history`
 fn default_keeps_history() -> bool {
     true // Default to `true` for keeps_history
@@ -73,6 +64,36 @@ fn default_keeps_history() -> bool {
 // Default function for `starts_as_paused`
 fn default_starts_as_paused() -> bool {
     false
+}
+
+fn default_token_distribution_rules() -> TokenDistributionRules {
+    TokenDistributionRules::V0(TokenDistributionRulesV0 {
+        perpetual_distribution: None,
+        perpetual_distribution_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+        pre_programmed_distribution: None,
+        new_tokens_destination_identity: None,
+        new_tokens_destination_identity_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+        minting_allow_choosing_destination: true,
+        minting_allow_choosing_destination_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+    })
 }
 
 fn default_change_control_rules() -> ChangeControlRules {
@@ -99,7 +120,7 @@ impl fmt::Display for TokenConfigurationV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  new_tokens_destination_identity: {:?},\n  new_tokens_destination_identity_rules: {:?},\n  minting_allow_choosing_destination: {},\n  minting_allow_choosing_destination_rules: {:?},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
+            "TokenConfigurationV0 {{\n  conventions: {:?},\n  conventions_change_rules: {:?},\n  base_supply: {},\n  max_supply: {:?},\n  keeps_history: {},\n  start_as_paused: {},\n  max_supply_change_rules: {:?},\n  distribution_rules: {},\n  manual_minting_rules: {:?},\n  manual_burning_rules: {:?},\n  freeze_rules: {:?},\n  unfreeze_rules: {:?},\n  destroy_frozen_funds_rules: {:?},\n  emergency_action_rules: {:?},\n  main_control_group: {:?},\n  main_control_group_can_be_modified: {:?}\n}}",
             self.conventions,
             self.conventions_change_rules,
             self.base_supply,
@@ -107,10 +128,7 @@ impl fmt::Display for TokenConfigurationV0 {
             self.keeps_history,
             self.start_as_paused,
             self.max_supply_change_rules,
-            self.new_tokens_destination_identity,
-            self.new_tokens_destination_identity_rules,
-            self.minting_allow_choosing_destination,
-            self.minting_allow_choosing_destination_rules,
+            self.distribution_rules,
             self.manual_minting_rules,
             self.manual_burning_rules,
             self.freeze_rules,
@@ -150,24 +168,36 @@ impl TokenConfigurationV0 {
                 self_changing_admin_action_takers_allowed: false,
             }
             .into(),
-            new_tokens_destination_identity: None,
-            new_tokens_destination_identity_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
-            minting_allow_choosing_destination: true,
-            minting_allow_choosing_destination_rules: ChangeControlRulesV0 {
-                authorized_to_make_change: AuthorizedActionTakers::NoOne,
-                admin_action_takers: AuthorizedActionTakers::NoOne,
-                changing_authorized_action_takers_to_no_one_allowed: false,
-                changing_admin_action_takers_to_no_one_allowed: false,
-                self_changing_admin_action_takers_allowed: false,
-            }
-            .into(),
+            distribution_rules: TokenDistributionRules::V0(TokenDistributionRulesV0 {
+                perpetual_distribution: None,
+                perpetual_distribution_rules: ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }
+                .into(),
+                pre_programmed_distribution: None,
+                new_tokens_destination_identity: None,
+                new_tokens_destination_identity_rules: ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }
+                .into(),
+                minting_allow_choosing_destination: true,
+                minting_allow_choosing_destination_rules: ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }
+                .into(),
+            }),
             manual_minting_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
                 admin_action_takers: AuthorizedActionTakers::NoOne,

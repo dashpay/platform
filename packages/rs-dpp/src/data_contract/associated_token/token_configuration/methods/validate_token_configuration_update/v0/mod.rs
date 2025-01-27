@@ -1,6 +1,7 @@
 use crate::consensus::basic::data_contract::DataContractTokenConfigurationUpdateError;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
@@ -83,18 +84,28 @@ impl TokenConfiguration {
         }
 
         // Check changes to new_tokens_destination_identity and rules
-        if old.new_tokens_destination_identity != new.new_tokens_destination_identity
-            || old.new_tokens_destination_identity_rules
-                != new.new_tokens_destination_identity_rules
+        if old.distribution_rules.new_tokens_destination_identity()
+            != new.distribution_rules.new_tokens_destination_identity()
+            || old
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
+                != new
+                    .distribution_rules
+                    .new_tokens_destination_identity_rules()
         {
-            if !old.new_tokens_destination_identity_rules.can_change_to(
-                &new.new_tokens_destination_identity_rules,
-                contract_owner_id,
-                self.main_control_group(),
-                groups,
-                action_taker,
-                goal,
-            ) {
+            if !old
+                .distribution_rules
+                .new_tokens_destination_identity_rules()
+                .can_change_to(
+                    &new.distribution_rules
+                        .new_tokens_destination_identity_rules(),
+                    contract_owner_id,
+                    self.main_control_group(),
+                    groups,
+                    action_taker,
+                    goal,
+                )
+            {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
                         "update".to_string(),
@@ -109,23 +120,63 @@ impl TokenConfiguration {
         }
 
         // Check changes to minting_allow_choosing_destination and its rules
-        if old.minting_allow_choosing_destination != new.minting_allow_choosing_destination
-            || old.minting_allow_choosing_destination_rules
-                != new.minting_allow_choosing_destination_rules
+        if old.distribution_rules.minting_allow_choosing_destination()
+            != new.distribution_rules.minting_allow_choosing_destination()
+            || old
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
+                != new
+                    .distribution_rules
+                    .minting_allow_choosing_destination_rules()
         {
-            if !old.minting_allow_choosing_destination_rules.can_change_to(
-                &new.minting_allow_choosing_destination_rules,
-                contract_owner_id,
-                self.main_control_group(),
-                groups,
-                action_taker,
-                goal,
-            ) {
+            if !old
+                .distribution_rules
+                .minting_allow_choosing_destination_rules()
+                .can_change_to(
+                    &new.distribution_rules
+                        .minting_allow_choosing_destination_rules(),
+                    contract_owner_id,
+                    self.main_control_group(),
+                    groups,
+                    action_taker,
+                    goal,
+                )
+            {
                 return SimpleConsensusValidationResult::new_with_error(
                     DataContractTokenConfigurationUpdateError::new(
                         "update".to_string(),
                         "mintingAllowChoosingDestination or mintingAllowChoosingDestinationRules"
                             .to_string(),
+                        self.clone(),
+                        new_config.clone(),
+                    )
+                    .into(),
+                );
+            }
+        }
+
+        // Check changes to perpetual_distribution and its rules
+        if old.distribution_rules.perpetual_distribution()
+            != new.distribution_rules.perpetual_distribution()
+            || old.distribution_rules.perpetual_distribution_rules()
+                != new.distribution_rules.perpetual_distribution_rules()
+        {
+            if !old
+                .distribution_rules
+                .perpetual_distribution_rules()
+                .can_change_to(
+                    &new.distribution_rules.perpetual_distribution_rules(),
+                    contract_owner_id,
+                    self.main_control_group(),
+                    groups,
+                    action_taker,
+                    goal,
+                )
+            {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DataContractTokenConfigurationUpdateError::new(
+                        "update".to_string(),
+                        "perpetualDistribution or perpetualDistributionRules".to_string(),
                         self.clone(),
                         new_config.clone(),
                     )
