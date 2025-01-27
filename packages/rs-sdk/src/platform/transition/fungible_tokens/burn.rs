@@ -16,7 +16,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 
 /// A builder to configure and broadcast burning tokens transition
-pub struct BurnTokensStateTransitionBuilder<'a> {
+pub struct TokenBurnTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
     owner_id: Identifier,
@@ -27,7 +27,7 @@ pub struct BurnTokensStateTransitionBuilder<'a> {
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> BurnTokensStateTransitionBuilder<'a> {
+impl<'a> TokenBurnTransitionBuilder<'a> {
     pub fn new(
         data_contract: &'a DataContract,
         token_position: TokenContractPosition,

@@ -16,7 +16,7 @@ use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 
 /// A builder to configure minting tokens.
-pub struct FreezeTokensStateTransitionBuilder<'a> {
+pub struct TokenFreezeTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
     actor_id: Identifier,
@@ -27,7 +27,7 @@ pub struct FreezeTokensStateTransitionBuilder<'a> {
     using_group_info: Option<GroupStateTransitionInfoStatus>,
 }
 
-impl<'a> FreezeTokensStateTransitionBuilder<'a> {
+impl<'a> TokenFreezeTransitionBuilder<'a> {
     /// Start building a mint tokens request for the provided DataContract.
     pub fn new(
         data_contract: &'a DataContract,
