@@ -15,7 +15,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::dashcore::bls_sig_utils::BLSPublicKey;
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::ProTxHash;
 use dpp::platform_value::Bytes32;
 use dpp::version::version::ProtocolVersion;
@@ -29,7 +29,7 @@ use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::epoch_info::v0::EpochInfoV0;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::v0::{PlatformStateForSavingV1, PlatformStateV0, PlatformStateV0Methods};
-use crate::platform_types::signature_verification_quorum_set::{SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving, ThresholdBlsPublicKey};
+use crate::platform_types::signature_verification_quorum_set::{SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0Methods, ThresholdBlsPublicKey, VerificationQuorum};
 use crate::rpc::core::CoreRPCLike;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetForSaving::V1;
 use crate::platform_types::validator_set::v0::ValidatorSetMethodsV0;
@@ -208,8 +208,7 @@ where
 
     let current_protocol_version_in_consensus = snapshot_header_version.app as u32;
     let next_epoch_protocol_version = snapshot_header.proposed_app_version as u32;
-    let current_validator_set_quorum_hash = QuorumHash::from_byte_array(snapshot_header_validator_hash_32);
-    let next_validator_set_quorum_hash = QuorumHash::from_byte_array(snapshot_header_next_validator_hash_32);
+    let current_validator_set_quorum_hash = QuorumHash::from_byte_array(snapshot_commit_quorum_hash_32);
 
     let mn_list_diff = app.platform().core_rpc.get_protx_diff_with_masternodes(Some(1), snapshot_header.core_chain_locked_height)?;
 
@@ -224,7 +223,7 @@ where
         },
         app_hash: snapshot_header_app_hash_32,
         quorum_hash: snapshot_commit_quorum_hash_32,
-        block_id_hash: snapshot_commit_block_hash_32,
+        block_id_hash: snapshot_header_last_block_id_hash_32,
         proposer_pro_tx_hash: snapshot_header_proposer_pro_tx_hash_32,
         signature: snapshot_commit_threshold_block_sig_96,
         round: snapshot_commit.round as u32,
@@ -236,7 +235,7 @@ where
         current_protocol_version_in_consensus,
         next_epoch_protocol_version,
         current_validator_set_quorum_hash,
-        next_validator_set_quorum_hash: Some(next_validator_set_quorum_hash),
+        next_validator_set_quorum_hash: None,
         patched_platform_version: None,
         validator_sets: Default::default(),
         chain_lock_validating_quorums: SignatureVerificationQuorumSet::from(
@@ -328,8 +327,100 @@ where
                     primary_comparison
                 }
             });
-    }
 
+        let quorum_set_type = crate::execution::platform_events::core_based_updates::update_quorum_info::v0::QuorumSetType::ChainLock(chain_lock_quorum_type);
+        let quorums_list: BTreeMap<_, _> = extended_quorum_list
+            .quorums_by_type
+            .get(&quorum_set_type.quorum_type())
+            .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                format!(
+                    "expected quorums {}, but did not receive any from Dash Core",
+                    quorum_set_type
+                ),
+            )))?
+            .iter()
+            .map(|(quorum_hash, extended_quorum_details)| {
+                (quorum_hash, extended_quorum_details.quorum_index)
+            })
+            .collect();
+
+        // Fetch quorum info and their keys from the RPC for new quorums
+        // and then create VerificationQuorum instances
+        let new_quorums = quorums_list
+            .into_iter()
+            .filter(|(quorum_hash, _)| {
+                !state.chain_lock_validating_quorums()
+                    .current_quorums()
+                    .contains_key::<QuorumHash>(quorum_hash)
+            })
+            .map(|(quorum_hash, index)| {
+                let quorum_info = app.platform().core_rpc.get_quorum_info(
+                    quorum_set_type.quorum_type(),
+                    quorum_hash,
+                    None,
+                )?;
+
+                let public_key =
+                    match BlsPublicKey::try_from(quorum_info.quorum_public_key.as_slice())
+                        .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                    {
+                        Ok(public_key) => public_key,
+                        Err(e) => return Err(e.into()),
+                    };
+
+                Ok((*quorum_hash, VerificationQuorum { public_key, index }))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        state.chain_lock_validating_quorums_mut().current_quorums_mut().extend(new_quorums);
+
+        let quorum_set_type = crate::execution::platform_events::core_based_updates::update_quorum_info::v0::QuorumSetType::InstantLock(instant_lock_quorum_type);
+        let quorums_list: BTreeMap<_, _> = extended_quorum_list
+            .quorums_by_type
+            .get(&quorum_set_type.quorum_type())
+            .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                format!(
+                    "expected quorums {}, but did not receive any from Dash Core",
+                    quorum_set_type
+                ),
+            )))?
+            .iter()
+            .map(|(quorum_hash, extended_quorum_details)| {
+                (quorum_hash, extended_quorum_details.quorum_index)
+            })
+            .collect();
+
+        // Fetch quorum info and their keys from the RPC for new quorums
+        // and then create VerificationQuorum instances
+        let new_quorums = quorums_list
+            .into_iter()
+            .filter(|(quorum_hash, _)| {
+                !state.instant_lock_validating_quorums()
+                    .current_quorums()
+                    .contains_key::<QuorumHash>(quorum_hash)
+            })
+            .map(|(quorum_hash, index)| {
+                let quorum_info = app.platform().core_rpc.get_quorum_info(
+                    quorum_set_type.quorum_type(),
+                    quorum_hash,
+                    None,
+                )?;
+
+                let public_key =
+                    match BlsPublicKey::try_from(quorum_info.quorum_public_key.as_slice())
+                        .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                    {
+                        Ok(public_key) => public_key,
+                        Err(e) => return Err(e.into()),
+                    };
+
+                Ok((*quorum_hash, VerificationQuorum { public_key, index }))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        state.instant_lock_validating_quorums_mut().current_quorums_mut().extend(new_quorums);
+    }
+    
     let block_height = state.last_committed_block_height();
 
     tracing::info!(
@@ -377,3 +468,114 @@ fn build_masternode_lists(
 
     Ok((full_masternode_list, hpmn_masternode_list))
 }
+
+/*
+fn update_quorums_from_quorum_list(
+    quorum_set_type: QuorumSetType,
+    quorum_set: &mut SignatureVerificationQuorumSet,
+    platform_state: Option<&PlatformState>,
+    full_quorum_list: &ExtendedQuorumListResult,
+    last_committed_core_height: u32,
+    next_core_height: u32,
+) -> Result<bool, Error> {
+    // TODO: Use HashSet, we don't need to update index for existing quorums
+    let quorums_list: BTreeMap<_, _> = full_quorum_list
+        .quorums_by_type
+        .get(&quorum_set_type.quorum_type())
+        .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+            format!(
+                "expected quorums {}, but did not receive any from Dash Core",
+                quorum_set_type
+            ),
+        )))?
+        .iter()
+        .map(|(quorum_hash, extended_quorum_details)| {
+            (quorum_hash, extended_quorum_details.quorum_index)
+        })
+        .collect();
+
+    let mut removed_a_validating_quorum = false;
+
+    // Remove validating_quorums entries that are no longer valid for the core block height
+    // and update quorum index for existing validator sets
+    quorum_set
+        .current_quorums_mut()
+        .retain(|quorum_hash, quorum| {
+            let retain = match quorums_list.get(quorum_hash) {
+                Some(index) => {
+                    quorum.index = *index;
+                    true
+                }
+                None => false,
+            };
+
+            if !retain {
+                tracing::trace!(
+                        ?quorum_hash,
+                        quorum_type = ?quorum_set_type.quorum_type(),
+                        "removed old {} quorum {}",
+                        quorum_set_type,
+                        quorum_hash,
+                    );
+            }
+            removed_a_validating_quorum |= !retain;
+            retain
+        });
+
+    // Fetch quorum info and their keys from the RPC for new quorums
+    // and then create VerificationQuorum instances
+    let new_quorums = quorums_list
+        .into_iter()
+        .filter(|(quorum_hash, _)| {
+            !quorum_set
+                .current_quorums()
+                .contains_key::<QuorumHash>(quorum_hash)
+        })
+        .map(|(quorum_hash, index)| {
+            let quorum_info = self.core_rpc.get_quorum_info(
+                quorum_set_type.quorum_type(),
+                quorum_hash,
+                None,
+            )?;
+
+            let public_key =
+                match BlsPublicKey::try_from(quorum_info.quorum_public_key.as_slice())
+                    .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                {
+                    Ok(public_key) => public_key,
+                    Err(e) => return Err(e.into()),
+                };
+
+            tracing::trace!(
+                    ?public_key,
+                    ?quorum_hash,
+                    index,
+                    quorum_type = ?quorum_set_type.quorum_type(),
+                    "add new {} quorum {}",
+                    quorum_set_type,
+                    quorum_hash,
+                );
+
+            Ok((*quorum_hash, VerificationQuorum { public_key, index }))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+
+    let are_quorums_updated = !new_quorums.is_empty() || removed_a_validating_quorum;
+
+    quorum_set.current_quorums_mut().extend(new_quorums);
+
+    if are_quorums_updated {
+        if let Some(old_state) = platform_state {
+            let previous_validating_quorums =
+                crate::execution::platform_events::core_based_updates::update_quorum_info::v0::quorum_set_by_type(old_state, &quorum_set_type).current_quorums();
+
+            quorum_set.set_previous_past_quorums(
+                previous_validating_quorums.clone(),
+                last_committed_core_height,
+                next_core_height,
+            );
+        }
+    }
+
+    Ok(are_quorums_updated)
+}*/

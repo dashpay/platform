@@ -1,4 +1,4 @@
-mod v0;
+pub(crate) mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
