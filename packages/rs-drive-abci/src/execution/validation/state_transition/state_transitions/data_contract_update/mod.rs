@@ -1177,8 +1177,10 @@ mod tests {
     mod token_tests {
         use super::*;
         use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         #[test]
         fn test_data_contract_update_can_not_add_new_token() {
             let mut platform = TestPlatformBuilder::new()
@@ -1358,7 +1360,7 @@ mod tests {
                     platform_version,
                     None,
                 )
-                    .expect("expect to create data contract update transition");
+                .expect("expect to create data contract update transition");
 
             let data_contract_update_serialized_transition = data_contract_update_transition
                 .serialize_to_bytes()
@@ -1380,7 +1382,9 @@ mod tests {
                 .expect("expected to process state transition");
 
             if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(error)),
+                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                    error,
+                )),
                 _,
             )] = processing_result.execution_results().as_slice()
             {
@@ -1453,7 +1457,9 @@ mod tests {
             if let Some(TokenConfiguration::V0(config)) =
                 updated_data_contract.tokens_mut().unwrap().get_mut(&0)
             {
-                config.minting_allow_choosing_destination = false; //originally true
+                config
+                    .distribution_rules_mut()
+                    .set_minting_allow_choosing_destination(false); //originally true
             }
 
             let data_contract_update_transition =
@@ -1467,7 +1473,7 @@ mod tests {
                     platform_version,
                     None,
                 )
-                    .expect("expect to create data contract update transition");
+                .expect("expect to create data contract update transition");
 
             let data_contract_update_serialized_transition = data_contract_update_transition
                 .serialize_to_bytes()
@@ -1489,7 +1495,9 @@ mod tests {
                 .expect("expected to process state transition");
 
             if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(error)),
+                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                    error,
+                )),
                 _,
             )] = processing_result.execution_results().as_slice()
             {

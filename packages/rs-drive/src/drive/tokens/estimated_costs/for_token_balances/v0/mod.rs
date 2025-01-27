@@ -14,8 +14,6 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees};
 use std::collections::HashMap;
 
-pub const ESTIMATED_TOKEN_INFO_SIZE_BYTES: u32 = 256;
-
 impl Drive {
     /// Adds estimation costs for token balances in Drive for version 0.
     ///

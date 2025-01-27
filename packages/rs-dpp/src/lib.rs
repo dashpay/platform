@@ -79,10 +79,16 @@ pub mod prelude {
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
 
+    pub type EpochInterval = u16;
+
     pub type BlockHeight = u64;
+
+    pub type BlockHeightInterval = u64;
 
     pub type CoreBlockHeight = u32;
     pub type TimestampMillis = u64;
+
+    pub type TimestampMillisInterval = u64;
 
     pub type StartAtIncluded = bool;
 

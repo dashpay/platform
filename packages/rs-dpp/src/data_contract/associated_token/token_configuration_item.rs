@@ -1,5 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::GroupContractPosition;
 use crate::ProtocolError;
@@ -36,6 +37,9 @@ pub enum TokenConfigurationChangeItem {
     MaxSupply(Option<TokenAmount>),
     MaxSupplyControlGroup(AuthorizedActionTakers),
     MaxSupplyAdminGroup(AuthorizedActionTakers),
+    PerpetualDistribution(Option<TokenPerpetualDistribution>),
+    PerpetualDistributionControlGroup(AuthorizedActionTakers),
+    PerpetualDistributionAdminGroup(AuthorizedActionTakers),
     NewTokensDestinationIdentity(Option<Identifier>),
     NewTokensDestinationIdentityControlGroup(AuthorizedActionTakers),
     NewTokensDestinationIdentityAdminGroup(AuthorizedActionTakers),
@@ -56,7 +60,6 @@ pub enum TokenConfigurationChangeItem {
     EmergencyActionAdminGroup(AuthorizedActionTakers),
     MainControlGroup(Option<GroupContractPosition>),
 }
-
 impl TokenConfigurationChangeItem {
     pub fn u8_item_index(&self) -> u8 {
         match self {
@@ -67,25 +70,28 @@ impl TokenConfigurationChangeItem {
             TokenConfigurationChangeItem::MaxSupply(_) => 4,
             TokenConfigurationChangeItem::MaxSupplyControlGroup(_) => 5,
             TokenConfigurationChangeItem::MaxSupplyAdminGroup(_) => 6,
-            TokenConfigurationChangeItem::NewTokensDestinationIdentity(_) => 7,
-            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(_) => 8,
-            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(_) => 9,
-            TokenConfigurationChangeItem::MintingAllowChoosingDestination(_) => 10,
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(_) => 11,
-            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(_) => 12,
-            TokenConfigurationChangeItem::ManualMinting(_) => 13,
-            TokenConfigurationChangeItem::ManualMintingAdminGroup(_) => 14,
-            TokenConfigurationChangeItem::ManualBurning(_) => 15,
-            TokenConfigurationChangeItem::ManualBurningAdminGroup(_) => 16,
-            TokenConfigurationChangeItem::Freeze(_) => 17,
-            TokenConfigurationChangeItem::FreezeAdminGroup(_) => 18,
-            TokenConfigurationChangeItem::Unfreeze(_) => 19,
-            TokenConfigurationChangeItem::UnfreezeAdminGroup(_) => 20,
-            TokenConfigurationChangeItem::DestroyFrozenFunds(_) => 21,
-            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(_) => 22,
-            TokenConfigurationChangeItem::EmergencyAction(_) => 23,
-            TokenConfigurationChangeItem::EmergencyActionAdminGroup(_) => 24,
-            TokenConfigurationChangeItem::MainControlGroup(_) => 25,
+            TokenConfigurationChangeItem::PerpetualDistribution(_) => 7,
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(_) => 8,
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(_) => 9,
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(_) => 10,
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(_) => 11,
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(_) => 12,
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(_) => 13,
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(_) => 14,
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(_) => 15,
+            TokenConfigurationChangeItem::ManualMinting(_) => 16,
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(_) => 17,
+            TokenConfigurationChangeItem::ManualBurning(_) => 18,
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(_) => 19,
+            TokenConfigurationChangeItem::Freeze(_) => 20,
+            TokenConfigurationChangeItem::FreezeAdminGroup(_) => 21,
+            TokenConfigurationChangeItem::Unfreeze(_) => 22,
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(_) => 23,
+            TokenConfigurationChangeItem::DestroyFrozenFunds(_) => 24,
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(_) => 25,
+            TokenConfigurationChangeItem::EmergencyAction(_) => 26,
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(_) => 27,
+            TokenConfigurationChangeItem::MainControlGroup(_) => 28,
         }
     }
 }
@@ -114,6 +120,17 @@ impl fmt::Display for TokenConfigurationChangeItem {
             }
             TokenConfigurationChangeItem::MaxSupplyAdminGroup(admin_group) => {
                 write!(f, "Max Supply Admin Group: {}", admin_group)
+            }
+            TokenConfigurationChangeItem::PerpetualDistribution(distribution) => match distribution
+            {
+                Some(dist) => write!(f, "Perpetual Distribution: {}", dist),
+                None => write!(f, "Perpetual Distribution: None"),
+            },
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(control_group) => {
+                write!(f, "Perpetual Distribution Control Group: {}", control_group)
+            }
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(admin_group) => {
+                write!(f, "Perpetual Distribution Admin Group: {}", admin_group)
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(identity) => {
                 match identity {

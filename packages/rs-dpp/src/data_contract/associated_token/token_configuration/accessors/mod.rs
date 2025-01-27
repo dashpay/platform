@@ -6,10 +6,10 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 };
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
-use platform_value::Identifier;
 use std::collections::BTreeSet;
 
 /// Implementing TokenConfigurationV0Getters for TokenConfiguration
@@ -69,30 +69,15 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
         }
     }
 
-    /// Returns the new tokens destination identity.
-    fn new_tokens_destination_identity(&self) -> Option<Identifier> {
+    fn distribution_rules(&self) -> &TokenDistributionRules {
         match self {
-            TokenConfiguration::V0(v0) => v0.new_tokens_destination_identity(),
+            TokenConfiguration::V0(v0) => v0.distribution_rules(),
         }
     }
 
-    /// Returns the new tokens destination identity rules.
-    fn new_tokens_destination_identity_rules(&self) -> &ChangeControlRules {
+    fn distribution_rules_mut(&mut self) -> &mut TokenDistributionRules {
         match self {
-            TokenConfiguration::V0(v0) => v0.new_tokens_destination_identity_rules(),
-        }
-    }
-    /// Returns whether minting allows choosing a destination.
-    fn minting_allow_choosing_destination(&self) -> bool {
-        match self {
-            TokenConfiguration::V0(v0) => v0.minting_allow_choosing_destination(),
-        }
-    }
-
-    /// Returns the rules for minting destination selection.
-    fn minting_allow_choosing_destination_rules(&self) -> &ChangeControlRules {
-        match self {
-            TokenConfiguration::V0(v0) => v0.minting_allow_choosing_destination_rules(),
+            TokenConfiguration::V0(v0) => v0.distribution_rules_mut(),
         }
     }
 
@@ -195,17 +180,9 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
         }
     }
 
-    /// Sets the new tokens destination identity.
-    fn set_new_tokens_destination_identity(&mut self, id: Option<Identifier>) {
+    fn set_distribution_rules(&mut self, rules: TokenDistributionRules) {
         match self {
-            TokenConfiguration::V0(v0) => v0.set_new_tokens_destination_identity(id),
-        }
-    }
-
-    /// Sets the new tokens destination identity rules.
-    fn set_new_tokens_destination_identity_rules(&mut self, rules: ChangeControlRules) {
-        match self {
-            TokenConfiguration::V0(v0) => v0.set_new_tokens_destination_identity_rules(rules),
+            TokenConfiguration::V0(v0) => v0.set_distribution_rules(rules),
         }
     }
 
@@ -260,18 +237,6 @@ impl TokenConfigurationV0Setters for TokenConfiguration {
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         match self {
             TokenConfiguration::V0(v0) => v0.set_main_control_group_can_be_modified(action_takers),
-        }
-    }
-
-    fn set_minting_allow_choosing_destination(&mut self, value: bool) {
-        match self {
-            TokenConfiguration::V0(v0) => v0.set_minting_allow_choosing_destination(value),
-        }
-    }
-
-    fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules) {
-        match self {
-            TokenConfiguration::V0(v0) => v0.set_minting_allow_choosing_destination_rules(rules),
         }
     }
 }

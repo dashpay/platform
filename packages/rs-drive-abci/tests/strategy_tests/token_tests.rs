@@ -5,7 +5,10 @@ mod tests {
     use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
-    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
+        TokenConfigurationV0Getters, TokenConfigurationV0Setters,
+    };
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::DataContract;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
@@ -70,7 +73,9 @@ mod tests {
         let token_configuration = contract
             .token_configuration_mut(0)
             .expect("expected to get token configuration");
-        token_configuration.set_minting_allow_choosing_destination(true);
+        token_configuration
+            .distribution_rules_mut()
+            .set_minting_allow_choosing_destination(true);
         contract.set_owner_id(identity1.id());
         let new_id = DataContract::generate_data_contract_id_v0(identity1.id(), 1);
         contract.set_id(new_id);
@@ -218,7 +223,9 @@ mod tests {
         let token_configuration = contract
             .token_configuration_mut(0)
             .expect("expected to get token configuration");
-        token_configuration.set_minting_allow_choosing_destination(true);
+        token_configuration
+            .distribution_rules_mut()
+            .set_minting_allow_choosing_destination(true);
         contract.set_owner_id(identity1.id());
         let new_id = DataContract::generate_data_contract_id_v0(identity1.id(), 1);
         contract.set_id(new_id);

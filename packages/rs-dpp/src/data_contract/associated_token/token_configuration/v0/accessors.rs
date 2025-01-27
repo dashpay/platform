@@ -5,10 +5,11 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::v0::{
     TokenConfigurationConvention, TokenConfigurationV0,
 };
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
-use platform_value::Identifier;
 use std::collections::BTreeSet;
 
 /// Implementing `TokenConfigurationV0Getters` for `TokenConfigurationV0`
@@ -53,24 +54,12 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         &self.max_supply_change_rules
     }
 
-    /// Returns the new tokens destination identity.
-    fn new_tokens_destination_identity(&self) -> Option<Identifier> {
-        self.new_tokens_destination_identity
+    fn distribution_rules(&self) -> &TokenDistributionRules {
+        &self.distribution_rules
     }
 
-    /// Returns the new tokens destination identity rules.
-    fn new_tokens_destination_identity_rules(&self) -> &ChangeControlRules {
-        &self.new_tokens_destination_identity_rules
-    }
-
-    /// Returns whether minting allows choosing a destination.
-    fn minting_allow_choosing_destination(&self) -> bool {
-        self.minting_allow_choosing_destination
-    }
-
-    /// Returns the rules for minting destination selection.
-    fn minting_allow_choosing_destination_rules(&self) -> &ChangeControlRules {
-        &self.minting_allow_choosing_destination_rules
+    fn distribution_rules_mut(&mut self) -> &mut TokenDistributionRules {
+        &mut self.distribution_rules
     }
 
     /// Returns the manual minting rules.
@@ -138,8 +127,15 @@ impl TokenConfigurationV0Getters for TokenConfigurationV0 {
         // Apply the helper to all fields containing `ChangeControlRules`
         add_from_change_control_rules(&self.max_supply_change_rules);
         add_from_change_control_rules(&self.conventions_change_rules);
-        add_from_change_control_rules(&self.new_tokens_destination_identity_rules);
-        add_from_change_control_rules(&self.minting_allow_choosing_destination_rules);
+        add_from_change_control_rules(
+            self.distribution_rules
+                .new_tokens_destination_identity_rules(),
+        );
+        add_from_change_control_rules(
+            self.distribution_rules
+                .minting_allow_choosing_destination_rules(),
+        );
+        add_from_change_control_rules(self.distribution_rules.perpetual_distribution_rules());
         add_from_change_control_rules(&self.manual_minting_rules);
         add_from_change_control_rules(&self.manual_burning_rules);
         add_from_change_control_rules(&self.freeze_rules);
@@ -181,16 +177,9 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
         self.max_supply_change_rules = rules;
     }
 
-    /// Sets the new tokens destination identity.
-    fn set_new_tokens_destination_identity(&mut self, id: Option<Identifier>) {
-        self.new_tokens_destination_identity = id;
+    fn set_distribution_rules(&mut self, rules: TokenDistributionRules) {
+        self.distribution_rules = rules;
     }
-
-    /// Sets the new tokens destination identity rules.
-    fn set_new_tokens_destination_identity_rules(&mut self, rules: ChangeControlRules) {
-        self.new_tokens_destination_identity_rules = rules;
-    }
-
     /// Sets the manual minting rules.
     fn set_manual_minting_rules(&mut self, rules: ChangeControlRules) {
         self.manual_minting_rules = rules;
@@ -229,15 +218,5 @@ impl TokenConfigurationV0Setters for TokenConfigurationV0 {
     /// Sets the main control group can be modified.
     fn set_main_control_group_can_be_modified(&mut self, action_takers: AuthorizedActionTakers) {
         self.main_control_group_can_be_modified = action_takers;
-    }
-
-    /// Sets whether minting allows choosing a destination.
-    fn set_minting_allow_choosing_destination(&mut self, value: bool) {
-        self.minting_allow_choosing_destination = value;
-    }
-
-    /// Sets the rules for minting destination selection.
-    fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules) {
-        self.minting_allow_choosing_destination_rules = rules;
     }
 }

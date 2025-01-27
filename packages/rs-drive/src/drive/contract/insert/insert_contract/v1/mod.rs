@@ -18,6 +18,7 @@ use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -219,7 +220,9 @@ impl Drive {
             if token_config.base_supply() > 0 {
                 // We have a base supply that needs to be distributed on contract creation
                 let destination_identity_id = token_config
+                    .distribution_rules()
                     .new_tokens_destination_identity()
+                    .copied()
                     .unwrap_or(contract.owner_id());
                 let token_balance_path = token_balances_path_vec(token_id_bytes);
 

@@ -12,6 +12,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::v0::TokenMintTransitionActionV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
@@ -117,6 +118,7 @@ impl TokenMintTransitionActionV0 {
 
         if !base_action
             .token_configuration()?
+            .distribution_rules()
             .minting_allow_choosing_destination()
             && issued_to_identity_id.is_some()
         {
@@ -148,7 +150,10 @@ impl TokenMintTransitionActionV0 {
                 .tokens()
                 .get(&position)
                 .and_then(|token_configuration| {
-                    token_configuration.new_tokens_destination_identity()
+                    token_configuration
+                        .distribution_rules()
+                        .new_tokens_destination_identity()
+                        .copied()
                 })
         }) {
             Some(identity_balance_holder_id) => identity_balance_holder_id,
@@ -290,6 +295,7 @@ impl TokenMintTransitionActionV0 {
 
         if !base_action
             .token_configuration()?
+            .distribution_rules()
             .minting_allow_choosing_destination()
             && issued_to_identity_id.is_some()
         {
@@ -321,7 +327,10 @@ impl TokenMintTransitionActionV0 {
                 .tokens()
                 .get(&base.token_contract_position())
                 .and_then(|token_configuration| {
-                    token_configuration.new_tokens_destination_identity()
+                    token_configuration
+                        .distribution_rules()
+                        .new_tokens_destination_identity()
+                        .copied()
                 })
         }) {
             Some(identity_balance_holder_id) => identity_balance_holder_id,

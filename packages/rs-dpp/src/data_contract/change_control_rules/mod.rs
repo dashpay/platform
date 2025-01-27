@@ -11,6 +11,7 @@ use derive_more::From;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From)]
 pub enum ChangeControlRules {
@@ -122,6 +123,16 @@ impl ChangeControlRules {
                 action_taker,
                 goal,
             ),
+        }
+    }
+}
+
+impl fmt::Display for ChangeControlRules {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChangeControlRules::V0(v0) => {
+                write!(f, "{}", v0) //just pass through
+            }
         }
     }
 }

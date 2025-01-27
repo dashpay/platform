@@ -1,6 +1,7 @@
 use platform_value::Identifier;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -81,13 +82,13 @@ impl TokenMintTransitionV0Methods for TokenMintTransitionV0 {
         token_configuration: &TokenConfiguration,
     ) -> Result<Identifier, ProtocolError> {
         match self.issued_to_identity_id() {
-            None => {
-                token_configuration
-                    .new_tokens_destination_identity()
-                    .ok_or(ProtocolError::Token(
-                        TokenError::TokenNoMintingRecipient.into(),
-                    ))
-            }
+            None => token_configuration
+                .distribution_rules()
+                .new_tokens_destination_identity()
+                .copied()
+                .ok_or(ProtocolError::Token(
+                    TokenError::TokenNoMintingRecipient.into(),
+                )),
             Some(recipient) => Ok(recipient),
         }
     }

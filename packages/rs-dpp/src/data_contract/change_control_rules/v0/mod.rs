@@ -6,6 +6,7 @@ use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
 pub struct ChangeControlRulesV0 {
@@ -156,5 +157,25 @@ impl ChangeControlRulesV0 {
 
         // If we reach here, the changes are allowed
         true
+    }
+}
+
+impl fmt::Display for ChangeControlRulesV0 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ChangeControlRulesV0 {{\n  \
+            authorized_to_make_change: {},\n  \
+            admin_action_takers: {},\n  \
+            changing_authorized_action_takers_to_no_one_allowed: {},\n  \
+            changing_admin_action_takers_to_no_one_allowed: {},\n  \
+            self_changing_admin_action_takers_allowed: {}\n\
+            }}",
+            self.authorized_to_make_change,
+            self.admin_action_takers,
+            self.changing_authorized_action_takers_to_no_one_allowed,
+            self.changing_admin_action_takers_to_no_one_allowed,
+            self.self_changing_admin_action_takers_allowed
+        )
     }
 }
