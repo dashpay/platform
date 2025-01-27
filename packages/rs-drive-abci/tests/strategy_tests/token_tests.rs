@@ -5,9 +5,7 @@ mod tests {
     use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
-    use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
-        TokenConfigurationV0Getters, TokenConfigurationV0Setters,
-    };
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::DataContract;
     use dpp::identity::accessors::IdentityGettersV0;

@@ -36,6 +36,7 @@ pub struct TokenConfigurationV0 {
     #[serde(default = "default_change_control_rules")]
     pub max_supply_change_rules: ChangeControlRules,
     /// The distribution rules for the token
+    #[serde(default = "default_token_distribution_rules")]
     pub distribution_rules: TokenDistributionRules,
     #[serde(default = "default_contract_owner_change_control_rules")]
     pub manual_minting_rules: ChangeControlRules,
@@ -63,6 +64,36 @@ fn default_keeps_history() -> bool {
 // Default function for `starts_as_paused`
 fn default_starts_as_paused() -> bool {
     false
+}
+
+fn default_token_distribution_rules() -> TokenDistributionRules {
+    TokenDistributionRules::V0(TokenDistributionRulesV0 {
+        perpetual_distribution: None,
+        perpetual_distribution_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+        pre_programmed_distribution: None,
+        new_tokens_destination_identity: None,
+        new_tokens_destination_identity_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+        minting_allow_choosing_destination: false,
+        minting_allow_choosing_destination_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
+    })
 }
 
 fn default_change_control_rules() -> ChangeControlRules {
