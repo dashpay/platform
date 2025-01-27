@@ -1,4 +1,4 @@
-use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::builder::StateTransitionBuilder;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -70,8 +70,14 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         self.settings = Some(settings);
         self
     }
+}
 
-    pub async fn sign(
+impl StateTransitionBuilder for TokenBurnTransitionBuilder<'_> {
+    fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
+    async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
@@ -111,35 +117,5 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         )?;
 
         Ok(state_transition)
-    }
-
-    pub async fn broadcast(
-        &self,
-        sdk: &Sdk,
-        identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
-        platform_version: &PlatformVersion,
-    ) -> Result<StateTransition, Error> {
-        let state_transition = self
-            .sign(sdk, identity_public_key, signer, platform_version)
-            .await?;
-
-        state_transition.broadcast(sdk, self.settings).await?;
-
-        Ok(state_transition)
-    }
-
-    pub async fn broadcast_and_wait_for_result(
-        &self,
-        sdk: &Sdk,
-        identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
-        platform_version: &PlatformVersion,
-    ) -> Result<(Identifier, TokenAmount), Error> {
-        let state_transition = self
-            .broadcast(sdk, identity_public_key, signer, platform_version)
-            .await?;
-
-        state_transition.wait_for_response(sdk, self.settings).await
     }
 }
