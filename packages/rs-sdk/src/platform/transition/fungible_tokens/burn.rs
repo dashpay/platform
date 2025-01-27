@@ -15,7 +15,7 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 
-/// A builder to configure and broadcast burning tokens transition
+/// A builder to configure and broadcast token burn transitions
 pub struct TokenBurnTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
@@ -28,14 +28,20 @@ pub struct TokenBurnTransitionBuilder<'a> {
 }
 
 impl<'a> TokenBurnTransitionBuilder<'a> {
+    /// Creates a new `TokenBurnTransitionBuilder`
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract` - A reference to the data contract
+    /// * `token_position` - The position of the token in the contract
+    /// * `owner_id` - The identifier of the token owner
+    /// * `amount` - The amount of tokens to burn
     pub fn new(
         data_contract: &'a DataContract,
         token_position: TokenContractPosition,
         owner_id: Identifier,
         amount: TokenAmount,
     ) -> Self {
-        // TODO: Validate token position
-
         Self {
             data_contract,
             token_position,
@@ -48,24 +54,57 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         }
     }
 
+    /// Adds a public note to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `note` - The public note to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_public_note(mut self, note: String) -> Self {
         self.public_note = Some(note);
         self
     }
 
+    /// Adds a user fee increase to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `user_fee_increase` - The user fee increase to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_user_fee_increase(mut self, user_fee_increase: UserFeeIncrease) -> Self {
         self.user_fee_increase = Some(user_fee_increase);
         self
     }
 
+    /// Adds group information to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `group_info` - The group information to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
         self.using_group_info = Some(group_info);
-
-        // TODO: Simplify group actions automatically find position if group action is required
-
         self
     }
 
+    /// Adds settings to the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `settings` - The settings to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
         self.settings = Some(settings);
         self
@@ -73,10 +112,27 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
 }
 
 impl StateTransitionBuilder for TokenBurnTransitionBuilder<'_> {
+    /// Returns the settings for the token burn transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
     fn settings(&self) -> Option<PutSettings> {
         self.settings
     }
 
+    /// Signs the token burn transition
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - The SDK instance
+    /// * `identity_public_key` - The public key of the identity
+    /// * `signer` - The signer instance
+    /// * `platform_version` - The platform version
+    ///
+    /// # Returns
+    ///
+    /// * `Result<StateTransition, Error>` - The signed state transition or an error
     async fn sign(
         &self,
         sdk: &Sdk,

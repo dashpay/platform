@@ -15,7 +15,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::version::PlatformVersion;
 
-/// A builder to configure minting tokens.
+/// A builder to configure and broadcast emergency action transitions
 pub struct TokenEmergencyActionTransitionBuilder<'a> {
     data_contract: &'a DataContract,
     token_position: TokenContractPosition,
@@ -28,7 +28,17 @@ pub struct TokenEmergencyActionTransitionBuilder<'a> {
 }
 
 impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
-    /// Start building a mint tokens request for the provided DataContract.
+    /// Start building a pause tokens request for the provided DataContract.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract` - A reference to the data contract
+    /// * `token_position` - The position of the token in the contract
+    /// * `actor_id` - The identifier of the actor
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The new builder instance
     pub fn pause(
         data_contract: &'a DataContract,
         token_position: TokenContractPosition,
@@ -48,6 +58,17 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         }
     }
 
+    /// Start building a resume tokens request for the provided DataContract.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract` - A reference to the data contract
+    /// * `token_position` - The position of the token in the contract
+    /// * `actor_id` - The identifier of the actor
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The new builder instance
     pub fn resume(
         data_contract: &'a DataContract,
         token_position: TokenContractPosition,
@@ -67,16 +88,43 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         }
     }
 
+    /// Adds a public note to the token emergency action transition
+    ///
+    /// # Arguments
+    ///
+    /// * `note` - The public note to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_public_note(mut self, note: String) -> Self {
         self.public_note = Some(note);
         self
     }
 
+    /// Adds a user fee increase to the token emergency action transition
+    ///
+    /// # Arguments
+    ///
+    /// * `user_fee_increase` - The user fee increase to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_user_fee_increase(mut self, user_fee_increase: UserFeeIncrease) -> Self {
         self.user_fee_increase = Some(user_fee_increase);
         self
     }
 
+    /// Adds group information to the token emergency action transition
+    ///
+    /// # Arguments
+    ///
+    /// * `group_info` - The group information to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_using_group_info(mut self, group_info: GroupStateTransitionInfoStatus) -> Self {
         self.using_group_info = Some(group_info);
 
@@ -85,6 +133,15 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         self
     }
 
+    /// Adds settings to the token emergency action transition
+    ///
+    /// # Arguments
+    ///
+    /// * `settings` - The settings to add
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
         self.settings = Some(settings);
         self
@@ -92,10 +149,27 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
 }
 
 impl StateTransitionBuilder for TokenEmergencyActionTransitionBuilder<'_> {
+    /// Returns the settings for the token emergency action transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
     fn settings(&self) -> Option<PutSettings> {
         self.settings
     }
 
+    /// Signs the token emergency action transition
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - The SDK instance
+    /// * `identity_public_key` - The public key of the identity
+    /// * `signer` - The signer instance
+    /// * `platform_version` - The platform version
+    ///
+    /// # Returns
+    ///
+    /// * `Result<StateTransition, Error>` - The signed state transition or an error
     async fn sign(
         &self,
         sdk: &Sdk,

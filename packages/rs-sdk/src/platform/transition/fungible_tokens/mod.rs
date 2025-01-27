@@ -1,3 +1,5 @@
+//! Fungible token state transitions
+
 pub mod burn;
 pub mod destroy;
 pub mod emergency_action;
