@@ -514,3 +514,93 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_status
 );
+
+// rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityTokenBalancesRequest,
+    platform_proto::GetIdentityTokenBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_token_balances
+);
+
+// rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesTokenBalancesRequest,
+    platform_proto::GetIdentitiesTokenBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_token_balances
+);
+
+// rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityTokenInfosRequest,
+    platform_proto::GetIdentityTokenInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_token_infos
+);
+
+// rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesTokenInfosRequest,
+    platform_proto::GetIdentitiesTokenInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_token_infos
+);
+
+// rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenStatusesRequest,
+    platform_proto::GetTokenStatusesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_statuses
+);
+
+// rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenTotalSupplyRequest,
+    platform_proto::GetTokenTotalSupplyResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_total_supply
+);
+
+// rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupInfoRequest,
+    platform_proto::GetGroupInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_info
+);
+
+// rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupInfosRequest,
+    platform_proto::GetGroupInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_infos
+);
+
+// rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupActionsRequest,
+    platform_proto::GetGroupActionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_actions
+);
+
+// rpc getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetGroupActionSignersRequest,
+    platform_proto::GetGroupActionSignersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_group_action_signers
+);
