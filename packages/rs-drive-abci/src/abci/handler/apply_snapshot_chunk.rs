@@ -1,9 +1,9 @@
-use drive::grovedb_storage::rocksdb_storage::RocksDbStorage;
-use tenderdash_abci::proto::abci as proto;
 use crate::abci::app::{SnapshotFetchingApplication, SnapshotManagerApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
+use drive::grovedb_storage::rocksdb_storage::RocksDbStorage;
+use tenderdash_abci::proto::abci as proto;
 
 pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
     app: &'a A,

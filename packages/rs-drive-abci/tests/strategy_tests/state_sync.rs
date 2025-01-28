@@ -22,7 +22,7 @@ mod tests {
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
     use tenderdash_abci::proto::abci::{
-        RequestApplySnapshotChunk, RequestListSnapshots, RequestLoadSnapshotChunk,
+        RequestApplySnapshotChunk, RequestInfo, RequestListSnapshots, RequestLoadSnapshotChunk,
         RequestOfferSnapshot,
     };
     use tenderdash_abci::Application;
@@ -50,7 +50,7 @@ mod tests {
         Ok(())
     }
 
-    /*fn get_target_folder() -> PathBuf {
+    fn get_target_folder() -> PathBuf {
         // Use the environment variable `CARGO_MANIFEST_DIR` to locate the current package
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
 
@@ -62,11 +62,10 @@ mod tests {
 
         // The `target` folder is located at the workspace root
         current_dir.join("target")
-    }*/
+    }
 
     fn get_target_tmp_folder() -> PathBuf {
-        PathBuf::from("/Users/odysseasg/Downloads/state_sync/").join("tmp")
-        //get_target_folder().join("tmp")
+        get_target_folder().join("tmp")
     }
 
     #[test]
@@ -188,6 +187,7 @@ mod tests {
             .abci_app
             .list_snapshots(RequestListSnapshots::default())
             .expect("should expected snapshots");
+
         for s in &source_snapshots.snapshots {
             println!(
                 "snapshot height:{} app_hash:{}",

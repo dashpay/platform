@@ -1,4 +1,8 @@
-use std::{fs, path::{Path, PathBuf}, pin::Pin};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    pin::Pin,
+};
 
 use bincode::{config, Decode, Encode};
 use dapi_grpc::tonic;
@@ -232,8 +236,11 @@ mod tests {
             let grove_dir = tempfile::tempdir().unwrap();
             let checkpoints_dir = tempfile::tempdir().unwrap();
             let grove = GroveDb::open(grove_dir.path()).unwrap();
-            let manager =
-                SnapshotManager::new(checkpoints_dir.path().to_str().unwrap().to_string().into(), 3, 1);
+            let manager = SnapshotManager::new(
+                checkpoints_dir.path().to_str().unwrap().to_string().into(),
+                3,
+                1,
+            );
             for height in start..=end {
                 manager.create_snapshot(&grove, height).unwrap();
             }

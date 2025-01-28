@@ -10,12 +10,12 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
+use dapi_grpc::tonic;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
-use dapi_grpc::tonic;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -39,10 +39,7 @@ impl<'p, C> ConsensusAbciApplication<'p, C> {
     /// Create new ABCI app
     pub fn new(platform: &'p Platform<C>) -> Self {
         let snapshot_manager = SnapshotManager::new(
-            platform
-                .config
-                .state_sync_config
-                .checkpoints_path.clone(),
+            platform.config.state_sync_config.checkpoints_path.clone(),
             platform.config.state_sync_config.max_num_snapshots,
             platform.config.state_sync_config.snapshots_frequency,
         );

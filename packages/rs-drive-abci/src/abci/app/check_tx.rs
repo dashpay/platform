@@ -2,6 +2,7 @@ use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::handler;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::SnapshotManager;
 use crate::rpc::core::CoreRPCLike;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
@@ -10,7 +11,6 @@ use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::abci_application_server as grpc_abci_server;
 use tenderdash_abci::proto::tonic;
-use crate::platform_types::snapshot::SnapshotManager;
 
 /// AbciApp is an implementation of gRPC ABCI Application, as defined by Tenderdash.
 ///
@@ -52,14 +52,15 @@ where
     /// Create new ABCI app
     pub fn new(platform: Arc<Platform<C>>, core_rpc: Arc<C>) -> Self {
         let snapshot_manager = SnapshotManager::new(
-            platform
-                .config
-                .state_sync_config
-                .checkpoints_path.clone(),
+            platform.config.state_sync_config.checkpoints_path.clone(),
             platform.config.state_sync_config.max_num_snapshots,
             platform.config.state_sync_config.snapshots_frequency,
         );
-        Self { platform, core_rpc, snapshot_manager }
+        Self {
+            platform,
+            core_rpc,
+            snapshot_manager,
+        }
     }
 }
 

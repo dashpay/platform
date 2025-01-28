@@ -37,10 +37,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
     /// Create new ABCI app
     pub fn new(platform: &'a Platform<C>) -> Self {
         let snapshot_manager = SnapshotManager::new(
-            platform
-                .config
-                .state_sync_config
-                .checkpoints_path.clone(),
+            platform.config.state_sync_config.checkpoints_path.clone(),
             platform.config.state_sync_config.max_num_snapshots,
             platform.config.state_sync_config.snapshots_frequency,
         );

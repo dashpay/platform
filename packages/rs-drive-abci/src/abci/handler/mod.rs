@@ -41,6 +41,7 @@ mod echo;
 pub mod error;
 mod extend_vote;
 mod finalize_block;
+mod finalize_snapshot;
 mod info;
 mod init_chain;
 mod list_snapshots;
@@ -49,7 +50,6 @@ mod offer_snapshot;
 mod prepare_proposal;
 mod process_proposal;
 mod verify_vote_extension;
-mod finalize_snapshot;
 
 pub use apply_snapshot_chunk::apply_snapshot_chunk;
 pub use check_tx::check_tx;

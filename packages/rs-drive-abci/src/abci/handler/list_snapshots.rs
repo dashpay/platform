@@ -1,4 +1,3 @@
-use std::path::Path;
 use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::handler::error::error_into_exception;
 use crate::abci::AbciError;
@@ -6,6 +5,7 @@ use crate::error::Error;
 use crate::platform_types::snapshot::Snapshot;
 use crate::rpc::core::CoreRPCLike;
 use drive::grovedb::GroveDb;
+use std::path::Path;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn list_snapshots<A, C>(
@@ -37,9 +37,7 @@ where
             metadata: s.metadata,
         }
     };
-    let checkpoint_exists = |s: &Snapshot| -> bool {
-        Path::new(&s.path).exists()
-    };
+    let checkpoint_exists = |s: &Snapshot| -> bool { Path::new(&s.path).exists() };
 
     response.snapshots = snapshots
         .into_iter()
