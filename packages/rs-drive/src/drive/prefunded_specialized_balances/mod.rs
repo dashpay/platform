@@ -7,6 +7,10 @@ mod deduct_from_prefunded_specialized_balance;
 #[cfg(feature = "server")]
 mod deduct_from_prefunded_specialized_balance_operations;
 #[cfg(feature = "server")]
+mod empty_prefunded_specialized_balance;
+#[cfg(feature = "server")]
+mod empty_prefunded_specialized_balance_operations;
+#[cfg(feature = "server")]
 mod estimation_costs;
 #[cfg(feature = "server")]
 mod fetch;
@@ -20,17 +24,18 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
 use crate::util::batch::GroveDbOpBatch;
 
+/// The key for prefunded balances for voting
 pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
 
 /// prefunded specialized balances for voting
-pub(crate) fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
+pub fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::PreFundedSpecializedBalances,
     )]
 }
 
 /// prefunded specialized balances for voting
-pub(crate) fn prefunded_specialized_balances_for_voting_path() -> [&'static [u8]; 2] {
+pub fn prefunded_specialized_balances_for_voting_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
         &[PREFUNDED_BALANCES_FOR_VOTING],
@@ -38,7 +43,7 @@ pub(crate) fn prefunded_specialized_balances_for_voting_path() -> [&'static [u8]
 }
 
 /// prefunded specialized balances for voting vector
-pub(crate) fn prefunded_specialized_balances_for_voting_path_vec() -> Vec<Vec<u8>> {
+pub fn prefunded_specialized_balances_for_voting_path_vec() -> Vec<Vec<u8>> {
     vec![
         Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec(),
         vec![PREFUNDED_BALANCES_FOR_VOTING],

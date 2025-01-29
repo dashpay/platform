@@ -41,8 +41,9 @@ pub use grovedb_storage;
 pub mod cache;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod config;
+/// Fees module
 #[cfg(feature = "server")]
-mod fees;
+pub mod fees;
 #[cfg(feature = "server")]
 mod open;
 #[cfg(feature = "server")]
