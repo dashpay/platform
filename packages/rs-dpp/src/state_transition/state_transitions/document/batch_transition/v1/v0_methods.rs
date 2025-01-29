@@ -48,14 +48,11 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 #[cfg(feature = "state-transition-signing")]
 use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
-#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
-#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
