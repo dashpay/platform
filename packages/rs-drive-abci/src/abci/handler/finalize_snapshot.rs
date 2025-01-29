@@ -306,7 +306,7 @@ where
         })),
         current_protocol_version_in_consensus,
         next_epoch_protocol_version,
-        current_validator_set_quorum_hash: QuorumHash::all_zeros(),
+        current_validator_set_quorum_hash,
         next_validator_set_quorum_hash: None,
         patched_platform_version: None,
         validator_sets: Default::default(),
@@ -382,7 +382,7 @@ where
         }
     }
     */
-    
+
     let block_height = platform_state.last_committed_block_height();
 
     tracing::info!(
