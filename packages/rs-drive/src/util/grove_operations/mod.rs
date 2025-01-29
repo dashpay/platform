@@ -221,7 +221,7 @@ pub enum BatchDeleteUpTreeApplyType {
     /// Stateless batch delete
     StatelessBatchDelete {
         /// The estimated layer info
-        estimated_layer_info: IntMap<EstimatedLayerInformation>,
+        estimated_layer_info: IntMap<u16, EstimatedLayerInformation>,
     },
     /// Stateful batch delete
     StatefulBatchDelete {
