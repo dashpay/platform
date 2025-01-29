@@ -7,20 +7,24 @@ use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumListResult, MasternodeListDi
 use indexmap::IndexMap;
 use itertools::Itertools;
 use tenderdash_abci::proto::{abci as proto, ToMillis};
+use tenderdash_abci::proto::crypto::PublicKey;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::tenderdash_grpc::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::tenderdash_nostd::types::LightBlock;
+use tenderdash_abci::proto::types::ValidatorSet;
+use tenderdash_abci::signatures::Hashable;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
-use dpp::core_types::validator_set::ValidatorSet;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::ProTxHash;
 use dpp::platform_value::Bytes32;
 use dpp::version::version::ProtocolVersion;
 use dpp::version::PlatformVersion;
+use dpp::core_types::validator_set::ValidatorSet as CoreValidatorSet;
 use crate::abci::AbciError;
 use crate::abci::app::{PlatformApplication};
 use crate::error::Error;
@@ -358,6 +362,25 @@ where
         &mut platform_state,
     )?;
 
+    if let Some(quorum_hash) = platform_state.next_validator_set_quorum_hash() {
+        if let Some(validator_set) = platform_state.validator_sets().get(quorum_hash) {
+            let threshold_public_key = PublicKey {
+                sum: Some(Bls12381(validator_set.threshold_public_key().0.to_uncompressed().to_vec())),
+            };
+            let vs = tenderdash_abci::proto::types::ValidatorSet {
+                threshold_public_key: Some(threshold_public_key),
+                quorum_hash: quorum_hash.as_byte_array().to_vec(),
+                ..Default::default()
+            };
+            let actual = vs.calculate_msg_hash("", snapshot_commit.height, snapshot_commit.round).unwrap();
+            if (snapshot_header_next_validator_hash_32.to_vec() != actual) {
+                Error::Abci(AbciError::BadRequest(
+                    "Empty Next Validator Quorum Hash not matched".to_string(),
+                ));
+            }
+        }
+    }
+
     let block_height = platform_state.last_committed_block_height();
 
     tracing::info!(
@@ -516,7 +539,7 @@ where
     let new_validator_sets = quorum_infos
         .into_iter()
         .map(|(quorum_hash, info_result)| {
-            let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
+            let validator_set = CoreValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                 info_result,
                 &platform_state,
             )?);
