@@ -192,7 +192,7 @@ runs:
           AWS=${{ env.HOME }}/.aws/credentials
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
-          ${{ steps.sccache.outputs.env_vars }}
+        # ${{ steps.sccache.outputs.env_vars }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true

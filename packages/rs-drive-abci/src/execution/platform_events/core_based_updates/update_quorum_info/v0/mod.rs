@@ -21,13 +21,13 @@ use dpp::dashcore::QuorumHash;
 use tracing::Level;
 
 #[derive(Copy, Clone)]
-enum QuorumSetType {
+pub enum QuorumSetType {
     ChainLock(QuorumType),
     InstantLock(QuorumType),
 }
 
 impl QuorumSetType {
-    fn quorum_type(&self) -> QuorumType {
+    pub(crate) fn quorum_type(&self) -> QuorumType {
         match self {
             QuorumSetType::ChainLock(quorum_type) => *quorum_type,
             QuorumSetType::InstantLock(quorum_type) => *quorum_type,
