@@ -70,13 +70,13 @@ RUN apk add --no-cache \
         bash \
         binutils \
         ca-certificates \
-        clang-static clang-dev \
+        clang18-static clang18-dev \
         cmake \
         curl \
         git \
         libc-dev \
         linux-headers \
-        llvm-static llvm-dev  \
+        llvm18-static llvm18-dev  \
         openssl-dev \
         snappy-static snappy-dev \
         perl \
@@ -503,7 +503,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     source /root/env && \
-    unset PORTABLE && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
