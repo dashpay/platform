@@ -147,7 +147,7 @@ ENV NODE_ENV=${NODE_ENV}
 FROM deps-base AS deps-sccache
 
 # SCCACHE_VERSION must be the same as in github actions, to avoid cache incompatibility
-ARG SCCHACHE_VERSION=0.8.2
+ARG SCCHACHE_VERSION=0.9.1
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
