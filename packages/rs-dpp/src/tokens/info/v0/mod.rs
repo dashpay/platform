@@ -1,7 +1,8 @@
 use bincode::{Decode, Encode};
 use derive_more::From;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Serialize, Deserialize)]
 /// Token information for an identity (version 0).
 pub struct IdentityTokenInfoV0 {
     pub frozen: bool,

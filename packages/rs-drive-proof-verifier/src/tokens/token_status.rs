@@ -1,4 +1,4 @@
-use crate::types::RetrievedObjects;
+use crate::types::RetrievedOptionalObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -13,7 +13,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 
 /// Token statuses
-pub type TokenStatuses = RetrievedObjects<Identifier, TokenStatus>;
+pub type TokenStatuses = RetrievedOptionalObjects<Identifier, TokenStatus>;
 
 impl FromProof<GetTokenStatusesRequest> for TokenStatuses {
     type Request = GetTokenStatusesRequest;

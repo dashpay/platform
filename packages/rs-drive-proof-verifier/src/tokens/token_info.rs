@@ -1,4 +1,4 @@
-use crate::types::RetrievedObjects;
+use crate::types::RetrievedOptionalObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -7,6 +7,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityTokenInfosResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
+use derive_more::From;
 use dpp::dashcore::Network;
 use dpp::identifier::Identifier;
 use dpp::tokens::info::IdentityTokenInfo;
@@ -14,7 +15,25 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 
 /// Identity tokens information
-pub type IdentityTokenInfos = RetrievedObjects<Identifier, IdentityTokenInfo>;
+#[derive(Clone, Debug, Default)]
+pub struct IdentityTokenInfos(
+    /// Token ID to token info
+    pub RetrievedOptionalObjects<Identifier, IdentityTokenInfo>,
+);
+
+impl FromIterator<(Identifier, Option<IdentityTokenInfo>)> for IdentityTokenInfos {
+    fn from_iter<T: IntoIterator<Item = (Identifier, Option<IdentityTokenInfo>)>>(iter: T) -> Self {
+        iter.into_iter()
+            .collect::<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>>()
+            .into()
+    }
+}
+
+impl From<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>> for IdentityTokenInfos {
+    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, IdentityTokenInfo>) -> Self {
+        Self(retrieved_objects)
+    }
+}
 
 impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
     type Request = GetIdentityTokenInfosRequest;
@@ -83,7 +102,28 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
     }
 }
 
-impl FromProof<GetIdentitiesTokenInfosRequest> for IdentityTokenInfos {
+/// Identity tokens information
+#[derive(Debug, Default)]
+pub struct IdentitiesTokenInfos(
+    /// Identity ID to token info
+    pub RetrievedOptionalObjects<Identifier, IdentityTokenInfo>,
+);
+
+impl FromIterator<(Identifier, Option<IdentityTokenInfo>)> for IdentitiesTokenInfos {
+    fn from_iter<T: IntoIterator<Item = (Identifier, Option<IdentityTokenInfo>)>>(iter: T) -> Self {
+        iter.into_iter()
+            .collect::<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>>()
+            .into()
+    }
+}
+
+impl From<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>> for IdentitiesTokenInfos {
+    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, IdentityTokenInfo>) -> Self {
+        Self(retrieved_objects)
+    }
+}
+
+impl FromProof<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfos {
     type Request = GetIdentitiesTokenInfosRequest;
     type Response = GetIdentitiesTokenInfosResponse;
 

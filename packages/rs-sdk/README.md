@@ -133,12 +133,13 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    that will store collection of  returned objects, indexed by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
-7. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
+7. [ ] Implement `MockResponse` for `Object` in `packages/rs-sdk/src/mock/requests.rs`.
+8. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
    in `packages/rs-sdk/src/platform/fetch.rs`.
-8. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
+9. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
    with inner type Request = `Request`, in `packages/rs-sdk/src/platform/fetch_many.rs`.
-9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
-10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
-11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
-12. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
-13. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
+10. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
+12. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
+13. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
+14. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
+15. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`

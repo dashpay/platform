@@ -1,3 +1,4 @@
+use crate::types::RetrievedObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -81,7 +82,7 @@ impl FromProof<GetGroupInfoRequest> for Group {
 }
 
 /// Groups
-pub type Groups = IndexMap<GroupContractPosition, Group>;
+pub type Groups = RetrievedObjects<GroupContractPosition, Group>;
 
 impl FromProof<GetGroupInfosRequest> for Groups {
     type Request = GetGroupInfosRequest;
@@ -156,7 +157,7 @@ impl FromProof<GetGroupInfosRequest> for Groups {
 }
 
 /// Group actions
-pub type GroupActions = IndexMap<Identifier, GroupAction>;
+pub type GroupActions = RetrievedObjects<Identifier, GroupAction>;
 
 impl FromProof<GetGroupActionsRequest> for GroupActions {
     type Request = GetGroupActionsRequest;

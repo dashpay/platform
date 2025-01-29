@@ -1,9 +1,12 @@
 use crate::balances::credits::SignedTokenAmount;
 use crate::ProtocolError;
+use bincode::Encode;
+use platform_serialization::de::Decode;
 use std::fmt;
 
 /// A structure where the token supply and the aggregated token account balances should always be equal
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "fixtures-and-mocks", derive(Encode, Decode))]
 pub struct TotalSingleTokenBalance {
     /// the token supply
     pub token_supply: SignedTokenAmount,

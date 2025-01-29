@@ -6,6 +6,7 @@ use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+use serde::{Deserialize, Serialize};
 
 mod methods;
 pub mod v0;
@@ -18,6 +19,8 @@ pub mod v0;
     PlatformDeserialize,
     PlatformSerialize,
     PlatformVersioned,
+    Serialize,
+    Deserialize,
     From,
     PartialEq,
 )]

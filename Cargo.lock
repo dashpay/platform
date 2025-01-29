@@ -1181,6 +1181,7 @@ dependencies = [
  "clap",
  "dapi-grpc",
  "dapi-grpc-macros",
+ "dash-sdk",
  "dashcore-rpc",
  "data-contracts",
  "derive_more",

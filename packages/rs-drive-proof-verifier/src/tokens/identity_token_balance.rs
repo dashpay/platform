@@ -1,4 +1,4 @@
-use crate::types::RetrievedObjects;
+use crate::types::RetrievedOptionalObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -14,16 +14,24 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 
 /// Identity token balances
-/// Token ID to token balance
-pub type IdentityTokenBalances = RetrievedObjects<Identifier, TokenAmount>;
+#[derive(Debug, Default)]
+pub struct IdentityTokenBalances(
+    /// Token ID to token balance
+    pub RetrievedOptionalObjects<Identifier, TokenAmount>,
+);
 
-#[derive(Debug, Clone)]
-/// Identities token balances query
-pub struct IdentityTokenBalancesQuery {
-    /// Identity ID
-    pub identity_id: Identifier,
-    /// Token IDs
-    pub token_ids: Vec<Identifier>,
+impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentityTokenBalances {
+    fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
+        iter.into_iter()
+            .collect::<RetrievedOptionalObjects<Identifier, TokenAmount>>()
+            .into()
+    }
+}
+
+impl From<RetrievedOptionalObjects<Identifier, TokenAmount>> for IdentityTokenBalances {
+    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, TokenAmount>) -> Self {
+        Self(retrieved_objects)
+    }
 }
 
 impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
@@ -94,16 +102,24 @@ impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
 }
 
 /// Identities token balances
-/// Identity ID to token balance
-pub type IdentitiesTokenBalances = RetrievedObjects<Identifier, TokenAmount>;
+#[derive(Debug, Default)]
+pub struct IdentitiesTokenBalances(
+    /// Identity ID to token balance
+    pub RetrievedOptionalObjects<Identifier, TokenAmount>,
+);
 
-#[derive(Debug, Clone)]
-/// Identities token balances query
-pub struct IdentitiesTokenBalancesQuery {
-    /// Identity IDs
-    pub identity_ids: Vec<Identifier>,
-    /// Token ID
-    pub token_id: Identifier,
+impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentitiesTokenBalances {
+    fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
+        iter.into_iter()
+            .collect::<RetrievedOptionalObjects<Identifier, TokenAmount>>()
+            .into()
+    }
+}
+
+impl From<RetrievedOptionalObjects<Identifier, TokenAmount>> for IdentitiesTokenBalances {
+    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, TokenAmount>) -> Self {
+        Self(retrieved_objects)
+    }
 }
 
 impl FromProof<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalances {
