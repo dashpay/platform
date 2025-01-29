@@ -150,7 +150,10 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 
 # Switch to clang
 # Note that CC / CXX can be updated later on (eg. when configuring sccache)
-RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+RUN rm /usr/bin/cc && \
+    ln -sf /usr/bin/clang-18 /usr/bin/clang && \
+    ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
+    ln -s /usr/bin/clang /usr/bin/cc
 RUN <<EOS
 echo "export CXX='clang++'" >> /root/env
 echo "export CC='clang'" >> /root/env
