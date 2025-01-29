@@ -42,8 +42,9 @@ tonic = { version = "0.12.3", features = [
 serde = { version = "1.0.197", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11.12", optional = true }
 serde_json = { version = "1.0", optional = true }
-tenderdash-proto  = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev="47141571a9df6cda83d67bbf68091f3263799eed", default-features = false, features = [
-  "grpc", "serde",
+tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "b55bed9f574b68f2b6c96cbc80da41072056781d", default-features = false, features = [
+  "grpc",
+  "serde",
 ] }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 platform-version = { path = "../rs-platform-version" }

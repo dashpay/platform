@@ -49,8 +49,10 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev="47141571a9df6cda83d67bbf68091f3263799eed", features = [
-  "crypto", "grpc", "serde",
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "b55bed9f574b68f2b6c96cbc80da41072056781d", features = [
+  "crypto",
+  "grpc",
+  "serde",
 ] }
 lazy_static = "1.4.0"
 itertools = { version = "0.13" }
