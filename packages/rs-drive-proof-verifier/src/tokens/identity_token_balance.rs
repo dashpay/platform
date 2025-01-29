@@ -1,3 +1,4 @@
+use crate::types::RetrievedObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -11,10 +12,19 @@ use dpp::dashcore::Network;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use indexmap::IndexMap;
 
 /// Identity token balances
-pub type IdentityTokenBalances = IndexMap<Identifier, Option<TokenAmount>>;
+/// Token ID to token balance
+pub type IdentityTokenBalances = RetrievedObjects<Identifier, TokenAmount>;
+
+#[derive(Debug, Clone)]
+/// Identities token balances query
+pub struct IdentityTokenBalancesQuery {
+    /// Identity ID
+    pub identity_id: Identifier,
+    /// Token IDs
+    pub token_ids: Vec<Identifier>,
+}
 
 impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
     type Request = GetIdentityTokenBalancesRequest;
@@ -83,7 +93,20 @@ impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
     }
 }
 
-impl FromProof<GetIdentitiesTokenBalancesRequest> for IdentityTokenBalances {
+/// Identities token balances
+/// Identity ID to token balance
+pub type IdentitiesTokenBalances = RetrievedObjects<Identifier, TokenAmount>;
+
+#[derive(Debug, Clone)]
+/// Identities token balances query
+pub struct IdentitiesTokenBalancesQuery {
+    /// Identity IDs
+    pub identity_ids: Vec<Identifier>,
+    /// Token ID
+    pub token_id: Identifier,
+}
+
+impl FromProof<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalances {
     type Request = GetIdentitiesTokenBalancesRequest;
     type Response = GetIdentitiesTokenBalancesResponse;
 

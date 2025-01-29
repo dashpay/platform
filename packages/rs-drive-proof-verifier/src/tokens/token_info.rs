@@ -1,3 +1,4 @@
+use crate::types::RetrievedObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -11,10 +12,9 @@ use dpp::identifier::Identifier;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use indexmap::IndexMap;
 
 /// Identity tokens information
-pub type IdentityTokenInfos = IndexMap<Identifier, Option<IdentityTokenInfo>>;
+pub type IdentityTokenInfos = RetrievedObjects<Identifier, IdentityTokenInfo>;
 
 impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
     type Request = GetIdentityTokenInfosRequest;

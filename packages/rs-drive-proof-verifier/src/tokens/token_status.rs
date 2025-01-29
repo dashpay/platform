@@ -1,3 +1,4 @@
+use crate::types::RetrievedObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -10,10 +11,9 @@ use dpp::identifier::Identifier;
 use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use indexmap::IndexMap;
 
 /// Token statuses
-pub type TokenStatuses = IndexMap<Identifier, Option<TokenStatus>>;
+pub type TokenStatuses = RetrievedObjects<Identifier, TokenStatus>;
 
 impl FromProof<GetTokenStatusesRequest> for TokenStatuses {
     type Request = GetTokenStatusesRequest;
