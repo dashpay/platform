@@ -503,6 +503,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset PORTABLE && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
