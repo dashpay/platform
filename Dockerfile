@@ -552,11 +552,8 @@ LABEL description="Drive ABCI Rust"
 RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+ENV CHECKPOINTS_PATH=/var/lib/dash/rs-drive-abci/db-checkpoints
 ENV REJECTIONS_PATH=/var/log/dash/rejected
-
-RUN mkdir -p /var/log/dash \
-    /var/lib/dash/rs-drive-abci/db \
-    ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
@@ -564,6 +561,14 @@ COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
 VOLUME /var/log/dash
+
+# Ensure required paths do exist
+# TODO: remove /var/lib/dash-platform/data/checkpoints when drive-abci is fixed
+RUN mkdir -p /var/log/dash \
+    ${DB_PATH} \
+    ${CHECKPOINTS_PATH} \
+    ${REJECTIONS_PATH} \
+    /var/lib/dash-platform/data/checkpoints
 
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
@@ -574,9 +579,10 @@ RUN ldd /usr/bin/drive-abci
 ARG USERNAME=dash
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
+# TODO: remove /var/lib/dash-platform/data/checkpoints when drive-abci is fixed
 RUN addgroup -g $USER_GID $USERNAME && \
     adduser -D -u $USER_UID -G $USERNAME -h /var/lib/dash/rs-drive-abci $USERNAME && \
-    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci /var/log/dash
+    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci /var/log/dash /var/lib/dash-platform/data/checkpoints
 
 USER $USERNAME
 
