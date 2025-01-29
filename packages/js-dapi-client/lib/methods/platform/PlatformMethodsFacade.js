@@ -17,7 +17,7 @@ const getTotalCreditsInPlatformFactory = require('./getTotalCreditsInPlatform/ge
 const getStatusFactory = require('./getStatus/getStatusFactory');
 const getIdentityBalanceFactory = require('./getIdentityBalance/getIdentityBalanceFactory');
 const getContestedResourceVoteStateFactory = require('./getContestedResourceVoteState/getContestedResourceVoteStateFactory');
-const getContestedResourcesFactory = require('./getContestedResources/getContestedResourceFactory');
+const getContestedResourcesFactory = require('./getContestedResources/getContestedResourcesFactory');
 
 class PlatformMethodsFacade {
   /**

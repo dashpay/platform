@@ -4,6 +4,8 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 class GetContestedResourcesResponse extends AbstractResponse {
   /**
    * @param {object} contestedResourceContenders
+   * @param contestedResources
+   * @param resultCase
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -23,12 +25,12 @@ class GetContestedResourcesResponse extends AbstractResponse {
 
   /**
    * @param proto
-   * @returns {GetContestedResourceResponse}
+   * @returns {GetContestedResourcesResponse}
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
     const contestedResourceContenders = proto.getV0().getContestedResourceValues();
-    const resultCase = proto.getV0().getResultCase()
+    const resultCase = proto.getV0().getResultCase();
 
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
@@ -39,7 +41,7 @@ class GetContestedResourcesResponse extends AbstractResponse {
     }
 
     return new GetContestedResourcesResponse(
-      contestedResourceContenders.toObject(),
+      contestedResourceContenders !== undefined ? contestedResourceContenders.getContestedResourceValuesList() : '',
       resultCase,
       metadata,
       proof,

@@ -5,7 +5,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetContestedResourcesResponse = require('./GetContestedResourceResponse');
+const GetContestedResourcesResponse = require('./GetContestedResourcesResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
