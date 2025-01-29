@@ -306,7 +306,7 @@ where
         })),
         current_protocol_version_in_consensus,
         next_epoch_protocol_version,
-        current_validator_set_quorum_hash,
+        current_validator_set_quorum_hash: QuorumHash::all_zeros(),
         next_validator_set_quorum_hash: None,
         patched_platform_version: None,
         validator_sets: Default::default(),
@@ -362,6 +362,7 @@ where
         &mut platform_state,
     )?;
 
+    /*
     if let Some(quorum_hash) = platform_state.next_validator_set_quorum_hash() {
         if let Some(validator_set) = platform_state.validator_sets().get(quorum_hash) {
             let threshold_public_key = PublicKey {
@@ -375,12 +376,13 @@ where
             let actual = vs.calculate_msg_hash("", snapshot_commit.height, snapshot_commit.round).unwrap();
             if (snapshot_header_next_validator_hash_32.to_vec() != actual) {
                 Error::Abci(AbciError::BadRequest(
-                    "Empty Next Validator Quorum Hash not matched".to_string(),
+                    "Next Validator Quorum Hash not matched".to_string(),
                 ));
             }
         }
     }
-
+    */
+    
     let block_height = platform_state.last_committed_block_height();
 
     tracing::info!(
@@ -695,7 +697,7 @@ fn build_next_validator_set_quorum_hash(
                             &quorum_hash,
                             new_validator_set.members().len()
                         );
-                        platform_state.set_next_validator_set_quorum_hash(Some(*quorum_hash));
+                        *platform_state.current_validator_set_quorum_hash_mut() = *quorum_hash;
                         return Ok(());
                     }
                     index = (index + 1) % oldest_quorum_index_we_can_go_to;
@@ -712,8 +714,7 @@ fn build_next_validator_set_quorum_hash(
                         "rotation: all quorums changed, rotation to new quorum: {}",
                         &quorum_hash
                     );
-                    let new_quorum_hash = *quorum_hash;
-                    platform_state.set_next_validator_set_quorum_hash(Some(new_quorum_hash));
+                    *platform_state.current_validator_set_quorum_hash_mut() = *quorum_hash;
                     return Ok(());
                 }
                 tracing::debug!("no new quorums to choose from");
