@@ -288,8 +288,9 @@ RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
-# Only use 1 thread to avoid OOM
-make -j1 static_lib
+
+make -j$(nproc) static_lib
+
 mkdir -p /opt/rocksdb/usr/local/lib
 cp librocksdb.a /opt/rocksdb/usr/local/lib/
 cp -r include /opt/rocksdb/usr/local/
@@ -483,7 +484,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove /platform to reduce layer size
     rm -rf /platform
-
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
