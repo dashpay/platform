@@ -198,29 +198,6 @@ where
     snapshot_commit_threshold_block_sig_96
         .copy_from_slice(&snapshot_commit.threshold_block_signature[..96]);
 
-    let snapshot_validator_set =
-        snapshot_block
-            .validator_set
-            .as_ref()
-            .ok_or(Error::Abci(AbciError::BadRequest(
-                "Empty Snapshot Validator Set".to_string(),
-            )))?;
-
-    let snapshot_validator_set_proposer =
-        snapshot_validator_set
-            .proposer
-            .as_ref()
-            .ok_or(Error::Abci(AbciError::BadRequest(
-                "Empty Snapshot Proposer".to_string(),
-            )))?;
-
-    let snapshot_validator_set_threshold_public_key = snapshot_validator_set
-        .threshold_public_key
-        .as_ref()
-        .ok_or(Error::Abci(AbciError::BadRequest(
-            "Empty Snapshot Threshold Public Key".to_string(),
-        )))?;
-
     let genesis_block =
         request
             .genesis_block
@@ -238,7 +215,7 @@ where
             )))?;
 
     let genesis_header =
-        snapshot_signed_header
+        genesis_signed_header
             .header
             .as_ref()
             .ok_or(Error::Abci(AbciError::BadRequest(
@@ -361,27 +338,6 @@ where
         snapshot_header_proposer_pro_tx_hash_32,
         &mut platform_state,
     )?;
-
-    /*
-    if let Some(quorum_hash) = platform_state.next_validator_set_quorum_hash() {
-        if let Some(validator_set) = platform_state.validator_sets().get(quorum_hash) {
-            let threshold_public_key = PublicKey {
-                sum: Some(Bls12381(validator_set.threshold_public_key().0.to_uncompressed().to_vec())),
-            };
-            let vs = tenderdash_abci::proto::types::ValidatorSet {
-                threshold_public_key: Some(threshold_public_key),
-                quorum_hash: quorum_hash.as_byte_array().to_vec(),
-                ..Default::default()
-            };
-            let actual = vs.calculate_msg_hash("", snapshot_commit.height, snapshot_commit.round).unwrap();
-            if (snapshot_header_next_validator_hash_32.to_vec() != actual) {
-                Error::Abci(AbciError::BadRequest(
-                    "Next Validator Quorum Hash not matched".to_string(),
-                ));
-            }
-        }
-    }
-    */
 
     let block_height = platform_state.last_committed_block_height();
 
@@ -722,21 +678,7 @@ fn build_next_validator_set_quorum_hash(
             }
         }
     } else {
-        let current_validator_set = platform_state.current_validator_set()?;
-        if current_validator_set != platform_state.current_validator_set()? {
-            // Something changed, for example the IP of a validator changed, or someone's ban status
-
-            tracing::debug!(
-                method = "build_next_validator_set_quorum_hash",
-                "validator set update without rotation"
-            );
-            Ok(())
-        } else {
-            tracing::debug!(
-                method = "build_next_validator_set_quorum_hash",
-                "no validator set update",
-            );
-            Ok(())
-        }
+        tracing::debug!("no rotation");
+        Ok(())
     }
 }
