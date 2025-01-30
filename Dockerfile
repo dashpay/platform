@@ -289,9 +289,7 @@ set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
 # Only use 1 thread to avoid OOM
-export MAKEFLAGS='-j1' 
-
-make -j$(nproc) static_lib
+make -j1 static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
 cp librocksdb.a /opt/rocksdb/usr/local/lib/
 cp -r include /opt/rocksdb/usr/local/
