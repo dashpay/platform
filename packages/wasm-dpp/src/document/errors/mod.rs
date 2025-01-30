@@ -6,6 +6,7 @@ use crate::document::errors::invalid_action_error::InvalidActionError;
 use crate::document::errors::revision_absent_error::RevisionAbsentError;
 use crate::document::errors::trying_to_delete_immutable_document_error::TryingToDeleteImmutableDocumentError;
 use crate::document::errors::trying_to_replace_immutable_document_error::TryingToReplaceImmutableDocumentError;
+use crate::document::errors::trying_to_transfer_nontransferable_document_error::TryingToTransferNonTransferableDocumentError;
 pub use document_already_exists_error::*;
 pub use document_not_provided_error::*;
 use dpp::document::errors::DocumentError;
@@ -32,6 +33,7 @@ mod no_documents_supplied_error;
 mod revision_absent_error;
 mod trying_to_delete_immutable_document_error;
 mod trying_to_replace_immutable_document_error;
+mod trying_to_transfer_nontransferable_document_error;
 
 pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
@@ -77,6 +79,9 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         DocumentError::InvalidActionError(action) => InvalidActionError::new(action.into()).into(),
         DocumentError::TryingToDeleteIndelibleDocument { document } => {
             TryingToDeleteImmutableDocumentError::new((*document).into()).into()
+        },
+        DocumentError::TryingToTransferNonTransferableDocument { document } => {
+            TryingToTransferNonTransferableDocumentError::new((*document).into()).into()
         }
     }
 }

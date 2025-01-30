@@ -18,6 +18,7 @@ use crate::state_transition::documents_batch_transition::{
 };
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::DocumentFactoryV0;
+use crate::fee::Credits;
 
 /// # Document Factory
 ///
@@ -120,9 +121,11 @@ impl DocumentFactory {
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
+        recipient: Option<Identifier>,
+        price: Option<Credits>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter, nonce_counter),
+            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter, nonce_counter, recipient, price),
         }
     }
 
