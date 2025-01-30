@@ -1,4 +1,4 @@
-use crate::types::RetrievedOptionalObjects;
+use crate::types::RetrievedObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -18,19 +18,19 @@ use drive::drive::Drive;
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTokenInfos(
     /// Token ID to token info
-    pub RetrievedOptionalObjects<Identifier, IdentityTokenInfo>,
+    pub RetrievedObjects<Identifier, IdentityTokenInfo>,
 );
 
 impl FromIterator<(Identifier, Option<IdentityTokenInfo>)> for IdentityTokenInfos {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<IdentityTokenInfo>)>>(iter: T) -> Self {
         iter.into_iter()
-            .collect::<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>>()
+            .collect::<RetrievedObjects<Identifier, IdentityTokenInfo>>()
             .into()
     }
 }
 
-impl From<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>> for IdentityTokenInfos {
-    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, IdentityTokenInfo>) -> Self {
+impl From<RetrievedObjects<Identifier, IdentityTokenInfo>> for IdentityTokenInfos {
+    fn from(retrieved_objects: RetrievedObjects<Identifier, IdentityTokenInfo>) -> Self {
         Self(retrieved_objects)
     }
 }
@@ -106,19 +106,19 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
 #[derive(Debug, Default)]
 pub struct IdentitiesTokenInfos(
     /// Identity ID to token info
-    pub RetrievedOptionalObjects<Identifier, IdentityTokenInfo>,
+    pub RetrievedObjects<Identifier, IdentityTokenInfo>,
 );
 
 impl FromIterator<(Identifier, Option<IdentityTokenInfo>)> for IdentitiesTokenInfos {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<IdentityTokenInfo>)>>(iter: T) -> Self {
         iter.into_iter()
-            .collect::<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>>()
+            .collect::<RetrievedObjects<Identifier, IdentityTokenInfo>>()
             .into()
     }
 }
 
-impl From<RetrievedOptionalObjects<Identifier, IdentityTokenInfo>> for IdentitiesTokenInfos {
-    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, IdentityTokenInfo>) -> Self {
+impl From<RetrievedObjects<Identifier, IdentityTokenInfo>> for IdentitiesTokenInfos {
+    fn from(retrieved_objects: RetrievedObjects<Identifier, IdentityTokenInfo>) -> Self {
         Self(retrieved_objects)
     }
 }

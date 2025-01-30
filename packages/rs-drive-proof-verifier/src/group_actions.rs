@@ -140,6 +140,16 @@ impl FromProof<GetGroupInfosRequest> for Groups {
             false,
             platform_version,
         )
+        // Make value optional
+        .map(
+            |(root_hash, result): (_, IndexMap<GroupContractPosition, Group>)| {
+                let optional_value_map = result
+                    .into_iter()
+                    .map(|(action_id, group_action)| (action_id, Some(group_action)))
+                    .collect::<Groups>();
+                (root_hash, optional_value_map)
+            },
+        )
         .map_err(|e| match e {
             drive::error::Error::GroveDB(e) => Error::GroveDBError {
                 proof_bytes: proof.grovedb_proof.clone(),
@@ -241,6 +251,16 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
             false,
             platform_version,
         )
+        // Make value optional
+        .map(
+            |(root_hash, result): (_, IndexMap<Identifier, GroupAction>)| {
+                let optional_value_map = result
+                    .into_iter()
+                    .map(|(action_id, group_action)| (action_id, Some(group_action)))
+                    .collect::<GroupActions>();
+                (root_hash, optional_value_map)
+            },
+        )
         .map_err(|e| match e {
             drive::error::Error::GroveDB(e) => Error::GroveDBError {
                 proof_bytes: proof.grovedb_proof.clone(),
@@ -258,7 +278,7 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
 }
 
 /// Group action signers
-pub type GroupActionSigners = IndexMap<Identifier, GroupMemberPower>;
+pub type GroupActionSigners = RetrievedObjects<Identifier, GroupMemberPower>;
 
 impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
     type Request = GetGroupActionSignersRequest;
@@ -319,6 +339,16 @@ impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
             action_id,
             false,
             platform_version,
+        )
+        // Make value optional
+        .map(
+            |(root_hash, result): (_, IndexMap<Identifier, GroupMemberPower>)| {
+                let optional_value_map = result
+                    .into_iter()
+                    .map(|(action_id, group_action)| (action_id, Some(group_action)))
+                    .collect::<GroupActionSigners>();
+                (root_hash, optional_value_map)
+            },
         )
         .map_err(|e| match e {
             drive::error::Error::GroveDB(e) => Error::GroveDBError {

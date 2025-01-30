@@ -1,4 +1,4 @@
-use crate::types::RetrievedOptionalObjects;
+use crate::types::RetrievedObjects;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -17,19 +17,19 @@ use drive::drive::Drive;
 #[derive(Debug, Default)]
 pub struct IdentityTokenBalances(
     /// Token ID to token balance
-    pub RetrievedOptionalObjects<Identifier, TokenAmount>,
+    pub RetrievedObjects<Identifier, TokenAmount>,
 );
 
 impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentityTokenBalances {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
         iter.into_iter()
-            .collect::<RetrievedOptionalObjects<Identifier, TokenAmount>>()
+            .collect::<RetrievedObjects<Identifier, TokenAmount>>()
             .into()
     }
 }
 
-impl From<RetrievedOptionalObjects<Identifier, TokenAmount>> for IdentityTokenBalances {
-    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, TokenAmount>) -> Self {
+impl From<RetrievedObjects<Identifier, TokenAmount>> for IdentityTokenBalances {
+    fn from(retrieved_objects: RetrievedObjects<Identifier, TokenAmount>) -> Self {
         Self(retrieved_objects)
     }
 }
@@ -105,19 +105,19 @@ impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
 #[derive(Debug, Default)]
 pub struct IdentitiesTokenBalances(
     /// Identity ID to token balance
-    pub RetrievedOptionalObjects<Identifier, TokenAmount>,
+    pub RetrievedObjects<Identifier, TokenAmount>,
 );
 
 impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentitiesTokenBalances {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
         iter.into_iter()
-            .collect::<RetrievedOptionalObjects<Identifier, TokenAmount>>()
+            .collect::<RetrievedObjects<Identifier, TokenAmount>>()
             .into()
     }
 }
 
-impl From<RetrievedOptionalObjects<Identifier, TokenAmount>> for IdentitiesTokenBalances {
-    fn from(retrieved_objects: RetrievedOptionalObjects<Identifier, TokenAmount>) -> Self {
+impl From<RetrievedObjects<Identifier, TokenAmount>> for IdentitiesTokenBalances {
+    fn from(retrieved_objects: RetrievedObjects<Identifier, TokenAmount>) -> Self {
         Self(retrieved_objects)
     }
 }

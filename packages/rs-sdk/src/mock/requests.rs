@@ -2,6 +2,7 @@ use super::MockDashPlatformSdk;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::bincode::config::standard;
 use dpp::data_contract::group::Group;
+use dpp::group::group_action::GroupAction;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::tokens::status::TokenStatus;
 use dpp::{
@@ -20,6 +21,7 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::group_actions::GroupActions;
 use drive_proof_verifier::tokens::identity_token_balance::{
     IdentitiesTokenBalances, IdentityTokenBalances,
 };
@@ -383,17 +385,41 @@ impl MockResponse for TokenStatuses {
 }
 
 impl MockResponse for TotalSingleTokenBalance {
-    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode vec of data")
     }
 
-    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
         bincode::decode_from_slice(buf, BINCODE_CONFIG)
             .expect("decode vec of data")
             .0
+    }
+}
+
+impl MockResponse for GroupActions {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Clone and collect into vector
+        let vec: Vec<(Identifier, Option<GroupAction>)> =
+            self.iter().map(|(k, v)| (*k, v.clone())).collect();
+
+        // Serialize vector
+        platform_encode_to_vec(vec, BINCODE_CONFIG, sdk.version())
+            .expect(concat!("encode ", stringify!($name)))
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // deserialize vector
+        let vec: Vec<(Identifier, Option<GroupAction>)> =
+            platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                .expect(concat!("decode ", stringify!($name)));
+
+        RetrievedValues::from_iter(vec)
     }
 }
 

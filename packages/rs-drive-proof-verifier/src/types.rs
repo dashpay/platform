@@ -51,26 +51,6 @@ pub use evonode_status::*;
 /// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
-/// Each key `K` in the `RetrievedObjects` corresponds to one object of generic type `O`:
-///
-/// This data structure preserves order of objects insertion. However, actual order of objects depends on the order of
-/// objects returned by Dash Drive, which is not always guaranteed to be correct.
-/// You can sort the objects by key if you need a specific order; see [`IndexMap::sort_keys`] and similar methods.
-///
-/// `RetrievedObjects` is a wrapper around the [`IndexMap`] type.
-///
-/// # Generic Type Parameters
-///
-/// * `K`: The type of the keys in the map.
-/// * `O`: The type of the objects in the map.
-pub type RetrievedObjects<K, O> = IndexMap<K, O>;
-
-/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
-///
-/// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
-/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
-/// using [`FromProof`](crate::FromProof).
-///
 /// Each key `K` in the `RetrievedObjects` corresponds to zero or one object of generic type `O`:
 /// * if an object is found for a given key, the value is `Some(object)`,
 /// * if no object is found for a given key, the value is `None`; this can be interpreted as a proof of absence.
@@ -85,7 +65,7 @@ pub type RetrievedObjects<K, O> = IndexMap<K, O>;
 ///
 /// * `K`: The type of the keys in the map.
 /// * `O`: The type of the objects in the map.
-pub type RetrievedOptionalObjects<K, O> = IndexMap<K, Option<O>>;
+pub type RetrievedObjects<K, O> = IndexMap<K, Option<O>>;
 
 /// A data structure that holds a set of values of a generic type `I`, indexed by a key of type `K`.
 ///
@@ -94,7 +74,7 @@ pub type RetrievedOptionalObjects<K, O> = IndexMap<K, Option<O>>;
 /// using [`FromProof`](crate::FromProof).
 ///
 /// Each key in this data structure corresponds to an existing value of generic type `I`. It differs from
-/// [`RetrievedOptionalObjects`] in that it does not contain `Option<I>`, but only `I`, so it cannot be interpreted as a
+/// [`RetrievedObjects`] in that it does not contain `Option<I>`, but only `I`, so it cannot be interpreted as a
 /// proof of absence.
 ///
 /// This data structure preserves the order of object insertion. However, the actual order of objects depends on the
@@ -115,7 +95,7 @@ pub type DataContractHistory = RetrievedValues<u64, DataContract>;
 ///
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
-pub type DataContracts = RetrievedOptionalObjects<Identifier, DataContract>;
+pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
 /// Multiple contenders for a vote resolution.
 ///
@@ -211,7 +191,7 @@ impl FromIterator<Voter> for Voters {
 ///
 /// Mapping between the key id and associated elements.
 /// If element is not found, it is represented as `None`.
-pub type Elements = RetrievedOptionalObjects<Vec<u8>, Element>;
+pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
@@ -350,7 +330,7 @@ impl FromIterator<ContestedResource> for ContestedResources {
 pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// Votes casted by some identity.
-pub type ResourceVotesByIdentity = RetrievedOptionalObjects<Identifier, ResourceVote>;
+pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
 
 /// Represents the current state of quorums in the platform.
 ///
@@ -518,16 +498,16 @@ pub struct IdentityContractNonceFetcher(pub IdentityNonce);
 /// Public keys belonging to some identity.
 ///
 /// Map of [key IDs](KeyID) to the [public key](IdentityPublicKey).
-pub type IdentityPublicKeys = RetrievedOptionalObjects<KeyID, IdentityPublicKey>;
+pub type IdentityPublicKeys = RetrievedObjects<KeyID, IdentityPublicKey>;
 
 /// Collection of documents.
-pub type Documents = RetrievedOptionalObjects<Identifier, Document>;
+pub type Documents = RetrievedObjects<Identifier, Document>;
 
 /// Collection of balances.
-pub type IdentityBalances = RetrievedOptionalObjects<Identifier, Credits>;
+pub type IdentityBalances = RetrievedObjects<Identifier, Credits>;
 
 /// Collection of epoch information
-pub type ExtendedEpochInfos = RetrievedOptionalObjects<EpochIndex, ExtendedEpochInfo>;
+pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
 /// Results of protocol version upgrade voting.
 ///
@@ -538,8 +518,7 @@ pub type ExtendedEpochInfos = RetrievedOptionalObjects<EpochIndex, ExtendedEpoch
 ///
 /// * [`ProtocolVersion`] - key determining protocol version
 /// * [`ProtocolVersionVoteCount`] - value, number of votes for the protocol version upgrade
-pub type ProtocolVersionUpgrades =
-    RetrievedOptionalObjects<ProtocolVersion, ProtocolVersionVoteCount>;
+pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
 
 /// Vote of a masternode for a protocol version.
 #[derive(Debug)]
@@ -586,7 +565,7 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 ///
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
-pub type MasternodeProtocolVotes = RetrievedOptionalObjects<ProTxHash, MasternodeProtocolVote>;
+pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
 
 /// Proposer block counts
 ///
