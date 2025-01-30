@@ -70,13 +70,13 @@ RUN apk add --no-cache \
         bash \
         binutils \
         ca-certificates \
-        clang18-static clang18-dev \
+        clang-static clang-dev \
         cmake \
         curl \
         git \
         libc-dev \
         linux-headers \
-        llvm18-static llvm18-dev  \
+        llvm-static llvm-dev  \
         openssl-dev \
         snappy-static snappy-dev \
         perl \
@@ -151,8 +151,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Switch to clang
 # Note that CC / CXX can be updated later on (eg. when configuring sccache)
 RUN rm /usr/bin/cc && \
-    ln -sf /usr/bin/clang-18 /usr/bin/clang && \
-    ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
     ln -s /usr/bin/clang /usr/bin/cc
 RUN <<EOS
 echo "export CXX='clang++'" >> /root/env
@@ -501,11 +499,13 @@ WORKDIR /platform
 COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
+# Note we unset CFLAGS and CXXFLAGS as they have `-march` included, which breaks wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset CFLAGS CXXFLAGS && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
@@ -552,12 +552,14 @@ COPY --parents \
     packages/dash-spv \
     /platform/
 
+# We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset CFLAGS CXXFLAGS && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
