@@ -44,7 +44,8 @@ pub trait DocumentTransitionV0Methods {
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
     ///  get the id
     fn get_id(&self) -> Identifier;
-    /// get the document type
+    /// get the entropy
+    fn entropy(&self) -> Option<Vec<u8>>;
     fn document_type_name(&self) -> &String;
     /// get the data contract id
     fn data_contract_id(&self) -> Identifier;
@@ -165,6 +166,17 @@ impl DocumentTransitionV0Methods for DocumentTransition {
 
     fn document_type_name(&self) -> &String {
         self.base().document_type_name()
+    }
+
+    fn entropy(&self) -> Option<Vec<u8>> {
+        match self {
+            DocumentTransition::Create(t) => Some(Vec::from(t.entropy())),
+            DocumentTransition::Replace(t) => None,
+            DocumentTransition::Delete(t) => None,
+            DocumentTransition::Transfer(t) => None,
+            DocumentTransition::UpdatePrice(t) => None,
+            DocumentTransition::Purchase(t) => None,
+        }
     }
 
     fn data_contract_id(&self) -> Identifier {

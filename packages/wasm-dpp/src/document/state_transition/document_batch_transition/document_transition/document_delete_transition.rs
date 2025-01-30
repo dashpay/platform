@@ -68,9 +68,28 @@ impl DocumentDeleteTransitionWasm {
         self.inner.base().document_type_name().clone()
     }
 
+    #[wasm_bindgen(js_name = getEntropy)]
+    pub fn get_entropy(&self) -> Vec<u8> {
+        Vec::from(self.inner.entropy())
+    }
+
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
         self.inner.base().data_contract_id().into()
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_contract_nonce(&self) -> u64 {
+        self.inner.base().identity_contract_nonce() as u64
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) -> () {
+        let mut base = self.inner.base().clone();
+
+        base.set_identity_contract_nonce(identity_contract_nonce);
+
+        self.inner.set_base(base)
     }
 
     #[wasm_bindgen(js_name=get)]
