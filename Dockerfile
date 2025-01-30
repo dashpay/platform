@@ -284,10 +284,6 @@ WORKDIR /tmp/rocksdb
 # sccache -s
 # EOS
 
-# Select whether we want dev or release
-# This variable will be also visibe in next stages
-ONBUILD ARG CARGO_BUILD_PROFILE=dev
-
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
