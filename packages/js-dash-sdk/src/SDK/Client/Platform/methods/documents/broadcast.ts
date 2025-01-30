@@ -18,14 +18,18 @@ export default async function broadcast(
   documents: {
     create?: ExtendedDocument[],
     replace?: ExtendedDocument[],
-    delete?: ExtendedDocument[]
+    delete?: ExtendedDocument[],
+    transfer?: ExtendedDocument[]
   },
   identity: any,
+  options: any,
 ): Promise<any> {
+  console.log(documents)
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
+    transfer: documents.transfer?.length || 0,
   });
   await this.initialize();
 
@@ -36,10 +40,15 @@ export default async function broadcast(
     ...(documents.create || []),
     ...(documents.replace || []),
     ...(documents.delete || []),
+    ...(documents.transfer || []),
   ][0]?.getDataContractId();
 
   if (!dataContractId) {
     throw new Error('Data contract ID is not found');
+  }
+
+  if (documents.transfer?.length && !options.recipient) {
+    throw new Error('Receiver identity is not found for transfer transition');
   }
 
   const identityContractNonce = await this.nonceManager
@@ -49,7 +58,7 @@ export default async function broadcast(
     [identityId.toString()]: {
       [dataContractId.toString()]: identityContractNonce.toString(),
     },
-  });
+  }, options.recipient, options.price);
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 
@@ -79,6 +88,7 @@ export default async function broadcast(
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
+    transfer: documents.transfer?.length || 0,
   });
 
   return documentsBatchTransition;
