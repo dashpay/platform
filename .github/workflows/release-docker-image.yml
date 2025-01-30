@@ -39,8 +39,8 @@ jobs:
         include:
           - runner: ubuntu-24.04
             platform: linux/amd64
-          - runner: ubuntu-24.04
-            platform: linux/arm64
+          # - runner: ubuntu-24.04
+          #   platform: linux/arm64
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
