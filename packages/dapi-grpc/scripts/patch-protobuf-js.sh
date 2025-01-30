@@ -28,5 +28,4 @@ for file in $files; do
     echo "Error: global still present"
   fi
 
-  replace_in_file 's/readUint64()/readUint64String()/g' "$file"
 done
