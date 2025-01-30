@@ -292,6 +292,8 @@ RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
 git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
+# Only use 1 thread to avoid OOM
+export MAKEFLAGS='-j1' 
 
 make -j$(nproc) static_lib
 mkdir -p /opt/rocksdb/usr/local/lib
