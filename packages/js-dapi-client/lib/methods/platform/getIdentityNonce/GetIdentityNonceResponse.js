@@ -1,7 +1,7 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
-const IDENTITY_NONCE_VALUE_FILTER = 0xFFFFFFFFFF;
+const IDENTITY_NONCE_VALUE_FILTER = BigInt(0xFFFFFFFFFF);
 
 class GetIdentityNonceResponse extends AbstractResponse {
   /**
@@ -28,8 +28,8 @@ class GetIdentityNonceResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
-    const identityNonce = proto.getV0()
-      .getIdentityNonce() & IDENTITY_NONCE_VALUE_FILTER;
+    const identityNonce = BigInt(proto.getV0()
+      .getIdentityNonce()) & IDENTITY_NONCE_VALUE_FILTER;
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
     );
