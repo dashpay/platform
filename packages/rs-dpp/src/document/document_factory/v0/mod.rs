@@ -22,7 +22,11 @@ use crate::document::{
     extended_document::v0::ExtendedDocumentV0,
     serialization_traits::DocumentPlatformConversionMethodsV0, ExtendedDocument,
 };
+use crate::fee::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition,
+};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
     document_transition::{
@@ -32,8 +36,6 @@ use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
 use itertools::Itertools;
-use crate::fee::Credits;
-use crate::state_transition::documents_batch_transition::document_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -213,7 +215,7 @@ impl DocumentFactoryV0 {
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce,
         recipient: Option<Identifier>,
-        price: Option<Credits>
+        price: Option<Credits>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
@@ -273,17 +275,19 @@ impl DocumentFactoryV0 {
                         .collect(),
                     nonce_counter,
                     platform_version,
-                    recipient
+                    recipient,
                 ),
-                DocumentTransitionActionType::UpdatePrice => Self::document_update_price_transitions(
-                    documents
-                        .into_iter()
-                        .map(|(document, document_type, _)| (document, document_type))
-                        .collect(),
-                    nonce_counter,
-                    platform_version,
-                    price
-                ),
+                DocumentTransitionActionType::UpdatePrice => {
+                    Self::document_update_price_transitions(
+                        documents
+                            .into_iter()
+                            .map(|(document, document_type, _)| (document, document_type))
+                            .collect(),
+                        nonce_counter,
+                        platform_version,
+                        price,
+                    )
+                }
                 DocumentTransitionActionType::Purchase => Self::document_purchase_transitions(
                     documents
                         .into_iter()
@@ -292,14 +296,15 @@ impl DocumentFactoryV0 {
                     nonce_counter,
                     platform_version,
                     price,
-                    recipient
+                    recipient,
                 ),
                 _ => {
                     let action_type_name: &str = action.into();
 
                     Err(ProtocolError::InvalidStateTransitionType(
                         action_type_name.to_string(),
-                ))},
+                    ))
+                }
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
@@ -588,7 +593,7 @@ impl DocumentFactoryV0 {
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
-        recipient_owner_id: Option<Identifier>
+        recipient_owner_id: Option<Identifier>,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
@@ -635,7 +640,7 @@ impl DocumentFactoryV0 {
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
-        price: Option<Credits>
+        price: Option<Credits>,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
@@ -680,7 +685,7 @@ impl DocumentFactoryV0 {
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
         price: Option<Credits>,
-        recipient: Option<Identifier>
+        recipient: Option<Identifier>,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()

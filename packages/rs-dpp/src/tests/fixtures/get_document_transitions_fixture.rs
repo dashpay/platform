@@ -24,7 +24,7 @@ pub fn get_document_transitions_fixture<'a>(
         DocumentFactory::new(protocol_version).expect("expected to get document factory");
 
     document_factory
-        .create_state_transition(documents, nonce_counter)
+        .create_state_transition(documents, nonce_counter, None, None)
         .expect("the transitions should be created")
         .transitions()
         .to_owned()

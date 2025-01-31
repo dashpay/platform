@@ -48,7 +48,6 @@ impl TryFrom<&str> for DocumentTransitionActionType {
     }
 }
 
-
 impl From<DocumentTransitionActionType> for &str {
     fn from(value: DocumentTransitionActionType) -> Self {
         match value {
@@ -58,7 +57,9 @@ impl From<DocumentTransitionActionType> for &str {
             DocumentTransitionActionType::Transfer => "Transfer",
             DocumentTransitionActionType::Purchase => "Purchase",
             DocumentTransitionActionType::UpdatePrice => "UpdatePrice",
-            DocumentTransitionActionType::IgnoreWhileBumpingRevision => "IgnoreWhileBumpingRevision"
+            DocumentTransitionActionType::IgnoreWhileBumpingRevision => {
+                "IgnoreWhileBumpingRevision"
+            }
         }
     }
 }
