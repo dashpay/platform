@@ -14,7 +14,7 @@ class TimeStatus {
     this.local = local;
     this.block = typeof block === 'bigint' ? block : null;
     this.genesis = typeof genesis === 'bigint' ? genesis : null;
-    this.epoch = typeof epoch === 'number' ? epoch : null;
+    this.epoch = epoch || null;
   }
 
   /**

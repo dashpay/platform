@@ -29,7 +29,7 @@ class ChainStatus {
     this.earliestAppHash = earliestAppHash;
     this.earliestBlockHeight = earliestBlockHeight;
     this.maxPeerBlockHeight = maxPeerBlockHeight;
-    this.coreChainLockedHeight = typeof coreChainLockedHeight === 'number' ? coreChainLockedHeight : null;
+    this.coreChainLockedHeight = coreChainLockedHeight || null;
   }
 
   /**
