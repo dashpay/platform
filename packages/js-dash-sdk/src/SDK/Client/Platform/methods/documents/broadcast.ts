@@ -1,17 +1,23 @@
-import { ExtendedDocument } from '@dashevo/wasm-dpp';
+import { ExtendedDocument, Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';
 
+class DocumentTransitionParams {
+  receiver?: Identifier;
+
+  price?: bigint;
+}
+
 /**
  * Broadcast document onto the platform
  *
- * @param {Platform} this - bound instance class
  * @param {Object} documents
  * @param {ExtendedDocument[]} [documents.create]
  * @param {ExtendedDocument[]} [documents.replace]
  * @param {ExtendedDocument[]} [documents.delete]
- * @param identity - identity
+ * @param {Identity} identity
+ * @param options {DocumentTransitionParams} optional params for NFT functions
  */
 export default async function broadcast(
   this: Platform,
@@ -19,17 +25,20 @@ export default async function broadcast(
     create?: ExtendedDocument[],
     replace?: ExtendedDocument[],
     delete?: ExtendedDocument[],
-    transfer?: ExtendedDocument[]
+    transfer?: ExtendedDocument[],
+    updatePrice?: ExtendedDocument[],
+    purchase?: ExtendedDocument[],
   },
   identity: any,
-  options: any,
+  options?: DocumentTransitionParams,
 ): Promise<any> {
-  console.log(documents)
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
     transfer: documents.transfer?.length || 0,
+    updatePrice: documents.updatePrice?.length || 0,
+    purchase: documents.purchase?.length || 0,
   });
   await this.initialize();
 
@@ -41,24 +50,45 @@ export default async function broadcast(
     ...(documents.replace || []),
     ...(documents.delete || []),
     ...(documents.transfer || []),
+    ...(documents.updatePrice || []),
+    ...(documents.purchase || []),
   ][0]?.getDataContractId();
 
   if (!dataContractId) {
     throw new Error('Data contract ID is not found');
   }
 
-  if (documents.transfer?.length && !options.recipient) {
+  if (documents.transfer?.length && !options?.receiver) {
     throw new Error('Receiver identity is not found for transfer transition');
+  }
+
+  if (documents.updatePrice?.length && !options?.price) {
+    throw new Error('Price must be provided for UpdatePrice operation');
+  }
+
+  if (documents.purchase?.length) {
+    if (!options?.price && !options?.receiver) {
+      throw new Error('Price and Receiver must be provided for Purchase operation');
+    }
+
+    documents.purchase.forEach((document) => document.setOwnerId(options.receiver));
   }
 
   const identityContractNonce = await this.nonceManager
     .bumpIdentityContractNonce(identityId, dataContractId);
 
-  const documentsBatchTransition = dpp.document.createStateTransition(documents, {
+  const identityNonceObj = {
     [identityId.toString()]: {
       [dataContractId.toString()]: identityContractNonce.toString(),
     },
-  }, options.recipient, options.price);
+  };
+
+  const documentsBatchTransition = dpp.document.createStateTransition(
+    documents,
+    identityNonceObj,
+    options?.receiver,
+    options?.price,
+  );
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 

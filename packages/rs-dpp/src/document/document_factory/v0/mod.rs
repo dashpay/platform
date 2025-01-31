@@ -273,7 +273,7 @@ impl DocumentFactoryV0 {
                         .collect(),
                     nonce_counter,
                     platform_version,
-                    recipient.unwrap()
+                    recipient
                 ),
                 DocumentTransitionActionType::UpdatePrice => Self::document_update_price_transitions(
                     documents
@@ -282,7 +282,7 @@ impl DocumentFactoryV0 {
                         .collect(),
                     nonce_counter,
                     platform_version,
-                    price.unwrap()
+                    price
                 ),
                 DocumentTransitionActionType::Purchase => Self::document_purchase_transitions(
                     documents
@@ -291,11 +291,15 @@ impl DocumentFactoryV0 {
                         .collect(),
                     nonce_counter,
                     platform_version,
-                    price.unwrap()
+                    price,
+                    recipient
                 ),
-                _ => Err(ProtocolError::InvalidStateTransitionType(
-                    "action type not accounted for".to_string(),
-                )),
+                _ => {
+                    let action_type_name: &str = action.into();
+
+                    Err(ProtocolError::InvalidStateTransitionType(
+                        action_type_name.to_string(),
+                ))},
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
@@ -584,11 +588,11 @@ impl DocumentFactoryV0 {
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
-        recipient_owner_id: Identifier
+        recipient_owner_id: Option<Identifier>
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(mut document, document_type)| {
                 if !document_type.documents_transferable().is_transferable() {
                     return Err(DocumentError::TryingToTransferNonTransferableDocument {
                         document: Box::new(document),
@@ -602,14 +606,18 @@ impl DocumentFactoryV0 {
                     .into());
                 };
 
+                document.increment_revision()?;
+                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
+
                 let nonce = nonce_counter
                     .entry((document.owner_id(), document_type.data_contract_id()))
                     .or_default();
+
                 let transition = DocumentTransferTransition::from_document(
                     document,
                     document_type,
                     *nonce,
-                    recipient_owner_id,
+                    recipient_owner_id.unwrap(),
                     platform_version,
                     None,
                     None,
@@ -627,11 +635,11 @@ impl DocumentFactoryV0 {
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
-        price: Credits
+        price: Option<Credits>
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(mut document, document_type)| {
                 let Some(_document_revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
@@ -642,10 +650,17 @@ impl DocumentFactoryV0 {
                 let nonce = nonce_counter
                     .entry((document.owner_id(), document_type.data_contract_id()))
                     .or_default();
+
+                let now = Utc::now().timestamp_millis() as TimestampMillis;
+
+                document.increment_revision()?;
+                document.set_updated_at(Some(now));
+                document.set_transferred_at(Some(now));
+
                 let transition = DocumentUpdatePriceTransition::from_document(
                     document,
                     document_type,
-                    price,
+                    price.unwrap(),
                     *nonce,
                     platform_version,
                     None,
@@ -664,11 +679,12 @@ impl DocumentFactoryV0 {
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
-        price: Credits
+        price: Option<Credits>,
+        recipient: Option<Identifier>
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(mut document, document_type)| {
                 let Some(_document_revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
@@ -677,12 +693,17 @@ impl DocumentFactoryV0 {
                 };
 
                 let nonce = nonce_counter
-                    .entry((document.owner_id(), document_type.data_contract_id()))
+                    .entry((recipient.unwrap(), document_type.data_contract_id()))
                     .or_default();
+
+                //document.set_owner_id(recipient.unwrap());
+                document.increment_revision()?;
+                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
+
                 let transition = DocumentPurchaseTransition::from_document(
                     document,
                     document_type,
-                    price,
+                    price.unwrap(),
                     *nonce,
                     platform_version,
                     None,

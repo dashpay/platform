@@ -39,11 +39,26 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "replace" => Ok(DocumentTransitionActionType::Replace),
             "delete" => Ok(DocumentTransitionActionType::Delete),
             "transfer" => Ok(DocumentTransitionActionType::Transfer),
-            "purchase" => Ok(DocumentTransitionActionType::Purchase),
             "updatePrice" => Ok(DocumentTransitionActionType::UpdatePrice),
+            "purchase" => Ok(DocumentTransitionActionType::Purchase),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
             ))),
+        }
+    }
+}
+
+
+impl From<DocumentTransitionActionType> for &str {
+    fn from(value: DocumentTransitionActionType) -> Self {
+        match value {
+            DocumentTransitionActionType::Create => "Create",
+            DocumentTransitionActionType::Replace => "Replace",
+            DocumentTransitionActionType::Delete => "Delete",
+            DocumentTransitionActionType::Transfer => "Transfer",
+            DocumentTransitionActionType::Purchase => "Purchase",
+            DocumentTransitionActionType::UpdatePrice => "UpdatePrice",
+            DocumentTransitionActionType::IgnoreWhileBumpingRevision => "IgnoreWhileBumpingRevision"
         }
     }
 }
