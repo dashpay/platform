@@ -7,6 +7,37 @@ mod encode;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum DistributionFunction {
+    /// A fixed amount of tokens is emitted for each period in the reward distribution type.
+    ///
+    /// # Formula
+    /// - `f(x) = n`
+    ///
+    /// # Use Case
+    /// - Simplicity
+    /// - Stable reward emissions
+    ///
+    /// # Example
+    /// - If we emit 5 tokens per block, and 3 blocks have passed, the `Release` call will release 15 tokens.
+    FixedAmount { n: TokenAmount },
+
+    /// The amount of tokens decreases in predefined steps at fixed intervals.
+    ///
+    /// # Formula
+    /// - `f(x) = n * (1 - decrease_per_interval)^(x / step_count)`
+    ///
+    /// # Use Case
+    /// - Mimics Bitcoin and Dash Core emission models
+    /// - Encourages early participation by providing higher rewards initially
+    ///
+    /// # Example
+    /// - Bitcoin: A 50% decrease every 210,000 blocks (~4 years)
+    /// - Dash: A ~7% decrease every 210,000 blocks (~1 year)
+    StepDecreasingAmount {
+        step_count: u64,
+        decrease_per_interval: NotNan<f64>,
+        n: TokenAmount,
+    },
+
     /// A linear function emits tokens in increasing or decreasing amounts over time (integer precision).
     ///
     /// # Formula
@@ -145,6 +176,22 @@ pub enum DistributionFunction {
 impl fmt::Display for DistributionFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            DistributionFunction::FixedAmount { n } => {
+                write!(f, "FixedAmount: {} tokens per period", n)
+            }
+            DistributionFunction::StepDecreasingAmount {
+                step_count,
+                decrease_per_interval,
+                n,
+            } => {
+                write!(
+                    f,
+                    "StepDecreasingAmount: {} tokens, decreasing by {:.3}% every {} steps",
+                    n,
+                    decrease_per_interval.into_inner() * 100.0,
+                    step_count
+                )
+            }
             DistributionFunction::LinearInteger { a, b } => {
                 write!(f, "LinearInteger: f(x) = {} * x + {}", a, b)
             }

@@ -47,5 +47,6 @@ pub mod calculate_total_tokens_balance;
 /// Token status module, like if the token is paused
 pub mod status;
 
+mod distribution;
 /// Token paths
 pub mod paths;

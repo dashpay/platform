@@ -8,7 +8,7 @@ use grovedb::batch::KeyInfoPath;
 
 impl Drive {
     /// Pushes an "insert empty tree" operation to `drive_operations`.
-    pub(crate) fn batch_insert_empty_sum_tree_v0<'a, 'c, P>(
+    pub(super) fn batch_insert_empty_sum_tree_v0<'a, 'c, P>(
         &'a self,
         path: P,
         key_info: DriveKeyInfo<'c>,

@@ -8,6 +8,13 @@ pub struct DriveTokenMethodVersions {
     pub prove: DriveTokenProveMethodVersions,
     pub update: DriveTokenUpdateMethodVersions,
     pub calculate_total_tokens_balance: FeatureVersion,
+    pub distribution: DriveTokenDistributionMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveTokenDistributionMethodVersions {
+    pub add_perpetual_distribution: FeatureVersion,
+    pub add_pre_programmed_distributions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
