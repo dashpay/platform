@@ -53,7 +53,6 @@ pub struct SnapshotFetchingSession<'db> {
     pub snapshot: abci::Snapshot,
     /// Snapshot accepted
     pub app_hash: Vec<u8>,
-    // sender_metrics: Option<HashMap<String, Metrics>>,
     /// Snapshot accepted
     pub state_sync_info: Pin<Box<MultiStateSyncSession<'db>>>,
 }
@@ -79,33 +78,6 @@ impl<'db> SnapshotFetchingSession<'db> {
             snapshot,
             app_hash,
             state_sync_info,
-        }
-    }
-}
-
-// TODO: Use Metrics for statistics
-struct Metrics {
-    success: usize,
-    error: usize,
-}
-
-enum MetricType {
-    Success,
-    Error,
-}
-
-impl Metrics {
-    fn new() -> Self {
-        Self {
-            success: 0,
-            error: 0,
-        }
-    }
-
-    fn incr(&mut self, metric: MetricType) {
-        match metric {
-            MetricType::Success => self.success += 1,
-            MetricType::Error => self.error += 1,
         }
     }
 }
@@ -175,13 +147,13 @@ impl SnapshotManager {
 
         let root_hash = grove
             .root_hash(None, &PlatformVersion::latest().drive.grove_version)
-            .unwrap()
+            .value
             .map_err(|e| Error::Drive(Drive(DriveError::Snapshot(e.to_string()))))?;
 
         let snapshot = Snapshot {
             height,
             version: SNAPSHOT_VERSION,
-            path: checkpoint_path.to_str().unwrap().to_string(),
+            path: checkpoint_path.to_string_lossy().into_owned(),
             hash: root_hash as [u8; 32],
             metadata: vec![],
         };
@@ -199,7 +171,7 @@ impl SnapshotManager {
         let separator = snapshots.len() - self.number_stored_snapshots;
         for snapshot in &snapshots[0..separator] {
             if Path::new(&snapshot.path).is_dir() {
-                std::fs::remove_dir_all(&snapshot.path)
+                fs::remove_dir_all(&snapshot.path)
                     .map_err(|e| Error::Drive(Drive(DriveError::Snapshot(e.to_string()))))?;
             }
         }

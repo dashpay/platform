@@ -117,7 +117,7 @@ where
 
     let block_height = platform_state.last_committed_block_height();
 
-    tracing::info!(
+    tracing::trace!(
         block_height,
         platform_state = ?platform_state,
         "state_finalize_block"
