@@ -5,7 +5,7 @@ const IDENTITY_NONCE_VALUE_FILTER = BigInt(0xFFFFFFFFFF);
 
 class GetIdentityNonceResponse extends AbstractResponse {
   /**
-   * @param {number} identityNonce
+   * @param {bigint} identityNonce
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -16,7 +16,7 @@ class GetIdentityNonceResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {number}
+   * @returns {bigint}
    */
   getIdentityNonce() {
     return this.identityNonce;

@@ -5,7 +5,7 @@ const IDENTITY_CONTRACT_NONCE_VALUE_FILTER = BigInt(0xFFFFFFFFFF);
 
 class GetIdentityContractNonceResponse extends AbstractResponse {
   /**
-   * @param {number} identityContractNonce
+   * @param {bigint} identityContractNonce
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -16,7 +16,7 @@ class GetIdentityContractNonceResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {number}
+   * @returns {bigint}
    */
   getIdentityContractNonce() {
     return this.identityContractNonce;

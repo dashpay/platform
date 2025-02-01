@@ -1,17 +1,16 @@
 /**
  * @returns {{
+ * height: bigint,
  * coreChainLockedHeight: number,
- * height: number,
- * signature: Buffer,
+ * timeMs: bigint,
  * protocolVersion: number,
- * timeMs: number,
  * }}
  */
 function getMetadataFixture() {
   return {
-    height: 10,
-    coreChainLockedHeight: 42,
-    timeMs: new Date().getTime(),
+    height: BigInt(10),
+    coreChainLockedHeight: '42',
+    timeMs: new Date().getTime().toString(),
     protocolVersion: 1,
   };
 }

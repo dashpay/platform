@@ -41,17 +41,22 @@ describe('getDataContractHistoryFactory', () => {
 
   beforeEach(async function beforeEach() {
     dataContractFixture = await getDataContractFixture();
-    dataContractHistoryFixture = {
-      1000: dataContractFixture.toBuffer(),
-      2000: dataContractFixture.toBuffer(),
-    };
+
+    dataContractHistoryFixture = [{
+      date: 10000,
+      value: dataContractFixture.toBuffer(),
+    },
+    {
+      date: 20000,
+      value: dataContractFixture.toBuffer(),
+    }];
 
     const dataContractHistoryEntryProto = new DataContractHistoryEntry();
-    dataContractHistoryEntryProto.setDate(1000);
+    dataContractHistoryEntryProto.setDate(10000);
     dataContractHistoryEntryProto.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryEntryProto2 = new DataContractHistoryEntry();
-    dataContractHistoryEntryProto2.setDate(2000);
+    dataContractHistoryEntryProto2.setDate(20000);
     dataContractHistoryEntryProto2.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryProto = new DataContractHistory();
@@ -118,12 +123,17 @@ describe('getDataContractHistoryFactory', () => {
       options,
     ]);
     expect(result.getDataContractHistory()).to.deep.equal(dataContractHistoryFixture);
+
     expect(result.getProof()).to.equal(undefined);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
-    expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
-    expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
-      metadataFixture.coreChainLockedHeight,
-    );
+
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
   });
 
   it('should return proof', async () => {
@@ -152,17 +162,22 @@ describe('getDataContractHistoryFactory', () => {
       options,
     ]);
 
-    expect(result.getDataContractHistory()).to.deep.equal({});
+    expect(result.getDataContractHistory()).to.deep.equal(null);
+
     expect(result.getProof()).to.be.an.instanceOf(ProofClass);
     expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
-    expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
-    expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
-      metadataFixture.coreChainLockedHeight,
-    );
+
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
   });
 
   it('should throw unknown error', async () => {

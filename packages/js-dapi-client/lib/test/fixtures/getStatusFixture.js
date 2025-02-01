@@ -1,3 +1,6 @@
+/**
+ *
+ */
 function getStatusFixture() {
   return {
     version: {

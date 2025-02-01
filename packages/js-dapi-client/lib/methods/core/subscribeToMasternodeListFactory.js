@@ -41,6 +41,7 @@ function subscribeToMasternodeListFactory(grpcTransport) {
 
 /**
  * @typedef {object} subscribeToMasternodeListOptions
+ * @property
  */
 
 module.exports = subscribeToMasternodeListFactory;

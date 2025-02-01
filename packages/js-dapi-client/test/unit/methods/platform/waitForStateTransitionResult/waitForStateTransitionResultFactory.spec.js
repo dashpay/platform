@@ -55,7 +55,15 @@ describe('waitForStateTransitionResultFactory', () => {
 
     const result = await waitForStateTransitionResult(hash, options);
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.equal(undefined);
 
@@ -89,7 +97,15 @@ describe('waitForStateTransitionResultFactory', () => {
 
     const result = await waitForStateTransitionResult(hash, options);
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.be.deep.equal({
       merkleProof: Buffer.from('merkleProof'),
@@ -130,7 +146,15 @@ describe('waitForStateTransitionResultFactory', () => {
 
     const result = await waitForStateTransitionResult(hash, options);
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getProof()).to.equal(undefined);
     expect(result.getError()).to.be.deep.equal({
       code: 2,
