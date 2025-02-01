@@ -37,22 +37,22 @@ impl MetadataWasm {
     pub fn new(options: JsValue) -> Result<MetadataWasm, JsValue> {
         let metadata_options = options.with_serde_to_json_value()?;
         let block_height = metadata_options
-            .get_f64("blockHeight")
+            .get_u64("blockHeight")
             .map_err(|e| JsError::new(&e.to_string()))?;
         let core_chain_locked_height = metadata_options
-            .get_f64("coreChainLockedHeight")
+            .get_u32("coreChainLockedHeight")
             .map_err(|e| JsError::new(&e.to_string()))?;
         let time_ms = metadata_options
-            .get_f64("timeMs")
+            .get_u64("timeMs")
             .map_err(|e| JsError::new(&e.to_string()))?;
         let protocol_version = metadata_options
-            .get_f64("protocolVersion")
+            .get_u32("protocolVersion")
             .map_err(|e| JsError::new(&e.to_string()))?;
 
         let inner = Metadata {
-            block_height: block_height as u64,
+            block_height: block_height,
             core_chain_locked_height: core_chain_locked_height as u64,
-            time_ms: time_ms as u64,
+            time_ms: time_ms,
             protocol_version: protocol_version as u64 as ProtocolVersion,
         };
         Ok(inner.into())
@@ -77,22 +77,22 @@ impl MetadataWasm {
     }
 
     #[wasm_bindgen(js_name=getBlockHeight)]
-    pub fn block_height(&self) -> f64 {
-        self.0.block_height as f64
+    pub fn block_height(&self) -> u64 {
+        self.0.block_height
     }
 
     #[wasm_bindgen(js_name=getCoreChainLockedHeight)]
-    pub fn core_chain_locked_height(&self) -> f64 {
-        self.0.core_chain_locked_height as f64
+    pub fn core_chain_locked_height(&self) -> u32 {
+        self.0.core_chain_locked_height as u32
     }
 
     #[wasm_bindgen(js_name=getTimeMs)]
-    pub fn time_ms(&self) -> f64 {
-        self.0.time_ms as f64
+    pub fn time_ms(&self) -> u64 {
+        self.0.time_ms as u64
     }
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
-    pub fn protocol_version(&self) -> f64 {
-        self.0.protocol_version as f64
+    pub fn protocol_version(&self) -> u32 {
+        self.0.protocol_version as u32
     }
 }

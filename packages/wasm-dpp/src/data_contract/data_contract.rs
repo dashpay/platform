@@ -313,8 +313,8 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=setIdentityNonce)]
-    pub fn set_identity_nonce(&mut self, e: u64) -> Result<(), JsValue> {
-        self.identity_nonce = Some(e);
+    pub fn set_identity_nonce(&mut self, nonce: u64) -> Result<(), JsValue> {
+        self.identity_nonce = Some(nonce);
         Ok(())
     }
 

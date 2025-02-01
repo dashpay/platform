@@ -90,13 +90,13 @@ impl IdentityCreditTransferTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getAmount)]
-    pub fn get_amount(&self) -> f64 {
-        self.0.amount() as f64
+    pub fn get_amount(&self) -> u64 {
+        self.0.amount()
     }
 
     #[wasm_bindgen(js_name=setAmount)]
-    pub fn set_amount(&mut self, amount: f64) {
-        self.0.set_amount(amount as u64);
+    pub fn set_amount(&mut self, amount: u64) {
+        self.0.set_amount(amount);
     }
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
@@ -181,7 +181,7 @@ impl IdentityCreditTransferTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"amount".to_owned().into(),
-            &JsValue::from_f64(object.amount as f64),
+            &JsValue::bigint_from_str(&object.amount.to_string()),
         )?;
 
         Ok(js_object.into())
@@ -256,7 +256,7 @@ impl IdentityCreditTransferTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"amount".to_owned().into(),
-            &JsValue::from_f64(object.amount as f64),
+            &JsValue::bigint_from_str(&object.amount.to_string()),
         )?;
 
         Ok(js_object.into())
