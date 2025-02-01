@@ -1,4 +1,3 @@
-// @ts-ignore
 import { DataContract, Identifier } from '@dashevo/wasm-dpp';
 import {
   GetDataContractHistoryResponse,
@@ -13,15 +12,15 @@ declare type ContractIdentifier = string | Identifier;
  * Get contracts from the platform
  *
  * @param {ContractIdentifier} identifier - identifier of the contract to fetch
- * @param startAtMs
- * @param limit
- * @param offset
+ * @param {bigint} startAtMs
+ * @param {number} limit
+ * @param {number} offset
  * @returns contracts
  */
 export async function history(
   this: Platform,
   identifier: ContractIdentifier,
-  startAtMs: number,
+  startAtMs: bigint,
   limit: number,
   offset: number,
 ): Promise<any> {

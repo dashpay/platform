@@ -34,25 +34,11 @@ impl Into<Metadata> for MetadataWasm {
 #[wasm_bindgen(js_class=Metadata)]
 impl MetadataWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(options: JsValue) -> Result<MetadataWasm, JsValue> {
-        let metadata_options = options.with_serde_to_json_value()?;
-        let block_height = metadata_options
-            .get_u64("blockHeight")
-            .map_err(|e| JsError::new(&e.to_string()))?;
-        let core_chain_locked_height = metadata_options
-            .get_u32("coreChainLockedHeight")
-            .map_err(|e| JsError::new(&e.to_string()))?;
-        let time_ms = metadata_options
-            .get_u64("timeMs")
-            .map_err(|e| JsError::new(&e.to_string()))?;
-        let protocol_version = metadata_options
-            .get_u32("protocolVersion")
-            .map_err(|e| JsError::new(&e.to_string()))?;
-
+    pub fn new(block_height: u64, core_chain_locked_height: u32, time_ms: u64, protocol_version:u32) -> Result<MetadataWasm, JsValue> {
         let inner = Metadata {
-            block_height: block_height,
+            block_height,
             core_chain_locked_height: core_chain_locked_height as u64,
-            time_ms: time_ms,
+            time_ms,
             protocol_version: protocol_version as u64 as ProtocolVersion,
         };
         Ok(inner.into())

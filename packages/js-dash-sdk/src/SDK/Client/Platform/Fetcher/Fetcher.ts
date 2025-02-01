@@ -128,14 +128,14 @@ class Fetcher {
 
   /**
    * Fetches data contract by it's ID
-   * @param id
-   * @param startAMs
-   * @param limit
-   * @param offset
+   * @param id {Identifier}
+   * @param startAMs {bigint}
+   * @param limit {number}
+   * @param offset {number}
    */
   public async fetchDataContractHistory(
     id: Identifier,
-    startAMs: number,
+    startAMs: bigint,
     limit: number,
     offset: number,
   ): Promise<GetDataContractHistoryResponse> {
