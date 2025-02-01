@@ -12,6 +12,7 @@ use dpp::dashcore::Network;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
+use std::ops::Deref;
 
 /// Identity token balances
 #[derive(Debug, Default)]
@@ -19,6 +20,14 @@ pub struct IdentityTokenBalances(
     /// Token ID to token balance
     pub RetrievedObjects<Identifier, TokenAmount>,
 );
+
+impl Deref for IdentityTokenBalances {
+    type Target = RetrievedObjects<Identifier, TokenAmount>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentityTokenBalances {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
@@ -107,6 +116,14 @@ pub struct IdentitiesTokenBalances(
     /// Identity ID to token balance
     pub RetrievedObjects<Identifier, TokenAmount>,
 );
+
+impl Deref for IdentitiesTokenBalances {
+    type Target = RetrievedObjects<Identifier, TokenAmount>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentitiesTokenBalances {
     fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {

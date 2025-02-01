@@ -7,7 +7,7 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesTokenBalancesRequest, GetIdentityTokenBalancesRequest,
 };
 use dpp::balances::credits::TokenAmount;
-use drive_proof_verifier::tokens::identity_token_balance::{
+pub use drive_proof_verifier::tokens::identity_token_balance::{
     IdentitiesTokenBalances, IdentityTokenBalances,
 };
 

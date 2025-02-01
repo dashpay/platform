@@ -1,4 +1,4 @@
-mod identity_token_balances;
-mod token_info;
-mod token_status;
-mod token_total_supply;
+pub mod identity_token_balances;
+pub mod token_info;
+pub mod token_status;
+pub mod token_total_supply;
