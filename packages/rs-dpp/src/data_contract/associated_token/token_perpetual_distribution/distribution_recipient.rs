@@ -3,8 +3,8 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
-pub enum TokenPerpetualDistributionRecipient {
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum TokenDistributionRecipient {
     /// Distribute to the contract Owner
     ContractOwner,
     /// Distribute to a single identity
@@ -14,16 +14,16 @@ pub enum TokenPerpetualDistributionRecipient {
     EvonodesByParticipation,
 }
 
-impl fmt::Display for TokenPerpetualDistributionRecipient {
+impl fmt::Display for TokenDistributionRecipient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TokenPerpetualDistributionRecipient::ContractOwner => {
+            TokenDistributionRecipient::ContractOwner => {
                 write!(f, "ContractOwner")
             }
-            TokenPerpetualDistributionRecipient::Identity(identifier) => {
+            TokenDistributionRecipient::Identity(identifier) => {
                 write!(f, "Identity({})", identifier)
             }
-            TokenPerpetualDistributionRecipient::EvonodesByParticipation => {
+            TokenDistributionRecipient::EvonodesByParticipation => {
                 write!(f, "EvonodesByParticipation")
             }
         }

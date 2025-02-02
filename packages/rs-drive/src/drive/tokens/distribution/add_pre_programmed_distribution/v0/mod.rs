@@ -1,5 +1,5 @@
 use crate::drive::tokens::paths::{
-    token_ms_timed_at_time_distribution_path_vec, token_ms_timed_distributions_path_vec,
+    token_ms_timed_at_time_distributions_path_vec, token_ms_timed_distributions_path_vec,
     token_pre_programmed_at_time_distribution_path_vec, token_pre_programmed_distributions_path,
     token_root_pre_programmed_distributions_path, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
 };
@@ -22,6 +22,8 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::methods::v0::TokenPreProgrammedDistributionV0Methods;
 
 impl Drive {
     /// Version 0 of `add_perpetual_distribution`
@@ -113,7 +115,7 @@ impl Drive {
             let pre_programmed_at_time_distribution_path =
                 token_pre_programmed_at_time_distribution_path_vec(token_id, *time);
             let ms_time_at_time_distribution_path =
-                token_ms_timed_at_time_distribution_path_vec(*time);
+                token_ms_timed_at_time_distributions_path_vec(*time);
 
             for (recipient, amount) in distribution {
                 if *amount > i64::MAX as u64 {
@@ -123,7 +125,7 @@ impl Drive {
                 }
                 // We use a sum tree to be able to ask "at this time how much was distributed"
                 self.batch_insert(
-                    PathKeyElementInfo::PathKeyElement((
+                    PathKeyElementInfo::<0>::PathKeyElement((
                         pre_programmed_at_time_distribution_path.clone(),
                         recipient.to_vec(),
                         Element::new_sum_item(*amount as i64),
@@ -133,8 +135,8 @@ impl Drive {
                 )?;
 
                 let distribution_key = TokenDistributionKey {
-                    token_id: *token_id,
-                    identity_id: *recipient,
+                    token_id: token_id.into(),
+                    recipient: TokenDistributionRecipient::Identity(*recipient),
                     distribution_type: DistributionType::PreProgrammed,
                 };
 
@@ -152,7 +154,7 @@ impl Drive {
 
                 // Now we create the reference
                 self.batch_insert(
-                    PathKeyElementInfo::PathKeyElement((
+                    PathKeyElementInfo::<0>::PathKeyElement((
                         ms_time_at_time_distribution_path.clone(),
                         serialized_key,
                         Element::new_reference_with_flags(

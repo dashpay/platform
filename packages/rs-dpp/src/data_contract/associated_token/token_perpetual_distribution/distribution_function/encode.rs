@@ -3,49 +3,63 @@ use crate::data_contract::associated_token::token_perpetual_distribution::distri
 use bincode::{BorrowDecode, Decode, Encode};
 use ordered_float::NotNan;
 
+/// Helper function to decode a `NotNan<f64>` safely.
+fn decode_not_nan<D: bincode::de::Decoder>(decoder: &mut D) -> Result<NotNan<f64>, bincode::error::DecodeError> {
+    NotNan::new(f64::decode(decoder)?).map_err(|_| {
+        bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
+    })
+}
+
 // Implement Encode for DistributionFunction
 impl Encode for DistributionFunction {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> Result<(), bincode::error::EncodeError> {
+    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
         match self {
+            DistributionFunction::FixedAmount { n } => {
+                0u8.encode(encoder)?;
+                n.encode(encoder)?;
+            }
+            DistributionFunction::StepDecreasingAmount { step_count, decrease_per_interval, n } => {
+                1u8.encode(encoder)?;
+                step_count.encode(encoder)?;
+                decrease_per_interval.into_inner().encode(encoder)?;
+                n.encode(encoder)?;
+            }
             DistributionFunction::LinearInteger { a, b } => {
-                0u8.encode(encoder)?; // Variant index for LinearInteger
+                2u8.encode(encoder)?;
                 a.encode(encoder)?;
                 b.encode(encoder)?;
             }
             DistributionFunction::LinearFloat { a, b } => {
-                1u8.encode(encoder)?; // Variant index for LinearFloat
-                a.into_inner().encode(encoder)?; // Encode the NotNan<f64> value as f64
+                3u8.encode(encoder)?;
+                a.into_inner().encode(encoder)?;
                 b.encode(encoder)?;
             }
             DistributionFunction::PolynomialInteger { a, n, b } => {
-                2u8.encode(encoder)?; // Variant index for PolynomialInteger
+                4u8.encode(encoder)?;
                 a.encode(encoder)?;
                 n.encode(encoder)?;
                 b.encode(encoder)?;
             }
             DistributionFunction::PolynomialFloat { a, n, b } => {
-                3u8.encode(encoder)?; // Variant index for PolynomialFloat
+                5u8.encode(encoder)?;
                 a.into_inner().encode(encoder)?;
                 n.into_inner().encode(encoder)?;
                 b.encode(encoder)?;
             }
             DistributionFunction::Exponential { a, b, c } => {
-                4u8.encode(encoder)?; // Variant index for Exponential
+                6u8.encode(encoder)?;
                 a.into_inner().encode(encoder)?;
                 b.into_inner().encode(encoder)?;
                 c.encode(encoder)?;
             }
             DistributionFunction::Logarithmic { a, b, c } => {
-                5u8.encode(encoder)?; // Variant index for Logarithmic
+                7u8.encode(encoder)?;
                 a.into_inner().encode(encoder)?;
                 b.into_inner().encode(encoder)?;
                 c.encode(encoder)?;
             }
             DistributionFunction::Stepwise(steps) => {
-                6u8.encode(encoder)?; // Variant index for Stepwise
+                8u8.encode(encoder)?;
                 steps.encode(encoder)?;
             }
         }
@@ -55,125 +69,116 @@ impl Encode for DistributionFunction {
 
 // Implement Decode for DistributionFunction
 impl Decode for DistributionFunction {
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
+    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
         let variant = u8::decode(decoder)?;
         match variant {
             0 => {
+                let n = TokenAmount::decode(decoder)?;
+                Ok(Self::FixedAmount { n })
+            }
+            1 => {
+                let step_count = u64::decode(decoder)?;
+                let decrease_per_interval = decode_not_nan(decoder)?;
+                let n = TokenAmount::decode(decoder)?;
+                Ok(Self::StepDecreasingAmount { step_count, decrease_per_interval, n })
+            }
+            2 => {
                 let a = i64::decode(decoder)?;
                 let b = SignedTokenAmount::decode(decoder)?;
                 Ok(Self::LinearInteger { a, b })
             }
-            1 => {
-                let a = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
+            3 => {
+                let a = decode_not_nan(decoder)?;
                 let b = SignedTokenAmount::decode(decoder)?;
                 Ok(Self::LinearFloat { a, b })
             }
-            2 => {
+            4 => {
                 let a = i64::decode(decoder)?;
                 let n = i64::decode(decoder)?;
                 let b = SignedTokenAmount::decode(decoder)?;
                 Ok(Self::PolynomialInteger { a, n, b })
             }
-            3 => {
-                let a = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
-                let n = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
+            5 => {
+                let a = decode_not_nan(decoder)?;
+                let n = decode_not_nan(decoder)?;
                 let b = SignedTokenAmount::decode(decoder)?;
                 Ok(Self::PolynomialFloat { a, n, b })
             }
-            4 => {
-                let a = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
-                let b = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
+            6 => {
+                let a = decode_not_nan(decoder)?;
+                let b = decode_not_nan(decoder)?;
                 let c = SignedTokenAmount::decode(decoder)?;
                 Ok(Self::Exponential { a, b, c })
             }
-            5 => {
-                let a = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
-                let b = NotNan::new(f64::decode(decoder)?).map_err(|_| {
-                    bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-                })?;
+            7 => {
+                let a = decode_not_nan(decoder)?;
+                let b = decode_not_nan(decoder)?;
                 let c = SignedTokenAmount::decode(decoder)?;
                 Ok(Self::Logarithmic { a, b, c })
             }
-            6 => {
+            8 => {
                 let steps = Vec::<(u64, TokenAmount)>::decode(decoder)?;
                 Ok(Self::Stepwise(steps))
             }
-            _ => Err(bincode::error::DecodeError::OtherString(
-                "Invalid variant".into(),
-            )),
+            _ => Err(bincode::error::DecodeError::OtherString("Invalid variant".into())),
         }
     }
 }
 
+// Implement BorrowDecode for DistributionFunction
 impl<'de> BorrowDecode<'de> for DistributionFunction {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let variant = u8::borrow_decode(decoder)?; // Decode the variant tag
-
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+        let variant = u8::borrow_decode(decoder)?;
         match variant {
             0 => {
-                let a = i64::borrow_decode(decoder)?;
-                let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(DistributionFunction::LinearInteger { a, b })
+                let n = TokenAmount::borrow_decode(decoder)?;
+                Ok(Self::FixedAmount { n })
             }
             1 => {
-                let a = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-                let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(DistributionFunction::LinearFloat { a, b })
+                let step_count = u64::borrow_decode(decoder)?;
+                let decrease_per_interval = decode_not_nan(decoder)?;
+                let n = TokenAmount::borrow_decode(decoder)?;
+                Ok(Self::StepDecreasingAmount { step_count, decrease_per_interval, n })
             }
             2 => {
                 let a = i64::borrow_decode(decoder)?;
-                let n = i64::borrow_decode(decoder)?;
                 let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(DistributionFunction::PolynomialInteger { a, n, b })
+                Ok(Self::LinearInteger { a, b })
             }
             3 => {
-                let a = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-                let n = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
+                let a = decode_not_nan(decoder)?;
                 let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(DistributionFunction::PolynomialFloat { a, n, b })
+                Ok(Self::LinearFloat { a, b })
             }
             4 => {
-                let a = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-                let b = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-                let c = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(DistributionFunction::Exponential { a, b, c })
+                let a = i64::borrow_decode(decoder)?;
+                let n = i64::borrow_decode(decoder)?;
+                let b = SignedTokenAmount::borrow_decode(decoder)?;
+                Ok(Self::PolynomialInteger { a, n, b })
             }
             5 => {
-                let a = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-                let b = NotNan::<f64>::new(f64::borrow_decode(decoder)?)
-                    .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-                let c = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(DistributionFunction::Logarithmic { a, b, c })
+                let a = decode_not_nan(decoder)?;
+                let n = decode_not_nan(decoder)?;
+                let b = SignedTokenAmount::borrow_decode(decoder)?;
+                Ok(Self::PolynomialFloat { a, n, b })
             }
             6 => {
-                let steps = Vec::<(u64, TokenAmount)>::borrow_decode(decoder)?;
-                Ok(DistributionFunction::Stepwise(steps))
+                let a = decode_not_nan(decoder)?;
+                let b = decode_not_nan(decoder)?;
+                let c = SignedTokenAmount::borrow_decode(decoder)?;
+                Ok(Self::Exponential { a, b, c })
             }
-            _ => Err(bincode::error::DecodeError::OtherString(
-                "Invalid variant tag for DistributionFunction".to_string(),
-            )),
+            7 => {
+                let a = decode_not_nan(decoder)?;
+                let b = decode_not_nan(decoder)?;
+                let c = SignedTokenAmount::borrow_decode(decoder)?;
+                Ok(Self::Logarithmic { a, b, c })
+            }
+            8 => {
+                let steps = Vec::<(u64, TokenAmount)>::borrow_decode(decoder)?;
+                Ok(Self::Stepwise(steps))
+            }
+            _ => Err(bincode::error::DecodeError::OtherString("Invalid variant".into())),
         }
     }
 }

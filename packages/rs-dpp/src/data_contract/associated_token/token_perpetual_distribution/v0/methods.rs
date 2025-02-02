@@ -8,17 +8,17 @@ impl TokenPerpetualDistributionV0Methods for TokenPerpetualDistributionV0 {
         match self.distribution_type {
             // If the distribution is based on block height, return the next height where emissions occur.
             RewardDistributionType::BlockBasedDistribution(interval, _, _) => {
-                block_info.height + interval
+                block_info.height - block_info.height % interval + interval
             }
 
             // If the distribution is based on time, return the next timestamp in milliseconds.
             RewardDistributionType::TimeBasedDistribution(interval, _, _) => {
-                block_info.time_ms + interval
+                block_info.time_ms - block_info.time_ms % interval + interval
             }
 
             // If the distribution is based on epochs, return the next epoch index.
             RewardDistributionType::EpochBasedDistribution(interval, _, _) => {
-                (block_info.epoch.index + interval) as u64
+                (block_info.epoch.index - block_info.epoch.index % interval + interval) as u64
             }
         }
     }

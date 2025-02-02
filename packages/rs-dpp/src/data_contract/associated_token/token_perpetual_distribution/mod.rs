@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod distribution_function;
-mod distribution_recipient;
-mod methods;
+pub mod distribution_recipient;
+pub mod methods;
 pub mod reward_distribution_type;
 pub mod v0;
 

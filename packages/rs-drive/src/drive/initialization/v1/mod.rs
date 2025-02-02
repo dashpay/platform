@@ -5,7 +5,7 @@ use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::system::misc_path_vec;
 use crate::drive::tokens::paths::{
-    token_distributions_root_path, token_distributions_root_path_vec,
+    token_distributions_root_path_vec,
     token_timed_distributions_path_vec, tokens_root_path_vec, TOKEN_BALANCES_KEY,
     TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_DISTRIBUTIONS_KEY,
     TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_MS_TIMED_DISTRIBUTIONS_KEY,

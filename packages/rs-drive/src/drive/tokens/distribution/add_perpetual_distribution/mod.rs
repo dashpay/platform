@@ -6,7 +6,6 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -36,10 +35,10 @@ impl Drive {
         {
             0 => self.add_perpetual_distribution_v0(
                 token_id,
+                owner_id,
                 distribution,
                 block_info,
                 estimated_costs_only_with_layer_info,
-                previous_batch_operations,
                 batch_operations,
                 transaction,
                 platform_version,

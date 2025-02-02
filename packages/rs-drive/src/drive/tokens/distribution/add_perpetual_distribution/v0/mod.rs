@@ -1,21 +1,21 @@
-use crate::drive::tokens::paths::{
-    token_root_perpetual_distributions_path_vec, TokenPerpetualDistributionPaths,
-};
+use crate::drive::tokens::paths::{token_root_perpetual_distributions_path_vec, TokenPerpetualDistributionPaths, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, QueryTarget};
+use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionKey;
+use dpp::data_contract::associated_token::token_distribution_key::{DistributionType, TokenDistributionKey};
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
+use grovedb::reference_path::ReferencePathType;
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 
 impl Drive {
     /// Version 0 of `add_perpetual_distribution`
@@ -40,17 +40,6 @@ impl Drive {
         // Path for the perpetual distribution tree
         let perpetual_distributions_path = token_root_perpetual_distributions_path_vec();
 
-        // Insert the tree for this token's perpetual distribution
-        let tree_insert_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsertTree
-        } else {
-            BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
-                tree_type: TreeType::NormalTree,
-                flags_len: storage_flags.serialized_size(),
-            }
-        };
-
         let insert_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertApplyType::StatefulBatchInsert
         } else {
@@ -62,7 +51,7 @@ impl Drive {
 
         // We do a `if_not_exists` just to be extra careful
         let inserted = self.batch_insert_if_not_exists(
-            PathKeyElementInfo::PathKeyElement((
+            PathKeyElementInfo::<0>::PathKeyElement((
                 perpetual_distributions_path,
                 token_id.to_vec(),
                 Element::new_item(serialized_distribution),
@@ -77,31 +66,28 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution("we can not insert the perpetual distribution as it already existed, this should have been validated before insertion")));
         }
 
-        let next_interval = distribution.next_interval(block_info);
-
-        let path = distribution.distribution_path();
+        // We will distribute for the first time on the next interval
+        let distribution_path_for_next_interval = distribution.distribution_path_for_next_interval(block_info);
 
         let distribution_key = TokenDistributionKey {
-            token_id: *token_id,
-            identity_id: *recipient,
-            distribution_type: DistributionType::PreProgrammed,
+            token_id: token_id.into(),
+            recipient: distribution.distribution_recipient(),
+            distribution_type: DistributionType::Perpetual,
         };
 
         let serialized_key = distribution_key.serialize_consume_to_bytes()?;
 
         let remaining_reference = vec![
-            vec![TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY],
+            vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
             token_id.to_vec(),
-            time.to_be_bytes().to_vec(),
-            crate::drive::tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY.to_vec(),
         ];
-
+        
         let reference = ReferencePathType::UpstreamRootHeightReference(2, remaining_reference);
 
         // Now we create the reference
         self.batch_insert(
-            PathKeyElementInfo::PathKeyElement((
-                ms_time_at_time_distribution_path.clone(),
+            PathKeyElementInfo::<0>::PathKeyElement((
+                distribution_path_for_next_interval,
                 serialized_key,
                 Element::new_reference_with_flags(reference, storage_flags.to_some_element_flags()),
             )),

@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use dpp::identifier::Identifier;
 use dpp::prelude::{
-    DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
-    SenderKeyIndex,
+    DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
 use dpp::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
 use crate::drive::contract::DataContractFetchInfo;
