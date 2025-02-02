@@ -5,8 +5,7 @@ use crate::data_contract::associated_token::token_configuration_item::TokenConfi
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::{
-    DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex,
-    RootEncryptionKeyIndex, SenderKeyIndex,
+    DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

@@ -49,7 +49,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         owner_id: [u8; 32],
-        distribution: TokenPreProgrammedDistribution,
+        distribution: &TokenPreProgrammedDistribution,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

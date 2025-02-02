@@ -31,7 +31,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         owner_id: [u8; 32],
-        distribution: TokenPreProgrammedDistribution,
+        distribution: &TokenPreProgrammedDistribution,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -40,6 +40,20 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_token_pre_programmed_distribution(
+                token_id,
+                distribution.distributions().keys(),
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+
+            Drive::add_estimation_costs_for_root_token_ms_interval_distribution(
+                distribution.distributions().keys(),
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
         let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
 
         let pre_programmed_distributions_path = token_root_pre_programmed_distributions_path();
