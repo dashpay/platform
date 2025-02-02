@@ -688,6 +688,8 @@ mod tests {
             use super::*;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
             use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+            use drive::drive::Drive;
+
             #[test]
             fn test_data_contract_pre_programmed_distribution() {
                 let platform_version = PlatformVersion::latest();
@@ -721,44 +723,44 @@ mod tests {
 
                 let base_supply_start_amount = 0;
 
-                {
-                    let token_config = data_contract
-                        .tokens_mut()
-                        .expect("expected tokens")
-                        .get_mut(&0)
-                        .expect("expected first token");
-                    token_config.set_base_supply(base_supply_start_amount);
+                let token_config = data_contract
+                    .tokens_mut()
+                    .expect("expected tokens")
+                    .get_mut(&0)
+                    .expect("expected first token");
+                token_config.set_base_supply(base_supply_start_amount);
 
-                    // Create a new BTreeMap to store distributions
-                    let mut distributions: BTreeMap<
-                        TimestampMillis,
-                        BTreeMap<Identifier, TokenAmount>,
-                    > = BTreeMap::new();
+                // Create a new BTreeMap to store distributions
+                let mut distributions: BTreeMap<
+                    TimestampMillis,
+                    BTreeMap<Identifier, TokenAmount>,
+                > = BTreeMap::new();
 
-                    // Create distributions for different timestamps
-                    distributions.insert(
-                        1700000000000, // Example timestamp (milliseconds)
-                        BTreeMap::from([
-                            (identity.id(), 10),  // Identity 1 gets 10 tokens
-                            (identity_2.id(), 5), // Identity 2 gets 5 tokens
-                        ]),
-                    );
+                // Create distributions for different timestamps
+                distributions.insert(
+                    1700000000000, // Example timestamp (milliseconds)
+                    BTreeMap::from([
+                        (identity.id(), 10),  // Identity 1 gets 10 tokens
+                        (identity_2.id(), 5), // Identity 2 gets 5 tokens
+                    ]),
+                );
 
-                    distributions.insert(
-                        1700005000000, // Another timestamp
-                        BTreeMap::from([
-                            (identity_3.id(), 15), // Identity 3 gets 15 tokens
-                            (identity_4.id(), 20), // Identity 4 gets 20 tokens
-                            (identity_5.id(), 25), // Identity 5 gets 25 tokens
-                        ]),
-                    );
+                distributions.insert(
+                    1700005000000, // Another timestamp
+                    BTreeMap::from([
+                        (identity_3.id(), 15), // Identity 3 gets 15 tokens
+                        (identity_4.id(), 20), // Identity 4 gets 20 tokens
+                        (identity_5.id(), 25), // Identity 5 gets 25 tokens
+                    ]),
+                );
 
-                    token_config
-                        .distribution_rules_mut()
-                        .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
-                            TokenPreProgrammedDistributionV0 { distributions },
-                        )));
-                }
+                token_config
+                    .distribution_rules_mut()
+                    .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                        TokenPreProgrammedDistributionV0 {
+                            distributions: distributions.clone(),
+                        },
+                    )));
 
                 let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
 
@@ -817,6 +819,33 @@ mod tests {
                     )
                     .expect("expected to fetch token balance");
                 assert_eq!(token_balance, None);
+
+                let fetched_distributions = platform
+                    .drive
+                    .fetch_pre_programmed_distributions(token_id, None, None, platform_version)
+                    .expect("expected to fetch pre-programmed distributions");
+
+                assert_eq!(fetched_distributions, distributions);
+
+                let proved_distributions = platform
+                    .drive
+                    .prove_pre_programmed_distributions(token_id, None, None, platform_version)
+                    .expect("expected to prove pre-programmed distributions");
+
+                let verified_pre_programmed_distributions: BTreeMap<
+                    TimestampMillis,
+                    BTreeMap<Identifier, TokenAmount>,
+                > = Drive::verify_token_pre_programmed_distributions(
+                    proved_distributions.as_slice(),
+                    token_id,
+                    None,
+                    false,
+                    platform_version,
+                )
+                .expect("expected to verify proof")
+                .1;
+
+                assert_eq!(verified_pre_programmed_distributions, distributions);
             }
         }
 

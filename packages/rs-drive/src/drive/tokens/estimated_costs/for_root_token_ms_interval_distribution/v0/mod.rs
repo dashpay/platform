@@ -4,7 +4,8 @@ use crate::drive::tokens::paths::{
 };
 use crate::drive::Drive;
 use crate::util::type_constants::{
-    DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U64_SIZE_U8, U8_SIZE_U8,
+    DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U64_SIZE_U8,
+    U8_SIZE_U8,
 };
 use dpp::prelude::TimestampMillis;
 use grovedb::batch::KeyInfoPath;
@@ -53,7 +54,11 @@ impl Drive {
                     // We assume a shallow sum tree for the distribution entries at a given time.
                     estimated_layer_count: EstimatedLevel(1, false),
                     // Each distribution entry is estimated with a fixed size.
-                    estimated_layer_sizes: AllReference(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
+                    estimated_layer_sizes: AllReference(
+                        DEFAULT_HASH_SIZE_U8,
+                        DEFAULT_HASH_SIZE_U32 * 2 + 2,
+                        None,
+                    ),
                 },
             );
         }
