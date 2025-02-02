@@ -28,7 +28,9 @@ impl TokenPerpetualDistributionV0Accessors for TokenPerpetualDistribution {
 
     fn set_distribution_recipient(&mut self, distribution_recipient: TokenDistributionRecipient) {
         match self {
-            TokenPerpetualDistribution::V0(v0) => v0.distribution_recipient = distribution_recipient,
+            TokenPerpetualDistribution::V0(v0) => {
+                v0.distribution_recipient = distribution_recipient
+            }
         }
     }
 }

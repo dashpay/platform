@@ -4,21 +4,29 @@ use bincode::{BorrowDecode, Decode, Encode};
 use ordered_float::NotNan;
 
 /// Helper function to decode a `NotNan<f64>` safely.
-fn decode_not_nan<D: bincode::de::Decoder>(decoder: &mut D) -> Result<NotNan<f64>, bincode::error::DecodeError> {
-    NotNan::new(f64::decode(decoder)?).map_err(|_| {
-        bincode::error::DecodeError::OtherString("Invalid float: NaN".into())
-    })
+fn decode_not_nan<D: bincode::de::Decoder>(
+    decoder: &mut D,
+) -> Result<NotNan<f64>, bincode::error::DecodeError> {
+    NotNan::new(f64::decode(decoder)?)
+        .map_err(|_| bincode::error::DecodeError::OtherString("Invalid float: NaN".into()))
 }
 
 // Implement Encode for DistributionFunction
 impl Encode for DistributionFunction {
-    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
         match self {
             DistributionFunction::FixedAmount { n } => {
                 0u8.encode(encoder)?;
                 n.encode(encoder)?;
             }
-            DistributionFunction::StepDecreasingAmount { step_count, decrease_per_interval, n } => {
+            DistributionFunction::StepDecreasingAmount {
+                step_count,
+                decrease_per_interval,
+                n,
+            } => {
                 1u8.encode(encoder)?;
                 step_count.encode(encoder)?;
                 decrease_per_interval.into_inner().encode(encoder)?;
@@ -69,7 +77,9 @@ impl Encode for DistributionFunction {
 
 // Implement Decode for DistributionFunction
 impl Decode for DistributionFunction {
-    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         let variant = u8::decode(decoder)?;
         match variant {
             0 => {
@@ -80,7 +90,11 @@ impl Decode for DistributionFunction {
                 let step_count = u64::decode(decoder)?;
                 let decrease_per_interval = decode_not_nan(decoder)?;
                 let n = TokenAmount::decode(decoder)?;
-                Ok(Self::StepDecreasingAmount { step_count, decrease_per_interval, n })
+                Ok(Self::StepDecreasingAmount {
+                    step_count,
+                    decrease_per_interval,
+                    n,
+                })
             }
             2 => {
                 let a = i64::decode(decoder)?;
@@ -120,14 +134,18 @@ impl Decode for DistributionFunction {
                 let steps = Vec::<(u64, TokenAmount)>::decode(decoder)?;
                 Ok(Self::Stepwise(steps))
             }
-            _ => Err(bincode::error::DecodeError::OtherString("Invalid variant".into())),
+            _ => Err(bincode::error::DecodeError::OtherString(
+                "Invalid variant".into(),
+            )),
         }
     }
 }
 
 // Implement BorrowDecode for DistributionFunction
 impl<'de> BorrowDecode<'de> for DistributionFunction {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         let variant = u8::borrow_decode(decoder)?;
         match variant {
             0 => {
@@ -138,7 +156,11 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 let step_count = u64::borrow_decode(decoder)?;
                 let decrease_per_interval = decode_not_nan(decoder)?;
                 let n = TokenAmount::borrow_decode(decoder)?;
-                Ok(Self::StepDecreasingAmount { step_count, decrease_per_interval, n })
+                Ok(Self::StepDecreasingAmount {
+                    step_count,
+                    decrease_per_interval,
+                    n,
+                })
             }
             2 => {
                 let a = i64::borrow_decode(decoder)?;
@@ -178,7 +200,9 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 let steps = Vec::<(u64, TokenAmount)>::borrow_decode(decoder)?;
                 Ok(Self::Stepwise(steps))
             }
-            _ => Err(bincode::error::DecodeError::OtherString("Invalid variant".into())),
+            _ => Err(bincode::error::DecodeError::OtherString(
+                "Invalid variant".into(),
+            )),
         }
     }
 }

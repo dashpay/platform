@@ -1,4 +1,7 @@
-use crate::drive::tokens::paths::{token_root_perpetual_distributions_path_vec, TokenPerpetualDistributionPaths, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY};
+use crate::drive::tokens::paths::{
+    token_root_perpetual_distributions_path_vec, TokenPerpetualDistributionPaths,
+    TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -7,15 +10,17 @@ use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::associated_token::token_distribution_key::{DistributionType, TokenDistributionKey};
+use dpp::data_contract::associated_token::token_distribution_key::{
+    DistributionType, TokenDistributionKey,
+};
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
+use grovedb::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
-use grovedb::reference_path::ReferencePathType;
-use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 
 impl Drive {
     /// Version 0 of `add_perpetual_distribution`
@@ -67,7 +72,8 @@ impl Drive {
         }
 
         // We will distribute for the first time on the next interval
-        let distribution_path_for_next_interval = distribution.distribution_path_for_next_interval(block_info);
+        let distribution_path_for_next_interval =
+            distribution.distribution_path_for_next_interval(block_info);
 
         let distribution_key = TokenDistributionKey {
             token_id: token_id.into(),
@@ -77,11 +83,8 @@ impl Drive {
 
         let serialized_key = distribution_key.serialize_consume_to_bytes()?;
 
-        let remaining_reference = vec![
-            vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
-            token_id.to_vec(),
-        ];
-        
+        let remaining_reference = vec![vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY], token_id.to_vec()];
+
         let reference = ReferencePathType::UpstreamRootHeightReference(2, remaining_reference);
 
         // Now we create the reference

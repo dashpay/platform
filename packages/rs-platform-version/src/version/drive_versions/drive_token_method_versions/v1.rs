@@ -1,4 +1,7 @@
-use crate::version::drive_versions::drive_token_method_versions::{DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions, DriveTokenMethodVersions, DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions};
+use crate::version::drive_versions::drive_token_method_versions::{
+    DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions, DriveTokenMethodVersions,
+    DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions,
+};
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
     fetch: DriveTokenFetchMethodVersions {
@@ -38,5 +41,8 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         apply_status: 0,
     },
     calculate_total_tokens_balance: 0,
-    distribution: DriveTokenDistributionMethodVersions { add_perpetual_distribution: 0, add_pre_programmed_distributions: 0 },
+    distribution: DriveTokenDistributionMethodVersions {
+        add_perpetual_distribution: 0,
+        add_pre_programmed_distributions: 0,
+    },
 };

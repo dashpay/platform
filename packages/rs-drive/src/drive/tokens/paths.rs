@@ -1,10 +1,10 @@
+use crate::drive::RootTree;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
-use crate::drive::RootTree;
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::prelude::{BlockHeight, TimestampMillis};
-use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 
 // ROOT TOKEN LEVEL
 
@@ -315,18 +315,20 @@ pub fn token_block_timed_at_block_distributions_path(block_height_bytes: &[u8; 4
         &[TOKEN_DISTRIBUTIONS_KEY],
         &[TOKEN_TIMED_DISTRIBUTIONS_KEY],
         &[TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY],
-        block_height_bytes
+        block_height_bytes,
     ]
 }
 
 /// The path for the block timed at a specific block height token distributions tree as a vector
-pub fn token_block_timed_at_block_distributions_path_vec(block_height: BlockHeight) -> Vec<Vec<u8>> {
+pub fn token_block_timed_at_block_distributions_path_vec(
+    block_height: BlockHeight,
+) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Tokens as u8],
         vec![TOKEN_DISTRIBUTIONS_KEY],
         vec![TOKEN_TIMED_DISTRIBUTIONS_KEY],
         vec![TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY],
-        block_height.to_be_bytes().to_vec()
+        block_height.to_be_bytes().to_vec(),
     ]
 }
 
