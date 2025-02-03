@@ -47,6 +47,10 @@ where
         if next_chunk_ids.is_empty() && session.state_sync_info.is_sync_completed() {
             is_state_sync_completed = true;
         }
+        tracing::debug!(
+            is_state_sync_completed,
+            "state_sync apply_snapshot_chunk",
+        );
         if !is_state_sync_completed {
             return Ok(proto::ResponseApplySnapshotChunk {
                 result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
