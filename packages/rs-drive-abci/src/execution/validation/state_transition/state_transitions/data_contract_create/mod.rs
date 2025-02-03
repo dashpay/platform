@@ -822,14 +822,26 @@ mod tests {
 
                 let fetched_distributions = platform
                     .drive
-                    .fetch_pre_programmed_distributions(token_id, None, None, platform_version)
+                    .fetch_token_pre_programmed_distributions(
+                        token_id,
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
                     .expect("expected to fetch pre-programmed distributions");
 
                 assert_eq!(fetched_distributions, distributions);
 
                 let proved_distributions = platform
                     .drive
-                    .prove_pre_programmed_distributions(token_id, None, None, platform_version)
+                    .prove_token_pre_programmed_distributions(
+                        token_id,
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
                     .expect("expected to prove pre-programmed distributions");
 
                 let verified_pre_programmed_distributions: BTreeMap<
@@ -838,6 +850,7 @@ mod tests {
                 > = Drive::verify_token_pre_programmed_distributions(
                     proved_distributions.as_slice(),
                     token_id,
+                    None,
                     None,
                     false,
                     platform_version,

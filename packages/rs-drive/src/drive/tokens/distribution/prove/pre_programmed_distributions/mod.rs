@@ -1,4 +1,6 @@
-use crate::drive::tokens::distribution::queries::pre_programmed_distributions_query;
+use crate::drive::tokens::distribution::queries::{
+    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -27,15 +29,16 @@ impl Drive {
     /// # Returns
     ///
     /// A `Result` containing a nested `BTreeMap` on success or an `Error` on failure.
-    pub(super) fn prove_pre_programmed_distributions_operations_v0(
+    pub(super) fn prove_token_pre_programmed_distributions_operations_v0(
         &self,
         token_id: [u8; 32],
+        start_at: Option<QueryPreProgrammedDistributionStartAt>,
         limit: Option<u16>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path_query = pre_programmed_distributions_query(token_id, limit);
+        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
 
         self.grove_get_proved_path_query(
             &path_query,

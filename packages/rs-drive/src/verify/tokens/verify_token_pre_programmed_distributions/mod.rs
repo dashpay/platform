@@ -10,6 +10,7 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -40,6 +41,7 @@ impl Drive {
     >(
         proof: &[u8],
         token_id: [u8; 32],
+        start_at: Option<QueryPreProgrammedDistributionStartAt>,
         limit: Option<u16>,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
@@ -54,6 +56,7 @@ impl Drive {
             0 => Self::verify_token_pre_programmed_distributions_v0(
                 proof,
                 token_id,
+                start_at,
                 limit,
                 verify_subset_of_proof,
                 platform_version,

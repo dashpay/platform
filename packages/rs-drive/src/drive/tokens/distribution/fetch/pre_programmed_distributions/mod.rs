@@ -1,4 +1,6 @@
-use crate::drive::tokens::distribution::queries::pre_programmed_distributions_query;
+use crate::drive::tokens::distribution::queries::{
+    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -7,7 +9,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -33,15 +35,16 @@ impl Drive {
     /// # Returns
     ///
     /// A `Result` containing a nested `BTreeMap` on success or an `Error` on failure.
-    pub(super) fn fetch_pre_programmed_distributions_operations_v0(
+    pub(super) fn fetch_token_pre_programmed_distributions_operations_v0(
         &self,
         token_id: [u8; 32],
+        start_at: Option<QueryPreProgrammedDistributionStartAt>,
         limit: Option<u16>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error> {
-        let path_query = pre_programmed_distributions_query(token_id, limit);
+        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
 
         let results = self
             .grove_get_raw_path_query(

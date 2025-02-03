@@ -37,7 +37,8 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetStatusRequest, GetStatusResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
@@ -672,6 +673,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_token_statuses,
             "get_token_statuses",
+        )
+        .await
+    }
+
+    async fn get_token_pre_programmed_distributions(
+        &self,
+        request: Request<GetTokenPreProgrammedDistributionsRequest>,
+    ) -> Result<Response<GetTokenPreProgrammedDistributionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_pre_programmed_distributions,
+            "get_token_pre_programmed_distributions",
         )
         .await
     }

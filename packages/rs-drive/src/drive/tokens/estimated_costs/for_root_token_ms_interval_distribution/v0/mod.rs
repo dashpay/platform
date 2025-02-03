@@ -4,13 +4,12 @@ use crate::drive::tokens::paths::{
 };
 use crate::drive::Drive;
 use crate::util::type_constants::{
-    DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U64_SIZE_U8,
-    U8_SIZE_U8,
+    DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8, U8_SIZE_U8,
 };
 use dpp::prelude::TimestampMillis;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
+use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;

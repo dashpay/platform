@@ -1,5 +1,6 @@
 mod pre_programmed_distributions;
 
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -31,15 +32,17 @@ impl Drive {
     /// # Returns
     ///
     /// A `Result` containing a nested `BTreeMap` on success or an `Error` on failure.
-    pub fn fetch_pre_programmed_distributions(
+    pub fn fetch_token_pre_programmed_distributions(
         &self,
         token_id: [u8; 32],
+        start_at: Option<QueryPreProgrammedDistributionStartAt>,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error> {
-        self.fetch_pre_programmed_distributions_operations(
+        self.fetch_token_pre_programmed_distributions_operations(
             token_id,
+            start_at,
             limit,
             &mut vec![],
             transaction,
@@ -67,9 +70,10 @@ impl Drive {
     /// # Returns
     ///
     /// A `Result` containing a nested `BTreeMap` on success or an `Error` on failure.
-    pub(crate) fn fetch_pre_programmed_distributions_operations(
+    pub(crate) fn fetch_token_pre_programmed_distributions_operations(
         &self,
         token_id: [u8; 32],
+        start_at: Option<QueryPreProgrammedDistributionStartAt>,
         limit: Option<u16>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -82,15 +86,16 @@ impl Drive {
             .fetch
             .pre_programmed_distributions
         {
-            0 => self.fetch_pre_programmed_distributions_operations_v0(
+            0 => self.fetch_token_pre_programmed_distributions_operations_v0(
                 token_id,
+                start_at,
                 limit,
                 drive_operations,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_pre_programmed_distributions_operations".to_string(),
+                method: "fetch_token_pre_programmed_distributions_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
