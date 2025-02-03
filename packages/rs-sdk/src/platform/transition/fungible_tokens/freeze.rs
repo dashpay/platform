@@ -1,4 +1,3 @@
-use crate::platform::transition::builder::StateTransitionBuilder;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -116,17 +115,6 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
         self.settings = Some(settings);
         self
-    }
-}
-
-impl StateTransitionBuilder for TokenFreezeTransitionBuilder<'_> {
-    /// Returns the settings for the token freeze transition
-    ///
-    /// # Returns
-    ///
-    /// * `Option<PutSettings>` - The settings, if any
-    fn settings(&self) -> Option<PutSettings> {
-        self.settings
     }
 
     /// Signs the token freeze transition
