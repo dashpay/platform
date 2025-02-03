@@ -14,10 +14,11 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use std::ops::Deref;
 
-/// Identity token balances
-#[derive(Debug, Default)]
+/// Multiple token balances of one specific identity
+#[derive(Debug, Default, Clone, derive_more::From)]
 pub struct IdentityTokenBalances(
     /// Token ID to token balance
+    #[from]
     pub RetrievedObjects<Identifier, TokenAmount>,
 );
 
@@ -34,12 +35,6 @@ impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentityTokenBalances {
         iter.into_iter()
             .collect::<RetrievedObjects<Identifier, TokenAmount>>()
             .into()
-    }
-}
-
-impl From<RetrievedObjects<Identifier, TokenAmount>> for IdentityTokenBalances {
-    fn from(retrieved_objects: RetrievedObjects<Identifier, TokenAmount>) -> Self {
-        Self(retrieved_objects)
     }
 }
 
@@ -110,10 +105,11 @@ impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
     }
 }
 
-/// Identities token balances
-#[derive(Debug, Default)]
+/// One specific token balance of multiple identities
+#[derive(Debug, Default, Clone, derive_more::From)]
 pub struct IdentitiesTokenBalances(
     /// Identity ID to token balance
+    #[from]
     pub RetrievedObjects<Identifier, TokenAmount>,
 );
 
@@ -130,12 +126,6 @@ impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentitiesTokenBalances
         iter.into_iter()
             .collect::<RetrievedObjects<Identifier, TokenAmount>>()
             .into()
-    }
-}
-
-impl From<RetrievedObjects<Identifier, TokenAmount>> for IdentitiesTokenBalances {
-    fn from(retrieved_objects: RetrievedObjects<Identifier, TokenAmount>) -> Self {
-        Self(retrieved_objects)
     }
 }
 

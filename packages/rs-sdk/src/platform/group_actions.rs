@@ -18,11 +18,14 @@ use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::prelude::StartAtIncluded;
-use drive_proof_verifier::group_actions::{GroupActionSigners, GroupActions, Groups};
+pub use drive_proof_verifier::group_actions::{GroupActionSigners, GroupActions, Groups};
 
 #[derive(Debug, Clone)]
+/// Query to fetch data contract group
 pub struct GroupQuery {
+    /// Data contract ID
     pub contract_id: Identifier,
+    /// Group contract position in the data contract definition
     pub group_contract_position: GroupContractPosition,
 }
 
@@ -45,9 +48,15 @@ impl Fetch for Group {
 }
 
 #[derive(Debug, Clone)]
+/// Query to fetch multiple data contract groups
 pub struct GroupInfosQuery {
+    /// Data contract ID
     pub contract_id: Identifier,
+    /// Optional start group contract position to fetch groups from
+    /// If not provided, the first group will be fetched
+    /// If provided, the group at the provided position will be included in the result if `StartAtIncluded` is `true`
     pub start_group_contract_position: Option<(GroupContractPosition, StartAtIncluded)>,
+    /// An optional limit of groups to fetch
     pub limit: Option<u16>,
 }
 
@@ -78,11 +87,19 @@ impl FetchMany<GroupContractPosition, Groups> for Group {
 }
 
 #[derive(Debug, Clone)]
+/// Query to fetch available group actions on specific data contract
 pub struct GroupActionsQuery {
+    /// Data contract ID
     pub contract_id: Identifier,
+    /// Group contract position in the data contract definition
     pub group_contract_position: GroupContractPosition,
+    /// Group action status
     pub status: GroupActionStatus,
+    /// Optional start action ID to fetch actions from
+    /// If not provided, the first action will be fetched
+    /// If provided, the action at the provided position will be included in the result if `StartAtIncluded` is `true`
     pub start_at_action_id: Option<(Identifier, StartAtIncluded)>,
+    /// An optional limit of actions to fetch
     pub limit: Option<u16>,
 }
 
@@ -115,10 +132,15 @@ impl FetchMany<Identifier, GroupActions> for GroupAction {
 }
 
 #[derive(Debug, Clone)]
+/// Query to fetch available signatures of specific data contract and group action
 pub struct GroupActionSignersQuery {
+    /// Data contract ID
     pub contract_id: Identifier,
+    /// Group contract position in the data contract definition
     pub group_contract_position: GroupContractPosition,
+    /// Group action status
     pub status: GroupActionStatus,
+    /// Group action ID
     pub action_id: Identifier,
 }
 
@@ -130,7 +152,7 @@ impl Query<GetGroupActionSignersRequest> for GroupActionSignersQuery {
                     contract_id: self.contract_id.to_vec(),
                     group_contract_position: self.group_contract_position as u32,
                     status: self.status as i32,
-                    action_id: vec![],
+                    action_id: self.action_id.to_vec(),
                     prove,
                 },
             )),

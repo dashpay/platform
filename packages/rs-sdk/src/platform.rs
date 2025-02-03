@@ -17,7 +17,7 @@ mod query;
 pub mod transition;
 pub mod types;
 
-mod group_actions;
+pub mod group_actions;
 pub mod tokens;
 
 pub use dapi_grpc::platform::v0::{self as proto};

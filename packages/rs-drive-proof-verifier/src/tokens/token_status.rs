@@ -12,7 +12,8 @@ use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 
-/// Token statuses
+/// Token statuses (i.e. is token paused or not)
+/// Token ID to token status
 pub type TokenStatuses = RetrievedObjects<Identifier, TokenStatus>;
 
 impl FromProof<GetTokenStatusesRequest> for TokenStatuses {

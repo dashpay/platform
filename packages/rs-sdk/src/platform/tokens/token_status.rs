@@ -1,9 +1,9 @@
-use crate::platform::{FetchMany, Identifier, Query};
+use crate::platform::{Fetch, FetchMany, Identifier, Query};
 use crate::Error;
 use dapi_grpc::platform::v0::get_token_statuses_request::GetTokenStatusesRequestV0;
 use dapi_grpc::platform::v0::{get_token_statuses_request, GetTokenStatusesRequest};
 use dpp::tokens::status::TokenStatus;
-use drive_proof_verifier::tokens::token_status::TokenStatuses;
+pub use drive_proof_verifier::tokens::token_status::TokenStatuses;
 
 impl Query<GetTokenStatusesRequest> for Vec<Identifier> {
     fn query(self, prove: bool) -> Result<GetTokenStatusesRequest, Error> {

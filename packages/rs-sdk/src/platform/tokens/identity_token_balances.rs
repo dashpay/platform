@@ -12,7 +12,7 @@ pub use drive_proof_verifier::tokens::identity_token_balance::{
 };
 
 #[derive(Debug, Clone)]
-/// Identities token balances query
+/// Query to fetch multiple token balances of one specific identity
 pub struct IdentityTokenBalancesQuery {
     /// Identity ID
     pub identity_id: Identifier,
@@ -41,7 +41,7 @@ impl FetchMany<Identifier, IdentityTokenBalances> for TokenAmount {
 }
 
 #[derive(Debug, Clone)]
-/// Identities token balances query
+/// Query to fetch multiple identity balances of one specific token
 pub struct IdentitiesTokenBalancesQuery {
     /// Identity IDs
     pub identity_ids: Vec<Identifier>,

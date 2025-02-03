@@ -7,14 +7,14 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesTokenInfosRequest, GetIdentityTokenInfosRequest,
 };
 use dpp::tokens::info::IdentityTokenInfo;
-use drive_proof_verifier::tokens::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
+pub use drive_proof_verifier::tokens::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 
 #[derive(Debug, Clone)]
-/// Identities token balances query
+/// Query to fetch multiple token information of one specific identity
 pub struct IdentityTokenInfosQuery {
-    /// Identity IDs
+    /// Identity ID
     pub identity_id: Identifier,
-    /// Token ID
+    /// Token IDs
     pub token_ids: Vec<Identifier>,
 }
 
@@ -39,7 +39,7 @@ impl FetchMany<Identifier, IdentityTokenInfos> for IdentityTokenInfo {
 }
 
 #[derive(Debug, Clone)]
-/// Identities token balances query
+/// Query to fetch multiple identity token information of one specific token
 pub struct IdentitiesTokenInfosQuery {
     /// Identity IDs
     pub identity_ids: Vec<Identifier>,
@@ -66,6 +66,8 @@ impl Query<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfosQuery {
         Ok(request)
     }
 }
+
+// TODO: Implement Fetch (and for others)
 
 impl FetchMany<Identifier, IdentitiesTokenInfos> for IdentityTokenInfo {
     type Request = GetIdentitiesTokenInfosRequest;
