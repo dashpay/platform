@@ -62,7 +62,7 @@ impl<C> Platform<C> {
         // Freeze tokens for identity 2
         self.drive.token_freeze(
             *TOKEN_ID_0,
-            IDENTITY_ID_1,
+            IDENTITY_ID_2,
             block_info,
             true,
             transaction,

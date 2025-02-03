@@ -149,7 +149,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
     /// # Returns
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
-    async fn sign(
+    pub async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,

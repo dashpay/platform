@@ -93,8 +93,8 @@ async fn test_identities_token_infos() {
 
     assert_eq!(token_infos.count(), 4);
 
-    assert_matches!(token_infos.get(&IDENTITY_ID_1), Some(Some(info)) if info.frozen() == true);
-    assert_matches!(token_infos.get(&IDENTITY_ID_2), Some(None));
+    assert_matches!(token_infos.get(&IDENTITY_ID_1), Some(None));
+    assert_matches!(token_infos.get(&IDENTITY_ID_2), Some(Some(info)) if info.frozen() == true);
     assert_matches!(token_infos.get(&IDENTITY_ID_3), Some(None));
     assert_matches!(token_infos.get(&UNKNOWN_IDENTITY_ID), Some(None));
 }
