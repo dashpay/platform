@@ -172,7 +172,7 @@ impl<'a> TokenTransferTransitionBuilder<'a> {
             .get_identity_contract_nonce(
                 self.issuer_id,
                 self.data_contract.id(),
-                false,
+                true,
                 self.settings,
             )
             .await?;

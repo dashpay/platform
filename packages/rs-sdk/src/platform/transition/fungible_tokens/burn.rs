@@ -137,7 +137,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
             .get_identity_contract_nonce(
                 self.owner_id,
                 self.data_contract.id(),
-                false,
+                true,
                 self.settings,
             )
             .await?;

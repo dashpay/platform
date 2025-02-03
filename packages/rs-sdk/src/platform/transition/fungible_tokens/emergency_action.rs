@@ -174,7 +174,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
             .get_identity_contract_nonce(
                 self.actor_id,
                 self.data_contract.id(),
-                false,
+                true,
                 self.settings,
             )
             .await?;
