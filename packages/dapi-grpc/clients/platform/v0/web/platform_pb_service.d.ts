@@ -337,6 +337,15 @@ type PlatformgetTokenStatuses = {
   readonly responseType: typeof platform_pb.GetTokenStatusesResponse;
 };
 
+type PlatformgetTokenPreProgrammedDistributions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetTokenPreProgrammedDistributionsRequest;
+  readonly responseType: typeof platform_pb.GetTokenPreProgrammedDistributionsResponse;
+};
+
 type PlatformgetTokenTotalSupply = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -421,6 +430,7 @@ export class Platform {
   static readonly getIdentityTokenInfos: PlatformgetIdentityTokenInfos;
   static readonly getIdentitiesTokenInfos: PlatformgetIdentitiesTokenInfos;
   static readonly getTokenStatuses: PlatformgetTokenStatuses;
+  static readonly getTokenPreProgrammedDistributions: PlatformgetTokenPreProgrammedDistributions;
   static readonly getTokenTotalSupply: PlatformgetTokenTotalSupply;
   static readonly getGroupInfo: PlatformgetGroupInfo;
   static readonly getGroupInfos: PlatformgetGroupInfos;
@@ -792,6 +802,15 @@ export class PlatformClient {
   getTokenStatuses(
     requestMessage: platform_pb.GetTokenStatusesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenStatusesResponse|null) => void
+  ): UnaryResponse;
+  getTokenPreProgrammedDistributions(
+    requestMessage: platform_pb.GetTokenPreProgrammedDistributionsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenPreProgrammedDistributionsResponse|null) => void
+  ): UnaryResponse;
+  getTokenPreProgrammedDistributions(
+    requestMessage: platform_pb.GetTokenPreProgrammedDistributionsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenPreProgrammedDistributionsResponse|null) => void
   ): UnaryResponse;
   getTokenTotalSupply(
     requestMessage: platform_pb.GetTokenTotalSupplyRequest,

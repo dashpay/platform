@@ -875,6 +875,26 @@
              responseClass:[GetTokenStatusesResponse class]];
 }
 
+#pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
+
+- (void)getTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenPreProgrammedDistributionsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenPreProgrammedDistributions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenPreProgrammedDistributionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenPreProgrammedDistributionsWithMessage:(GetTokenPreProgrammedDistributionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenPreProgrammedDistributions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenPreProgrammedDistributionsResponse class]];
+}
+
 #pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)
 
 - (void)getTokenTotalSupplyWithRequest:(GetTokenTotalSupplyRequest *)request handler:(void(^)(GetTokenTotalSupplyResponse *_Nullable response, NSError *_Nullable error))handler{

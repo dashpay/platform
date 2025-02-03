@@ -7039,6 +7039,249 @@ export namespace GetTokenStatusesResponse {
   }
 }
 
+export class GetTokenPreProgrammedDistributionsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0 | undefined;
+  setV0(value?: GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0): void;
+
+  getVersionCase(): GetTokenPreProgrammedDistributionsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenPreProgrammedDistributionsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenPreProgrammedDistributionsRequest): GetTokenPreProgrammedDistributionsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenPreProgrammedDistributionsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenPreProgrammedDistributionsRequest;
+  static deserializeBinaryFromReader(message: GetTokenPreProgrammedDistributionsRequest, reader: jspb.BinaryReader): GetTokenPreProgrammedDistributionsRequest;
+}
+
+export namespace GetTokenPreProgrammedDistributionsRequest {
+  export type AsObject = {
+    v0?: GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0.AsObject,
+  }
+
+  export class GetTokenPreProgrammedDistributionsRequestV0 extends jspb.Message {
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
+    hasStartAtInfo(): boolean;
+    clearStartAtInfo(): void;
+    getStartAtInfo(): GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0.StartAtInfo | undefined;
+    setStartAtInfo(value?: GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0.StartAtInfo): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenPreProgrammedDistributionsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenPreProgrammedDistributionsRequestV0): GetTokenPreProgrammedDistributionsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenPreProgrammedDistributionsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenPreProgrammedDistributionsRequestV0;
+    static deserializeBinaryFromReader(message: GetTokenPreProgrammedDistributionsRequestV0, reader: jspb.BinaryReader): GetTokenPreProgrammedDistributionsRequestV0;
+  }
+
+  export namespace GetTokenPreProgrammedDistributionsRequestV0 {
+    export type AsObject = {
+      tokenId: Uint8Array | string,
+      startAtInfo?: GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0.StartAtInfo.AsObject,
+      limit: number,
+      prove: boolean,
+    }
+
+    export class StartAtInfo extends jspb.Message {
+      getStartTimeMs(): number;
+      setStartTimeMs(value: number): void;
+
+      hasStartRecipient(): boolean;
+      clearStartRecipient(): void;
+      getStartRecipient(): Uint8Array | string;
+      getStartRecipient_asU8(): Uint8Array;
+      getStartRecipient_asB64(): string;
+      setStartRecipient(value: Uint8Array | string): void;
+
+      hasStartRecipientIncluded(): boolean;
+      clearStartRecipientIncluded(): void;
+      getStartRecipientIncluded(): boolean;
+      setStartRecipientIncluded(value: boolean): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): StartAtInfo.AsObject;
+      static toObject(includeInstance: boolean, msg: StartAtInfo): StartAtInfo.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: StartAtInfo, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): StartAtInfo;
+      static deserializeBinaryFromReader(message: StartAtInfo, reader: jspb.BinaryReader): StartAtInfo;
+    }
+
+    export namespace StartAtInfo {
+      export type AsObject = {
+        startTimeMs: number,
+        startRecipient: Uint8Array | string,
+        startRecipientIncluded: boolean,
+      }
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetTokenPreProgrammedDistributionsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0 | undefined;
+  setV0(value?: GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0): void;
+
+  getVersionCase(): GetTokenPreProgrammedDistributionsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenPreProgrammedDistributionsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenPreProgrammedDistributionsResponse): GetTokenPreProgrammedDistributionsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenPreProgrammedDistributionsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenPreProgrammedDistributionsResponse;
+  static deserializeBinaryFromReader(message: GetTokenPreProgrammedDistributionsResponse, reader: jspb.BinaryReader): GetTokenPreProgrammedDistributionsResponse;
+}
+
+export namespace GetTokenPreProgrammedDistributionsResponse {
+  export type AsObject = {
+    v0?: GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.AsObject,
+  }
+
+  export class GetTokenPreProgrammedDistributionsResponseV0 extends jspb.Message {
+    hasTokenDistributions(): boolean;
+    clearTokenDistributions(): void;
+    getTokenDistributions(): GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributions | undefined;
+    setTokenDistributions(value?: GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributions): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetTokenPreProgrammedDistributionsResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenPreProgrammedDistributionsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenPreProgrammedDistributionsResponseV0): GetTokenPreProgrammedDistributionsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenPreProgrammedDistributionsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenPreProgrammedDistributionsResponseV0;
+    static deserializeBinaryFromReader(message: GetTokenPreProgrammedDistributionsResponseV0, reader: jspb.BinaryReader): GetTokenPreProgrammedDistributionsResponseV0;
+  }
+
+  export namespace GetTokenPreProgrammedDistributionsResponseV0 {
+    export type AsObject = {
+      tokenDistributions?: GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributions.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class TokenDistributionEntry extends jspb.Message {
+      getRecipientId(): Uint8Array | string;
+      getRecipientId_asU8(): Uint8Array;
+      getRecipientId_asB64(): string;
+      setRecipientId(value: Uint8Array | string): void;
+
+      getAmount(): number;
+      setAmount(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): TokenDistributionEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: TokenDistributionEntry): TokenDistributionEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: TokenDistributionEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): TokenDistributionEntry;
+      static deserializeBinaryFromReader(message: TokenDistributionEntry, reader: jspb.BinaryReader): TokenDistributionEntry;
+    }
+
+    export namespace TokenDistributionEntry {
+      export type AsObject = {
+        recipientId: Uint8Array | string,
+        amount: number,
+      }
+    }
+
+    export class TokenTimedDistributionEntry extends jspb.Message {
+      getTimestamp(): number;
+      setTimestamp(value: number): void;
+
+      clearDistributionsList(): void;
+      getDistributionsList(): Array<GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry>;
+      setDistributionsList(value: Array<GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry>): void;
+      addDistributions(value?: GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry, index?: number): GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): TokenTimedDistributionEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: TokenTimedDistributionEntry): TokenTimedDistributionEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: TokenTimedDistributionEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): TokenTimedDistributionEntry;
+      static deserializeBinaryFromReader(message: TokenTimedDistributionEntry, reader: jspb.BinaryReader): TokenTimedDistributionEntry;
+    }
+
+    export namespace TokenTimedDistributionEntry {
+      export type AsObject = {
+        timestamp: number,
+        distributionsList: Array<GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry.AsObject>,
+      }
+    }
+
+    export class TokenDistributions extends jspb.Message {
+      clearTokenDistributionsList(): void;
+      getTokenDistributionsList(): Array<GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntry>;
+      setTokenDistributionsList(value: Array<GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntry>): void;
+      addTokenDistributions(value?: GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntry, index?: number): GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntry;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): TokenDistributions.AsObject;
+      static toObject(includeInstance: boolean, msg: TokenDistributions): TokenDistributions.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: TokenDistributions, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): TokenDistributions;
+      static deserializeBinaryFromReader(message: TokenDistributions, reader: jspb.BinaryReader): TokenDistributions;
+    }
+
+    export namespace TokenDistributions {
+      export type AsObject = {
+        tokenDistributionsList: Array<GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntry.AsObject>,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      TOKEN_DISTRIBUTIONS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetTokenTotalSupplyRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

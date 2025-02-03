@@ -265,6 +265,14 @@ GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Version_Protocol);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Version_Software);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsRequest);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsResponse);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions);
+GPBObjCClassDeclaration(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry);
 GPBObjCClassDeclaration(GetTokenStatusesRequest);
 GPBObjCClassDeclaration(GetTokenStatusesRequest_GetTokenStatusesRequestV0);
 GPBObjCClassDeclaration(GetTokenStatusesResponse);
@@ -14991,6 +14999,505 @@ typedef struct GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenStatuses
                                    storageSize:sizeof(GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenStatuses__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenStatusesResponse_GetTokenStatusesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsRequest
+
+@implementation GetTokenPreProgrammedDistributionsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetTokenPreProgrammedDistributionsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0 *v0;
+} GetTokenPreProgrammedDistributionsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0),
+        .number = GetTokenPreProgrammedDistributionsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetTokenPreProgrammedDistributionsRequest_ClearVersionOneOfCase(GetTokenPreProgrammedDistributionsRequest *message) {
+  GPBDescriptor *descriptor = [GetTokenPreProgrammedDistributionsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0
+
+@implementation GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0
+
+@dynamic tokenId;
+@dynamic hasStartAtInfo, startAtInfo;
+@dynamic hasLimit, limit;
+@dynamic prove;
+
+typedef struct GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t limit;
+  NSData *tokenId;
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo *startAtInfo;
+} GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_TokenId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0__storage_, tokenId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startAtInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo),
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_StartAtInfo,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0__storage_, startAtInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "limit",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_Limit,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0__storage_, limit),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_Prove,
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenPreProgrammedDistributionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo
+
+@implementation GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo
+
+@dynamic startTimeMs;
+@dynamic hasStartRecipient, startRecipient;
+@dynamic hasStartRecipientIncluded, startRecipientIncluded;
+
+typedef struct GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *startRecipient;
+  uint64_t startTimeMs;
+} GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startTimeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber_StartTimeMs,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo__storage_, startTimeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "startRecipient",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber_StartRecipient,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo__storage_, startRecipient),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startRecipientIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber_StartRecipientIncluded,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse
+
+@implementation GetTokenPreProgrammedDistributionsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetTokenPreProgrammedDistributionsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 *v0;
+} GetTokenPreProgrammedDistributionsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0),
+        .number = GetTokenPreProgrammedDistributionsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetTokenPreProgrammedDistributionsResponse_ClearVersionOneOfCase(GetTokenPreProgrammedDistributionsResponse *message) {
+  GPBDescriptor *descriptor = [GetTokenPreProgrammedDistributionsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0
+
+@implementation GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic tokenDistributions;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions *tokenDistributions;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "tokenDistributions",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions),
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber_TokenDistributions,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0__storage_, tokenDistributions),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenPreProgrammedDistributionsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_ClearResultOneOfCase(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry
+
+@implementation GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry
+
+@dynamic recipientId;
+@dynamic amount;
+
+typedef struct GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *recipientId;
+  uint64_t amount;
+} GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "recipientId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry_FieldNumber_RecipientId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry__storage_, recipientId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "amount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry_FieldNumber_Amount,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry__storage_, amount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry
+
+@implementation GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry
+
+@dynamic timestamp;
+@dynamic distributionsArray, distributionsArray_Count;
+
+typedef struct GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *distributionsArray;
+  uint64_t timestamp;
+} GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "timestamp",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry_FieldNumber_Timestamp,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry__storage_, timestamp),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "distributionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry),
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry_FieldNumber_DistributionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry__storage_, distributionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions
+
+@implementation GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions
+
+@dynamic tokenDistributionsArray, tokenDistributionsArray_Count;
+
+typedef struct GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *tokenDistributionsArray;
+} GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "tokenDistributionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry),
+        .number = GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions_FieldNumber_TokenDistributionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions__storage_, tokenDistributionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
