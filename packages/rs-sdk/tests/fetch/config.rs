@@ -228,7 +228,7 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        Identifier::from([1; 32])
+        IDENTITY_ID_1
     }
 
     fn default_data_contract_id() -> Identifier {

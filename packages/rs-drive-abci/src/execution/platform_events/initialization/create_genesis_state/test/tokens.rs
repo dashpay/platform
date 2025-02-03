@@ -46,18 +46,13 @@ static TOKEN_ID_2: LazyLock<Identifier> =
     LazyLock::new(|| calculate_token_id(&DATA_CONTRACT_ID.to_buffer(), 2).into());
 
 impl<C> Platform<C> {
-    pub(super) fn create_data_for_token_queries(
+    /// This data is used for testing token and group queries in RS SDK tests.
+    pub(super) fn create_data_for_group_token_queries(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if self.config.network != Network::Regtest {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "create_data_for_token_queries must be called only on local network",
-            )));
-        }
-
         self.register_identities(block_info, transaction, platform_version)?;
 
         self.create_data_contract(block_info, transaction, platform_version)?;

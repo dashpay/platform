@@ -6,6 +6,7 @@ use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "fixtures-and-mocks")]
 use serde::{Deserialize, Serialize};
 
 mod methods;
@@ -19,12 +20,11 @@ pub mod v0;
     PlatformDeserialize,
     PlatformSerialize,
     PlatformVersioned,
-    Serialize,
-    Deserialize,
     From,
     PartialEq,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
+#[cfg_attr(feature = "fixtures-and-mocks", derive(Serialize, Deserialize))]
 pub enum IdentityTokenInfo {
     V0(IdentityTokenInfoV0),
 }

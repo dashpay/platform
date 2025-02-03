@@ -1,6 +1,8 @@
 use crate::balances::credits::SignedTokenAmount;
 use crate::ProtocolError;
+#[cfg(feature = "fixtures-and-mocks")]
 use bincode::Encode;
+#[cfg(feature = "fixtures-and-mocks")]
 use platform_serialization::de::Decode;
 use std::fmt;
 
