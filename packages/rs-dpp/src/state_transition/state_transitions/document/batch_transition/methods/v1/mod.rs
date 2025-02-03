@@ -9,10 +9,7 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{
-    DerivationEncryptionKeyIndex, IdentityNonce, RecipientKeyIndex, RootEncryptionKeyIndex,
-    SenderKeyIndex, UserFeeIncrease,
-};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::token_transfer_transition::{
     PrivateEncryptedNote, SharedEncryptedNote,

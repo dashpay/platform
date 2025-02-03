@@ -24,7 +24,11 @@ use drive::drive::identity::withdrawals::paths::{
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
-    tokens_root_path, TOKEN_BALANCES_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_STATUS_INFO_KEY,
+    token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
+    TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, TOKEN_DISTRIBUTIONS_KEY,
+    TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, TOKEN_IDENTITY_INFO_KEY, TOKEN_MS_TIMED_DISTRIBUTIONS_KEY,
+    TOKEN_PERPETUAL_DISTRIBUTIONS_KEY, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
+    TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::RootTree;
@@ -93,6 +97,100 @@ impl<C> Platform<C> {
             self.transition_to_version_9(block_info, transaction, platform_version)?;
         }
 
+        Ok(())
+    }
+
+    /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
+    ///
+    /// This function is called during the transition to protocol version 4 to set up
+    /// an empty sum tree at the specified path if it does not already exist.
+    ///
+    /// # Parameters
+    ///
+    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
+    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())`: If the transition to version 4 was successful.
+    /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
+    fn transition_to_version_4(
+        &self,
+        platform_state: &PlatformState,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // We are adding the withdrawal transactions sum amount tree
+        let path = get_withdrawal_root_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        // We are adding a tree to store broadcasted transactions that might expire
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        // We need to add all masternode owner keys
+        // This is because owner identities only had a withdrawal key
+        // But no owner key
+        for masternode in platform_state.full_masternode_list().values() {
+            let masternode_id = masternode.pro_tx_hash.to_byte_array();
+            let key_request = IdentityKeysRequest {
+                identity_id: masternode_id,
+                request_type: KeyRequestType::AllKeys,
+                limit: None,
+                offset: None,
+            };
+
+            let old_owner_identity_keys = self
+                .drive
+                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                    key_request,
+                    Some(transaction),
+                    platform_version,
+                )?;
+
+            if old_owner_identity_keys.is_empty() {
+                continue;
+            }
+
+            let last_key_id = *old_owner_identity_keys
+                .keys()
+                .max()
+                .expect("there must be keys, we already checked");
+
+            let new_owner_key = Self::get_owner_identity_owner_key(
+                masternode.state.owner_address,
+                last_key_id + 1,
+                platform_version,
+            )?;
+
+            tracing::trace!(
+                identity_id = ?masternode_id,
+                withdrawal_key = ?new_owner_key,
+                method = "transition_to_version_4",
+                "add new owner key to owner identity"
+            );
+
+            self.drive.add_new_non_unique_keys_to_identity(
+                masternode_id,
+                vec![new_owner_key],
+                block_info,
+                true,
+                Some(transaction),
+                platform_version,
+            )?;
+        }
         Ok(())
     }
 
@@ -265,6 +363,8 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
+        // The root token trees
+
         let path = tokens_root_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
@@ -293,6 +393,78 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[TOKEN_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // The token distribution trees
+
+        let token_distributions_path = token_distributions_root_path();
+
+        self.drive.grove_insert_if_not_exists(
+            (&token_distributions_path).into(),
+            &[TOKEN_TIMED_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&token_distributions_path).into(),
+            &[TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&token_distributions_path).into(),
+            &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // The token time distribution trees
+        let timed_distributions_path = token_timed_distributions_path();
+
+        self.drive.grove_insert_if_not_exists(
+            (&timed_distributions_path).into(),
+            &[TOKEN_MS_TIMED_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&timed_distributions_path).into(),
+            &[TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            (&timed_distributions_path).into(),
+            &[TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // The token total supply
+
         let path = misc_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
@@ -314,100 +486,6 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        Ok(())
-    }
-
-    /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
-    ///
-    /// This function is called during the transition to protocol version 4 to set up
-    /// an empty sum tree at the specified path if it does not already exist.
-    ///
-    /// # Parameters
-    ///
-    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
-    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())`: If the transition to version 4 was successful.
-    /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
-    fn transition_to_version_4(
-        &self,
-        platform_state: &PlatformState,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        // We are adding the withdrawal transactions sum amount tree
-        let path = get_withdrawal_root_path();
-        self.drive.grove_insert_if_not_exists(
-            (&path).into(),
-            &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
-            Element::empty_sum_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-        // We are adding a tree to store broadcasted transactions that might expire
-        self.drive.grove_insert_if_not_exists(
-            (&path).into(),
-            &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-        // We need to add all masternode owner keys
-        // This is because owner identities only had a withdrawal key
-        // But no owner key
-        for masternode in platform_state.full_masternode_list().values() {
-            let masternode_id = masternode.pro_tx_hash.to_byte_array();
-            let key_request = IdentityKeysRequest {
-                identity_id: masternode_id,
-                request_type: KeyRequestType::AllKeys,
-                limit: None,
-                offset: None,
-            };
-
-            let old_owner_identity_keys = self
-                .drive
-                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
-                    key_request,
-                    Some(transaction),
-                    platform_version,
-                )?;
-
-            if old_owner_identity_keys.is_empty() {
-                continue;
-            }
-
-            let last_key_id = *old_owner_identity_keys
-                .keys()
-                .max()
-                .expect("there must be keys, we already checked");
-
-            let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
-                last_key_id + 1,
-                platform_version,
-            )?;
-
-            tracing::trace!(
-                identity_id = ?masternode_id,
-                withdrawal_key = ?new_owner_key,
-                method = "transition_to_version_4",
-                "add new owner key to owner identity"
-            );
-
-            self.drive.add_new_non_unique_keys_to_identity(
-                masternode_id,
-                vec![new_owner_key],
-                block_info,
-                true,
-                Some(transaction),
-                platform_version,
-            )?;
-        }
         Ok(())
     }
 }

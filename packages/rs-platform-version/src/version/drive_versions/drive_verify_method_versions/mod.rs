@@ -63,6 +63,7 @@ pub struct DriveVerifyTokenMethodVersions {
     pub verify_token_balance_for_identity_id: FeatureVersion,
     pub verify_token_info_for_identity_id: FeatureVersion,
     pub verify_token_status: FeatureVersion,
+    pub verify_token_pre_programmed_distributions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

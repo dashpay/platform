@@ -87,6 +87,8 @@
 @class GetProtocolVersionUpgradeVoteStatusResponse;
 @class GetStatusRequest;
 @class GetStatusResponse;
+@class GetTokenPreProgrammedDistributionsRequest;
+@class GetTokenPreProgrammedDistributionsResponse;
 @class GetTokenStatusesRequest;
 @class GetTokenStatusesResponse;
 @class GetTokenTotalSupplyRequest;
@@ -289,6 +291,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse)
 
 - (GRPCUnaryProtoCall *)getTokenStatusesWithMessage:(GetTokenStatusesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
+
+- (GRPCUnaryProtoCall *)getTokenPreProgrammedDistributionsWithMessage:(GetTokenPreProgrammedDistributionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)
 
@@ -625,6 +631,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
+
+- (void)getTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)

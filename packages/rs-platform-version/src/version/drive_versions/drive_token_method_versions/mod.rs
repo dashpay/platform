@@ -8,6 +8,13 @@ pub struct DriveTokenMethodVersions {
     pub prove: DriveTokenProveMethodVersions,
     pub update: DriveTokenUpdateMethodVersions,
     pub calculate_total_tokens_balance: FeatureVersion,
+    pub distribution: DriveTokenDistributionMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveTokenDistributionMethodVersions {
+    pub add_perpetual_distribution: FeatureVersion,
+    pub add_pre_programmed_distributions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -22,6 +29,7 @@ pub struct DriveTokenFetchMethodVersions {
     pub token_status: FeatureVersion,
     pub token_total_supply: FeatureVersion,
     pub token_total_aggregated_identity_balances: FeatureVersion,
+    pub pre_programmed_distributions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -34,6 +42,7 @@ pub struct DriveTokenProveMethodVersions {
     pub identities_token_infos: FeatureVersion,
     pub token_statuses: FeatureVersion,
     pub total_supply_and_aggregated_identity_balances: FeatureVersion,
+    pub pre_programmed_distributions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

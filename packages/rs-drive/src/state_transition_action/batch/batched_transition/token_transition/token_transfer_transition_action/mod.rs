@@ -2,7 +2,7 @@ use derive_more::From;
 
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use dpp::identifier::Identifier;
-use dpp::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
+use dpp::prelude::{DerivationEncryptionKeyIndex, RootEncryptionKeyIndex};
 use dpp::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
 
 /// transformer module

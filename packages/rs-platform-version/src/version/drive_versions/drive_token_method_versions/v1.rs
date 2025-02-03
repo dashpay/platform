@@ -1,6 +1,6 @@
 use crate::version::drive_versions::drive_token_method_versions::{
-    DriveTokenFetchMethodVersions, DriveTokenMethodVersions, DriveTokenProveMethodVersions,
-    DriveTokenUpdateMethodVersions,
+    DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions, DriveTokenMethodVersions,
+    DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions,
 };
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
@@ -15,6 +15,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         token_status: 0,
         token_total_supply: 0,
         token_total_aggregated_identity_balances: 0,
+        pre_programmed_distributions: 0,
     },
     prove: DriveTokenProveMethodVersions {
         identity_token_balance: 0,
@@ -25,6 +26,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         identities_token_infos: 0,
         token_statuses: 0,
         total_supply_and_aggregated_identity_balances: 0,
+        pre_programmed_distributions: 0,
     },
     update: DriveTokenUpdateMethodVersions {
         create_token_trees: 0,
@@ -41,4 +43,8 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         apply_status: 0,
     },
     calculate_total_tokens_balance: 0,
+    distribution: DriveTokenDistributionMethodVersions {
+        add_perpetual_distribution: 0,
+        add_pre_programmed_distributions: 0,
+    },
 };
