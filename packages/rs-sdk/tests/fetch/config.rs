@@ -191,7 +191,7 @@ impl Config {
         let sdk = {
             let core_host = self.core_host.as_ref().unwrap_or(&self.platform_host);
             // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let mut builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 core_host,
                 self.core_port,
                 &self.core_user,
@@ -237,15 +237,7 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        // TODO: We don't have default system identities anymore.
-        //  So now I used this manually created identity to populate test vectors.
-        //  Next time we need to do it again and update this value :(. This is terrible.
-        //  We should automate creation of identity for SDK tests when we have time.
-        Identifier::from_string(
-            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
-            Encoding::Base58,
-        )
-        .unwrap()
+        Identifier::from([1; 32])
     }
 
     fn default_data_contract_id() -> Identifier {
