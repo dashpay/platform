@@ -7,6 +7,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 mod common;
+mod test;
 pub mod v0;
 pub mod v1;
 
@@ -42,6 +43,11 @@ impl<C> Platform<C> {
                 known_versions: vec![0, 1],
                 received: version,
             })),
-        }
+        }?;
+
+        // UNCOMMENT ONLY TO GENERATE SDK TEST DATA
+        // self.create_sdk_test_data(&block_info, transaction, platform_version)?;
+
+        Ok(())
     }
 }

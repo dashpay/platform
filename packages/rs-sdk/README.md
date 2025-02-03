@@ -93,7 +93,7 @@ When you start local dev environment of Dash Platform using `yarn start`, the `.
 To generate test vectors:
 
 1. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
-2. Uncomment `create_sdk_test_data(...)` in `create_genesis_state()` function in Drive ABCI for current protocol version. This is a path for v1 https://github.com/dashpay/platform/blob/55a1e03273dd98797d43dff040f8e99827b9be3c/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/v1/mod.rs#L85
+2. Uncomment `create_sdk_test_data(...)` in `create_genesis_state()` function in `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`.
 3. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
 4. (Optional) commit generated files with `git commit packages/rs-sdk/tests/vectors/`.
 
@@ -143,5 +143,5 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
 12. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
 13. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
 14. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
-15. [ ] Uncomment `create_sdk_test_data(...)` in `create_genesis_state()` function in Drive ABCI for current protocol version. This is a path for v1 https://github.com/dashpay/platform/blob/55a1e03273dd98797d43dff040f8e99827b9be3c/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/v1/mod.rs#L85
+15. [ ] Uncomment `create_sdk_test_data(...)` in `create_genesis_state()` function in `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`.
 16. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
