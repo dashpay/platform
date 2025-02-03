@@ -25,8 +25,6 @@ impl Drive {
     /// - `block_info`: Metadata about the current block, including epoch information.
     /// - `estimated_costs_only_with_layer_info`: If provided, stores estimated cost calculations
     ///   instead of applying the changes.
-    /// - `previous_batch_operations`: If provided, contains previously executed batch operations
-    ///   that should be taken into account.
     /// - `batch_operations`: The list of low-level operations to be executed as a batch.
     /// - `transaction`: The transaction context for this operation.
     /// - `platform_version`: The version of the platform to determine the correct function variant.
