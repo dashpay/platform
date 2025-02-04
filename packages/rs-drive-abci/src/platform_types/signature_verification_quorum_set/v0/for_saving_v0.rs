@@ -1,15 +1,12 @@
-use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
-    PreviousPastQuorumsV0, QuorumConfig,
-};
+use crate::platform_types::signature_verification_quorum_set::v0::quorum_config_for_saving_v0::QuorumConfigForSavingV0;
+use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::PreviousPastQuorumsV0;
 use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
     VerificationQuorum,
 };
+use bincode::{Decode, Encode};
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::QuorumHash;
-use dashcore_rpc::json::QuorumType;
-use dpp::identity::state_transition::asset_lock_proof::Encode;
-use dpp::platform_serialization::de::Decode;
 use dpp::platform_value::Bytes32;
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -53,36 +50,6 @@ impl From<SignatureVerificationQuorumSetForSavingV0> for SignatureVerificationQu
             config: config.into(),
             current_quorums: current_quorums.into(),
             previous: previous_quorums.map(|previous| previous.into()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct QuorumConfigForSavingV0 {
-    quorum_type: QuorumType,
-    active_signers: u16,
-    rotation: bool,
-    window: u32,
-}
-
-impl From<QuorumConfig> for QuorumConfigForSavingV0 {
-    fn from(config: QuorumConfig) -> Self {
-        Self {
-            quorum_type: config.quorum_type,
-            active_signers: config.active_signers,
-            rotation: config.rotation,
-            window: config.window,
-        }
-    }
-}
-
-impl From<QuorumConfigForSavingV0> for QuorumConfig {
-    fn from(config: QuorumConfigForSavingV0) -> Self {
-        Self {
-            quorum_type: config.quorum_type,
-            active_signers: config.active_signers,
-            rotation: config.rotation,
-            window: config.window,
         }
     }
 }
@@ -134,6 +101,7 @@ impl From<PreviousPastQuorumsForSavingV0> for PreviousPastQuorumsV0 {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct QuorumForSavingV0 {
     hash: Bytes32,
+    #[cfg(feature = "bls-signatures")]
     #[bincode(with_serde)]
     public_key: bls_signatures::PublicKey,
     index: Option<u32>,
@@ -145,10 +113,13 @@ impl From<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
             (
                 QuorumHash::from_byte_array(quorum.hash.to_buffer()),
                 VerificationQuorum {
+                    #[cfg(feature = "bls-signatures")]
                     public_key: dpp::bls_signatures::PublicKey::try_from(
                         quorum.public_key.to_bytes().as_slice(),
                     )
                     .expect("expected to convert between BLS key libraries (from chia)"),
+                    #[cfg(not(feature = "bls-signatures"))]
+                    public_key: Default::default(),
                     index: quorum.index,
                 },
             )
@@ -162,6 +133,7 @@ impl From<Quorums<VerificationQuorum>> for Vec<QuorumForSavingV0> {
             .into_iter()
             .map(|(hash, quorum)| QuorumForSavingV0 {
                 hash: Bytes32::from(hash.as_byte_array()),
+                #[cfg(feature = "bls-signatures")]
                 public_key: bls_signatures::PublicKey::from_bytes(
                     &quorum.public_key.0.to_compressed(),
                 )

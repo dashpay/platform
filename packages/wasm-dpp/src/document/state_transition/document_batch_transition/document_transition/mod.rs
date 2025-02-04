@@ -17,7 +17,13 @@ use dpp::{
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
-
+use dpp::fee::Credits;
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},
@@ -42,6 +48,28 @@ impl DocumentTransitionWasm {
         self.0.document_type_name().to_owned()
     }
 
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&self) -> JsValue {
+        match &self.0 {
+            DocumentTransition::Create(document_create_transition) => {
+                let json_value = document_create_transition.data().to_json_value().unwrap();
+                json_value
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .unwrap()
+            }
+            DocumentTransition::Replace(document_replace_transition) => {
+                let json_value = document_replace_transition.data().to_json_value().unwrap();
+                json_value
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .unwrap()
+            }
+            DocumentTransition::Delete(document_delete_transition) => JsValue::null(),
+            DocumentTransition::Transfer(document_transfer_transition) => JsValue::null(),
+            DocumentTransition::UpdatePrice(document_update_price_transition) => JsValue::null(),
+            DocumentTransition::Purchase(document_purchase_transition) => JsValue::null(),
+        }
+    }
+
     #[wasm_bindgen(js_name=getAction)]
     pub fn get_action(&self) -> u8 {
         self.0.action_type() as u8
@@ -59,12 +87,47 @@ impl DocumentTransitionWasm {
         Ok(())
     }
 
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_contract_nonce(&self) -> JsValue {
+        match self.0.base() {
+            DocumentBaseTransition::V0(v0) => JsValue::from(v0.identity_contract_nonce),
+        }
+    }
+
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> JsValue {
         if let Some(revision) = self.0.revision() {
             (revision as f64).into()
         } else {
             JsValue::NULL
+        }
+    }
+    #[wasm_bindgen(js_name=getEntropy)]
+    pub fn get_entropy(&self) -> Option<Vec<u8>> {
+        self.0.entropy()
+    }
+
+    #[wasm_bindgen(js_name=get_price)]
+    pub fn get_price(&self) -> Option<Credits> {
+        match &self.0 {
+            DocumentTransition::Create(create) => None,
+            DocumentTransition::Replace(_) => None,
+            DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(_) => None,
+            DocumentTransition::UpdatePrice(update_price) => Some(update_price.price()),
+            DocumentTransition::Purchase(purchase) => Some(purchase.price()),
+        }
+    }
+
+    #[wasm_bindgen(js_name=getReceiverId)]
+    pub fn get_receiver_id(&self) -> Option<IdentifierWrapper> {
+        match &self.0 {
+            DocumentTransition::Create(create) => None,
+            DocumentTransition::Replace(_) => None,
+            DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(transfer) => Some(transfer.recipient_owner_id().into()),
+            DocumentTransition::UpdatePrice(update_price) => None,
+            DocumentTransition::Purchase(purchase) => None,
         }
     }
 
@@ -80,6 +143,32 @@ impl DocumentTransitionWasm {
                 create_transition.prefunded_voting_balance().is_some()
             }
             _ => false,
+        }
+    }
+
+    #[wasm_bindgen(js_name=getPrefundedVotingBalance)]
+    pub fn get_prefunded_voting_balance(&self) -> Result<JsValue, JsValue> {
+        match &self.0 {
+            DocumentTransition::Create(create_transition) => {
+                let prefunded_voting_balance = create_transition.prefunded_voting_balance().clone();
+
+                if prefunded_voting_balance.is_none() {
+                    return Ok(JsValue::null());
+                }
+
+                let (index_name, credits) = prefunded_voting_balance.unwrap();
+
+                let js_object = js_sys::Object::new();
+
+                js_sys::Reflect::set(
+                    &js_object,
+                    &JsValue::from_str(&index_name),
+                    &JsValue::from(credits),
+                )?;
+
+                Ok(JsValue::from(js_object))
+            }
+            _ => Ok(JsValue::null()),
         }
     }
 }
