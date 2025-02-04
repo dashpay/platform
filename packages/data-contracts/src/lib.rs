@@ -14,6 +14,7 @@ pub use withdrawals_contract;
 
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Ord, PartialOrd, Hash)]
+#[ferment_macro::export]
 pub enum SystemDataContract {
     Withdrawals = 0,
     MasternodeRewards = 1,
