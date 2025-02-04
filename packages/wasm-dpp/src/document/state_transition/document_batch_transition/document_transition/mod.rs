@@ -232,7 +232,8 @@ pub(crate) fn to_object<'a>(
         Default::default()
     };
 
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible().serialize_large_number_types_as_bigints(true);
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible()
+        .serialize_large_number_types_as_bigints(true);
     let js_value = value.serialize(&serializer)?;
 
     for path in identifiers_paths.into_iter() {

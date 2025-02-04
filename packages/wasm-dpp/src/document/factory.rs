@@ -13,11 +13,6 @@ use dpp::document::Document;
 
 use dpp::prelude::ExtendedDocument;
 
-use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use dpp::version::PlatformVersion;
-use std::convert::TryFrom;
-use std::str::FromStr;
 use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
@@ -25,6 +20,11 @@ use crate::{
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, ExtendedDocumentWasm,
 };
+use dpp::identifier::Identifier;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::version::PlatformVersion;
+use std::convert::TryFrom;
+use std::str::FromStr;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
