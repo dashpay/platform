@@ -18,6 +18,7 @@ use dpp::group::group_action::v0::GroupActionV0;
 use dpp::group::group_action::GroupAction;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentitySettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, KeyID};
 use dpp::prelude::*;
 use dpp::tokens::calculate_token_id;
@@ -116,6 +117,15 @@ impl<C> Platform<C> {
             let seed = id.to_buffer()[0];
             let mut rng = StdRng::seed_from_u64(seed as u64);
             let keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(3, &mut rng, platform_version)?;
+
+            for (key, private_key) in keys.iter() {
+                let private_key = hex::encode(private_key);
+
+                tracing::info!(
+                    key = ?key,
+                    private_key,
+                    "Generated random {} key {} for test identity {}", key.purpose(), key.id(), id);
+            }
 
             // Print private keys if necessary
             identity.set_public_keys(
