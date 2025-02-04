@@ -129,8 +129,8 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: u32) {
-        self.0.set_revision(revision as u64);
+    pub fn set_revision(&mut self, revision: u64) {
+        self.0.set_revision(revision);
     }
 
     #[wasm_bindgen(js_name=hasPrefundedBalance)]
@@ -232,7 +232,7 @@ pub(crate) fn to_object<'a>(
         Default::default()
     };
 
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible().serialize_large_number_types_as_bigints(true);
     let js_value = value.serialize(&serializer)?;
 
     for path in identifiers_paths.into_iter() {

@@ -79,8 +79,8 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter, js_name=INITIAL_REVISION)]
-    pub fn initial_revision() -> u32 {
-        INITIAL_REVISION as u32
+    pub fn initial_revision() -> u64 {
+        INITIAL_REVISION
     }
 
     #[wasm_bindgen(js_name = getEntropy)]

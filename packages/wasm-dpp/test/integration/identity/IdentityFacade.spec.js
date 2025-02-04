@@ -32,7 +32,7 @@ describe('IdentityFacade', () => {
     chainAssetLockProof = new ChainAssetLockProof(chainAssetLockProofJS.toObject());
 
     identity = await getIdentityFixture(instantAssetLockProof.createIdentifier());
-    identity.setBalance(0);
+    identity.setBalance(BigInt(0));
   });
 
   describe('#create', () => {
@@ -186,7 +186,7 @@ describe('IdentityFacade', () => {
       expect(stateTransition.getIdentityId().toBuffer())
         .to.be.deep.equal(identity.getId().toBuffer());
       expect(stateTransition.getRevision()).to.equal(
-        identity.getRevision() + 1,
+        identity.getRevision() + BigInt(1),
       );
       expect(
         stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
