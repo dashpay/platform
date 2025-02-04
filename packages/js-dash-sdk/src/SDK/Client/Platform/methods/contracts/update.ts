@@ -32,7 +32,7 @@ export default async function update(
     .bumpIdentityContractNonce(identityId, dataContractId);
 
   const dataContractUpdateTransition = dpp.dataContract
-    .createDataContractUpdateTransition(updatedDataContract, BigInt(identityContractNonce));
+    .createDataContractUpdateTransition(updatedDataContract, identityContractNonce);
 
   this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
 
