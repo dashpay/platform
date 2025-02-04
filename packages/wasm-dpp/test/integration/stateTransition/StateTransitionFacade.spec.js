@@ -102,7 +102,7 @@ describe('StateTransitionFacade', () => {
       create: documents,
     }, {
       [documents[0].getOwnerId().toString()]: {
-        [documents[0].getDataContractId().toString()]: "0",
+        [documents[0].getDataContractId().toString()]: '0',
       },
     });
     await documentsBatchTransition.sign(identityPublicKey, privateKey);

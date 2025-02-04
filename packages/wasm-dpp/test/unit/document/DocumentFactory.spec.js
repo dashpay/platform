@@ -294,7 +294,7 @@ describe('DocumentFactory', () => {
         replace: [newDocument],
       }, {
         [identityId.toString()]: {
-          [dataContract.getId().toString()]: "1",
+          [dataContract.getId().toString()]: '1',
         },
       });
 

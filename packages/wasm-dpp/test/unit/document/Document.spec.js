@@ -1,5 +1,3 @@
-const crypto = require('crypto');
-
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp, DocumentCreateTransition } = require('../../..');
 const { getLatestProtocolVersion } = require('../../..');
