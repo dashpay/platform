@@ -151,7 +151,7 @@ describe('getDataContractHistoryFactory', () => {
         .setId(contractId)
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
-        .setStartAtMs("0")
+        .setStartAtMs('0')
         .setProve(true),
     );
 
@@ -193,7 +193,7 @@ describe('getDataContractHistoryFactory', () => {
         .setId(contractId.toBuffer())
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
-        .setStartAtMs("0")
+        .setStartAtMs('0')
         .setProve(false),
     );
 
