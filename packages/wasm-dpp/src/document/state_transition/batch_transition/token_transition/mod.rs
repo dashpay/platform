@@ -1,11 +1,11 @@
-mod burn;
-mod config;
-mod destroy;
-mod emergency_action;
-mod freeze;
-mod mint;
-mod transfer;
-mod unfreeze;
+pub mod burn;
+pub mod config;
+pub mod destroy;
+pub mod emergency_action;
+pub mod freeze;
+pub mod mint;
+pub mod transfer;
+pub mod unfreeze;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
