@@ -30,7 +30,7 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
 
     const requestV0 = new GetProofsRequestV0();
 
-    let dataContractsCache = {};
+    const dataContractsCache = {};
 
     if (stateTransition.isDocumentStateTransition()) {
       const {
@@ -253,6 +253,9 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
 
     const request = new GetProofsRequest();
     request.setV0(requestV0);
+
+    // TODO: Remove logging
+    console.dir(request.toObject(), { depth: null });
 
     return driveClient.getProofs(request);
   }
