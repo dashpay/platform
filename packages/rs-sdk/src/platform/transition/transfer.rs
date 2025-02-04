@@ -60,9 +60,10 @@ impl TransferToIdentity for Identity {
             None,
         )?;
 
-        let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
+        let (sender, _receiver): (PartialIdentity, PartialIdentity) =
+            state_transition.broadcast_and_wait(sdk, settings).await?;
 
-        identity.balance.ok_or(Error::DapiClientError(
+        sender.balance.ok_or(Error::DapiClientError(
             "expected an identity balance after transfer".to_string(),
         ))
     }
