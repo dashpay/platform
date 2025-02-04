@@ -103,7 +103,7 @@ describe('getDataContractHistoryFactory', () => {
 
   it('should return data contract history', async () => {
     const contractId = dataContractFixture.getId().toBuffer();
-    const result = await getDataContractHistory(contractId, 0, 10, 0, options);
+    const result = await getDataContractHistory(contractId, BigInt(0), 10, 0, options);
 
     const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const request = new GetDataContractHistoryRequest();
@@ -112,7 +112,7 @@ describe('getDataContractHistoryFactory', () => {
         .setId(contractId)
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
-        .setStartAtMs(0)
+        .setStartAtMs('0')
         .setProve(false),
     );
 
@@ -142,7 +142,7 @@ describe('getDataContractHistoryFactory', () => {
     response.getV0().setDataContractHistory(undefined);
 
     const contractId = dataContractFixture.getId().toBuffer();
-    const result = await getDataContractHistory(contractId, 0, 10, 0, options);
+    const result = await getDataContractHistory(contractId, BigInt(0), 10, 0, options);
 
     const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const request = new GetDataContractHistoryRequest();
@@ -151,7 +151,7 @@ describe('getDataContractHistoryFactory', () => {
         .setId(contractId)
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
-        .setStartAtMs(0)
+        .setStartAtMs("0")
         .setProve(true),
     );
 
@@ -193,12 +193,12 @@ describe('getDataContractHistoryFactory', () => {
         .setId(contractId.toBuffer())
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
-        .setStartAtMs(0)
+        .setStartAtMs("0")
         .setProve(false),
     );
 
     try {
-      await getDataContractHistory(contractId, 0, 10, 0, options);
+      await getDataContractHistory(contractId, BigInt(0), 10, 0, options);
 
       expect.fail('should throw unknown error');
     } catch (e) {
