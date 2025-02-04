@@ -34,7 +34,12 @@ impl Into<Metadata> for MetadataWasm {
 #[wasm_bindgen(js_class=Metadata)]
 impl MetadataWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(block_height: u64, core_chain_locked_height: u32, time_ms: u64, protocol_version:u32) -> Result<MetadataWasm, JsValue> {
+    pub fn new(
+        block_height: u64,
+        core_chain_locked_height: u32,
+        time_ms: u64,
+        protocol_version: u32,
+    ) -> Result<MetadataWasm, JsValue> {
         let inner = Metadata {
             block_height,
             core_chain_locked_height: core_chain_locked_height as u64,
