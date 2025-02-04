@@ -1320,6 +1320,7 @@ dependencies = [
  "dashpay-contract",
  "dpns-contract",
  "feature-flags-contract",
+ "ferment-macro",
  "masternode-reward-shares-contract",
  "platform-value",
  "platform-version",
