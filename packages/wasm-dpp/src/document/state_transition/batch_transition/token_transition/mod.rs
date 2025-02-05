@@ -72,6 +72,25 @@ impl From<TokenTransitionWasm> for TokenTransition {
 
 #[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        TokenTransitionWasm(TokenTransition::Mint(TokenMintTransition::V0(
+            TokenMintTransitionV0 {
+                base: TokenBaseTransitionV0 {
+                    identity_contract_nonce: 0,
+                    token_contract_position: 0,
+                    data_contract_id: Default::default(),
+                    token_id: Default::default(),
+                    using_group_info: None,
+                }
+                .into(),
+                issued_to_identity_id: None,
+                amount: 0,
+                public_note: None,
+            },
+        )))
+    }
+
     #[wasm_bindgen(js_name=getTransitionType)]
     pub fn transition_type(&self) -> TokenTransitionType {
         TokenTransitionType::from(&self.0)
