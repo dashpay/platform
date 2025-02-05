@@ -317,7 +317,7 @@ describe('Platform', () => {
 
         expect(fetchedIdentityWithoutBalance).to.deep.equal(localIdentityWithoutBalance);
 
-        expect(fetchedIdentity.getBalance()).to.be.greaterThan(0);
+        expect(fetchedIdentity.getBalance() > 0).to.be.true();
       });
     });
 
