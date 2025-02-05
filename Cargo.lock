@@ -2098,8 +2098,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebf36cc41af86d8ccb8b7f64fd15006cd83ec979c49cd2ad30628bf855c54d7d"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "axum",
  "bincode",
@@ -2130,8 +2129,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cc526a58bdca58cb86340632081e27264e3557a73608cf29f6738ad9bfab316"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2141,8 +2139,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abd5f01eb50ff57b2c24e856377684d42dacdbd04de7c0189bf2e0e0cd109692"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -2154,8 +2151,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce3b133a76e9935f3a57e08598769849d79df582244e1ac99509177e23c2605"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "bincode",
  "blake3",
@@ -2177,14 +2173,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67dc8bc00b9be473f7b25670d1422daadd706c9b09ed6aa5cf2caf8722a487ac"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 
 [[package]]
 name = "grovedb-storage"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "905cff776de89b9ee1e96979861e254b0912170b35d89678ad782f487a22a2e3"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2203,8 +2197,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a987e051c8c9cf8fa381b29b243d4951f8c1f24f9c90ceed52afca3ac460986c"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "thiserror 2.0.11",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2213,8 +2206,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56eee6f57d324505611de0042af2b6b9933235e704a1a6542ff7ba5b5c56f64e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -2223,8 +2215,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cfa37a90579ba2c71e074d6047c1dcfc19caa458fbcefd4e8e31a02f6a9fe38"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
