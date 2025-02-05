@@ -8,7 +8,7 @@ const {
   ExtendedDocument,
   DataContract,
   ValidationResult,
-  DocumentsBatchTransition,
+  BatchTransition,
   DashPlatformProtocol,
   DataContractNotPresentError,
 } = require('../../..');
@@ -107,7 +107,7 @@ describe('DocumentFacade', () => {
         },
       });
 
-      expect(result).to.be.instanceOf(DocumentsBatchTransition);
+      expect(result).to.be.instanceOf(BatchTransition);
       // expect(result.getTransitions().map((t) => t.toObject()))
       //   .has.deep.members(getDocumentTransitionsFixture({
       //     create: documentsJs,
