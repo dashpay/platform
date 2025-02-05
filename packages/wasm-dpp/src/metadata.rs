@@ -63,8 +63,7 @@ impl MetadataWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> JsValue {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible()
-            .serialize_large_number_types_as_bigints(true);
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         self.0.serialize(&serializer).expect("implements Serialize")
     }
 
