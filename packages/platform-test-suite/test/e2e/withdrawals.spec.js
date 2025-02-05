@@ -133,10 +133,10 @@ describe('Withdrawals', function withdrawalsTest() {
       );
 
       let withdrawalBroadcasted = false;
-      let blocksPassed = 0;
+      let blocksPassed = BigInt(0);
 
       // Wait for first withdrawal to broadcast
-      while (!withdrawalBroadcasted && blocksPassed === 0) {
+      while (!withdrawalBroadcasted && blocksPassed === BigInt(0)) {
         await waitForSTPropagated();
 
         const withdrawals = await client.platform

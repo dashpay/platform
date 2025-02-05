@@ -37,7 +37,7 @@ class GetDataContractHistoryResponse extends AbstractResponse {
     return new GetDataContractHistoryResponse(
       dataContractHistory ? dataContractHistory.getDataContractEntriesList()
         .map((dataContractHistoryEntry) => new DataContractHistoryEntry(
-          dataContractHistoryEntry.getDate(),
+          BigInt(dataContractHistoryEntry.getDate()),
           dataContractHistoryEntry.getValue(),
         )) : null,
       metadata,
