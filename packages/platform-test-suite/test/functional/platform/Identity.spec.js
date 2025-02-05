@@ -430,10 +430,9 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identityAfterTopUp.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
+        expect(identityAfterTopUp.getBalance() > balanceBeforeTopUp).to.be.true();
 
-        expect(identityAfterTopUp.getBalance()).to.be
-          .lessThan(balanceBeforeTopUp + topUpCredits);
+        expect(identityAfterTopUp.getBalance() < balanceBeforeTopUp + topUpCredits).to.be.true();
       });
 
       it('should be able to create more documents after the top-up', async () => {
@@ -552,7 +551,7 @@ describe('Platform', () => {
           expect(recipientBalanceAfter).to.be.equal(recipientBalanceBefore + transferAmount);
 
           // TODO: implement the way to get the fee
-          expect(identityBalanceAfter).to.be.lessThan(identityBalanceBefore + transferAmount);
+          expect(identityBalanceAfter < identityBalanceBefore + transferAmount).to.be.true();
         });
 
         it('should not be able to transfer more credits then have', async () => {
