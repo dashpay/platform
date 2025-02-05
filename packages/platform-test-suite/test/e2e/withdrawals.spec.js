@@ -110,7 +110,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
       // Should ensure balances are right
       expect(walletBalanceUpdated).to.be.greaterThan(walletBalanceBefore);
-      expect(identityBalanceUpdated).to.be.lessThan(identityBalanceBefore);
+      expect(identityBalanceUpdated < identityBalanceBefore).to.be.true();
 
       // Should allow deleting of the withdrawal document
       await client.platform.documents.broadcast({
@@ -172,7 +172,7 @@ describe('Withdrawals', function withdrawalsTest() {
       const account = await client.getWalletAccount();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
-      const amountToWithdraw = identityBalanceBefore * 2;
+      const amountToWithdraw = identityBalanceBefore * BigInt(2);
 
       await expect(client.platform.identities.withdrawCredits(
         identity,
@@ -187,7 +187,7 @@ describe('Withdrawals', function withdrawalsTest() {
       const account = await client.getWalletAccount();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
-      const amountToWithdraw = identityBalanceBefore / 2;
+      const amountToWithdraw = identityBalanceBefore / BigInt(2);
 
       await expect(client.platform.identities.withdrawCredits(
         identity,

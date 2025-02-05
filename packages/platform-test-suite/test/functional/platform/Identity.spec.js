@@ -619,7 +619,7 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identity.getRevision()).to.equal(identityBeforeUpdate.revision + 1);
+        expect(identity.getRevision()).to.equal(BigInt(identityBeforeUpdate.revision) + BigInt(1));
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject(true);
@@ -651,7 +651,7 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identity.getRevision()).to.equal(identityBeforeUpdate.revision + 1);
+        expect(identity.getRevision()).to.equal(BigInt(identityBeforeUpdate.revision) + BigInt(1));
         expect(identity.getPublicKeyById(2)).to.exist();
         expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
 
