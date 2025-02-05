@@ -548,10 +548,12 @@ describe('Platform', () => {
           const recipientBalanceBefore = recipientBeforeTransfer.getBalance();
           const recipientBalanceAfter = recipientAfterTransfer.getBalance();
 
-          expect(recipientBalanceAfter).to.be.equal(recipientBalanceBefore + transferAmount);
+          expect(recipientBalanceAfter).to.be
+            .equal(recipientBalanceBefore + BigInt(transferAmount));
 
           // TODO: implement the way to get the fee
-          expect(identityBalanceAfter < identityBalanceBefore + transferAmount).to.be.true();
+          expect(identityBalanceAfter < identityBalanceBefore + BigInt(transferAmount))
+            .to.be.true();
         });
 
         it('should not be able to transfer more credits then have', async () => {
@@ -565,7 +567,7 @@ describe('Platform', () => {
             await client.platform.identities.creditTransfer(
               identity,
               recipient.getId(),
-              identity.getBalance() + 1,
+              identity.getBalance() + BigInt(1),
             );
           } catch (e) {
             transferError = e;
