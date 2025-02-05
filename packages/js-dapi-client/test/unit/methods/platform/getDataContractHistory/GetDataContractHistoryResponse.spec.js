@@ -26,11 +26,11 @@ describe('GetDataContractHistoryResponse', () => {
     dataContractFixture = await getDataContractFixture();
 
     dataContractHistoryFixture = [{
-      date: 10000,
+      date: BigInt('10000'),
       value: dataContractFixture.toBuffer(),
     },
     {
-      date: 20000,
+      date: BigInt('20000'),
       value: dataContractFixture.toBuffer(),
     }];
     proofFixture = getProofFixture();
@@ -74,12 +74,12 @@ describe('GetDataContractHistoryResponse', () => {
 
     const dataContractHistoryEntryProto = new GetDataContractHistoryResponseV0
       .DataContractHistoryEntry();
-    dataContractHistoryEntryProto.setDate(10000);
+    dataContractHistoryEntryProto.setDate('10000');
     dataContractHistoryEntryProto.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryEntryProto2 = new GetDataContractHistoryResponseV0
       .DataContractHistoryEntry();
-    dataContractHistoryEntryProto2.setDate(20000);
+    dataContractHistoryEntryProto2.setDate('20000');
     dataContractHistoryEntryProto2.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryProto = new GetDataContractHistoryResponseV0
