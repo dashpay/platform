@@ -419,7 +419,7 @@ describe('Platform', () => {
         );
         const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
         const topUpAmount = 1000000;
-        const topUpCredits = topUpAmount * 1000;
+        const topUpCredits = BigInt(topUpAmount) * 1000;
 
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
 
