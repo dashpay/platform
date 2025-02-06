@@ -34,7 +34,7 @@ where
             .apply_chunk(
                 &app.platform().drive.grove,
                 &request.chunk_id,
-                request.chunk,
+                &request.chunk,
                 1u16,
                 &PlatformVersion::latest().drive.grove_version,
             )
