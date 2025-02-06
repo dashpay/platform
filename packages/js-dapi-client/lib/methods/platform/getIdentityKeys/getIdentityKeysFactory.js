@@ -10,6 +10,8 @@ const {
 
 const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
 
+const { GetIdentityKeysRequestV0 } = GetIdentityKeysRequest;
+
 const GetIdentityKeysResponse = require('./GetIdentityKeysResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
@@ -28,14 +30,13 @@ function getIdentityKeysFactory(grpcTransport) {
    * @returns {Promise<GetIdentityKeysResponse>}
    */
   async function getIdentityKeys(identityId, keyIds, limit = 100, options = {}) {
-    const { GetIdentityKeysRequestV0 } = GetIdentityKeysRequest;
-    const getIdentityKeysRequest = new GetIdentityKeysRequest();
-    const requestType = new KeyRequestType();
-
     if (Buffer.isBuffer(identityId)) {
       // eslint-disable-next-line no-param-reassign
       identityId = Buffer.from(identityId);
     }
+
+    const getIdentityKeysRequest = new GetIdentityKeysRequest();
+    const requestType = new KeyRequestType();
 
     if (keyIds) {
       requestType.setSpecificKeys(new SpecificKeys().setKeyIdsList(keyIds));
