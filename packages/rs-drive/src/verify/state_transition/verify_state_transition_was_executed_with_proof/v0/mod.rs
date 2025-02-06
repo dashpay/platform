@@ -44,6 +44,7 @@ use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_m
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenBalanceAbsence, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
+use dpp::system_data_contracts::SystemDataContract;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -295,7 +296,7 @@ impl Drive {
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         //todo group actions
-                        let data_contract_id = token_transition.data_contract_id();
+                        let data_contract_id = SystemDataContract::TokenHistory.id();
                         let token_id = token_transition.token_id();
 
                         let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
