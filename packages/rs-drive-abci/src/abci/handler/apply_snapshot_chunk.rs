@@ -39,6 +39,11 @@ where
                 &PlatformVersion::latest().drive.grove_version,
             )
             .map_err(|e| {
+                tracing::error!(
+                    chunk_id = ?request.chunk_id,
+                    chunk = ?request.chunk,
+                    "state_sync apply_chunk_error",
+                );
                 AbciError::StateSyncInternalError(format!(
                     "apply_snapshot_chunk unable to apply chunk:{}",
                     e
