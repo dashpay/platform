@@ -32,7 +32,7 @@ use dpp::state_transition::batch_transition::document_replace_transition::Docume
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods, TOKEN_HISTORY_ID_BYTES};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
@@ -44,7 +44,7 @@ use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_m
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenBalanceAbsence, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
-use dpp::system_data_contracts::SystemDataContract;
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -296,7 +296,7 @@ impl Drive {
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         //todo group actions
-                        let data_contract_id = SystemDataContract::TokenHistory.id();
+                        let data_contract_id = token_transition.data_contract_id();
                         let token_id = token_transition.token_id();
 
                         let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
@@ -309,18 +309,25 @@ impl Drive {
                         let identity_contract_nonce =
                             token_transition.base().identity_contract_nonce();
 
-                        let document_type_name =
+                        let token_history_document_type_name =
                             token_transition.historical_document_type_name().to_string();
-                        let document_type = token_transition.historical_document_type(&contract)?;
+
+                        let token_history_contract = load_system_data_contract(
+                            SystemDataContract::TokenHistory,
+                            platform_version,
+                        )?;
+
+                        let token_history_document_type =
+                            token_transition.historical_document_type(&token_history_contract)?;
 
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
                         )?;
-                        let keeps_historical_document = token_config.keeps_history();
-                        if keeps_historical_document {
+
+                        if token_config.keeps_history() {
                             let query = SingleDocumentDriveQuery {
-                                contract_id: TOKEN_HISTORY_ID_BYTES,
-                                document_type_name,
+                                contract_id: token_history_contract.id().into_buffer(),
+                                document_type_name: token_history_document_type_name,
                                 document_type_keeps_history: false,
                                 document_id: token_transition
                                     .historical_document_id(owner_id, identity_contract_nonce)
@@ -342,7 +349,7 @@ impl Drive {
                             let (root_hash, document) = query.verify_proof(
                                 false,
                                 proof,
-                                document_type,
+                                token_history_document_type,
                                 platform_version,
                             )?;
                             let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
