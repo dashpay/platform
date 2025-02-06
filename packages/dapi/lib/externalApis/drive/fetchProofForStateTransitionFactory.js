@@ -75,7 +75,7 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
                 );
 
                 dataContractsCache[dataContractIdString] = await dpp.dataContract
-                  .createFromBuffer(dataContractBuffer);
+                  .createFromBuffer(dataContractBuffer, { skipValidation: true });
               }
 
               const dataContract = dataContractsCache[dataContractIdString];
