@@ -1,4 +1,4 @@
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -13,6 +13,14 @@ pub enum TokenDistributionType {
     #[default]
     PreProgrammed = 0,
     Perpetual = 1,
+}
+
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd,
+)]
+pub enum TokenDistributionTypeWithResolvedRecipient {
+    PreProgrammed(Identifier),
+    Perpetual(TokenDistributionResolvedRecipient),
 }
 
 impl fmt::Display for TokenDistributionType {

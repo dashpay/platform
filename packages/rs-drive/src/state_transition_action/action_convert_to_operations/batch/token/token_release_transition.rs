@@ -1,5 +1,5 @@
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_event::TokenEvent;
@@ -40,8 +40,10 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                     },
                 )];
 
-                match self.recipient() {
-                    TokenDistributionResolvedRecipient::Identity(identity) => {
+                match self.distribution_type_with_recipient() {
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ContractOwnerIdentity(identity))
+                    | TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identity)
+                    | TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::Identity(identity)) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMint {
                             token_id: self.token_id(),
                             identity_balance_holder_id: *identity,
@@ -49,9 +51,9 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                             allow_first_mint: false,
                         }));
                     }
-                    TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(
                         weighted_identities,
-                    ) => {
+                    )) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMintMany {
                             token_id: self.token_id(),
                             mint_amount: self.amount(),
@@ -61,27 +63,36 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                     }
                 }
 
-                match self.distribution_type() {
-                    TokenDistributionType::PreProgrammed => {
+                match self.distribution_type_with_recipient() {
+                    TokenDistributionTypeWithResolvedRecipient::PreProgrammed(recipient) => {
                         ops.push(TokenOperation(
                             TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed {
                                 token_id: self.token_id(),
-                                identity_id: Default::default(),
+                                owner_id,
+                                identity_id: *recipient,
                                 release_time: 0,
                             },
                         ));
                     }
-                    TokenDistributionType::Perpetual => {}
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(perpetual) => {
+                        ops.push(TokenOperation(
+                            TokenOperationType::TokenMarkPerpetualReleaseAsDistributed {
+                                token_id: self.token_id(),
+                                owner_id,
+                                last_release_moment: (),
+                                next_release_moment: (),
+                                recipient: Default::default(),
+                            },
+                        ));
+                    }
                 }
-
                 let token_configuration = self.base().token_configuration()?;
                 ops.push(TokenOperation(TokenOperationType::TokenHistory {
                     token_id: self.token_id(),
                     owner_id,
                     nonce: identity_contract_nonce,
                     event: TokenEvent::Release(
-                        self.recipient().clone(),
-                        self.distribution_type(),
+                        self.distribution_type_with_recipient().clone(),
                         self.amount(),
                         self.public_note_owned(),
                     ),

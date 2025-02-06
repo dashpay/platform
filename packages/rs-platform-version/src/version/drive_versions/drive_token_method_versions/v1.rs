@@ -48,5 +48,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         add_perpetual_distribution: 0,
         add_pre_programmed_distributions: 0,
         mark_perpetual_release_as_distributed: 0,
+        mark_pre_programmed_release_as_distributed: 0,
     },
 };

@@ -4,6 +4,8 @@ use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
+use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
 #[derive(
     Serialize,
@@ -33,19 +35,37 @@ pub enum TokenDistributionRecipient {
 
 impl TokenDistributionRecipient {
     /// Simple resolve matches the contract owner but does not try to resolve the evonodes
-    pub fn simple_resolve(
+    pub fn simple_resolve_with_distribution_type(
         &self,
         contract_owner_id: Identifier,
-    ) -> TokenDistributionResolvedRecipient {
-        match self {
-            TokenDistributionRecipient::ContractOwner => {
-                TokenDistributionResolvedRecipient::ContractOwnerIdentity(contract_owner_id)
+        distribution_type: TokenDistributionType,
+    ) -> Result<TokenDistributionTypeWithResolvedRecipient, ProtocolError> {
+        match distribution_type {
+            TokenDistributionType::PreProgrammed => {
+                match self {
+                    TokenDistributionRecipient::ContractOwner => {
+                        Ok(TokenDistributionTypeWithResolvedRecipient::PreProgrammed(contract_owner_id))
+                    }
+                    TokenDistributionRecipient::Identity(identity) => {
+                        Ok(TokenDistributionTypeWithResolvedRecipient::PreProgrammed(*identity))
+                    }
+                    TokenDistributionRecipient::EvonodesByParticipation => {
+                        Err(ProtocolError::NotSupported("trying to simple resolve for pre-programmed evonode distribution".to_string()))
+                    }
+                }
             }
-            TokenDistributionRecipient::Identity(identity) => {
-                TokenDistributionResolvedRecipient::Identity(*identity)
-            }
-            TokenDistributionRecipient::EvonodesByParticipation => {
-                TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(vec![])
+            TokenDistributionType::Perpetual => {
+                match self {
+                    TokenDistributionRecipient::ContractOwner => {
+                        Ok(TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ContractOwnerIdentity(contract_owner_id)))
+                    }
+                    TokenDistributionRecipient::Identity(identity) => {
+                        Ok(TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::Identity(*identity)))
+                    }
+                    TokenDistributionRecipient::EvonodesByParticipation => {
+                        Ok(TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(vec![])))
+                    }
+                }
             }
         }
     }

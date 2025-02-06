@@ -1,9 +1,7 @@
 use derive_more::From;
 use dpp::balances::credits::TokenAmount;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{
-    TokenDistributionRecipient, TokenDistributionResolvedRecipient,
-};
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 
 /// transformer module for token release transition action
 pub mod transformer;
@@ -45,36 +43,36 @@ impl TokenReleaseTransitionActionAccessorsV0 for TokenReleaseTransitionAction {
         }
     }
 
-    fn recipient(&self) -> &TokenDistributionResolvedRecipient {
+    fn recipient(&self) -> &TokenDistributionRecipient {
         match self {
             TokenReleaseTransitionAction::V0(v0) => &v0.recipient,
         }
     }
 
-    fn recipient_owned(self) -> TokenDistributionResolvedRecipient {
+    fn recipient_owned(self) -> TokenDistributionRecipient {
         match self {
             TokenReleaseTransitionAction::V0(v0) => v0.recipient,
         }
     }
 
-    fn set_recipient(&mut self, recipient: TokenDistributionResolvedRecipient) {
+    fn set_recipient(&mut self, recipient: TokenDistributionRecipient) {
         match self {
             TokenReleaseTransitionAction::V0(v0) => v0.recipient = recipient,
         }
     }
 
-    fn distribution_type(&self) -> TokenDistributionType {
+    fn distribution_type_with_recipient(&self) -> &TokenDistributionTypeWithResolvedRecipient {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.distribution_type,
+            TokenReleaseTransitionAction::V0(v0) => &v0.distribution_type_with_recipient,
         }
     }
 
-    fn set_distribution_type(&mut self, distribution_type: TokenDistributionType) {
+    fn set_distribution_type_with_recipient(&mut self, distribution_type_with_recipient: TokenDistributionTypeWithResolvedRecipient) {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.distribution_type = distribution_type,
+            TokenReleaseTransitionAction::V0(v0) => v0.distribution_type_with_recipient = distribution_type_with_recipient,
         }
     }
-
+    
     fn public_note(&self) -> Option<&String> {
         match self {
             TokenReleaseTransitionAction::V0(v0) => v0.public_note.as_ref(),

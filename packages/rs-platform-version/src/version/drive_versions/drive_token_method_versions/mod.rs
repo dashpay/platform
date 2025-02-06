@@ -16,6 +16,7 @@ pub struct DriveTokenDistributionMethodVersions {
     pub add_perpetual_distribution: FeatureVersion,
     pub add_pre_programmed_distributions: FeatureVersion,
     pub mark_perpetual_release_as_distributed: FeatureVersion,
+    pub mark_pre_programmed_release_as_distributed: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -68,6 +68,8 @@ pub enum TokenOperationType {
     TokenMarkPreProgrammedReleaseAsDistributed {
         /// The token id
         token_id: Identifier,
+        /// The owner of this operation, generally the person making the state transition
+        owner_id: Identifier,
         /// The identity that had their pre-programmed release set
         identity_id: Identifier,
         /// The last release time, block or epoch
@@ -277,7 +279,20 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 )?;
                 Ok(batch_operations)
             }
-            TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed { .. } => {}
+            TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed { token_id, owner_id, identity_id, release_time } => {
+                let batch_operations = drive.mark_pre_programmed_release_as_distributed_operations(
+                    token_id.to_buffer(),
+                    owner_id.to_buffer(),
+                    last_release_moment,
+                    next_release_moment,
+                    recipient,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                Ok(batch_operations)
+            }
         }
     }
 }

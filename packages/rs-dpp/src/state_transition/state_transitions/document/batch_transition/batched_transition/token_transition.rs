@@ -409,8 +409,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 config_update.public_note().cloned(),
             ),
             TokenTransition::Release(release) => TokenEvent::Release(
-                release.recipient().simple_resolve(contract_owner_id),
-                release.distribution_type(),
+                release.recipient().simple_resolve_with_distribution_type(contract_owner_id, release.distribution_type())?,
                 TokenAmount::MAX, // we do not know how much will be released
                 release.public_note().cloned(),
             ),

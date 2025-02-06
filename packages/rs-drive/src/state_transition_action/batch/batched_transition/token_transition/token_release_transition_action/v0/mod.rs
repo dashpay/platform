@@ -2,8 +2,8 @@ mod transformer;
 
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::identifier::Identifier;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
@@ -17,10 +17,10 @@ pub struct TokenReleaseTransitionActionV0 {
     /// if this is a release to Evonodes or a group, this is the total amount that later needs
     /// to be split up
     pub amount: TokenAmount,
-    /// The recipient we wish to release the funds of
-    pub recipient: TokenDistributionResolvedRecipient,
+    /// The recipient
+    pub recipient: TokenDistributionRecipient,
     /// The type of distribution we are targeting
-    pub distribution_type: TokenDistributionType,
+    pub distribution_type_with_recipient: TokenDistributionTypeWithResolvedRecipient,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -65,19 +65,19 @@ pub trait TokenReleaseTransitionActionAccessorsV0 {
     fn set_amount(&mut self, amount: TokenAmount);
 
     /// Returns the recipient of the distribution
-    fn recipient(&self) -> &TokenDistributionResolvedRecipient;
+    fn recipient(&self) -> &TokenDistributionRecipient;
 
     /// Returns the recipient (owned)
-    fn recipient_owned(self) -> TokenDistributionResolvedRecipient;
+    fn recipient_owned(self) -> TokenDistributionRecipient;
 
     /// Sets the recipient
-    fn set_recipient(&mut self, recipient: TokenDistributionResolvedRecipient);
+    fn set_recipient(&mut self, recipient: TokenDistributionRecipient);
 
-    /// Returns the type of distribution
-    fn distribution_type(&self) -> TokenDistributionType;
+    /// Returns the type of distribution with its recipient
+    fn distribution_type_with_recipient(&self) -> &TokenDistributionTypeWithResolvedRecipient;
 
-    /// Sets the type of distribution
-    fn set_distribution_type(&mut self, distribution_type: TokenDistributionType);
+    /// Sets the type of distribution with its recipient
+    fn set_distribution_type_with_recipient(&mut self, distribution_type: TokenDistributionTypeWithResolvedRecipient);
 
     /// Returns the public note (optional)
     fn public_note(&self) -> Option<&String>;
@@ -106,24 +106,24 @@ impl TokenReleaseTransitionActionAccessorsV0 for TokenReleaseTransitionActionV0 
         self.amount = amount;
     }
 
-    fn recipient(&self) -> &TokenDistributionResolvedRecipient {
+    fn recipient(&self) -> &TokenDistributionRecipient {
         &self.recipient
     }
 
-    fn recipient_owned(self) -> TokenDistributionResolvedRecipient {
+    fn recipient_owned(self) -> TokenDistributionRecipient {
         self.recipient
     }
 
-    fn set_recipient(&mut self, recipient: TokenDistributionResolvedRecipient) {
+    fn set_recipient(&mut self, recipient: TokenDistributionRecipient) {
         self.recipient = recipient;
     }
 
-    fn distribution_type(&self) -> TokenDistributionType {
-        self.distribution_type
+    fn distribution_type_with_recipient(&self) -> &TokenDistributionTypeWithResolvedRecipient {
+        &self.distribution_type_with_recipient
     }
 
-    fn set_distribution_type(&mut self, distribution_type: TokenDistributionType) {
-        self.distribution_type = distribution_type;
+    fn set_distribution_type_with_recipient(&mut self, distribution_type_with_recipient: TokenDistributionTypeWithResolvedRecipient) {
+        self.distribution_type_with_recipient = distribution_type_with_recipient;
     }
 
     fn public_note(&self) -> Option<&String> {

@@ -10,3 +10,4 @@ mod mark_perpetual_release_as_distributed;
 mod prove;
 /// Token distribution queries
 pub mod queries;
+mod mark_pre_programmed_release_as_distributed;

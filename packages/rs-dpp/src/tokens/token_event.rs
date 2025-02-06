@@ -2,7 +2,7 @@ use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
@@ -48,8 +48,7 @@ pub enum TokenEvent {
         TokenAmount,
     ),
     Release(
-        TokenDistributionResolvedRecipient,
-        TokenDistributionType,
+        TokenDistributionTypeWithResolvedRecipient,
         TokenAmount,
         TokenEventPublicNote,
     ),
@@ -215,16 +214,19 @@ impl TokenEvent {
                 }
                 properties
             }
-            TokenEvent::Release(recipient, distribution_type, amount, public_note) => {
-                let (recipient_type, recipient_id) = match recipient {
-                    TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier) => {
-                        (0, Some(identifier.into()))
+            TokenEvent::Release(recipient, amount, public_note) => {
+                let (recipient_type, recipient_id, distribution_type) = match recipient {
+                    TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identifier) => {
+                        (1u8, Some(identifier.into()), 0u8)
                     }
-                    TokenDistributionResolvedRecipient::Identity(identifier) => {
-                        (1, Some(identifier.into()))
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier)) => {
+                        (0, Some(identifier.into()), 1)
                     }
-                    TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(_) => {
-                        (2, None)
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::Identity(identifier)) => {
+                        (1, Some(identifier.into()), 1)
+                    }
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(_)) => {
+                        (2, None, 1)
                     }
                 };
 
@@ -233,7 +235,7 @@ impl TokenEvent {
                     ("recipientType".to_string(), recipient_type.into()),
                     (
                         "distributionType".to_string(),
-                        (distribution_type as u8).into(),
+                        distribution_type.into(),
                     ),
                     ("amount".to_string(), amount.into()),
                 ]);
