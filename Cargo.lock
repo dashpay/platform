@@ -2098,7 +2098,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "axum",
  "bincode",
@@ -2129,7 +2129,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2139,7 +2139,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -2151,7 +2151,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "bincode",
  "blake3",
@@ -2173,12 +2173,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 
 [[package]]
 name = "grovedb-storage"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2197,7 +2197,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "thiserror 2.0.11",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2206,7 +2206,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -2215,7 +2215,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "2.2.1"
-source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master#b363e5e431826be1a30ea9740be6c863b77e902e"
+source = "git+https://github.com/dashpay/grovedb?branch=feat%2Fchunk_packing_master_32#86629aaed8b7791e5a6cfa0139c0df1ee3d8c761"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
