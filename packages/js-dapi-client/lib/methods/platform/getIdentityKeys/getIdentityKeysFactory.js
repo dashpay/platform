@@ -22,7 +22,7 @@ function getIdentityKeysFactory(grpcTransport) {
    * Fetch the version upgrade votes status
    * @typedef {getIdentityKeys}
    * @param {Buffer} identityId
-   * @param {number[]} keyIds
+   * @param {number[]=} keyIds
    * @param {number} limit
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityKeysResponse>}
