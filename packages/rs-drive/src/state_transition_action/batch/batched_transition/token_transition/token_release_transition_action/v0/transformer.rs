@@ -1,11 +1,15 @@
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::ConsensusError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_release_transition::v0::TokenReleaseTransitionV0;
 use dpp::ProtocolError;
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_release_transition_action::v0::TokenReleaseTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
@@ -217,6 +221,37 @@ impl TokenReleaseTransitionActionV0 {
                     ),
                     fee_result,
                 ));
+            }
+        };
+
+        let token_config = base_action.token_configuration()?;
+
+        let distribution_info = match distribution_type {
+            TokenDistributionType::PreProgrammed => {}
+            TokenDistributionType::Perpetual => {
+                // we need to validate that we have a perpetual distribution
+                let Some(perpetual_distribution) =
+                    token_config.distribution_rules().perpetual_distribution()
+                else {
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                            base,
+                            owner_id,
+                            user_fee_increase,
+                        );
+                    let batched_action =
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                    return Ok((
+                        ConsensusValidationResult::new_with_data_and_errors(
+                            batched_action.into(),
+                            vec![ConsensusError::StateError(
+                                StateError::InvalidTokenReleasePropertyNotPresent,
+                            )],
+                        ),
+                        fee_result,
+                    ));
+                };
             }
         };
 

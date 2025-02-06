@@ -141,6 +141,9 @@ impl ErrorWithCode for BasicError {
             Self::DestinationIdentityForTokenMintingNotSetError(_) => 10454,
             Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10455,
             Self::TokenTransferToOurselfError(_) => 10456,
+            Self::InvalidTokenConfigUpdateNoChangeError(_) => 10457,
+            Self::InvalidTokenAmountError(_) => 10458,
+            Self::InvalidTokenNoteTooBigError(_) => 10459,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,

@@ -16,14 +16,22 @@ use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
-use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError, TokenTransferToOurselfError};
+use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::state_transition::batch_transition::token_config_update_transition::validate_structure::TokenConfigUpdateTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::validate_structure::TokenDestroyFrozenFundsTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_emergency_action_transition::validate_structure::TokenEmergencyActionTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_freeze_transition::validate_structure::TokenFreezeTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_mint_transition::validate_structure::TokenMintTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_release_transition::validate_structure::TokenReleaseTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use crate::state_transition::StateTransitionLike;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_burn_transition::validate_structure::TokenBurnTransitionStructureValidation;
 
 impl BatchTransition {
     #[inline(always)]
@@ -135,25 +143,33 @@ impl BatchTransition {
             }
 
             match transition {
-                TokenTransition::Burn(_) => {}
-                TokenTransition::Mint(_) => {}
-                TokenTransition::Transfer(transfer) => {
-                    if transfer.recipient_id() == self.owner_id() {
-                        // We can not transfer to ourselves
-                        result.add_error(BasicError::TokenTransferToOurselfError(
-                            TokenTransferToOurselfError::new(
-                                transition.token_id(),
-                                self.owner_id(),
-                            ),
-                        ));
-                    }
+                TokenTransition::Burn(burn_transition) => {
+                    burn_transition.validate_structure(platform_version)?;
                 }
-                TokenTransition::Freeze(_) => {}
-                TokenTransition::Unfreeze(_) => {}
-                TokenTransition::DestroyFrozenFunds(_) => {}
-                TokenTransition::EmergencyAction(_) => {}
-                TokenTransition::ConfigUpdate(_) => {}
-                TokenTransition::Release(_) => {}
+                TokenTransition::Mint(mint_transition) => {
+                    mint_transition.validate_structure(platform_version)?;
+                }
+                TokenTransition::Transfer(transfer_transition) => {
+                    transfer_transition.validate_structure(self.owner_id(), platform_version)?;
+                }
+                TokenTransition::Freeze(freeze_transition) => {
+                    freeze_transition.validate_structure(platform_version)?;
+                }
+                TokenTransition::Unfreeze(unfreeze_transition) => {
+                    unfreeze_transition.validate_structure(platform_version)?;
+                }
+                TokenTransition::DestroyFrozenFunds(destroy_frozen_funds_transition) => {
+                    destroy_frozen_funds_transition.validate_structure(platform_version)?;
+                }
+                TokenTransition::EmergencyAction(emergency_action_transition) => {
+                    emergency_action_transition.validate_structure(platform_version)?;
+                }
+                TokenTransition::ConfigUpdate(config_update_transition) => {
+                    config_update_transition.validate_structure(platform_version)?;
+                }
+                TokenTransition::Release(release_transition) => {
+                    release_transition.validate_structure(platform_version)?;
+                }
             }
 
             // We need to verify that the action id given matches the expected action id

@@ -35,26 +35,26 @@ impl TokenKeepsHistoryRulesV0Getters for TokenKeepsHistoryRules {
 /// Implementing `TokenKeepsHistoryRulesV0Setters` for `TokenKeepsHistoryRules`
 impl TokenKeepsHistoryRulesV0Setters for TokenKeepsHistoryRules {
     fn set_keeps_transfer_history(&mut self, value: bool) {
-        if let TokenKeepsHistoryRules::V0(v0) = self {
-            v0.keeps_transfer_history = value;
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_transfer_history = value,
         }
     }
 
     fn set_keeps_freezing_history(&mut self, value: bool) {
-        if let TokenKeepsHistoryRules::V0(v0) = self {
-            v0.keeps_freezing_history = value;
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_freezing_history = value,
         }
     }
 
     fn set_keeps_minting_history(&mut self, value: bool) {
-        if let TokenKeepsHistoryRules::V0(v0) = self {
-            v0.keeps_minting_history = value;
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_minting_history = value,
         }
     }
 
     fn set_keeps_burning_history(&mut self, value: bool) {
-        if let TokenKeepsHistoryRules::V0(v0) = self {
-            v0.keeps_burning_history = value;
+        match self {
+            TokenKeepsHistoryRules::V0(v0) => v0.keeps_burning_history = value,
         }
     }
 }

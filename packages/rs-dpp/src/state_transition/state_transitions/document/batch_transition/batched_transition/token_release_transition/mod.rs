@@ -1,5 +1,6 @@
 pub mod v0;
 mod v0_methods;
+pub mod validate_structure;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};

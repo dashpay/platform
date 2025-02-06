@@ -45,6 +45,7 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_transition_action::TokenBurnTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_config_update_transition_action::TokenConfigUpdateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
@@ -231,117 +232,22 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         }
                     }
                 },
-                BatchedTransitionAction::TokenAction(token_action) => match token_action {
-                    TokenTransitionAction::BurnAction(burn_action) => {
-                        let result = burn_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(token_action.base(), self.owner_id(), self.user_fee_increase()),
-                                );
+                BatchedTransitionAction::TokenAction(token_transition_action) => {
+                    // token actions only need to do advanced structure validation on the base action
+                    let result = token_transition_action
+                        .base()
+                        .validate_structure(platform_version)?;
+                    if !result.is_valid() {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(token_transition_action.base(), self.owner_id(), self.user_fee_increase()),
+                        );
 
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            result.errors,
+                        ));
                     }
-                    TokenTransitionAction::MintAction(mint_action) => {
-                        let result = mint_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(mint_action.base(), self.owner_id(), self.user_fee_increase()),
-                                );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                    TokenTransitionAction::TransferAction(transfer_action) => {
-                        let result = transfer_action
-                            .validate_structure(self.owner_id(), platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(transfer_action.base(), self.owner_id(), self.user_fee_increase()),
-                                );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                    TokenTransitionAction::FreezeAction(freeze_action) => {
-                        let result = freeze_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(freeze_action.base(), self.owner_id(), self.user_fee_increase()),
-                            );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                    TokenTransitionAction::UnfreezeAction(unfreeze_action) => {
-                        let result = unfreeze_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(unfreeze_action.base(), self.owner_id(), self.user_fee_increase()),
-                            );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                    TokenTransitionAction::EmergencyActionAction(emergency_action_action) => {
-                        let result =
-                            emergency_action_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(emergency_action_action.base(), self.owner_id(), self.user_fee_increase()),
-                            );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                    TokenTransitionAction::DestroyFrozenFundsAction(
-                        destroy_frozen_funds_action,
-                    ) => {
-                        let result =
-                            destroy_frozen_funds_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(destroy_frozen_funds_action.base(), self.owner_id(), self.user_fee_increase()),
-                            );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                    TokenTransitionAction::ConfigUpdateAction(config_update_action) => {
-                        let result = config_update_action.validate_structure(platform_version)?;
-                        if !result.is_valid() {
-                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(config_update_action.base(), self.owner_id(), self.user_fee_increase()),
-                    );
-
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                bump_action,
-                                result.errors,
-                            ));
-                        }
-                    }
-                },
+                }
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "we should not have a bump identity contract nonce at this stage",

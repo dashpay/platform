@@ -1,11 +1,12 @@
+use crate::data_contract::associated_token::token_distribution_key::{
+    TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
+};
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
-use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
 #[derive(
     Serialize,

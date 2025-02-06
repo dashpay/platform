@@ -102,7 +102,6 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                         ));
                     }
                 }
-                let token_configuration = self.base().token_configuration()?;
                 ops.push(TokenOperation(TokenOperationType::TokenHistory {
                     token_id: self.token_id(),
                     owner_id,

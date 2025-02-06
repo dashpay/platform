@@ -135,7 +135,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
-                token_issuance_transition_state_validation: 0,
+                token_mint_transition_state_validation: 0,
                 token_burn_transition_state_validation: 0,
                 token_transfer_transition_state_validation: 0,
                 token_base_transition_structure_validation: 0,
@@ -151,6 +151,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 token_config_update_transition_structure_validation: 0,
                 token_config_update_transition_state_validation: 0,
                 token_base_transition_group_action_validation: 0,
+                token_release_transition_structure_validation: 0,
+                token_release_transition_state_validation: 0,
             },
         },
         has_nonce_validation: 1, // <---- changed this
