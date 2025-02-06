@@ -1,19 +1,22 @@
 use crate::drive::tokens::paths::{
-    token_root_perpetual_distributions_path_vec, TokenPerpetualDistributionPaths,
+    token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec,
+    TokenPerpetualDistributionPaths, TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY,
     TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
-use crate::util::object_size_info::PathKeyElementInfo;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::associated_token::token_distribution_key::{
-    DistributionType, TokenDistributionKey,
+    TokenDistributionKey, TokenDistributionType,
 };
-use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::{
+    TokenPerpetualDistributionV0Accessors, TokenPerpetualDistributionV0Methods,
+};
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
@@ -48,27 +51,27 @@ impl Drive {
         // Storage flags for cleanup logic
         let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
 
-        // Path for the perpetual distribution tree
-        let perpetual_distributions_path = token_root_perpetual_distributions_path_vec();
+        let root_perpetual_distributions_path = token_root_perpetual_distributions_path_vec();
 
-        let insert_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertApplyType::StatefulBatchInsert
+        let perpetual_distributions_path = token_perpetual_distributions_path_vec(token_id);
+
+        let tree_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
-            BatchInsertApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_type: TreeType::NormalTree,
-                target: QueryTarget::QueryTargetValue(serialized_distribution.len() as u32),
+                tree_type: TreeType::NormalTree,
+                flags_len: 0,
             }
         };
 
-        // We do a `if_not_exists` just to be extra careful
-        let inserted = self.batch_insert_if_not_exists(
-            PathKeyElementInfo::<0>::PathKeyElement((
-                perpetual_distributions_path,
-                token_id.to_vec(),
-                Element::new_item(serialized_distribution),
-            )),
-            insert_type,
+        let inserted = self.batch_insert_empty_tree_if_not_exists(
+            PathKeyInfo::<0>::PathKey((root_perpetual_distributions_path, token_id.to_vec())),
+            TreeType::NormalTree,
+            None,
+            tree_apply_type,
             transaction,
+            &mut None,
             batch_operations,
             &platform_version.drive,
         )?;
@@ -77,14 +80,37 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution("we can not insert the perpetual distribution as it already existed, this should have been validated before insertion")));
         }
 
+        // We do a `if_not_exists` just to be extra careful
+        self.batch_insert(
+            PathKeyElementInfo::<0>::PathKeyElement((
+                perpetual_distributions_path.clone(),
+                vec![TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY],
+                Element::new_item(serialized_distribution),
+            )),
+            batch_operations,
+            &platform_version.drive,
+        )?;
+
+        let next_interval = distribution.next_interval(block_info);
+
+        self.batch_insert(
+            PathKeyElementInfo::<0>::PathKeyElement((
+                perpetual_distributions_path,
+                vec![TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY],
+                Element::new_item(next_interval.to_be_bytes().to_vec()),
+            )),
+            batch_operations,
+            &platform_version.drive,
+        )?;
+
         // We will distribute for the first time on the next interval
         let distribution_path_for_next_interval =
-            distribution.distribution_path_for_next_interval(block_info);
+            distribution.distribution_path_for_next_interval_from_block_info(block_info);
 
         let distribution_key = TokenDistributionKey {
             token_id: token_id.into(),
             recipient: distribution.distribution_recipient(),
-            distribution_type: DistributionType::Perpetual,
+            distribution_type: TokenDistributionType::Perpetual,
         };
 
         let serialized_key = distribution_key.serialize_consume_to_bytes()?;

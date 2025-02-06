@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action::v0::GroupActionV0;
@@ -92,18 +91,15 @@ impl DriveHighLevelBatchOperationConverter for TokenConfigUpdateTransitionAction
                         },
                     ));
 
-                    let token_configuration = self.base().token_configuration()?;
-                    if token_configuration.keeps_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::ConfigUpdate(
-                                self.update_token_configuration_item().clone(),
-                                self.public_note_owned(),
-                            ),
-                        }));
-                    }
+                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                        token_id: self.token_id(),
+                        owner_id,
+                        nonce: identity_contract_nonce,
+                        event: TokenEvent::ConfigUpdate(
+                            self.update_token_configuration_item().clone(),
+                            self.public_note_owned(),
+                        ),
+                    }));
                 }
 
                 Ok(ops)

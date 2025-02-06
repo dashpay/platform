@@ -21,6 +21,7 @@ pub mod token_destroy_frozen_funds_transition;
 pub mod token_emergency_action_transition;
 pub mod token_freeze_transition;
 pub mod token_mint_transition;
+pub mod token_release_transition;
 pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;

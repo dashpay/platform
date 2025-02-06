@@ -32,6 +32,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         create_token_trees: 0,
         burn: 0,
         mint: 0,
+        mint_many: 0,
         transfer: 0,
         add_to_token_total_supply: 0,
         remove_from_token_total_supply: 0,
@@ -46,5 +47,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
     distribution: DriveTokenDistributionMethodVersions {
         add_perpetual_distribution: 0,
         add_pre_programmed_distributions: 0,
+        mark_perpetual_release_as_distributed: 0,
     },
 };

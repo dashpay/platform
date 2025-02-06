@@ -589,6 +589,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 Ok(batched_action)
             }
+            TokenTransition::Release(release) => {
+                let (batched_action, fee_result) = TokenReleaseTransitionAction::try_from_borrowed_token_release_transition_with_contract_lookup(drive, owner_id, release, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
         }
     }
 

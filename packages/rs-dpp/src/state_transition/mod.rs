@@ -361,6 +361,7 @@ impl StateTransition {
                         BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(_)) => {
                             "TokenConfigUpdate"
                         }
+                        BatchedTransitionRef::Token(TokenTransition::Release(_)) => "TokenRelease",
                     };
                     document_transition_types.push(document_transition_name);
                 }

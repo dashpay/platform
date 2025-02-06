@@ -2,6 +2,7 @@ use crate::drive::RootTree;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::prelude::{BlockHeight, TimestampMillis};
@@ -51,6 +52,12 @@ pub const TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY: u8 = 64;
 
 /// Key for the epoch timed token distributions.
 pub const TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY: u8 = 192;
+
+/// Key for the perpetual distribution info.
+pub const TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY: u8 = 128;
+
+/// Key for the perpetual distribution next event.
+pub const TOKEN_PERPETUAL_DISTRIBUTIONS_NEXT_EVENT_KEY: u8 = 64;
 
 /// The path for the balances tree
 
@@ -422,7 +429,10 @@ pub trait TokenPerpetualDistributionPaths {
     /// Returns the path where the perpetual distribution should be stored.
     fn distribution_path(&self, unit: u64) -> Vec<Vec<u8>>;
     /// Returns the path where the perpetual distribution should be stored.
-    fn distribution_path_for_next_interval(&self, block_info: &BlockInfo) -> Vec<Vec<u8>>;
+    fn distribution_path_for_next_interval_from_block_info(
+        &self,
+        block_info: &BlockInfo,
+    ) -> Vec<Vec<u8>>;
 }
 
 impl TokenPerpetualDistributionPaths for TokenPerpetualDistribution {
@@ -454,7 +464,10 @@ impl TokenPerpetualDistributionPaths for TokenPerpetualDistribution {
         }
     }
 
-    fn distribution_path_for_next_interval(&self, block_info: &BlockInfo) -> Vec<Vec<u8>> {
+    fn distribution_path_for_next_interval_from_block_info(
+        &self,
+        block_info: &BlockInfo,
+    ) -> Vec<Vec<u8>> {
         match self.distribution_type() {
             // If the distribution is based on block height, return the next height where emissions occur.
             RewardDistributionType::BlockBasedDistribution(interval, _, _) => {
@@ -472,6 +485,28 @@ impl TokenPerpetualDistributionPaths for TokenPerpetualDistribution {
             RewardDistributionType::EpochBasedDistribution(interval, _, _) => {
                 let index = block_info.epoch.index - block_info.epoch.index % interval + interval;
                 token_epoch_timed_at_epoch_distributions_path_vec(index)
+            }
+        }
+    }
+}
+
+/// Paths for the token perpetual distribution moment
+pub trait TokenPerpetualDistributionMomentPaths {
+    /// The distribution path for a moment
+    fn distribution_path(&self) -> Vec<Vec<u8>>;
+}
+
+impl TokenPerpetualDistributionMomentPaths for RewardDistributionMoment {
+    fn distribution_path(&self) -> Vec<Vec<u8>> {
+        match self {
+            RewardDistributionMoment::BlockBasedMoment(height) => {
+                token_block_timed_at_block_distributions_path_vec(*height)
+            }
+            RewardDistributionMoment::TimeBasedMoment(time_ms) => {
+                token_ms_timed_at_time_distributions_path_vec(*time_ms)
+            }
+            RewardDistributionMoment::EpochBasedMoment(epoch) => {
+                token_epoch_timed_at_epoch_distributions_path_vec(*epoch)
             }
         }
     }

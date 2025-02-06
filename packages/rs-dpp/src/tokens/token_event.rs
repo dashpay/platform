@@ -2,6 +2,8 @@ use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::{
@@ -45,6 +47,12 @@ pub enum TokenEvent {
         TokenEventPersonalEncryptedNote,
         TokenAmount,
     ),
+    Release(
+        TokenDistributionResolvedRecipient,
+        TokenDistributionType,
+        TokenAmount,
+        TokenEventPublicNote,
+    ),
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
 }
@@ -52,14 +60,15 @@ pub enum TokenEvent {
 impl TokenEvent {
     pub fn associated_document_type_name(&self) -> &str {
         match self {
-            TokenEvent::Mint(_, _, _) => "mint",
-            TokenEvent::Burn(_, _) => "burn",
-            TokenEvent::Freeze(_, _) => "freeze",
-            TokenEvent::Unfreeze(_, _) => "unfreeze",
-            TokenEvent::DestroyFrozenFunds(_, _, _) => "destroyFrozenFunds",
-            TokenEvent::Transfer(_, _, _, _, _) => "transfer",
-            TokenEvent::EmergencyAction(_, _) => "emergencyAction",
-            TokenEvent::ConfigUpdate(_, _) => "configUpdate",
+            TokenEvent::Mint(..) => "mint",
+            TokenEvent::Burn(..) => "burn",
+            TokenEvent::Freeze(..) => "freeze",
+            TokenEvent::Unfreeze(..) => "unfreeze",
+            TokenEvent::DestroyFrozenFunds(..) => "destroyFrozenFunds",
+            TokenEvent::Transfer(..) => "transfer",
+            TokenEvent::Release(..) => "release",
+            TokenEvent::EmergencyAction(..) => "emergencyAction",
+            TokenEvent::ConfigUpdate(..) => "configUpdate",
         }
     }
 
@@ -201,6 +210,38 @@ impl TokenEvent {
                             .into(),
                     ),
                 ]);
+                if let Some(note) = public_note {
+                    properties.insert("note".to_string(), note.into());
+                }
+                properties
+            }
+            TokenEvent::Release(recipient, distribution_type, amount, public_note) => {
+                let (recipient_type, recipient_id) = match recipient {
+                    TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier) => {
+                        (0, Some(identifier.into()))
+                    }
+                    TokenDistributionResolvedRecipient::Identity(identifier) => {
+                        (1, Some(identifier.into()))
+                    }
+                    TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(_) => {
+                        (2, None)
+                    }
+                };
+
+                let mut properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("recipientType".to_string(), recipient_type.into()),
+                    (
+                        "distributionType".to_string(),
+                        (distribution_type as u8).into(),
+                    ),
+                    ("amount".to_string(), amount.into()),
+                ]);
+
+                if let Some(id) = recipient_id {
+                    properties.insert("recipientId".to_string(), id);
+                }
+
                 if let Some(note) = public_note {
                     properties.insert("note".to_string(), note.into());
                 }

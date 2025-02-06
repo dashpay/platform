@@ -11,6 +11,7 @@ pub enum TokenTransitionActionType {
     Freeze,
     Unfreeze,
     DestroyFrozenFunds,
+    Release,
     EmergencyAction,
     ConfigUpdate,
 }
@@ -24,6 +25,7 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Freeze => "Freeze",
             TokenTransitionActionType::Unfreeze => "Unfreeze",
             TokenTransitionActionType::DestroyFrozenFunds => "DestroyFrozenFunds",
+            TokenTransitionActionType::Release => "Release",
             TokenTransitionActionType::EmergencyAction => "EmergencyAction",
             TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
         };
@@ -44,6 +46,7 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::Freeze(_) => TokenTransitionActionType::Freeze,
             TokenTransition::Unfreeze(_) => TokenTransitionActionType::Unfreeze,
             TokenTransition::DestroyFrozenFunds(_) => TokenTransitionActionType::DestroyFrozenFunds,
+            TokenTransition::Release(_) => TokenTransitionActionType::Release,
             TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionActionType::ConfigUpdate,
         }
@@ -60,12 +63,14 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "transfer" => Ok(TokenTransitionActionType::Transfer),
             "freeze" => Ok(TokenTransitionActionType::Freeze),
             "unfreeze" => Ok(TokenTransitionActionType::Unfreeze),
+            "release" => Ok(TokenTransitionActionType::Release),
             "destroy_frozen_funds" | "destroyFrozenFunds" => {
                 Ok(TokenTransitionActionType::DestroyFrozenFunds)
             }
             "emergency_action" | "emergencyAction" => {
                 Ok(TokenTransitionActionType::EmergencyAction)
             }
+            "config_update" | "configUpdate" => Ok(TokenTransitionActionType::ConfigUpdate),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"
             ))),
