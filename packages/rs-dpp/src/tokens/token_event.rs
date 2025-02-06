@@ -2,7 +2,9 @@ use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
+use crate::data_contract::associated_token::token_distribution_key::{
+    TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
+};
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
@@ -219,24 +221,21 @@ impl TokenEvent {
                     TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identifier) => {
                         (1u8, Some(identifier.into()), 0u8)
                     }
-                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier)) => {
-                        (0, Some(identifier.into()), 1)
-                    }
-                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::Identity(identifier)) => {
-                        (1, Some(identifier.into()), 1)
-                    }
-                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(_)) => {
-                        (2, None, 1)
-                    }
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(
+                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(identifier),
+                    ) => (0, Some(identifier.into()), 1),
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(
+                        TokenDistributionResolvedRecipient::Identity(identifier),
+                    ) => (1, Some(identifier.into()), 1),
+                    TokenDistributionTypeWithResolvedRecipient::Perpetual(
+                        TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(_),
+                    ) => (2, None, 1),
                 };
 
                 let mut properties = BTreeMap::from([
                     ("tokenId".to_string(), token_id.into()),
                     ("recipientType".to_string(), recipient_type.into()),
-                    (
-                        "distributionType".to_string(),
-                        distribution_type.into(),
-                    ),
+                    ("distributionType".to_string(), distribution_type.into()),
                     ("amount".to_string(), amount.into()),
                 ]);
 

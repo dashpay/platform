@@ -1,6 +1,6 @@
 use derive_more::From;
 use dpp::balances::credits::TokenAmount;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 
 /// transformer module for token release transition action
@@ -61,18 +61,18 @@ impl TokenReleaseTransitionActionAccessorsV0 for TokenReleaseTransitionAction {
         }
     }
 
-    fn distribution_type_with_recipient(&self) -> &TokenDistributionTypeWithResolvedRecipient {
+    fn distribution_info(&self) -> &TokenDistributionInfo {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => &v0.distribution_type_with_recipient,
+            TokenReleaseTransitionAction::V0(v0) => &v0.distribution_info,
         }
     }
 
-    fn set_distribution_type_with_recipient(&mut self, distribution_type_with_recipient: TokenDistributionTypeWithResolvedRecipient) {
+    fn set_distribution_info(&mut self, distribution_info: TokenDistributionInfo) {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.distribution_type_with_recipient = distribution_type_with_recipient,
+            TokenReleaseTransitionAction::V0(v0) => v0.distribution_info = distribution_info,
         }
     }
-    
+
     fn public_note(&self) -> Option<&String> {
         match self {
             TokenReleaseTransitionAction::V0(v0) => v0.public_note.as_ref(),

@@ -94,8 +94,7 @@ impl TokenTransitionAction {
                 unfreeze_action.public_note().cloned(),
             ),
             TokenTransitionAction::ReleaseAction(release_action) => TokenEvent::Release(
-                release_action.recipient().clone(),
-                release_action.distribution_type(),
+                release_action.distribution_info().into(),
                 release_action.amount(),
                 release_action.public_note().cloned(),
             ),

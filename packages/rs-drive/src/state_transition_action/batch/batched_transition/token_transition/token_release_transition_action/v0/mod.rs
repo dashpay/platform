@@ -2,7 +2,7 @@ mod transformer;
 
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::identifier::Identifier;
 use crate::drive::contract::DataContractFetchInfo;
@@ -20,7 +20,7 @@ pub struct TokenReleaseTransitionActionV0 {
     /// The recipient
     pub recipient: TokenDistributionRecipient,
     /// The type of distribution we are targeting
-    pub distribution_type_with_recipient: TokenDistributionTypeWithResolvedRecipient,
+    pub distribution_info: TokenDistributionInfo,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -74,10 +74,10 @@ pub trait TokenReleaseTransitionActionAccessorsV0 {
     fn set_recipient(&mut self, recipient: TokenDistributionRecipient);
 
     /// Returns the type of distribution with its recipient
-    fn distribution_type_with_recipient(&self) -> &TokenDistributionTypeWithResolvedRecipient;
+    fn distribution_info(&self) -> &TokenDistributionInfo;
 
     /// Sets the type of distribution with its recipient
-    fn set_distribution_type_with_recipient(&mut self, distribution_type: TokenDistributionTypeWithResolvedRecipient);
+    fn set_distribution_info(&mut self, distribution_type: TokenDistributionInfo);
 
     /// Returns the public note (optional)
     fn public_note(&self) -> Option<&String>;
@@ -118,12 +118,12 @@ impl TokenReleaseTransitionActionAccessorsV0 for TokenReleaseTransitionActionV0 
         self.recipient = recipient;
     }
 
-    fn distribution_type_with_recipient(&self) -> &TokenDistributionTypeWithResolvedRecipient {
-        &self.distribution_type_with_recipient
+    fn distribution_info(&self) -> &TokenDistributionInfo {
+        &self.distribution_info
     }
 
-    fn set_distribution_type_with_recipient(&mut self, distribution_type_with_recipient: TokenDistributionTypeWithResolvedRecipient) {
-        self.distribution_type_with_recipient = distribution_type_with_recipient;
+    fn set_distribution_info(&mut self, distribution_info: TokenDistributionInfo) {
+        self.distribution_info = distribution_info;
     }
 
     fn public_note(&self) -> Option<&String> {

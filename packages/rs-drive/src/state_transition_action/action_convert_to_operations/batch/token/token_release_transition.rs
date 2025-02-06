@@ -1,5 +1,5 @@
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_event::TokenEvent;
@@ -40,10 +40,18 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                     },
                 )];
 
-                match self.distribution_type_with_recipient() {
-                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ContractOwnerIdentity(identity))
-                    | TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identity)
-                    | TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::Identity(identity)) => {
+                match self.distribution_info() {
+                    TokenDistributionInfo::Perpetual(
+                        _,
+                        _,
+                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(identity),
+                    )
+                    | TokenDistributionInfo::PreProgrammed(_, identity)
+                    | TokenDistributionInfo::Perpetual(
+                        _,
+                        _,
+                        TokenDistributionResolvedRecipient::Identity(identity),
+                    ) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMint {
                             token_id: self.token_id(),
                             identity_balance_holder_id: *identity,
@@ -51,9 +59,13 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                             allow_first_mint: false,
                         }));
                     }
-                    TokenDistributionTypeWithResolvedRecipient::Perpetual(TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(
-                        weighted_identities,
-                    )) => {
+                    TokenDistributionInfo::Perpetual(
+                        _,
+                        _,
+                        TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(
+                            weighted_identities,
+                        ),
+                    ) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMintMany {
                             token_id: self.token_id(),
                             mint_amount: self.amount(),
@@ -63,25 +75,29 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                     }
                 }
 
-                match self.distribution_type_with_recipient() {
-                    TokenDistributionTypeWithResolvedRecipient::PreProgrammed(recipient) => {
+                match self.distribution_info() {
+                    TokenDistributionInfo::PreProgrammed(release_time, recipient) => {
                         ops.push(TokenOperation(
                             TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed {
                                 token_id: self.token_id(),
                                 owner_id,
                                 identity_id: *recipient,
-                                release_time: 0,
+                                release_time: *release_time,
                             },
                         ));
                     }
-                    TokenDistributionTypeWithResolvedRecipient::Perpetual(perpetual) => {
+                    TokenDistributionInfo::Perpetual(
+                        last_release_moment,
+                        next_release_moment,
+                        _,
+                    ) => {
                         ops.push(TokenOperation(
                             TokenOperationType::TokenMarkPerpetualReleaseAsDistributed {
                                 token_id: self.token_id(),
                                 owner_id,
-                                last_release_moment: (),
-                                next_release_moment: (),
-                                recipient: Default::default(),
+                                last_release_moment: *last_release_moment,
+                                next_release_moment: *next_release_moment,
+                                recipient: *self.recipient(),
                             },
                         ));
                     }
@@ -92,7 +108,7 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                     owner_id,
                     nonce: identity_contract_nonce,
                     event: TokenEvent::Release(
-                        self.distribution_type_with_recipient().clone(),
+                        self.distribution_info().into(),
                         self.amount(),
                         self.public_note_owned(),
                     ),

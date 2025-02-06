@@ -114,7 +114,7 @@ impl TokenReleaseTransitionActionV0 {
                     base: base_action,
                     amount: 0, //todo
                     recipient,
-                    distribution_type,
+                    distribution_info: (),
                     public_note,
                 }
                 .into(),
@@ -226,7 +226,7 @@ impl TokenReleaseTransitionActionV0 {
                     base: base_action,
                     amount: 0, //todo
                     recipient: *recipient,
-                    distribution_type: *distribution_type,
+                    distribution_info: (),
                     public_note: public_note.clone(),
                 }
                 .into(),

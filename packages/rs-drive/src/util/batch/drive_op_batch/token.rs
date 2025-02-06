@@ -279,18 +279,23 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 )?;
                 Ok(batch_operations)
             }
-            TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed { token_id, owner_id, identity_id, release_time } => {
-                let batch_operations = drive.mark_pre_programmed_release_as_distributed_operations(
-                    token_id.to_buffer(),
-                    owner_id.to_buffer(),
-                    last_release_moment,
-                    next_release_moment,
-                    recipient,
-                    block_info,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )?;
+            TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed {
+                token_id,
+                owner_id,
+                identity_id,
+                release_time,
+            } => {
+                let batch_operations = drive
+                    .mark_pre_programmed_release_as_distributed_operations(
+                        token_id.to_buffer(),
+                        owner_id.to_buffer(),
+                        identity_id.to_buffer(),
+                        release_time,
+                        block_info,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?;
                 Ok(batch_operations)
             }
         }
