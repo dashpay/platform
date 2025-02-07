@@ -62,11 +62,11 @@ describe('IdentityFacade', () => {
 
   describe('#createFromBuffer', () => {
     it('should create Identity from a Buffer', () => {
-      const identity = dpp.identity.createFromBuffer(identity.toBuffer());
+      const deserialized = dpp.identity.createFromBuffer(identity.toBuffer());
 
-      expect(result).to.be.an.instanceOf(Identity);
+      expect(deserialized).to.be.an.instanceOf(Identity);
 
-      expect(result.toObject()).to.deep.equal(identity.toObject());
+      expect(deserialized.toObject()).to.deep.equal(deserialized.toObject());
     });
   });
 
