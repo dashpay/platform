@@ -338,7 +338,7 @@ impl Drive {
                             };
 
                             let expected_document = token_transition.build_historical_document(
-                                &contract,
+                                &token_history_contract,
                                 token_id,
                                 owner_id,
                                 identity_contract_nonce,
