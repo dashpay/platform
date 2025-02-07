@@ -89,7 +89,7 @@ class ChainStatus {
   }
 
   /**
-   * @returns {number} core chain locked height
+   * @returns {number|null} core chain locked height
    */
   getCoreChainLockedHeight() {
     return this.coreChainLockedHeight;

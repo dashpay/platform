@@ -124,7 +124,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
     expect(error.getId()).to.equal(3);
   });
 
-  it('should pass when disabling public key', async function () {
+  it('should pass when disabling public key', async function it() {
     stateTransition.setPublicKeyIdsToDisable([1]);
     stateTransition.setPublicKeysToAdd(undefined);
 
@@ -143,7 +143,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
       .to.be.calledOnce();
   });
 
-  it('should pass when adding public key', async function () {
+  it('should pass when adding public key', async function it() {
     stateTransition.setPublicKeyIdsToDisable(undefined);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -161,7 +161,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
       .to.not.be.called();
   });
 
-  it('should pass when both adding and disabling public keys', async function () {
+  it('should pass when both adding and disabling public keys', async function it() {
     stateTransition.setPublicKeyIdsToDisable([1]);
 
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -227,7 +227,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
     // );
   });
 
-  it('should return valid result on dry run', async function () {
+  it('should return valid result on dry run', async function it() {
     stateTransition.setPublicKeyIdsToDisable([3]);
 
     // Make code that executes after dry run check to fail

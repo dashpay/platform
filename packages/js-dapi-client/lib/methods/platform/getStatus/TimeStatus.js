@@ -25,14 +25,14 @@ class TimeStatus {
   }
 
   /**
-   * @returns {bigint|null} Drive ABCI version
+   * @returns {bigint|null} Block time
    */
   getBlockTime() {
     return this.block;
   }
 
   /**
-   * @returns {bigint|null} Tenderdash version
+   * @returns {bigint|null} Genesis time
    */
   getGenesisTime() {
     return this.genesis;

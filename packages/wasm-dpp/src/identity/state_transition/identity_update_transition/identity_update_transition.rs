@@ -176,7 +176,7 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_nonce: u64) -> () {
+    pub fn set_identity_contract_nonce(&mut self, identity_nonce: u64) {
         self.0.set_nonce(identity_nonce)
     }
 

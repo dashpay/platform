@@ -140,7 +140,7 @@ class Fetcher {
     offset: number,
   ): Promise<GetDataContractHistoryResponse> {
     // Define query
-    const query = async (): Promise<GetDataContractHistoryResponse> => await this
+    const query = async (): Promise<GetDataContractHistoryResponse> => this
       .dapiClient.platform.getDataContractHistory(id, startAMs, limit, offset);
 
     // Define retry attempts.

@@ -1,8 +1,8 @@
 /**
  * @returns {{
  * height: bigint,
- * coreChainLockedHeight: number,
- * timeMs: bigint,
+ * coreChainLockedHeight: string,
+ * timeMs: string,
  * protocolVersion: number,
  * }}
  */
