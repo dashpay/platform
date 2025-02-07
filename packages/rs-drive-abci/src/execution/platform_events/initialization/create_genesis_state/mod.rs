@@ -46,8 +46,8 @@ impl<C> Platform<C> {
         }?;
 
         // UNCOMMENT ONLY TO GENERATE SDK TEST DATA
-        // let block_info = dpp::block::block_info::BlockInfo::default_with_time(genesis_time);
-        // self.create_sdk_test_data(&block_info, transaction, platform_version)?;
+        let block_info = dpp::block::block_info::BlockInfo::default_with_time(genesis_time);
+        self.create_sdk_test_data(&block_info, transaction, platform_version)?;
 
         Ok(())
     }

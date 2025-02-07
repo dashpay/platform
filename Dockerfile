@@ -724,6 +724,7 @@ COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
+COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

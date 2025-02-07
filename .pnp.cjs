@@ -2603,6 +2603,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
+          ["@dashevo/token-history-contract", "workspace:packages/token-history-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@grpc/grpc-js", "npm:1.4.4"],\
           ["@pshenmic/zeromq", "npm:6.0.0-beta.22"],\

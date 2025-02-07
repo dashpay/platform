@@ -337,8 +337,17 @@ impl Drive {
                                     SingleDocumentDriveQueryContestedStatus::NotContested,
                             };
 
+                            let (root_hash, document) = query.verify_proof(
+                                false,
+                                proof,
+                                token_history_document_type,
+                                platform_version,
+                            )?;
+
+                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+
                             let expected_document = token_transition.build_historical_document(
-                                &contract,
+                                &token_history_contract,
                                 token_id,
                                 owner_id,
                                 identity_contract_nonce,
@@ -346,13 +355,7 @@ impl Drive {
                                 token_config,
                                 platform_version,
                             )?;
-                            let (root_hash, document) = query.verify_proof(
-                                false,
-                                proof,
-                                token_history_document_type,
-                                platform_version,
-                            )?;
-                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+
                             if !document.is_equal_ignoring_time_based_fields(
                                 &expected_document,
                                 Some(vec!["destroyedAmount"]),

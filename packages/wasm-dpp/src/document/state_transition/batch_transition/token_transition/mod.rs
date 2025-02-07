@@ -16,6 +16,7 @@ use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
 use crate::identifier::IdentifierWrapper;
+use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
@@ -72,25 +73,6 @@ impl From<TokenTransitionWasm> for TokenTransition {
 
 #[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        TokenTransitionWasm(TokenTransition::Mint(TokenMintTransition::V0(
-            TokenMintTransitionV0 {
-                base: TokenBaseTransitionV0 {
-                    identity_contract_nonce: 0,
-                    token_contract_position: 0,
-                    data_contract_id: Default::default(),
-                    token_id: Default::default(),
-                    using_group_info: None,
-                }
-                .into(),
-                issued_to_identity_id: None,
-                amount: 0,
-                public_note: None,
-            },
-        )))
-    }
-
     #[wasm_bindgen(js_name=getTransitionType)]
     pub fn transition_type(&self) -> TokenTransitionType {
         TokenTransitionType::from(&self.0)
@@ -109,6 +91,27 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
         self.0.base().data_contract_id().into()
+    }
+
+    #[wasm_bindgen(js_name=getHistoricalDocumentTypeName)]
+    pub fn historical_document_type_name(&self) -> String {
+        self.0.historical_document_type_name().to_string()
+    }
+
+    #[wasm_bindgen(js_name=getHistoricalDocumentId)]
+    pub fn historical_document_id(
+        &self,
+        owner_id: IdentifierWrapper,
+        owner_nonce: IdentityNonce,
+    ) -> IdentifierWrapper {
+        self.0
+            .historical_document_id(owner_id.into(), owner_nonce)
+            .into()
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
+        self.0.base().identity_contract_nonce()
     }
 
     #[wasm_bindgen(js_name=toTransition)]
