@@ -1,8 +1,8 @@
 use crate::abci::app::{SnapshotFetchingApplication, SnapshotManagerApplication};
+use crate::abci::handler::load_snapshot_chunk::ChunkData;
 use crate::abci::AbciError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use drive::grovedb_storage::rocksdb_storage::RocksDbStorage;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
@@ -29,12 +29,21 @@ where
             .ok_or(AbciError::StateSyncInternalError(
                 "apply_snapshot_chunk unable to lock session".to_string(),
             ))?;
+
+        let chunk_data = ChunkData::deserialize(&request.chunk).map_err(|e| {
+            AbciError::StateSyncInternalError(format!(
+                "apply_snapshot_chunk unable to deserialize chunk: {}",
+                e
+            ))
+        })?;
+        let chunk = chunk_data.chunk();
+
         let next_chunk_ids = session
             .state_sync_info
             .apply_chunk(
                 &app.platform().drive.grove,
                 &request.chunk_id,
-                &request.chunk,
+                chunk,
                 1u16,
                 &PlatformVersion::latest().drive.grove_version,
             )
@@ -52,10 +61,7 @@ where
         if next_chunk_ids.is_empty() && session.state_sync_info.is_sync_completed() {
             is_state_sync_completed = true;
         }
-        tracing::debug!(
-            is_state_sync_completed,
-            "state_sync apply_snapshot_chunk",
-        );
+        tracing::debug!(is_state_sync_completed, "state_sync apply_snapshot_chunk",);
         if !is_state_sync_completed {
             return Ok(proto::ResponseApplySnapshotChunk {
                 result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
@@ -78,11 +84,12 @@ where
             .grove
             .commit_session(state_sync_info)
             .map_err(|e| {
-                AbciError::StateSyncInternalError(
-                    "apply_snapshot_chunk unable to commit session".to_string(),
-                )
+                AbciError::StateSyncInternalError(format!(
+                    "apply_snapshot_chunk unable to commit session: {}",
+                    e
+                ))
             })?;
-        println!("[state_sync] state sync completed. verifying");
+        tracing::trace!("[state_sync] state sync completed. verifying");
         let incorrect_hashes = app
             .platform()
             .drive
@@ -94,21 +101,22 @@ where
                 &PlatformVersion::latest().drive.grove_version,
             )
             .map_err(|e| {
-                AbciError::StateSyncInternalError(
-                    "apply_snapshot_chunk unable to verify grovedb".to_string(),
-                )
+                AbciError::StateSyncInternalError(format!(
+                    "apply_snapshot_chunk unable to verify grovedb: {}",
+                    e
+                ))
             })?;
-        if incorrect_hashes.len() > 0 {
+        if !incorrect_hashes.is_empty() {
             Err(AbciError::StateSyncInternalError(format!(
                 "apply_snapshot_chunk grovedb verification failed with {} incorrect hashes",
                 incorrect_hashes.len()
             )))?;
         }
-        return Ok(proto::ResponseApplySnapshotChunk {
+        Ok(proto::ResponseApplySnapshotChunk {
             result: proto::response_apply_snapshot_chunk::Result::CompleteSnapshot.into(),
             refetch_chunks: vec![],
             reject_senders: vec![],
             next_chunks: vec![],
-        });
+        })
     }
 }
