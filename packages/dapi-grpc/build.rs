@@ -17,8 +17,13 @@ fn main() {
     generate_code(ImplType::Server);
     #[cfg(feature = "client")]
     generate_code(ImplType::Client);
-    #[cfg(target_arch = "wasm32")]
-    generate_code(ImplType::Wasm);
+
+    if std::env::var("CARGO_CFG_TARGET_ARCH")
+        .unwrap_or_default()
+        .eq("wasm32")
+    {
+        generate_code(ImplType::Wasm);
+    }
 }
 
 fn generate_code(typ: ImplType) {
@@ -44,6 +49,7 @@ fn generate_code(typ: ImplType) {
 
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
+    println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
 }
 
 struct MappingConfig {
