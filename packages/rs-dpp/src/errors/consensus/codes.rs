@@ -102,6 +102,9 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenBaseSupplyError(_) => 10251,
             Self::NonContiguousContractGroupPositionsError(_) => 10252,
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
+            Self::InvalidTokenDistributionFunctionDivideByZeroError(_) => 10254,
+            Self::InvalidTokenDistributionFunctionInvalidParameterError(_) => 10254,
+            Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10255,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -257,6 +260,7 @@ impl ErrorWithCode for StateError {
             Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40158,
             Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
             Self::InvalidGroupPositionError(_) => 40160,
+            Self::InvalidTokenReleasePropertyMismatch(_) => 40161,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

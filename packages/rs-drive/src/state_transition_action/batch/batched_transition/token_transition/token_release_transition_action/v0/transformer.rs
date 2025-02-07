@@ -2,9 +2,14 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::InvalidTokenReleasePropertyMismatch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+use dpp::data_contract::associated_token::token_distribution_key::{TokenDistributionInfo, TokenDistributionType};
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_release_transition::v0::TokenReleaseTransitionV0;
 use dpp::ProtocolError;
@@ -13,6 +18,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_release_transition_action::v0::TokenReleaseTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
+use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -118,7 +125,7 @@ impl TokenReleaseTransitionActionV0 {
                     base: base_action,
                     amount: 0, //todo
                     recipient,
-                    distribution_info: (),
+                    distribution_info: todo!(),
                     public_note,
                 }
                 .into(),
@@ -226,8 +233,52 @@ impl TokenReleaseTransitionActionV0 {
 
         let token_config = base_action.token_configuration()?;
 
-        let distribution_info = match distribution_type {
-            TokenDistributionType::PreProgrammed => {}
+        let (amount, distribution_info) = match distribution_type {
+            TokenDistributionType::PreProgrammed => {
+                let Some(pre_programmed_distribution) =
+                    token_config.distribution_rules().pre_programmed_distribution()
+                else {
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                            base,
+                            owner_id,
+                            user_fee_increase,
+                        );
+                    let batched_action =
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                    return Ok((
+                        ConsensusValidationResult::new_with_data_and_errors(
+                            batched_action.into(),
+                            vec![ConsensusError::StateError(
+                                StateError::InvalidTokenReleasePropertyMismatch(InvalidTokenReleasePropertyMismatch::new("pre programmed distribution", base.token_id())),
+                            )],
+                        ),
+                        fee_result,
+                    ));
+                };
+
+                let recipient = match recipient {
+                    TokenDistributionRecipient::ContractOwner => {
+                        base_action.data_contract_fetch_info().contract.owner_id()
+                    }
+                    TokenDistributionRecipient::Identity(identifier) => {
+                        *identifier
+                    }
+                    TokenDistributionRecipient::EvonodesByParticipation => {
+                        // This should have already been snuffed out in basic structure validation
+                        return Err(Error::Protocol(ProtocolError::CorruptedCodeExecution("trying to transform with EvonodesByParticipation that should already have been validated in basic structure validation".to_string())));
+                    }
+                };
+
+                // We need to find the oldest pre-programmed distribution that wasn't yet claimed
+                // for this identity
+                let oldest_time = ;
+                
+                let amount = ;
+
+                (amount, TokenDistributionInfo::PreProgrammed(0, recipient))
+            }
             TokenDistributionType::Perpetual => {
                 // we need to validate that we have a perpetual distribution
                 let Some(perpetual_distribution) =
@@ -246,12 +297,28 @@ impl TokenReleaseTransitionActionV0 {
                         ConsensusValidationResult::new_with_data_and_errors(
                             batched_action.into(),
                             vec![ConsensusError::StateError(
-                                StateError::InvalidTokenReleasePropertyNotPresent,
+                                StateError::InvalidTokenReleasePropertyMismatch(InvalidTokenReleasePropertyMismatch::new("perpetual distribution", value.base().token_id())),
                             )],
                         ),
                         fee_result,
                     ));
                 };
+
+                let recipient = match recipient {
+                    TokenDistributionRecipient::ContractOwner => {
+                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(base_action.data_contract_fetch_info().contract.owner_id())
+                    }
+                    TokenDistributionRecipient::Identity(identifier) => {
+                        TokenDistributionResolvedRecipient::Identity(*identifier)
+                    }
+                    TokenDistributionRecipient::EvonodesByParticipation => {
+                        todo!(),
+                    }
+                };
+
+                let amount = ;
+
+                (amount, TokenDistributionInfo::Perpetual(RewardDistributionMoment::TimeBasedMoment(0),RewardDistributionMoment::TimeBasedMoment(0), recipient))
             }
         };
 
@@ -259,9 +326,9 @@ impl TokenReleaseTransitionActionV0 {
             BatchedTransitionAction::TokenAction(TokenTransitionAction::ReleaseAction(
                 TokenReleaseTransitionActionV0 {
                     base: base_action,
-                    amount: 0, //todo
+                    amount,
                     recipient: *recipient,
-                    distribution_info: (),
+                    distribution_info,
                     public_note: public_note.clone(),
                 }
                 .into(),

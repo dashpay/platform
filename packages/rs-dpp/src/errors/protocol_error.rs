@@ -204,6 +204,9 @@ pub enum ProtocolError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    #[error("divide by zero error: {0}")]
+    DivideByZero(&'static str),
+
     /// Error
     #[error("missing key: {0}")]
     DesiredKeyWithTypePurposeSecurityLevelMissing(String),

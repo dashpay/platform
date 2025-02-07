@@ -1,176 +1,231 @@
-use crate::balances::credits::{SignedTokenAmount, TokenAmount};
-use ordered_float::NotNan;
+use std::collections::BTreeMap;
+use crate::balances::credits::TokenAmount;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 mod encode;
+mod validation;
+mod methods;
+
+pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum DistributionFunction {
-    /// A fixed amount of tokens is emitted for each period in the reward distribution type.
+    /// Emits a constant (fixed) number of tokens for every period.
     ///
     /// # Formula
-    /// - `f(x) = n`
+    /// For any period `x`, the emitted tokens are:
+    ///
+    /// ```text
+    /// f(x) = n
+    /// ```
     ///
     /// # Use Case
-    /// - Simplicity
-    /// - Stable reward emissions
+    /// - When a predictable, unchanging reward is desired.
+    /// - Simplicity and stable emissions.
     ///
     /// # Example
-    /// - If we emit 5 tokens per block, and 3 blocks have passed, the `Release` call will release 15 tokens.
+    /// - If `n = 5` tokens per block, then after 3 blocks the total emission is 15 tokens.
     FixedAmount { n: TokenAmount },
 
-    /// The amount of tokens decreases in predefined steps at fixed intervals.
+    /// Emits tokens that decrease in discrete steps at fixed intervals.
     ///
     /// # Formula
-    /// - `f(x) = n * (1 - decrease_per_interval)^(x / step_count)`
+    /// For a given period `x`, the emission is calculated as:
+    ///
+    /// ```text
+    /// f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
+    /// ```
+    ///
+    /// # Parameters
+    /// - `step_count`: The number of periods between each step.
+    /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.
+    /// - `s`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
+    /// - `n`: The initial token emission.
+    /// - `min_value`: Optional minimum emission value.
     ///
     /// # Use Case
-    /// - Mimics Bitcoin and Dash Core emission models
-    /// - Encourages early participation by providing higher rewards initially
+    /// - Modeling reward systems similar to Bitcoin or Dash Core.
+    /// - Encouraging early participation by providing higher rewards initially.
     ///
     /// # Example
-    /// - Bitcoin: A 50% decrease every 210,000 blocks (~4 years)
-    /// - Dash: A ~7% decrease every 210,000 blocks (~1 year)
+    /// - Bitcoin-style: 50% reduction every 210,000 blocks.
+    /// - Dash-style: Approximately a 7% reduction every 210,000 blocks.
     StepDecreasingAmount {
-        step_count: u64,
-        decrease_per_interval: NotNan<f64>,
+        step_count: u32,
+        decrease_per_interval_numerator: u16,
+        decrease_per_interval_denominator: u16,
+        s: Option<u64>,
         n: TokenAmount,
+        min_value: Option<u64>,
     },
 
-    /// A linear function emits tokens in increasing or decreasing amounts over time (integer precision).
+    /// Emits tokens in fixed amounts for predefined intervals (steps).
     ///
-    /// # Formula
-    /// - `f(x) = a * x + b`
-    /// - Where `a` is the slope (rate of change) and `b` is the initial value.
-    ///
-    /// # Description
-    /// - `a > 0`: Tokens increase over time.
-    /// - `a < 0`: Tokens decrease over time.
-    /// - `b` is the starting emission value.
+    /// # Details
+    /// - Within each step, the emission remains constant.
+    /// - The keys in the `BTreeMap` represent the starting period for each interval,
+    ///   and the corresponding values are the fixed token amounts to emit during that interval.
     ///
     /// # Use Case
-    /// - Incentivize early adopters with higher rewards (`a < 0`).
-    /// - Gradually increase emissions to match ecosystem growth (`a > 0`).
+    /// - Adjusting rewards at specific milestones or time intervals.
     ///
     /// # Example
-    /// - Start with 50 tokens and increase by 10 tokens per epoch: `f(x) = 10x + 50`.
-    LinearInteger { a: i64, b: SignedTokenAmount },
+    /// - Emit 100 tokens per block for the first 1,000 blocks, then 50 tokens per block thereafter.
+    Stepwise(BTreeMap<u64, TokenAmount>),
 
-    /// A linear function emits tokens in increasing or decreasing amounts over time (floating-point precision).
+    /// Emits tokens following a linear function that can increase or decrease over time
+    /// with fractional precision.
     ///
     /// # Formula
-    /// - `f(x) = a * x + b`
-    /// - Where `a` is the slope (rate of change) and `b` is the initial value.
+    /// The emission at period `x` is given by:
     ///
-    /// # Description
-    /// - `a > 0`: Tokens increase over time.
-    /// - `a < 0`: Tokens decrease over time.
-    /// - `b` is the starting emission value.
+    /// ```text
+    /// f(x) = (a * (x - s) / d) + b
+    /// ```
     ///
-    /// # Use Case
-    /// - Similar to `LinearInteger`, but supports fractional rates of change.
+    /// # Parameters
+    /// - `a`: The slope numerator; determines the rate of change.
+    /// - `d`: The slope divisor; together with `a` controls the fractional rate.
+    /// - `s`: Optional start period offset. If not set, the contract creation start is assumed.
+    /// - `b`: The initial token emission (offset).
+    /// - `min_value` / `max_value`: Optional bounds to clamp the emission.
     ///
-    /// # Example
-    /// - Start with 50 tokens and increase by 0.5 tokens per epoch: `f(x) = 0.5x + 50`.
-    LinearFloat {
-        a: NotNan<f64>,
-        b: SignedTokenAmount,
-    },
-
-    /// A polynomial function emits tokens according to a quadratic or cubic curve (integer precision).
-    ///
-    /// # Formula
-    /// - `f(x) = a * x^n + b`
-    /// - Where `n` is the degree of the polynomial, `a` is the scaling factor, and `b` is the base amount.
-    ///
-    /// # Description
-    /// - Higher-degree polynomials allow for flexible emission curves.
-    /// - Use for growth or decay patterns that aren't linear.
+    /// # Details
+    /// - If `a > 0`, emissions increase over time.
+    /// - If `a < 0`, emissions decrease over time.
     ///
     /// # Use Case
-    /// - Reward systems with diminishing returns as time progresses.
+    /// - When a smooth, gradual change in emissions is needed.
+    /// - Useful when fractional (floating-point) rate adjustments are desired.
     ///
     /// # Example
-    /// - Emit rewards based on a quadratic curve: `f(x) = 2x^2 + 20`.
-    PolynomialInteger {
+    /// - Starting at 50 tokens and increasing by 0.5 tokens per period:
+    ///   ```text
+    ///   f(x) = 0.5 * (x - s) / d + 50
+    ///   ```
+    Linear {
         a: i64,
-        n: i64,
-        b: SignedTokenAmount,
+        d: u64,
+        s: Option<u64>,
+        b: TokenAmount,
+        min_value: Option<u64>,
+        max_value: Option<u64>,
     },
 
-    /// A polynomial function emits tokens according to a quadratic or cubic curve (floating-point precision).
+    /// Emits tokens following a polynomial curve with integer arithmetic.
     ///
     /// # Formula
-    /// - `f(x) = a * x^n + b`
-    /// - Where `n` is the degree of the polynomial, `a` is the scaling factor, and `b` is the base amount.
+    /// The emission at period `x` is given by:
     ///
-    /// # Description
-    /// - Similar to `PolynomialInteger`, but supports fractional scaling and degrees.
+    /// ```text
+    /// f(x) = (a * (x - s + o)^(m/n)) / d + b
+    /// ```
     ///
-    /// # Example
-    /// - Emit rewards based on a cubic curve with fractional growth: `f(x) = 0.5x^3 + 20`.
-    PolynomialFloat {
-        a: NotNan<f64>,
-        n: NotNan<f64>,
-        b: SignedTokenAmount,
-    },
-
-    /// An exponential function emits tokens based on exponential growth or decay.
-    ///
-    /// # Formula
-    /// - `f(x) = a * e^(b * x) + c`
-    /// - Where `a` is the scaling factor, `b` controls the growth/decay rate, and `c` is an offset.
-    ///
-    /// # Description
-    /// - Exponential growth: `b > 0`, emissions increase rapidly.
-    /// - Exponential decay: `b < 0`, emissions decrease rapidly.
-    /// - Useful for early incentivization or ecosystem maturity.
+    /// # Parameters
+    /// - `a`: Scaling factor for the polynomial term.
+    /// - `m` and `n`: Together specify the exponent as a rational number (allowing non-integer exponents).
+    /// - `d`: A divisor for scaling.
+    /// - `s`: Optional start period offset. If not provided, the contract creation start is used.
+    /// - `o`: An offset for the polynomial function, this is useful if s is in None,
+    /// - `b`: An offset added to the computed value.
+    /// - `min_value` / `max_value`: Optional bounds to constrain the emission.
     ///
     /// # Use Case
-    /// - Reward mechanisms where early contributors get larger rewards.
+    /// - Reward systems where returns diminish (or increase) non-linearly over time.
     ///
     /// # Example
-    /// - Start with 100 tokens and halve emissions every interval, with a minimum of 5 tokens: `f(x) = 100 * e^(-0.693 * x) + 5`.
+    /// - A quadratic emission curve might look like:
+    ///   ```text
+    ///   f(x) = 2 * (x - s + o)^2 / d + 20
+    ///   ```
+    Polynomial {
+        a: i64,
+        d: u64,
+        m: u64,
+        n: u64,
+        o: i64,
+        s: Option<u64>,
+        b: TokenAmount,
+        min_value: Option<u64>,
+        max_value: Option<u64>,
+    },
+
+    /// Emits tokens following an exponential function.
+    ///
+    /// # Formula
+    /// The emission at period `x` is given by:
+    ///
+    /// ```text
+    /// f(x) = (a * e^(m * (x - s) / n)) / d + c
+    /// ```
+    ///
+    /// # Parameters
+    /// - `a`: The scaling factor.
+    /// - `m` and `n`: Define the exponent rate (with `m > 0` for growth and `m < 0` for decay).
+    /// - `d`: A divisor used to scale the exponential term.
+    /// - `s`: Optional start period offset. If not set, the contract creation start is assumed.
+    /// - `o`: An offset for the exp function, this is useful if s is in None.
+    /// - `c`: An offset added to the result.
+    /// - `min_value` / `max_value`: Optional constraints on the emitted tokens.
+    ///
+    /// # Use Case
+    /// - Reward systems where early contributors receive disproportionately higher rewards.
+    ///
+    /// # Example
+    /// - Starting with 100 tokens and halving emissions each interval (with a minimum of 5 tokens):
+    ///   ```text
+    ///   f(x) = 100 * e^(m * (x - s + o) / n) / d + 5
+    ///   ```
     Exponential {
-        a: NotNan<f64>,
-        b: NotNan<f64>,
-        c: SignedTokenAmount,
+        a: i64,
+        d: u64,
+        m: i64,
+        n: u64,
+        o: i64,
+        s: Option<u64>,
+        c: TokenAmount,
+        min_value: Option<u64>,
+        max_value: Option<u64>,
     },
 
-    /// A logarithmic function emits tokens based on logarithmic growth.
+    /// Emits tokens following a logarithmic function.
     ///
     /// # Formula
-    /// - `f(x) = a * log_b(x) + c`
-    /// - Where `a` is the scaling factor, `b` is the logarithm base, and `c` is an offset.
+    /// The emission at period `x` is computed as:
     ///
-    /// # Description
-    /// - Growth starts quickly but slows as `x` increases.
-    /// - Suitable for sustainable emissions over long periods.
+    /// ```text
+    /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
+    /// ```
+    ///
+    /// # Parameters
+    /// - `a`: Scaling factor for the logarithmic term.
+    /// - `d`: A divisor for scaling.
+    /// - `m` and `n`: Adjust the input to the logarithm function.
+    /// - `s`: Optional start period offset. If not provided, the contract creation start is used.
+    /// - `o`: An offset for the log function, this is useful if s is in None.
+    /// - `b`: An offset added to the result.
+    /// - `min_value` / `max_value`: Optional bounds to ensure the emission remains within limits.
     ///
     /// # Use Case
-    /// - Gradual emissions tapering to balance supply and demand.
+    /// - Suitable for long-term reward schedules where emissions need to increase at a diminishing rate.
     ///
     /// # Example
-    /// - Emit rewards using a log base-2 curve: `f(x) = 20 * log_2(x) + 5`.
+    /// - An emission function following a logarithmic curve:
+    ///   ```text
+    ///   f(x) = 20 * log(m * (x - s) / n) / d + 5
+    ///   ```
     Logarithmic {
-        a: NotNan<f64>,
-        b: NotNan<f64>,
-        c: SignedTokenAmount,
+        a: i64,
+        d: u64,
+        m: i64,
+        n: u64,
+        o: i64,
+        s: Option<u64>,
+        b: TokenAmount,
+        min_value: Option<u64>,
+        max_value: Option<u64>,
     },
-
-    /// A stepwise function emits tokens in fixed amounts for predefined intervals.
-    ///
-    /// # Description
-    /// - Emissions remain constant within each step.
-    /// - Steps define specific time intervals or milestones.
-    ///
-    /// # Use Case
-    /// - Adjust rewards at specific milestones.
-    ///
-    /// # Example
-    /// - Emit 100 tokens per block for the first 1000 blocks, then 50 tokens thereafter.
-    Stepwise(Vec<(u64, TokenAmount)>),
 }
 
 impl fmt::Display for DistributionFunction {
@@ -181,60 +236,135 @@ impl fmt::Display for DistributionFunction {
             }
             DistributionFunction::StepDecreasingAmount {
                 step_count,
-                decrease_per_interval,
+                decrease_per_interval_numerator,
+                decrease_per_interval_denominator,
+                s,
                 n,
+                min_value,
             } => {
                 write!(
                     f,
-                    "StepDecreasingAmount: {} tokens, decreasing by {:.3}% every {} steps",
-                    n,
-                    decrease_per_interval.into_inner() * 100.0,
-                    step_count
-                )
-            }
-            DistributionFunction::LinearInteger { a, b } => {
-                write!(f, "LinearInteger: f(x) = {} * x + {}", a, b)
-            }
-            DistributionFunction::LinearFloat { a, b } => {
-                write!(f, "LinearFloat: f(x) = {:.3} * x + {}", a.into_inner(), b)
-            }
-            DistributionFunction::PolynomialInteger { a, n, b } => {
-                write!(f, "PolynomialInteger: f(x) = {} * x^{} + {}", a, n, b)
-            }
-            DistributionFunction::PolynomialFloat { a, n, b } => {
-                write!(
-                    f,
-                    "PolynomialFloat: f(x) = {:.3} * x^{:.3} + {}",
-                    a.into_inner(),
-                    n.into_inner(),
-                    b
-                )
-            }
-            DistributionFunction::Exponential { a, b, c } => {
-                write!(
-                    f,
-                    "Exponential: f(x) = {:.3} * e^({:.3} * x) + {}",
-                    a.into_inner(),
-                    b.into_inner(),
-                    c
-                )
-            }
-            DistributionFunction::Logarithmic { a, b, c } => {
-                write!(
-                    f,
-                    "Logarithmic: f(x) = {:.3} * log_{:.3}(x) + {}",
-                    a.into_inner(),
-                    b.into_inner(),
-                    c
-                )
+                    "StepDecreasingAmount: {} tokens, decreasing by {}/{} every {} steps",
+                    n, decrease_per_interval_numerator, decrease_per_interval_denominator, step_count
+                )?;
+                if let Some(start) = s {
+                    write!(f, " starting at period {}", start)?;
+                }
+                if let Some(min) = min_value {
+                    write!(f, ", with a minimum emission of {}", min)?;
+                }
+                Ok(())
             }
             DistributionFunction::Stepwise(steps) => {
-                write!(f, "Stepwise: ")?;
-                for (index, (step, amount)) in steps.iter().enumerate() {
-                    if index > 0 {
+                write!(f, "Stepwise emission: ")?;
+                let mut first = true;
+                for (step, amount) in steps {
+                    if !first {
                         write!(f, ", ")?;
                     }
-                    write!(f, "Step {} -> {}", step, amount)?;
+                    first = false;
+                    write!(f, "[Step {} → {} tokens]", step, amount)?;
+                }
+                Ok(())
+            }
+            DistributionFunction::Linear {
+                a,
+                d,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                write!(f, "Linear: f(x) = {} * (x", a)?;
+                if let Some(start) = s {
+                    write!(f, " - {})", start)?;
+                } else {
+                    write!(f, ")")?;
+                }
+                write!(f, " / {}) + {}", d, b)?;
+                if let Some(min) = min_value {
+                    write!(f, ", min: {}", min)?;
+                }
+                if let Some(max) = max_value {
+                    write!(f, ", max: {}", max)?;
+                }
+                Ok(())
+            }
+            DistributionFunction::Polynomial {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                write!(f, "Polynomial: f(x) = {} * (x", a)?;
+                if let Some(start) = s {
+                    write!(f, " - {} + {})", start, o)?;
+                } else {
+                    write!(f, " + {})", o)?;
+                }
+                write!(f, "^( {} / {} ) / {} + {}", m, n, d, b)?;
+                if let Some(min) = min_value {
+                    write!(f, ", min: {}", min)?;
+                }
+                if let Some(max) = max_value {
+                    write!(f, ", max: {}", max)?;
+                }
+                Ok(())
+            }
+            DistributionFunction::Exponential {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                c,
+                min_value,
+                max_value,
+            } => {
+                write!(f, "Exponential: f(x) = {} * e^( {} * (x", a, m)?;
+                if let Some(start) = s {
+                    write!(f, " - {} + {})", start, o)?;
+                } else {
+                    write!(f, " + {})", o)?;
+                }
+                write!(f, " / {} ) / {} + {}", n, d, c)?;
+                if let Some(min) = min_value {
+                    write!(f, ", min: {}", min)?;
+                }
+                if let Some(max) = max_value {
+                    write!(f, ", max: {}", max)?;
+                }
+                Ok(())
+            }
+            DistributionFunction::Logarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                write!(f, "Logarithmic: f(x) = {} * log( {} * (x", a, m)?;
+                if let Some(start) = s {
+                    write!(f, " - {} + {})", start, o)?;
+                } else {
+                    write!(f, " + {})", o)?;
+                }
+                write!(f, " / {} ) / {} + {}", n, d, b)?;
+                if let Some(min) = min_value {
+                    write!(f, ", min: {}", min)?;
+                }
+                if let Some(max) = max_value {
+                    write!(f, ", max: {}", max)?;
                 }
                 Ok(())
             }

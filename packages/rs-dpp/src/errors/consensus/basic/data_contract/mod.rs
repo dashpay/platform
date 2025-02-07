@@ -38,6 +38,9 @@ mod unknown_security_level_error;
 mod unknown_storage_key_requirements_error;
 mod unknown_trade_mode_error;
 mod unknown_transferable_type_error;
+mod invalid_token_distribution_function_divide_by_zero;
+mod invalid_token_distribution_function_invalid_parameter;
+mod invalid_token_distribution_function_invalid_parameter_tuple;
 
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;
@@ -80,3 +83,6 @@ pub use unknown_security_level_error::*;
 pub use unknown_storage_key_requirements_error::*;
 pub use unknown_trade_mode_error::*;
 pub use unknown_transferable_type_error::*;
+pub use invalid_token_distribution_function_divide_by_zero::*;
+pub use invalid_token_distribution_function_invalid_parameter::*;
+pub use invalid_token_distribution_function_invalid_parameter_tuple::*;
