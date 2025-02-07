@@ -2,6 +2,7 @@
 
 use crate::utils::from_opt_str_or_number;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 // We allow changes in the ABCI configuration, but there should be a social process
 // involved in making this change.
@@ -59,5 +60,64 @@ impl Default for AbciConfig {
             log: Default::default(),
             proposer_tx_processing_time_limit: Default::default(),
         }
+    }
+}
+
+/// Configuration for StateSync feature
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StateSyncAbciConfig {
+    /// Enable snapshot
+    pub snapshots_enabled: bool,
+
+    /// Path to checkpoints
+    #[serde(default = "StateSyncAbciConfig::default_checkpoints_path")]
+    pub checkpoints_path: PathBuf,
+
+    /// Frequency of snapshot creation (in blocks)
+    pub snapshots_frequency: i64,
+
+    /// Maximum number of snapshots to keep
+    pub max_num_snapshots: usize,
+}
+
+impl Default for StateSyncAbciConfig {
+    fn default() -> Self {
+        Self::default_mainnet()
+    }
+}
+
+#[allow(missing_docs)]
+impl StateSyncAbciConfig {
+    pub fn default_local() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_frequency: 10,
+            max_num_snapshots: 100,
+        }
+    }
+
+    pub fn default_testnet() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_frequency: 10,
+            max_num_snapshots: 100,
+        }
+    }
+
+    pub fn default_mainnet() -> Self {
+        Self {
+            snapshots_enabled: true,
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
+            snapshots_frequency: 10,
+            max_num_snapshots: 100,
+        }
+    }
+
+    fn default_checkpoints_path() -> PathBuf {
+        std::env::var("CHECKPOINTS_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/var/lib/dash-platform/data/checkpoints"))
     }
 }

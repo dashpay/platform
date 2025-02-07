@@ -26,6 +26,7 @@ mod masternode_list_item_helpers;
 mod masternodes;
 mod patch_platform_tests;
 mod query;
+mod state_sync;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
