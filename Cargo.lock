@@ -1547,6 +1547,7 @@ dependencies = [
  "ciborium 0.2.0",
  "clap",
  "console-subscriber",
+ "crc",
  "dapi-grpc",
  "dashcore-rpc",
  "delegate",
