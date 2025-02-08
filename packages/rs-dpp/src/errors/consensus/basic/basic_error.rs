@@ -6,7 +6,28 @@ use thiserror::Error;
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
-use crate::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError, DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use crate::consensus::basic::data_contract::{
+    ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
+    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
+    InvalidTokenDistributionFunctionDivideByZeroError,
+    InvalidTokenDistributionFunctionIncoherenceError,
+    InvalidTokenDistributionFunctionInvalidParameterError,
+    InvalidTokenDistributionFunctionInvalidParameterTupleError,
+    NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
+};
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
@@ -423,17 +444,25 @@ pub enum BasicError {
     InvalidTokenConfigUpdateNoChangeError(InvalidTokenConfigUpdateNoChangeError),
 
     #[error(transparent)]
-    InvalidTokenDistributionFunctionDivideByZeroError(InvalidTokenDistributionFunctionDivideByZeroError),
+    InvalidTokenDistributionFunctionDivideByZeroError(
+        InvalidTokenDistributionFunctionDivideByZeroError,
+    ),
 
     #[error(transparent)]
-    InvalidTokenDistributionFunctionInvalidParameterError(InvalidTokenDistributionFunctionInvalidParameterError),
+    InvalidTokenDistributionFunctionInvalidParameterError(
+        InvalidTokenDistributionFunctionInvalidParameterError,
+    ),
 
     #[error(transparent)]
-    InvalidTokenDistributionFunctionInvalidParameterTupleError(InvalidTokenDistributionFunctionInvalidParameterTupleError),
+    InvalidTokenDistributionFunctionInvalidParameterTupleError(
+        InvalidTokenDistributionFunctionInvalidParameterTupleError,
+    ),
 
     #[error(transparent)]
-    InvalidTokenDistributionFunctionIncoherenceError(InvalidTokenDistributionFunctionIncoherenceError),
-    
+    InvalidTokenDistributionFunctionIncoherenceError(
+        InvalidTokenDistributionFunctionIncoherenceError,
+    ),
+
     #[error(transparent)]
     TokenTransferToOurselfError(TokenTransferToOurselfError),
 

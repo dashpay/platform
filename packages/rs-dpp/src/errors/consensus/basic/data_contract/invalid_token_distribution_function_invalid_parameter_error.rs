@@ -36,7 +36,12 @@ pub struct InvalidTokenDistributionFunctionInvalidParameterError {
 
 impl InvalidTokenDistributionFunctionInvalidParameterError {
     pub fn new(parameter: String, min: i64, max: i64, not_valid: Option<i64>) -> Self {
-        Self { parameter, min, max, not_valid }
+        Self {
+            parameter,
+            min,
+            max,
+            not_valid,
+        }
     }
 
     pub fn parameter(&self) -> &str {

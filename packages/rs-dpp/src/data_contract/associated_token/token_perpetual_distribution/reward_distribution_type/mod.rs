@@ -1,15 +1,17 @@
 use crate::balances::credits::TokenAmount;
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-use crate::prelude::{BlockHeight, BlockHeightInterval, EpochInterval, TimestampMillis, TimestampMillisInterval};
+use crate::prelude::{
+    BlockHeight, BlockHeightInterval, EpochInterval, TimestampMillis, TimestampMillisInterval,
+};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::block::epoch::EpochIndex;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum RewardDistributionType {
     /// An amount of tokens is emitted every n blocks
-    BlockBasedDistribution{
+    BlockBasedDistribution {
         interval: BlockHeightInterval,
         amount: TokenAmount,
         function: DistributionFunction,
@@ -17,7 +19,7 @@ pub enum RewardDistributionType {
         end: Option<BlockHeight>,
     },
     /// An amount of tokens is emitted every amount of time given
-    TimeBasedDistribution{
+    TimeBasedDistribution {
         interval: TimestampMillisInterval,
         amount: TokenAmount,
         function: DistributionFunction,
@@ -25,18 +27,24 @@ pub enum RewardDistributionType {
         end: Option<TimestampMillis>,
     },
     /// An amount of tokens is emitted every amount of epochs
-    EpochBasedDistribution{
+    EpochBasedDistribution {
         interval: EpochInterval,
         amount: TokenAmount,
         function: DistributionFunction,
         start: Option<EpochIndex>,
         end: Option<EpochIndex>,
-    }
+    },
 }
 impl fmt::Display for RewardDistributionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RewardDistributionType::BlockBasedDistribution { interval, amount, function, start, end } => {
+            RewardDistributionType::BlockBasedDistribution {
+                interval,
+                amount,
+                function,
+                start,
+                end,
+            } => {
                 write!(
                     f,
                     "BlockBasedDistribution: {} tokens every {} blocks using {}",
@@ -50,7 +58,13 @@ impl fmt::Display for RewardDistributionType {
                 }
                 Ok(())
             }
-            RewardDistributionType::TimeBasedDistribution { interval, amount, function, start, end } => {
+            RewardDistributionType::TimeBasedDistribution {
+                interval,
+                amount,
+                function,
+                start,
+                end,
+            } => {
                 write!(
                     f,
                     "TimeBasedDistribution: {} tokens every {} milliseconds using {}",
@@ -64,7 +78,13 @@ impl fmt::Display for RewardDistributionType {
                 }
                 Ok(())
             }
-            RewardDistributionType::EpochBasedDistribution { interval, amount, function, start, end } => {
+            RewardDistributionType::EpochBasedDistribution {
+                interval,
+                amount,
+                function,
+                start,
+                end,
+            } => {
                 write!(
                     f,
                     "EpochBasedDistribution: {} tokens every {} epochs using {}",

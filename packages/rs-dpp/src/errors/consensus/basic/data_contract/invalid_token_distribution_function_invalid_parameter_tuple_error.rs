@@ -52,6 +52,8 @@ impl InvalidTokenDistributionFunctionInvalidParameterTupleError {
 
 impl From<InvalidTokenDistributionFunctionInvalidParameterTupleError> for ConsensusError {
     fn from(err: InvalidTokenDistributionFunctionInvalidParameterTupleError) -> Self {
-        Self::BasicError(BasicError::InvalidTokenDistributionFunctionInvalidParameterTupleError(err))
+        Self::BasicError(
+            BasicError::InvalidTokenDistributionFunctionInvalidParameterTupleError(err),
+        )
     }
 }

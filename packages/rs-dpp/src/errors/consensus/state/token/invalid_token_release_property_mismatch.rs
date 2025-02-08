@@ -1,15 +1,19 @@
+use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-use crate::consensus::state::state_error::StateError;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Invalid token release property mismatch for '{}', token ID: {}", property, token_id)]
+#[error(
+    "Invalid token release property mismatch for '{}', token ID: {}",
+    property,
+    token_id
+)]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenReleasePropertyMismatch {
     property: String,

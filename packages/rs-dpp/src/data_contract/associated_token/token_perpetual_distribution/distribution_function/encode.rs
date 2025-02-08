@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use bincode::{BorrowDecode, Decode, Encode};
+use std::collections::BTreeMap;
 
 impl Encode for DistributionFunction {
     fn encode<E: bincode::enc::Encoder>(
@@ -232,7 +232,9 @@ impl Decode for DistributionFunction {
                     max_value,
                 })
             }
-            _ => Err(bincode::error::DecodeError::OtherString("Invalid variant".into())),
+            _ => Err(bincode::error::DecodeError::OtherString(
+                "Invalid variant".into(),
+            )),
         }
     }
 }
@@ -349,7 +351,9 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     max_value,
                 })
             }
-            _ => Err(bincode::error::DecodeError::OtherString("Invalid variant".into())),
+            _ => Err(bincode::error::DecodeError::OtherString(
+                "Invalid variant".into(),
+            )),
         }
     }
 }

@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
 use crate::balances::credits::TokenAmount;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 mod encode;
-mod validation;
 mod methods;
+mod validation;
 
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
 
@@ -245,7 +245,10 @@ impl fmt::Display for DistributionFunction {
                 write!(
                     f,
                     "StepDecreasingAmount: {} tokens, decreasing by {}/{} every {} steps",
-                    n, decrease_per_interval_numerator, decrease_per_interval_denominator, step_count
+                    n,
+                    decrease_per_interval_numerator,
+                    decrease_per_interval_denominator,
+                    step_count
                 )?;
                 if let Some(start) = s {
                     write!(f, " starting at period {}", start)?;
