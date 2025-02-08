@@ -178,7 +178,7 @@ pub enum DistributionFunction {
     ///   f(x) = 100 * e^(m * (x - s + o) / n) / d + 5
     ///   ```
     Exponential {
-        a: i64,
+        a: u64,
         d: u64,
         m: i64,
         n: u64,

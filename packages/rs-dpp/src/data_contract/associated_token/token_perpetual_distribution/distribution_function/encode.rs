@@ -189,7 +189,7 @@ impl Decode for DistributionFunction {
                 })
             }
             5 => {
-                let a = i64::decode(decoder)?;
+                let a = u64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
                 let m = i64::decode(decoder)?;
                 let n = u64::decode(decoder)?;
@@ -306,7 +306,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 })
             }
             5 => {
-                let a = i64::borrow_decode(decoder)?;
+                let a = u64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
                 let m = i64::borrow_decode(decoder)?;
                 let n = u64::borrow_decode(decoder)?;

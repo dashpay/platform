@@ -105,6 +105,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionFunctionDivideByZeroError(_) => 10254,
             Self::InvalidTokenDistributionFunctionInvalidParameterError(_) => 10254,
             Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10255,
+            Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10256,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

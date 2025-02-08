@@ -1,4 +1,4 @@
-use crate::consensus::basic::data_contract::{InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError};
+use crate::consensus::basic::data_contract::{InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError};
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM};
 use crate::ProtocolError;
 use crate::validation::SimpleConsensusValidationResult;
@@ -13,6 +13,7 @@ impl DistributionFunction {
                             "n".to_string(),
                             1,
                             u32::MAX as i64,
+                            None,
                         )
                             .into(),
                     ));
@@ -34,6 +35,7 @@ impl DistributionFunction {
                             "n".to_string(),
                             1,
                             u32::MAX as i64,
+                            None,
                         )
                             .into(),
                     ));
@@ -78,6 +80,7 @@ impl DistributionFunction {
                                 "s".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into()))
                     }
@@ -92,6 +95,7 @@ impl DistributionFunction {
                             "steps".to_string(),
                             2,
                             u16::MAX as i64,
+                            None,
                         )
                             .into(),
                     ));
@@ -124,6 +128,7 @@ impl DistributionFunction {
                                 "s".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into()))
                     }
@@ -136,6 +141,7 @@ impl DistributionFunction {
                                 "max".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -159,6 +165,7 @@ impl DistributionFunction {
                                 "start_token_amount".to_string(),
                                 *min as i64,
                                 max_value.unwrap_or(MAX_DISTRIBUTION_PARAM) as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -171,6 +178,7 @@ impl DistributionFunction {
                                 "start_token_amount".to_string(),
                                 0,
                                 *max as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -197,6 +205,7 @@ impl DistributionFunction {
                                 "s".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into()))
                     }
@@ -208,6 +217,7 @@ impl DistributionFunction {
                             "o".to_string(),
                             -(MAX_DISTRIBUTION_PARAM as i64),
                             MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                             .into()))
                 }
@@ -218,6 +228,7 @@ impl DistributionFunction {
                             "o".to_string(),
                             -(MAX_DISTRIBUTION_PARAM as i64),
                             MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                             .into()))
                 }
@@ -229,6 +240,7 @@ impl DistributionFunction {
                                 "max".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -267,6 +279,7 @@ impl DistributionFunction {
                                 "start_token_amount".to_string(),
                                 *min as i64,
                                 max_value.unwrap_or(MAX_DISTRIBUTION_PARAM) as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -279,13 +292,14 @@ impl DistributionFunction {
                                 "start_token_amount".to_string(),
                                 0,
                                 *max as i64,
+                                None,
                             )
                                 .into(),
                         ));
                     }
                 }
             }
-
+            // f(x) = (a * e^(m * (x - s + o) / n)) / d + c
             DistributionFunction::Exponential { a, d, m, n, o, s, c, min_value, max_value } => {
                 if *d == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -297,6 +311,29 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
+                if *m == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new("m".to_string(), -(MAX_DISTRIBUTION_PARAM as i64), MAX_DISTRIBUTION_PARAM as i64, Some(0)).into(),
+                    ));
+                }
+                if *a == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new("a".to_string(), 1, MAX_DISTRIBUTION_PARAM as i64, None).into(),
+                    ));
+                }
+                
+                if *m > 0 {
+                    // m is positive means that we need a max value set
+                    if max_value.is_none() {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                            "max_value".to_string(),
+                            "m".to_string(),
+                            "set if the following parameter is positive".to_string(),
+                        )
+                            .into()));
+                    }
+                }
 
                 if let Some(s) = s {
                     if *s > MAX_DISTRIBUTION_PARAM {
@@ -305,6 +342,7 @@ impl DistributionFunction {
                                 "s".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into()))
                     }
@@ -316,6 +354,18 @@ impl DistributionFunction {
                             "o".to_string(),
                             -(MAX_DISTRIBUTION_PARAM as i64),
                             MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                            .into()))
+                }
+
+                if *a > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "a".to_string(),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                             .into()))
                 }
@@ -326,6 +376,7 @@ impl DistributionFunction {
                             "o".to_string(),
                             -(MAX_DISTRIBUTION_PARAM as i64),
                             MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                             .into()))
                 }
@@ -337,6 +388,7 @@ impl DistributionFunction {
                                 "max".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -356,42 +408,56 @@ impl DistributionFunction {
                     }
                 }
 
-                let start_token_amount = DistributionFunction::Exponential {
-                    a: *a,
-                    d: *d,
-                    m: *m,
-                    n: *n,
-                    o: *o,
-                    s: Some(s.unwrap_or(start_moment)),
-                    c: *c,
-                    min_value: None,
-                    max_value: None,
-                }.evaluate(start_moment)?;
-
-                if let Some(min) = min_value {
-                    if start_token_amount < *min {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenDistributionFunctionInvalidParameterError::new(
-                                "start_token_amount".to_string(),
-                                *min as i64,
-                                max_value.unwrap_or(MAX_DISTRIBUTION_PARAM) as i64,
-                            )
-                                .into(),
-                        ));
+                if *m > 0 {
+                    // we want to put in the max value to see if we are starting off at the max
+                    // value.
+                    // if we are starting at the max value there's no point at doing an exp
+                    let start_token_amount = DistributionFunction::Exponential {
+                        a: *a,
+                        d: *d,
+                        m: *m,
+                        n: *n,
+                        o: *o,
+                        s: Some(s.unwrap_or(start_moment)),
+                        c: *c,
+                        min_value: *min_value,
+                        max_value: *max_value, 
+                    }.evaluate(start_moment)?;
+                    if let Some(max) = max_value {
+                        if start_token_amount == *max {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidTokenDistributionFunctionIncoherenceError::new(
+                                    "since m is positive the exponential function will increase, however it starts at the maximum value already which makes the function never used".to_string(),
+                                )
+                                    .into(),
+                            ));
+                        }
                     }
-                }
-                if let Some(max) = max_value {
-                    if start_token_amount > *max {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenDistributionFunctionInvalidParameterError::new(
-                                "start_token_amount".to_string(),
-                                0,
-                                *max as i64,
-                            )
-                                .into(),
-                        ));
+                    start_token_amount
+                } else {
+                    let start_token_amount = DistributionFunction::Exponential {
+                        a: *a,
+                        d: *d,
+                        m: *m,
+                        n: *n,
+                        o: *o,
+                        s: Some(s.unwrap_or(start_moment)),
+                        c: *c,
+                        min_value: *min_value,
+                        max_value: *max_value,
+                    }.evaluate(start_moment)?;
+                    if let Some(min) = min_value {
+                        if start_token_amount == *min {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidTokenDistributionFunctionIncoherenceError::new(
+                                    "since m is negative the exponential function will decrease, however it starts at the minimum value which makes the function never used".to_string(),
+                                )
+                                    .into(),
+                            ));
+                        }
                     }
-                }
+                    start_token_amount
+                };
             }
             // f(x) = (a * log(m * (x - s + o) / n)) / d + b
             DistributionFunction::Logarithmic { a, d, m, n, o, s, b, min_value, max_value } => {
@@ -413,6 +479,7 @@ impl DistributionFunction {
                                 "s".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into()))
                     }
@@ -425,6 +492,7 @@ impl DistributionFunction {
                                 "max".to_string(),
                                 0,
                                 MAX_DISTRIBUTION_PARAM as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -437,6 +505,7 @@ impl DistributionFunction {
                             "o".to_string(),
                             -(MAX_DISTRIBUTION_PARAM as i64),
                             MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                             .into()))
                 }
@@ -447,6 +516,7 @@ impl DistributionFunction {
                             "o".to_string(),
                             -(MAX_DISTRIBUTION_PARAM as i64),
                             MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                             .into()))
                 }
@@ -496,6 +566,7 @@ impl DistributionFunction {
                                 "start_token_amount".to_string(),
                                 *min as i64,
                                 max_value.unwrap_or(MAX_DISTRIBUTION_PARAM) as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -508,6 +579,7 @@ impl DistributionFunction {
                                 "start_token_amount".to_string(),
                                 0,
                                 *max as i64,
+                                None,
                             )
                                 .into(),
                         ));
@@ -699,14 +771,19 @@ mod tests {
             d: 10,
             m: 1,
             n: 2,
-            o: 0,
+            o: -3999,
             s: Some(0),
             c: 10,
             min_value: Some(1),
-            max_value: Some(100),
+            max_value: Some(1000000),
         };
         let result = dist.validate(START_MOMENT);
-        assert!(result.expect("no error on test_exponential_valid").first_error().is_none());
+        if let Err(err) = &result {
+            panic!("Test failed: unexpected error: {:?}", err);
+        }
+        if let Some(error) = result.expect("no error on test_exponential_valid").first_error() {
+            panic!("Test failed: validation error: {:?}", error);
+        }
     }
 
     #[test]
@@ -724,6 +801,334 @@ mod tests {
         };
         let result = dist.validate(START_MOMENT);
         assert!(result.expect("no error on test_exponential_invalid_zero_n").first_error().is_some());
+    }
+
+    #[test]
+    fn test_exponential_invalid_zero_m() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 10,
+            m: 0, // Invalid: `m` should not be zero
+            n: 2,
+            o: 1,
+            s: Some(0),
+            c: 10,
+            min_value: Some(1),
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_zero_m").first_error().is_some(),
+            "Expected error: m should not be zero"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_zero_a() {
+        let dist = DistributionFunction::Exponential {
+            a: 0, // Invalid: `a` cannot be zero
+            d: 10,
+            m: 1,
+            n: 2,
+            o: 1,
+            s: Some(0),
+            c: 10,
+            min_value: Some(1),
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_zero_a").first_error().is_some(),
+            "Expected error: a cannot be zero"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_max_missing_when_m_positive() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 10,
+            m: 1, // `m > 0`, so `max_value` must be set
+            n: 2,
+            o: 1,
+            s: Some(0),
+            c: 10,
+            min_value: Some(1),
+            max_value: None, // Invalid: max_value must be set
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_max_missing_when_m_positive")
+                .first_error()
+                .is_some(),
+            "Expected error: max_value must be set when m > 0"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_o_too_large() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 10,
+            m: 1,
+            n: 2,
+            o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: `o` exceeds allowed range
+            s: Some(0),
+            c: 10,
+            min_value: Some(1),
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_o_too_large").first_error().is_some(),
+            "Expected error: o exceeds MAX_DISTRIBUTION_PARAM"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_min_greater_than_max() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 10,
+            m: -1,
+            n: 2,
+            o: 1,
+            s: Some(0),
+            c: 10,
+            min_value: Some(50), // Invalid: min > max
+            max_value: Some(30),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_min_greater_than_max")
+                .first_error()
+                .is_some(),
+            "Expected error: min_value > max_value"
+        );
+    }
+
+    #[test]
+    fn test_exponential_valid_with_negative_m() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 5,
+            m: -2, // Valid: Decay function (exponential decrease)
+            n: 4,
+            o: 2,
+            s: Some(START_MOMENT),
+            c: 8,
+            min_value: Some(2),
+            max_value: Some(50),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(result.expect("no error on test_exponential_valid_with_negative_m").first_error().is_none());
+    }
+
+    #[test]
+    fn test_exponential_valid_with_max_boundary() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 5,
+            m: 2,
+            n: 4,
+            o: 1,
+            s: Some(START_MOMENT),
+            c: 8,
+            min_value: Some(2),
+            max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(result.expect("no error on test_exponential_valid_with_max_boundary").first_error().is_none());
+    }
+
+    #[test]
+    fn test_exponential_invalid_large_start_token_amount() {
+        let dist = DistributionFunction::Exponential {
+            a: MAX_DISTRIBUTION_PARAM,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: 1,
+            s: Some(0),
+            c: 10,
+            min_value: Some(1),
+            max_value: Some(MAX_DISTRIBUTION_PARAM),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_large_start_token_amount")
+                .first_error()
+                .is_some(),
+            "Expected error: start_token_amount exceeds allowed range"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_a_too_large_for_max() {
+        let dist = DistributionFunction::Exponential {
+            a: MAX_DISTRIBUTION_PARAM, // Large `a`
+            d: 10,
+            m: 2, // Increasing
+            n: 1,
+            o: 0,
+            s: Some(0),
+            c: 10,
+            min_value: Some(1),
+            max_value: Some(1000), // Small `max_value`
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_a_too_large_for_max").first_error().is_some(),
+            "Expected error: `a` is too large, leading to immediate max_value"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_starts_at_min() {
+        let dist = DistributionFunction::Exponential {
+            a: 5,
+            d: 10,
+            m: -3, // Decreasing
+            n: 2,
+            o: 0,
+            s: Some(0),
+            c: 10,
+            min_value: Some(10), // Function starts at `min_value`
+            max_value: Some(1000),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_starts_at_min").first_error().is_some(),
+            "Expected IncoherenceError: function starts at `min_value`"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_missing_max_for_positive_m() {
+        let dist = DistributionFunction::Exponential {
+            a: 2,
+            d: 10,
+            m: 3, // Increasing
+            n: 2,
+            o: 1,
+            s: Some(0),
+            c: 5,
+            min_value: Some(1),
+            max_value: None, // Should fail
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_missing_max_for_positive_m").first_error().is_some(),
+            "Expected error: missing `max_value` when `m > 0`"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_large_o_overflow() {
+        let dist = DistributionFunction::Exponential {
+            a: 2,
+            d: 10,
+            m: 1,
+            n: 1,
+            o: i64::MAX / 2, // Large `o`
+            s: Some(0),
+            c: 5,
+            min_value: Some(1),
+            max_value: Some(MAX_DISTRIBUTION_PARAM),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_large_o_overflow").first_error().is_some(),
+            "Expected error: `o` is too large and causes overflow"
+        );
+    }
+
+    #[test]
+    fn test_exponential_invalid_a_too_small() {
+        let dist = DistributionFunction::Exponential {
+            a: 1, // Tiny `a`
+            d: 10,
+            m: -2, // Decreasing
+            n: 2,
+            o: 0,
+            s: Some(0),
+            c: 10,
+            min_value: Some(10),
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("no error on test_exponential_invalid_a_too_small").first_error().is_some(),
+            "Expected error: `a` is too small to make meaningful changes"
+        );
+    }
+
+    #[test]
+    fn test_exponential_valid_slow_increase() {
+        let dist = DistributionFunction::Exponential {
+            a: 1,
+            d: 50,
+            m: 1, // Small positive `m`
+            n: 10,
+            o: -3,
+            s: Some(0),
+            c: 5,
+            min_value: Some(10),
+            max_value: Some(1000),
+        };
+
+        let result = dist.validate(5);
+
+        match result {
+            Ok(validation_result) => {
+                if let Some(error) = validation_result.first_error() {
+                    panic!(
+                        "Test failed: Expected no error, but got: {:?}",
+                        error
+                    );
+                }
+            }
+            Err(protocol_error) => {
+                panic!(
+                    "Test failed: Expected validation success, but got ProtocolError: {:?}",
+                    protocol_error
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_exponential_valid_gentle_decay() {
+        let dist = DistributionFunction::Exponential {
+            a: 3,
+            d: 15,
+            m: -1, // Small negative `m`
+            n: 4,
+            o: 2,
+            s: Some(START_MOMENT),
+            c: 8,
+            min_value: Some(5),
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(result.expect("no error on test_exponential_valid_gentle_decay").first_error().is_none());
+    }
+
+    #[test]
+    fn test_exponential_valid_negative_m_with_o_offset() {
+        let dist = DistributionFunction::Exponential {
+            a: 5,
+            d: 8,
+            m: -2, // Decreasing
+            n: 3,
+            o: 5, // Shift start
+            s: Some(START_MOMENT),
+            c: 10,
+            min_value: Some(5),
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(result.expect("no error on test_exponential_valid_negative_m_with_o_offset").first_error().is_none());
     }
 
     #[test]
