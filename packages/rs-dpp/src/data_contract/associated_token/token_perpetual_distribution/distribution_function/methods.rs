@@ -218,11 +218,20 @@ impl DistributionFunction {
                         return Ok(*max_value);
                     }
                 }
-                if !value.is_finite() || value > (u64::MAX as f64) || value < 0.0 {
+                if !value.is_finite() || value > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
                         "Exponential function evaluation overflow or negative",
                     ));
                 }
+
+                if value < 0.0 {
+                    return if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    }
+                }
+                
                 let value_u64 = value as u64;
                 if let Some(min_value) = min_value {
                     if value_u64 < *min_value {
@@ -280,9 +289,99 @@ impl DistributionFunction {
                     ));
                 }
                 if value < 0.0 {
-                    return Ok(0);
+                    return if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    }
                 }
                 let value_u64 = value as u64;
+                if let Some(min_value) = min_value {
+                    if value_u64 < *min_value {
+                        return Ok(*min_value);
+                    }
+                }
+                Ok(value_u64)
+            }
+            DistributionFunction::InvertedLogarithmic { a, d, m, n, o, s, b, min_value, max_value } => {
+                // Check for division-by-zero: d, n, and m must be non-zero.
+                if *d == 0 {
+                    return Err(ProtocolError::DivideByZero(
+                        "InvertedLogarithmic: divisor d is 0".into(),
+                    ));
+                }
+                if *n == 0 {
+                    return Err(ProtocolError::DivideByZero(
+                        "InvertedLogarithmic: parameter n is 0".into(),
+                    ));
+                }
+                if *m == 0 {
+                    return Err(ProtocolError::DivideByZero(
+                        "InvertedLogarithmic: parameter m is 0".into(),
+                    ));
+                }
+
+                // Use the provided start period or default to 0.
+                let s_val = s.unwrap_or(0);
+
+                // Compute the adjusted time difference: (x - s + o).
+                // We use i128 to prevent overflow issues.
+                let diff = x as i128 - s_val as i128 + *o as i128;
+
+                // For the inverted logarithmic formula f(x) = (a * ln(n / (m * (x - s + o)))) / d + b,
+                // the denominator inside the log must be positive.
+                if diff <= 0 {
+                    return Err(ProtocolError::Overflow(
+                        "InvertedLogarithmic: (x - s + o) must be > 0".into(),
+                    ));
+                }
+
+                // Calculate the denominator for the logarithm: m * (x - s + o)
+                let denom_f = (*m as f64) * (diff as f64);
+                if denom_f <= 0.0 {
+                    return Err(ProtocolError::Overflow(
+                        "InvertedLogarithmic: computed denominator is non-positive".into(),
+                    ));
+                }
+
+                // Compute the logarithm argument: n / (m * (x - s + o))
+                let argument = (*n as f64) / denom_f;
+                if argument <= 0.0 {
+                    return Err(ProtocolError::Overflow(
+                        "InvertedLogarithmic: log argument is non-positive".into(),
+                    ));
+                }
+
+                let log_val = argument.ln();
+
+                // Compute the final value: (a * ln(...)) / d + b.
+                let value = ((*a as f64) * log_val / (*d as f64)) + (*b as f64);
+
+                // Clamp to max_value if provided.
+                if let Some(max_value) = max_value {
+                    if value > *max_value as f64 || (value.is_infinite() && value.is_sign_positive()) {
+                        return Ok(*max_value);
+                    }
+                }
+
+                // Ensure the computed value is finite and within the u64 range.
+                if !value.is_finite() || value > (u64::MAX as f64) {
+                    return Err(ProtocolError::Overflow(
+                        "InvertedLogarithmic: evaluation overflow".into(),
+                    ));
+                }
+                
+                if value < 0.0 {
+                    return if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    }
+                }
+                
+                let value_u64 = value as u64;
+
+                // Clamp to min_value if provided.
                 if let Some(min_value) = min_value {
                     if value_u64 < *min_value {
                         return Ok(*min_value);
@@ -358,545 +457,755 @@ mod tests {
             Err(ProtocolError::DivideByZero(_))
         ));
     }
+    mod linear {
+        use super::*;
+        #[test]
+        fn test_linear_function_increasing() {
+            let distribution = DistributionFunction::Linear {
+                a: 10,
+                d: 2,
+                s: Some(0),
+                b: 50,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_linear_function_increasing() {
-        let distribution = DistributionFunction::Linear {
-            a: 10,
-            d: 2,
-            s: Some(0),
-            b: 50,
-            min_value: None,
-            max_value: None,
-        };
+            assert_eq!(distribution.evaluate(0).unwrap(), 50);
+            assert_eq!(distribution.evaluate(2).unwrap(), 60);
+            assert_eq!(distribution.evaluate(4).unwrap(), 70);
+            assert_eq!(distribution.evaluate(6).unwrap(), 80);
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 50);
-        assert_eq!(distribution.evaluate(2).unwrap(), 60);
-        assert_eq!(distribution.evaluate(4).unwrap(), 70);
-        assert_eq!(distribution.evaluate(6).unwrap(), 80);
-    }
+        #[test]
+        fn test_linear_function_decreasing() {
+            let distribution = DistributionFunction::Linear {
+                a: -5,
+                d: 1,
+                s: Some(0),
+                b: 100,
+                min_value: Some(10),
+                max_value: None,
+            };
 
-    #[test]
-    fn test_linear_function_decreasing() {
-        let distribution = DistributionFunction::Linear {
-            a: -5,
-            d: 1,
-            s: Some(0),
-            b: 100,
-            min_value: Some(10),
-            max_value: None,
-        };
+            assert_eq!(distribution.evaluate(0).unwrap(), 100);
+            assert_eq!(distribution.evaluate(10).unwrap(), 50);
+            assert_eq!(distribution.evaluate(20).unwrap(), 10); // Should not go below min_value
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(10).unwrap(), 50);
-        assert_eq!(distribution.evaluate(20).unwrap(), 10); // Should not go below min_value
-    }
+        #[test]
+        fn test_linear_function_divide_by_zero() {
+            let distribution = DistributionFunction::Linear {
+                a: 10,
+                d: 0, // Invalid denominator
+                s: Some(0),
+                b: 50,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_linear_function_divide_by_zero() {
-        let distribution = DistributionFunction::Linear {
-            a: 10,
-            d: 0, // Invalid denominator
-            s: Some(0),
-            b: 50,
-            min_value: None,
-            max_value: None,
-        };
-
-        assert!(matches!(
-            distribution.evaluate(10),
-            Err(ProtocolError::DivideByZero(_))
-        ));
-    }
-
-    #[test]
-    fn test_polynomial_function() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 2,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 10,
-            min_value: None,
-            max_value: None,
-        };
-
-        assert_eq!(distribution.evaluate(0).unwrap(), 10);
-        assert_eq!(distribution.evaluate(2).unwrap(), 18);
-        assert_eq!(distribution.evaluate(3).unwrap(), 28);
-        assert_eq!(distribution.evaluate(4).unwrap(), 42);
-    }
-
-    #[test]
-    fn test_polynomial_function_overflow() {
-        let distribution = DistributionFunction::Polynomial {
-            a: i64::MAX,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 10,
-            min_value: None,
-            max_value: None,
-        };
-
-        let result = distribution.evaluate(1);
-        assert!(
-            matches!(result, Err(ProtocolError::Overflow(_))),
-            "Expected overflow but got {:?}",
-            result
-        );
-    }
-
-    // Test: Fractional exponent (exponent = 3/2)
-    #[test]
-    fn test_polynomial_function_fraction_exponent() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 1,
-            d: 1,
-            m: 3, // exponent is 3/2
-            n: 2,
-            o: 0,
-            s: Some(0),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        };
-        // (4 - 0 + 0)^(3/2) = 4^(3/2) = (sqrt(4))^3 = 2^3 = 8.
-        assert_eq!(distribution.evaluate(4).unwrap(), 8);
-    }
-
-    // Test: Negative coefficient a (should flip the sign)
-    #[test]
-    fn test_polynomial_function_negative_a() {
-        let distribution = DistributionFunction::Polynomial {
-            a: -1,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = -1 * (x^2). For x = 3: -1 * (3^2) = -9.
-        assert_eq!(distribution.evaluate(3).unwrap(), 0);
-    }
-
-    // Test: Non-zero shift parameter s (shifting the x coordinate)
-    #[test]
-    fn test_polynomial_function_with_shift() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 2,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: 0,
-            s: Some(2),
-            b: 10,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = 2 * ((x - 2)^2) + 10.
-        // At x = 2: (0)^2 = 0, f(2) = 10.
-        assert_eq!(distribution.evaluate(2).unwrap(), 10);
-        // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
-        assert_eq!(distribution.evaluate(3).unwrap(), 12);
-    }
-
-    // Test: Non-zero offset o (shifting the base of the power)
-    #[test]
-    fn test_polynomial_function_with_offset() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 2,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: 3,
-            s: Some(0),
-            b: 10,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = 2 * ((x - 0 + 3)^2) + 10.
-        // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
-        assert_eq!(distribution.evaluate(1).unwrap(), 42);
-    }
-
-    // Test: Constant function when m = 0 (should ignore x)
-    #[test]
-    fn test_polynomial_function_constant() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 5,
-            d: 1,
-            m: 0, // exponent 0 => (x-s+o)^0 = 1 (for any x where x-s+o ≠ 0)
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 3,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = 5*1 + 3 = 8 for any x.
-        for x in [0, 10, 100].iter() {
-            assert_eq!(distribution.evaluate(*x).unwrap(), 8);
+            assert!(matches!(
+                distribution.evaluate(10),
+                Err(ProtocolError::DivideByZero(_))
+            ));
         }
     }
+    mod polynomial {
+        use super::*;
+        #[test]
+        fn test_polynomial_function() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
 
-    // Test: Linear function when exponent is 1 (m = 1, n = 1)
-    #[test]
-    fn test_polynomial_function_linear() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 3,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 5,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = 3*x + 5. At x = 10, f(10) = 30 + 5 = 35.
-        assert_eq!(distribution.evaluate(10).unwrap(), 35);
+            assert_eq!(distribution.evaluate(0).unwrap(), 10);
+            assert_eq!(distribution.evaluate(2).unwrap(), 18);
+            assert_eq!(distribution.evaluate(3).unwrap(), 28);
+            assert_eq!(distribution.evaluate(4).unwrap(), 42);
+        }
+
+        #[test]
+        fn test_polynomial_function_overflow() {
+            let distribution = DistributionFunction::Polynomial {
+                a: i64::MAX,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
+
+            let result = distribution.evaluate(1);
+            assert!(
+                matches!(result, Err(ProtocolError::Overflow(_))),
+                "Expected overflow but got {:?}",
+                result
+            );
+        }
+
+        // Test: Fractional exponent (exponent = 3/2)
+        #[test]
+        fn test_polynomial_function_fraction_exponent() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 3, // exponent is 3/2
+                n: 2,
+                o: 0,
+                s: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+            // (4 - 0 + 0)^(3/2) = 4^(3/2) = (sqrt(4))^3 = 2^3 = 8.
+            assert_eq!(distribution.evaluate(4).unwrap(), 8);
+        }
+
+        // Test: Negative coefficient a (should flip the sign)
+        #[test]
+        fn test_polynomial_function_negative_a() {
+            let distribution = DistributionFunction::Polynomial {
+                a: -1,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = -1 * (x^2). For x = 3: -1 * (3^2) = -9.
+            assert_eq!(distribution.evaluate(3).unwrap(), 0);
+        }
+
+        // Test: Non-zero shift parameter s (shifting the x coordinate)
+        #[test]
+        fn test_polynomial_function_with_shift() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 0,
+                s: Some(2),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = 2 * ((x - 2)^2) + 10.
+            // At x = 2: (0)^2 = 0, f(2) = 10.
+            assert_eq!(distribution.evaluate(2).unwrap(), 10);
+            // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
+            assert_eq!(distribution.evaluate(3).unwrap(), 12);
+        }
+
+        // Test: Non-zero offset o (shifting the base of the power)
+        #[test]
+        fn test_polynomial_function_with_offset() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 3,
+                s: Some(0),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = 2 * ((x - 0 + 3)^2) + 10.
+            // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
+            assert_eq!(distribution.evaluate(1).unwrap(), 42);
+        }
+
+        // Test: Constant function when m = 0 (should ignore x)
+        #[test]
+        fn test_polynomial_function_constant() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 5,
+                d: 1,
+                m: 0, // exponent 0 => (x-s+o)^0 = 1 (for any x where x-s+o ≠ 0)
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 3,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = 5*1 + 3 = 8 for any x.
+            for x in [0, 10, 100].iter() {
+                assert_eq!(distribution.evaluate(*x).unwrap(), 8);
+            }
+        }
+
+        // Test: Linear function when exponent is 1 (m = 1, n = 1)
+        #[test]
+        fn test_polynomial_function_linear() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 3,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = 3*x + 5. At x = 10, f(10) = 30 + 5 = 35.
+            assert_eq!(distribution.evaluate(10).unwrap(), 35);
+        }
+
+        // Test: Cubic function (m = 3, n = 1)
+        #[test]
+        fn test_polynomial_function_cubic() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 3,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = x^3. At x = 4, f(4) = 64.
+            assert_eq!(distribution.evaluate(4).unwrap(), 64);
+        }
+
+        // Test: Combination of non-zero offset and shift
+        #[test]
+        fn test_polynomial_function_with_offset_and_shift() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 2,
+                s: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+            // f(x) = ( (x - 1 + 2)^2 ).
+            // At x = 3: (3 - 1 + 2) = 4, and 4^2 = 16.
+            assert_eq!(distribution.evaluate(3).unwrap(), 16);
+        }
     }
+    mod exp {
+        use super::*;
+        #[test]
+        fn test_exponential_function() {
+            let distribution = DistributionFunction::Exponential {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: None,
+                max_value: None,
+            };
 
-    // Test: Cubic function (m = 3, n = 1)
-    #[test]
-    fn test_polynomial_function_cubic() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 1,
-            d: 1,
-            m: 3,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = x^3. At x = 4, f(4) = 64.
-        assert_eq!(distribution.evaluate(4).unwrap(), 64);
+            assert_eq!(distribution.evaluate(0).unwrap(), 11);
+            assert!(distribution.evaluate(10).unwrap() > 20);
+        }
+
+        #[test]
+        fn test_exponential_function_divide_by_zero() {
+            let distribution = DistributionFunction::Exponential {
+                a: 1,
+                d: 0, // Invalid denominator
+                m: 1,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert!(matches!(
+                distribution.evaluate(10),
+                Err(ProtocolError::DivideByZero(_))
+            ));
+        }
+
+        #[test]
+        fn test_exponential_function_basic() {
+            let distribution = DistributionFunction::Exponential {
+                a: 2,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 5,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert_eq!(distribution.evaluate(0).unwrap(), 7);
+            assert_eq!(distribution.evaluate(5).unwrap(), 301);
+            assert_eq!(distribution.evaluate(10).unwrap(), 44057);
+        }
+
+        #[test]
+        fn test_exponential_function_slow_growth() {
+            let distribution = DistributionFunction::Exponential {
+                a: 1,
+                d: 10,
+                m: 1,
+                n: 10,
+                o: 0,
+                s: Some(0),
+                c: 0,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert_eq!(distribution.evaluate(0).unwrap(), 0);
+            assert_eq!(distribution.evaluate(50).unwrap(), 14);
+            assert_eq!(distribution.evaluate(100).unwrap(), 2202);
+        }
+
+        #[test]
+        fn test_exponential_function_rapid_growth() {
+            let distribution = DistributionFunction::Exponential {
+                a: 1,
+                d: 1,
+                m: 4,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 0,
+                min_value: None,
+                max_value: Some(100000000),
+            };
+
+            assert_eq!(distribution.evaluate(0).unwrap(), 1);
+            assert_eq!(distribution.evaluate(2).unwrap(), 2980);
+            assert_eq!(distribution.evaluate(4).unwrap(), 8886110);
+            assert_eq!(distribution.evaluate(10).unwrap(), 100000000);
+            assert_eq!(distribution.evaluate(100000).unwrap(), 100000000);
+        }
+
+        #[test]
+        fn test_exponential_function_with_no_min_value() {
+            let distribution = DistributionFunction::Exponential {
+                a: 2,
+                d: 1,
+                m: -1,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert_eq!(distribution.evaluate(0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
+            assert_eq!(distribution.evaluate(5).unwrap(), 10);
+            assert_eq!(distribution.evaluate(10000).unwrap(), 10);
+        }
+
+        #[test]
+        fn test_exponential_function_with_min_value() {
+            let distribution = DistributionFunction::Exponential {
+                a: 2,
+                d: 1,
+                m: -1,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: Some(11),
+                max_value: None,
+            };
+
+            assert_eq!(distribution.evaluate(0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
+            assert_eq!(distribution.evaluate(5).unwrap(), 11);
+            assert_eq!(distribution.evaluate(100).unwrap(), 11);
+        }
+
+        #[test]
+        fn test_exponential_function_starting_at_max() {
+            let distribution = DistributionFunction::Exponential {
+                a: 2,
+                d: 1,
+                m: 1,
+                n: 2,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(11), // Set max at the starting value
+            };
+
+            assert_eq!(
+                distribution.evaluate(0).unwrap(),
+                11,
+                "Function should start at the max value"
+            );
+            assert_eq!(
+                distribution.evaluate(5).unwrap(),
+                11,
+                "Function should be clamped at max value"
+            );
+        }
+
+        #[test]
+        fn test_exponential_function_large_x_overflow() {
+            let distribution = DistributionFunction::Exponential {
+                a: 2,
+                d: 1,
+                m: 1,
+                n: 10,
+                o: 0,
+                s: Some(0),
+                c: 5,
+                min_value: None,
+                max_value: None,
+            };
+
+            let result = distribution.evaluate(100000);
+            assert!(
+                matches!(result, Err(ProtocolError::Overflow(_))),
+                "Expected overflow but got {:?}",
+                result
+            );
+        }
     }
+    mod log {
+        use super::*;
+        #[test]
+        fn test_logarithmic_function() {
+            let distribution = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,       // Offset ensures (x - s + o) > 0
+                s: Some(1), // Start at x=1 to avoid log(0)
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
 
-    // Test: Combination of non-zero offset and shift
-    #[test]
-    fn test_polynomial_function_with_offset_and_shift() {
-        let distribution = DistributionFunction::Polynomial {
-            a: 1,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: 2,
-            s: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        };
-        // f(x) = ( (x - 1 + 2)^2 ).
-        // At x = 3: (3 - 1 + 2) = 4, and 4^2 = 16.
-        assert_eq!(distribution.evaluate(3).unwrap(), 16);
+            assert_eq!(distribution.evaluate(1).unwrap(), 5);
+            assert!(distribution.evaluate(10).unwrap() > 5);
+        }
+
+        #[test]
+        fn test_logarithmic_function_with_min_max_bounds() {
+            let distribution = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                s: Some(1),
+                b: 5,
+                min_value: Some(7),  // Minimum bound should be enforced
+                max_value: Some(20), // Maximum bound should be enforced
+            };
+
+            assert_eq!(distribution.evaluate(1).unwrap(), 7); // Clamped to min_value
+            assert!(distribution.evaluate(10).unwrap() <= 20); // Should not exceed max_value
+        }
+
+        #[test]
+        fn test_logarithmic_function_undefined() {
+            let distribution = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: -1, // Invalid offset causing log(0)
+                s: Some(1),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert!(matches!(
+                distribution.evaluate(1),
+                Err(ProtocolError::Overflow(_))
+            ));
+        }
+
+        #[test]
+        fn test_logarithmic_function_large_x() {
+            let distribution = DistributionFunction::Logarithmic {
+                a: 100,
+                d: 2,
+                m: 1,
+                n: 1,
+                o: 5,
+                s: Some(10),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
+
+            let result = distribution.evaluate(100);
+            assert!(result.is_ok());
+            assert!(result.unwrap() > 10); // Function should increase over time
+        }
+
+        #[test]
+        fn test_logarithmic_function_divide_by_zero_d() {
+            let distribution = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 0, // Invalid: Division by zero
+                m: 1,
+                n: 1,
+                o: 1,
+                s: Some(5),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert!(matches!(
+                distribution.evaluate(10),
+                Err(ProtocolError::DivideByZero(_))
+            ));
+        }
+
+        #[test]
+        fn test_logarithmic_function_divide_by_zero_n() {
+            let distribution = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 0, // Invalid: Division by zero in log denominator
+                o: 1,
+                s: Some(5),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+
+            assert!(matches!(
+                distribution.evaluate(10),
+                Err(ProtocolError::DivideByZero(_))
+            ));
+        }
     }
+    mod inverted_log {
+        use super::*;
+        #[test]
+        fn test_inverted_logarithmic_basic_decreasing() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_exponential_function() {
-        let distribution = DistributionFunction::Exponential {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: None,
-            max_value: None,
-        };
+            assert!(distribution.evaluate(1).unwrap() > distribution.evaluate(5).unwrap());
+            assert!(distribution.evaluate(5).unwrap() > distribution.evaluate(10).unwrap());
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 11);
-        assert!(distribution.evaluate(10).unwrap() > 20);
-    }
+        #[test]
+        fn test_inverted_logarithmic_basic_increasing() {
+            // f(x) = (-10 * log( 1000 / (x + 10) )) + 5
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 1000,
+                o: 10,
+                s: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+            
+            let val1000 = distribution.evaluate(1000).unwrap();
+            let val2000 = distribution.evaluate(2000).unwrap();
+            let val3000 = distribution.evaluate(3000).unwrap();
 
-    #[test]
-    fn test_exponential_function_divide_by_zero() {
-        let distribution = DistributionFunction::Exponential {
-            a: 1,
-            d: 0, // Invalid denominator
-            m: 1,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: None,
-            max_value: None,
-        };
+            assert!(val1000 < val2000, "Function should be increasing");
+            assert!(val2000 < val3000, "Function should be increasing");
+        }
 
-        assert!(matches!(
-            distribution.evaluate(10),
-            Err(ProtocolError::DivideByZero(_))
-        ));
-    }
+        #[test]
+        fn test_inverted_logarithmic_negative_clamped_to_0() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_exponential_function_basic() {
-        let distribution = DistributionFunction::Exponential {
-            a: 2,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 5,
-            min_value: None,
-            max_value: None,
-        };
+            assert_eq!(distribution.evaluate(1).unwrap(), 0); // Should be clamped to 0
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 7);
-        assert_eq!(distribution.evaluate(5).unwrap(), 301);
-        assert_eq!(distribution.evaluate(10).unwrap(), 44057);
-    }
+        #[test]
+        fn test_inverted_logarithmic_clamped_by_min_value() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(7),
+                max_value: None,
+            };
 
-    #[test]
-    fn test_exponential_function_slow_growth() {
-        let distribution = DistributionFunction::Exponential {
-            a: 1,
-            d: 10,
-            m: 1,
-            n: 10,
-            o: 0,
-            s: Some(0),
-            c: 0,
-            min_value: None,
-            max_value: None,
-        };
+            assert_eq!(distribution.evaluate(1000).unwrap(), 7); // Should be clamped to min_value
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 0);
-        assert_eq!(distribution.evaluate(50).unwrap(), 14);
-        assert_eq!(distribution.evaluate(100).unwrap(), 2202);
-    }
+        #[test]
+        fn test_inverted_logarithmic_clamped_by_max_value() {
+            // f(x) = (-10 * log( 100 / (x + 1) )) + 5
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: Some(20),
+            };
 
-    #[test]
-    fn test_exponential_function_rapid_growth() {
-        let distribution = DistributionFunction::Exponential {
-            a: 1,
-            d: 1,
-            m: 4,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 0,
-            min_value: None,
-            max_value: Some(100000000),
-        };
+            assert_eq!(distribution.evaluate(500).unwrap(), 20); // Should be clamped to max_value
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 1);
-        assert_eq!(distribution.evaluate(2).unwrap(), 2980);
-        assert_eq!(distribution.evaluate(4).unwrap(), 8886110);
-        assert_eq!(distribution.evaluate(10).unwrap(), 100000000);
-        assert_eq!(distribution.evaluate(100000).unwrap(), 100000000);
-    }
+        #[test]
+        fn test_inverted_logarithmic_undefined_log_argument_zero() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: -1,
+                s: Some(1),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_exponential_function_with_no_min_value() {
-        let distribution = DistributionFunction::Exponential {
-            a: 2,
-            d: 1,
-            m: -1,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: None,
-            max_value: None,
-        };
+            assert!(matches!(
+                distribution.evaluate(1),
+                Err(ProtocolError::Overflow(_))
+            ));
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
-        assert_eq!(distribution.evaluate(5).unwrap(), 10);
-        assert_eq!(distribution.evaluate(10000).unwrap(), 10);
-    }
+        #[test]
+        fn test_inverted_logarithmic_divide_by_zero_n() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 0, // Invalid: n must not be zero
+                o: 1,
+                s: Some(5),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_exponential_function_with_min_value() {
-        let distribution = DistributionFunction::Exponential {
-            a: 2,
-            d: 1,
-            m: -1,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: Some(11),
-            max_value: None,
-        };
+            assert!(matches!(
+                distribution.evaluate(10),
+                Err(ProtocolError::DivideByZero(_))
+            ));
+        }
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
-        assert_eq!(distribution.evaluate(5).unwrap(), 11);
-        assert_eq!(distribution.evaluate(100).unwrap(), 11);
-    }
+        #[test]
+        fn test_inverted_logarithmic_divide_by_zero_d() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 0, // Invalid: d must not be zero
+                m: 1,
+                n: 1,
+                o: 1,
+                s: Some(5),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
 
-    #[test]
-    fn test_exponential_function_starting_at_max() {
-        let distribution = DistributionFunction::Exponential {
-            a: 2,
-            d: 1,
-            m: 1,
-            n: 2,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(11), // Set max at the starting value
-        };
+            assert!(matches!(
+                distribution.evaluate(10),
+                Err(ProtocolError::DivideByZero(_))
+            ));
+        }
 
-        assert_eq!(
-            distribution.evaluate(0).unwrap(),
-            11,
-            "Function should start at the max value"
-        );
-        assert_eq!(
-            distribution.evaluate(5).unwrap(),
-            11,
-            "Function should be clamped at max value"
-        );
-    }
+        #[test]
+        fn test_inverted_logarithmic_increasing_starts_at_min_value() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: -10, // Increasing function
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(10), // Max value set at the starting point
+            };
 
-    #[test]
-    fn test_exponential_function_large_x_overflow() {
-        let distribution = DistributionFunction::Exponential {
-            a: 2,
-            d: 1,
-            m: 1,
-            n: 10,
-            o: 0,
-            s: Some(0),
-            c: 5,
-            min_value: None,
-            max_value: None,
-        };
+            assert_eq!(
+                distribution.evaluate(0).unwrap(),
+                1,
+                "Function should start at the max value"
+            );
+            assert_eq!(
+                distribution.evaluate(200).unwrap(),
+                10,
+                "Function should remain clamped at max value"
+            );
+        }
 
-        let result = distribution.evaluate(100000);
-        assert!(
-            matches!(result, Err(ProtocolError::Overflow(_))),
-            "Expected overflow but got {:?}",
-            result
-        );
-    }
+        #[test]
+        fn test_inverted_logarithmic_starts_at_min_value() {
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10, // Decreasing function
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(3),
+                max_value: None,
+            };
 
-    #[test]
-    fn test_logarithmic_function() {
-        let distribution = DistributionFunction::Logarithmic {
-            a: 10,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,       // Offset ensures (x - s + o) > 0
-            s: Some(1), // Start at x=1 to avoid log(0)
-            b: 5,
-            min_value: None,
-            max_value: None,
-        };
-
-        assert_eq!(distribution.evaluate(1).unwrap(), 5);
-        assert!(distribution.evaluate(10).unwrap() > 5);
-    }
-
-    #[test]
-    fn test_logarithmic_function_with_min_max_bounds() {
-        let distribution = DistributionFunction::Logarithmic {
-            a: 10,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            s: Some(1),
-            b: 5,
-            min_value: Some(7),  // Minimum bound should be enforced
-            max_value: Some(20), // Maximum bound should be enforced
-        };
-
-        assert_eq!(distribution.evaluate(1).unwrap(), 7); // Clamped to min_value
-        assert!(distribution.evaluate(10).unwrap() <= 20); // Should not exceed max_value
-    }
-
-    #[test]
-    fn test_logarithmic_function_undefined() {
-        let distribution = DistributionFunction::Logarithmic {
-            a: 10,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: -1, // Invalid offset causing log(0)
-            s: Some(1),
-            b: 5,
-            min_value: None,
-            max_value: None,
-        };
-
-        assert!(matches!(
-            distribution.evaluate(1),
-            Err(ProtocolError::Overflow(_))
-        ));
-    }
-
-    #[test]
-    fn test_logarithmic_function_large_x() {
-        let distribution = DistributionFunction::Logarithmic {
-            a: 100,
-            d: 2,
-            m: 1,
-            n: 1,
-            o: 5,
-            s: Some(10),
-            b: 10,
-            min_value: None,
-            max_value: None,
-        };
-
-        let result = distribution.evaluate(100);
-        assert!(result.is_ok());
-        assert!(result.unwrap() > 10); // Function should increase over time
-    }
-
-    #[test]
-    fn test_logarithmic_function_divide_by_zero_d() {
-        let distribution = DistributionFunction::Logarithmic {
-            a: 10,
-            d: 0, // Invalid: Division by zero
-            m: 1,
-            n: 1,
-            o: 1,
-            s: Some(5),
-            b: 5,
-            min_value: None,
-            max_value: None,
-        };
-
-        assert!(matches!(
-            distribution.evaluate(10),
-            Err(ProtocolError::DivideByZero(_))
-        ));
-    }
-
-    #[test]
-    fn test_logarithmic_function_divide_by_zero_n() {
-        let distribution = DistributionFunction::Logarithmic {
-            a: 10,
-            d: 1,
-            m: 1,
-            n: 0, // Invalid: Division by zero in log denominator
-            o: 1,
-            s: Some(5),
-            b: 5,
-            min_value: None,
-            max_value: None,
-        };
-
-        assert!(matches!(
-            distribution.evaluate(10),
-            Err(ProtocolError::DivideByZero(_))
-        ));
+            assert_eq!(
+                distribution.evaluate(1000).unwrap(),
+                3,
+                "Function should remain clamped at min value"
+            );
+        }
     }
 }

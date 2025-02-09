@@ -685,6 +685,156 @@ impl DistributionFunction {
                     }
                 }
             }
+            // f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
+            DistributionFunction::InvertedLogarithmic { a, d, m, n, o, s, b, min_value, max_value } => {
+                // Check for division by zero.
+                if *d == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+                if *n == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "n".to_string(),
+                            1,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                            .into(),
+                    ));
+                }
+                if *m == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+
+                // Validate s: if provided, it must not exceed MAX_DISTRIBUTION_PARAM.
+                if let Some(s_val) = s {
+                    if *s_val > MAX_DISTRIBUTION_PARAM {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenDistributionFunctionInvalidParameterError::new(
+                                "s".to_string(),
+                                0,
+                                MAX_DISTRIBUTION_PARAM as i64,
+                                None,
+                            )
+                                .into(),
+                        ));
+                    }
+                }
+                // Validate o is within allowed bounds.
+                if *o > MAX_DISTRIBUTION_PARAM as i64 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "o".to_string(),
+                            -(MAX_DISTRIBUTION_PARAM as i64),
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                            .into(),
+                    ));
+                }
+                if *o < -(MAX_DISTRIBUTION_PARAM as i64) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "o".to_string(),
+                            -(MAX_DISTRIBUTION_PARAM as i64),
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                            .into(),
+                    ));
+                }
+                // Validate max_value if provided.
+                if let Some(max) = max_value {
+                    if *max > MAX_DISTRIBUTION_PARAM {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenDistributionFunctionInvalidParameterError::new(
+                                "max".to_string(),
+                                0,
+                                MAX_DISTRIBUTION_PARAM as i64,
+                                None,
+                            )
+                                .into(),
+                        ));
+                    }
+                }
+                // If both min_value and max_value are provided, ensure min_value <= max_value.
+                if let (Some(min), Some(max)) = (min_value, max_value) {
+                    if min > max {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                                "min_value".to_string(),
+                                "max_value".to_string(),
+                                "smaller than or equal to".to_string(),
+                            )
+                                .into(),
+                        ));
+                    }
+                }
+
+                // Use the provided s or default to start_moment.
+                let start_s = s.unwrap_or(start_moment);
+                // Ensure the argument for the logarithm is > 0:
+                if (start_moment as i64 - start_s as i64 + *o) <= 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                            "s".to_string(),
+                            "o".to_string(),
+                            "(x - s + o) must be > 0 in f(x) = (a * ln(n / (m * (x - s + o)))) / d + b".to_string(),
+                        )
+                            .into(),
+                    ));
+                }
+
+                // Evaluate the function at the starting moment.
+                let start_token_amount = DistributionFunction::InvertedLogarithmic {
+                    a: *a,
+                    d: *d,
+                    m: *m,
+                    n: *n,
+                    o: *o,
+                    s: Some(start_s),
+                    b: *b,
+                    min_value: *min_value,
+                    max_value: *max_value,
+                }
+                    .evaluate(start_moment)?;
+
+                // Determine the function's monotonicity.
+                // For InvertedLogarithmic, f'(x) = -a / (d * (x - s + o)).
+                // Hence, if a > 0, the function is decreasing;
+                // if a < 0, the function is increasing.
+                if *a > 0 {
+                    // For a decreasing function, if the start amount is already at min_value,
+                    // the function would never decrease further.
+                    if let Some(min) = min_value {
+                        if start_token_amount == *min {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidTokenDistributionFunctionIncoherenceError::new(
+                                    "Since a is positive, the inverted logarithmic function is decreasing, but it starts at the minimum value already, so it will never produce a lower value.".to_string(),
+                                )
+                                    .into(),
+                            ));
+                        }
+                    }
+                } else if *a < 0 {
+                    // For an increasing function, if the start amount is already at max_value,
+                    // the function would never increase further.
+                    if let Some(max) = max_value {
+                        if start_token_amount == *max {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidTokenDistributionFunctionIncoherenceError::new(
+                                    "Since a is negative, the inverted logarithmic function is increasing, but it starts at the maximum value already, so it will never produce a higher value.".to_string(),
+                                )
+                                    .into(),
+                            ));
+                        }
+                    }
+                }
+            }
         }
 
         Ok(SimpleConsensusValidationResult::default())
@@ -696,1241 +846,1458 @@ mod tests {
     use std::collections::BTreeMap;
 
     const START_MOMENT: u64 = 4000;
-
-    #[test]
-    fn test_fixed_amount_valid() {
-        let dist = DistributionFunction::FixedAmount { n: 100 };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_fixed_amount_valid")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_fixed_amount_zero_invalid() {
-        let dist = DistributionFunction::FixedAmount { n: 0 };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_fixed_amount_zero_invalid")
-            .first_error()
-            .is_some());
-    }
-
-    #[test]
-    fn test_fixed_amount_max_valid() {
-        let dist = DistributionFunction::FixedAmount { n: u32::MAX as u64 };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_fixed_amount_max_valid")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_fixed_amount_exceeds_max_invalid() {
-        let dist = DistributionFunction::FixedAmount {
-            n: u32::MAX as u64 + 1,
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_fixed_amount_exceeds_max_invalid")
-            .first_error()
-            .is_some());
-    }
-
-    #[test]
-    fn test_step_decreasing_amount_valid() {
-        let dist = DistributionFunction::StepDecreasingAmount {
-            step_count: 10,
-            decrease_per_interval_numerator: 1,
-            decrease_per_interval_denominator: 2,
-            s: Some(0),
-            n: 100,
-            min_value: Some(10),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_step_decreasing_amount_valid")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_step_decreasing_amount_invalid_zero_step_count() {
-        let dist = DistributionFunction::StepDecreasingAmount {
-            step_count: 0,
-            decrease_per_interval_numerator: 1,
-            decrease_per_interval_denominator: 2,
-            s: Some(0),
-            n: 100,
-            min_value: Some(10),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_step_decreasing_amount_invalid_zero_step_count")
-            .first_error()
-            .is_some());
-    }
-
-    #[test]
-    fn test_step_decreasing_amount_invalid_zero_denominator() {
-        let dist = DistributionFunction::StepDecreasingAmount {
-            step_count: 10,
-            decrease_per_interval_numerator: 1,
-            decrease_per_interval_denominator: 0,
-            s: Some(0),
-            n: 100,
-            min_value: Some(10),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_step_decreasing_amount_invalid_zero_denominator")
-            .first_error()
-            .is_some());
-    }
-
-    #[test]
-    fn test_stepwise_valid() {
-        let mut steps = BTreeMap::new();
-        steps.insert(0, 100);
-        steps.insert(10, 50);
-        steps.insert(20, 25);
-        let dist = DistributionFunction::Stepwise(steps);
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_stepwise_valid")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_stepwise_invalid_single_step() {
-        let mut steps = BTreeMap::new();
-        steps.insert(0, 100);
-        let dist = DistributionFunction::Stepwise(steps);
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_stepwise_invalid_single_step")
-            .first_error()
-            .is_some());
-    }
-
-    #[test]
-    fn test_linear_valid() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 10,
-            s: Some(3800),
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-
-        let result = dist.validate(START_MOMENT);
-
-        // If the test fails, print the exact error message.
-        if let Err(err) = &result {
-            panic!("Test failed: Expected no error, but got: {:?}", err);
+    mod fixed_amount {
+        use super::*;
+        #[test]
+        fn test_fixed_amount_valid() {
+            let dist = DistributionFunction::FixedAmount { n: 100 };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_fixed_amount_valid")
+                .first_error()
+                .is_none());
         }
 
-        // If validation succeeds but contains errors, print those errors.
-        if let Some(error) = result.expect("no error on test_linear_valid").first_error() {
-            panic!("Test failed: Validation error found: {:?}", error);
+        #[test]
+        fn test_fixed_amount_zero_invalid() {
+            let dist = DistributionFunction::FixedAmount { n: 0 };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_fixed_amount_zero_invalid")
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_fixed_amount_max_valid() {
+            let dist = DistributionFunction::FixedAmount { n: u32::MAX as u64 };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_fixed_amount_max_valid")
+                .first_error()
+                .is_none());
+        }
+
+        #[test]
+        fn test_fixed_amount_exceeds_max_invalid() {
+            let dist = DistributionFunction::FixedAmount {
+                n: u32::MAX as u64 + 1,
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_fixed_amount_exceeds_max_invalid")
+                .first_error()
+                .is_some());
         }
     }
-    #[test]
-    fn test_linear_invalid_divide_by_zero() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 0,
-            s: Some(0),
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_linear_invalid_divide_by_zero")
-            .first_error()
-            .is_some());
-    }
+    mod step_decreasing {
+        use super::*;
 
-    #[test]
-    fn test_linear_invalid_s_exceeds_max() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 10,
-            s: Some(MAX_DISTRIBUTION_PARAM + 1),
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_linear_invalid_s_exceeds_max")
-            .first_error()
-            .is_some());
-    }
-
-    #[test]
-    fn test_linear_invalid_a_zero() {
-        let dist = DistributionFunction::Linear {
-            a: 0, // Invalid: a cannot be zero
-            d: 10,
-            s: Some(0),
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_a_zero")
+        #[test]
+        fn test_step_decreasing_amount_valid() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                s: Some(0),
+                n: 100,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_step_decreasing_amount_valid")
                 .first_error()
-                .is_some(),
-            "Expected error: a cannot be zero"
-        );
-    }
+                .is_none());
+        }
 
-    #[test]
-    fn test_linear_invalid_a_too_large() {
-        let dist = DistributionFunction::Linear {
-            a: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: a exceeds allowed range
-            d: 10,
-            s: Some(0),
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_a_too_large")
+        #[test]
+        fn test_step_decreasing_amount_invalid_zero_step_count() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 0,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                s: Some(0),
+                n: 100,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_step_decreasing_amount_invalid_zero_step_count")
                 .first_error()
-                .is_some(),
-            "Expected error: a exceeds MAX_DISTRIBUTION_PARAM"
-        );
-    }
+                .is_some());
+        }
 
-    #[test]
-    fn test_linear_invalid_min_greater_than_max() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 10,
-            s: Some(0),
-            b: 100,
-            min_value: Some(200), // Invalid: min > max
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_min_greater_than_max")
+        #[test]
+        fn test_step_decreasing_amount_invalid_zero_denominator() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 0,
+                s: Some(0),
+                n: 100,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_step_decreasing_amount_invalid_zero_denominator")
                 .first_error()
-                .is_some(),
-            "Expected error: min_value > max_value"
-        );
+                .is_some());
+        }
     }
-
-    #[test]
-    fn test_linear_invalid_s_greater_than_max() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 10,
-            s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds allowed range
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_s_greater_than_max")
+    mod stepwise {
+        use super::*;
+        #[test]
+        fn test_stepwise_valid() {
+            let mut steps = BTreeMap::new();
+            steps.insert(0, 100);
+            steps.insert(10, 50);
+            steps.insert(20, 25);
+            let dist = DistributionFunction::Stepwise(steps);
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_stepwise_valid")
                 .first_error()
-                .is_some(),
-            "Expected error: s exceeds MAX_DISTRIBUTION_PARAM"
-        );
-    }
+                .is_none());
+        }
 
-    #[test]
-    fn test_linear_invalid_max_exceeds_max_distribution_param() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 10,
-            s: Some(0),
-            b: 100,
-            min_value: Some(50),
-            max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value exceeds max allowed range
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_max_exceeds_max_distribution_param")
+        #[test]
+        fn test_stepwise_invalid_single_step() {
+            let mut steps = BTreeMap::new();
+            steps.insert(0, 100);
+            let dist = DistributionFunction::Stepwise(steps);
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_stepwise_invalid_single_step")
                 .first_error()
-                .is_some(),
-            "Expected error: max_value exceeds MAX_DISTRIBUTION_PARAM"
-        );
+                .is_some());
+        }
     }
+    mod linear {
+        use super::*;
+        #[test]
+        fn test_linear_valid() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 10,
+                s: Some(3800),
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(150),
+            };
 
-    #[test]
-    fn test_linear_invalid_starting_at_max_value() {
-        let dist = DistributionFunction::Linear {
-            a: 1,
-            d: 10,
-            s: Some(0),
-            b: 150, // Starts at max value
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_starting_at_max_value")
+            let result = dist.validate(START_MOMENT);
+
+            // If the test fails, print the exact error message.
+            if let Err(err) = &result {
+                panic!("Test failed: Expected no error, but got: {:?}", err);
+            }
+
+            // If validation succeeds but contains errors, print those errors.
+            if let Some(error) = result.expect("no error on test_linear_valid").first_error() {
+                panic!("Test failed: Validation error found: {:?}", error);
+            }
+        }
+        #[test]
+        fn test_linear_invalid_divide_by_zero() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 0,
+                s: Some(0),
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_linear_invalid_divide_by_zero")
                 .first_error()
-                .is_some(),
-            "Expected error: function starts at max_value and cannot increase"
-        );
-    }
+                .is_some());
+        }
 
-    #[test]
-    fn test_linear_invalid_starting_at_min_value() {
-        let dist = DistributionFunction::Linear {
-            a: -1, // Negative slope (decreasing function)
-            d: 10,
-            s: Some(0),
-            b: 50, // Starts at min value
-            min_value: Some(50),
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_linear_invalid_starting_at_min_value")
+        #[test]
+        fn test_linear_invalid_s_exceeds_max() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 10,
+                s: Some(MAX_DISTRIBUTION_PARAM + 1),
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_linear_invalid_s_exceeds_max")
                 .first_error()
-                .is_some(),
-            "Expected error: function starts at min_value and cannot decrease"
-        );
-    }
+                .is_some());
+        }
 
-    #[test]
-    fn test_linear_valid_with_negative_a() {
-        let dist = DistributionFunction::Linear {
-            a: -5, // Valid decreasing function
-            d: 10,
-            s: Some(START_MOMENT),
-            b: 200,
-            min_value: Some(50),
-            max_value: Some(250),
-        };
-        let result = dist.validate(START_MOMENT);
+        #[test]
+        fn test_linear_invalid_a_zero() {
+            let dist = DistributionFunction::Linear {
+                a: 0, // Invalid: a cannot be zero
+                d: 10,
+                s: Some(0),
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_a_zero")
+                    .first_error()
+                    .is_some(),
+                "Expected error: a cannot be zero"
+            );
+        }
 
-        match result {
-            Ok(validation_result) => {
-                if let Some(error) = validation_result.first_error() {
+        #[test]
+        fn test_linear_invalid_a_too_large() {
+            let dist = DistributionFunction::Linear {
+                a: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: a exceeds allowed range
+                d: 10,
+                s: Some(0),
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_a_too_large")
+                    .first_error()
+                    .is_some(),
+                "Expected error: a exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        #[test]
+        fn test_linear_invalid_min_greater_than_max() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 10,
+                s: Some(0),
+                b: 100,
+                min_value: Some(200), // Invalid: min > max
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_min_greater_than_max")
+                    .first_error()
+                    .is_some(),
+                "Expected error: min_value > max_value"
+            );
+        }
+
+        #[test]
+        fn test_linear_invalid_s_greater_than_max() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 10,
+                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds allowed range
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_s_greater_than_max")
+                    .first_error()
+                    .is_some(),
+                "Expected error: s exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        #[test]
+        fn test_linear_invalid_max_exceeds_max_distribution_param() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 10,
+                s: Some(0),
+                b: 100,
+                min_value: Some(50),
+                max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value exceeds max allowed range
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_max_exceeds_max_distribution_param")
+                    .first_error()
+                    .is_some(),
+                "Expected error: max_value exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        #[test]
+        fn test_linear_invalid_starting_at_max_value() {
+            let dist = DistributionFunction::Linear {
+                a: 1,
+                d: 10,
+                s: Some(0),
+                b: 150, // Starts at max value
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_starting_at_max_value")
+                    .first_error()
+                    .is_some(),
+                "Expected error: function starts at max_value and cannot increase"
+            );
+        }
+
+        #[test]
+        fn test_linear_invalid_starting_at_min_value() {
+            let dist = DistributionFunction::Linear {
+                a: -1, // Negative slope (decreasing function)
+                d: 10,
+                s: Some(0),
+                b: 50, // Starts at min value
+                min_value: Some(50),
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_linear_invalid_starting_at_min_value")
+                    .first_error()
+                    .is_some(),
+                "Expected error: function starts at min_value and cannot decrease"
+            );
+        }
+
+        #[test]
+        fn test_linear_valid_with_negative_a() {
+            let dist = DistributionFunction::Linear {
+                a: -5, // Valid decreasing function
+                d: 10,
+                s: Some(START_MOMENT),
+                b: 200,
+                min_value: Some(50),
+                max_value: Some(250),
+            };
+            let result = dist.validate(START_MOMENT);
+
+            match result {
+                Ok(validation_result) => {
+                    if let Some(error) = validation_result.first_error() {
+                        panic!(
+                            "Test failed: Expected no error, but got validation error: {:?}",
+                            error
+                        );
+                    }
+                }
+                Err(protocol_error) => {
                     panic!(
-                        "Test failed: Expected no error, but got validation error: {:?}",
-                        error
+                        "Test failed: Expected validation success, but got ProtocolError: {:?}",
+                        protocol_error
                     );
                 }
             }
-            Err(protocol_error) => {
-                panic!(
-                    "Test failed: Expected validation success, but got ProtocolError: {:?}",
-                    protocol_error
-                );
-            }
+        }
+
+        #[test]
+        fn test_linear_valid_with_min_boundary() {
+            let dist = DistributionFunction::Linear {
+                a: -3,
+                d: 5,
+                s: Some(START_MOMENT),
+                b: 100,
+                min_value: Some(10), // Valid min boundary
+                max_value: Some(150),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_linear_valid_with_min_boundary")
+                .first_error()
+                .is_none());
+        }
+
+        #[test]
+        fn test_linear_valid_with_max_boundary() {
+            let dist = DistributionFunction::Linear {
+                a: 3,
+                d: 5,
+                s: Some(START_MOMENT),
+                b: 50,
+                min_value: Some(10),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_linear_valid_with_max_boundary")
+                .first_error()
+                .is_none());
         }
     }
+    mod polynomial {
+        use super::*;
+        #[test]
+        fn test_polynomial_valid() {
+            // f(x) = (2 * x^(2/3)) / 10 + 5
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 3,
+                o: 0,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(80),
+            };
+            let result = dist.validate(START_MOMENT);
 
-    #[test]
-    fn test_linear_valid_with_min_boundary() {
-        let dist = DistributionFunction::Linear {
-            a: -3,
-            d: 5,
-            s: Some(START_MOMENT),
-            b: 100,
-            min_value: Some(10), // Valid min boundary
-            max_value: Some(150),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_linear_valid_with_min_boundary")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_linear_valid_with_max_boundary() {
-        let dist = DistributionFunction::Linear {
-            a: 3,
-            d: 5,
-            s: Some(START_MOMENT),
-            b: 50,
-            min_value: Some(10),
-            max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_linear_valid_with_max_boundary")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_polynomial_valid() {
-        // f(x) = (2 * x^(2/3)) / 10 + 5
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 3,
-            o: 0,
-            s: Some(0),
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(80),
-        };
-        let result = dist.validate(START_MOMENT);
-
-        match &result {
-            Ok(validation_result) => {
-                if let Some(error) = validation_result.first_error() {
-                    panic!("Test failed: validation error found: {:?}", error);
+            match &result {
+                Ok(validation_result) => {
+                    if let Some(error) = validation_result.first_error() {
+                        panic!("Test failed: validation error found: {:?}", error);
+                    }
+                }
+                Err(protocol_error) => {
+                    panic!("Test failed: ProtocolError: {:?}", protocol_error);
                 }
             }
-            Err(protocol_error) => {
-                panic!("Test failed: ProtocolError: {:?}", protocol_error);
+        }
+        #[test]
+        fn test_polynomial_invalid_divide_by_zero() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 0,
+                m: 2,
+                n: 3,
+                o: 0,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_polynomial_invalid_divide_by_zero")
+                .first_error()
+                .is_some());
+        }
+
+        // 1. Test invalid: n is zero (division by zero in exponent)
+        #[test]
+        fn test_polynomial_invalid_n_zero() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 0, // Invalid: n == 0
+                o: 0,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an error when n is zero"
+            );
+        }
+
+        // 2. Test invalid: shift parameter s exceeds MAX_DISTRIBUTION_PARAM.
+        #[test]
+        fn test_polynomial_invalid_s_exceeds_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 3,
+                o: 0,
+                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s too large
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an error when s exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        // 3. Test invalid: offset o is too high.
+        #[test]
+        fn test_polynomial_invalid_o_too_high() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 3,
+                o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: o too high
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an error when o is above the allowed maximum"
+            );
+        }
+
+        // 4. Test invalid: offset o is too low.
+        #[test]
+        fn test_polynomial_invalid_o_too_low() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 3,
+                o: -(MAX_DISTRIBUTION_PARAM as i64) - 1, // Invalid: o too low
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an error when o is below the allowed minimum"
+            );
+        }
+
+        // 5. Test invalid: max_value exceeds MAX_DISTRIBUTION_PARAM.
+        #[test]
+        fn test_polynomial_invalid_max_exceeds_max_distribution() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 3,
+                o: 0,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too high
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an error when max_value exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        // 6. Test invalid: min_value is greater than max_value.
+        #[test]
+        fn test_polynomial_invalid_min_greater_than_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 10,
+                m: 2,
+                n: 3,
+                o: 0,
+                s: Some(0),
+                b: 5,
+                min_value: Some(60), // min_value > max_value
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an error when min_value is greater than max_value"
+            );
+        }
+
+        // 7. Test invalid: For an increasing polynomial function, the starting value equals max_value.
+        #[test]
+        fn test_polynomial_invalid_starting_at_max_for_increasing() {
+            // For an increasing function (a > 0, m > 0) evaluated at x = s,
+            // the result is b. If b equals max_value, then the function starts at the maximum.
+            let dist = DistributionFunction::Polynomial {
+                a: 2, // positive
+                d: 10,
+                m: 2, // positive
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 100, // f(0) = 100
+                min_value: Some(1),
+                max_value: Some(100), // Starting at max_value
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an incoherence error when an increasing function starts at max_value"
+            );
+        }
+
+        // 8. Test invalid: For a decreasing polynomial function, the starting value equals min_value.
+        #[test]
+        fn test_polynomial_invalid_starting_at_min_for_decreasing() {
+            // For a decreasing function (a < 0, m > 0 so that a*m < 0),
+            // evaluated at x = s, the result is b. If b equals min_value, then it's invalid.
+            let dist = DistributionFunction::Polynomial {
+                a: -2, // negative
+                d: 10,
+                m: 2, // positive => a*m is negative (decreasing)
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 50,               // f(0) = 50
+                min_value: Some(50), // Starting at min_value
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected an incoherence error when a decreasing function starts at min_value"
+            );
+        }
+
+        // 9. Test valid: Polynomial with no min_value or max_value provided.
+        #[test]
+        fn test_polynomial_valid_no_boundaries() {
+            let dist = DistributionFunction::Polynomial {
+                a: 3,
+                d: 10,
+                m: 2,
+                n: 1,
+                o: 0,
+                s: Some(0),
+                b: 20,
+                min_value: None,
+                max_value: None,
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected valid").first_error().is_none(),
+                "Expected no validation errors when boundaries are omitted"
+            );
+        }
+
+        // 10. Test valid: Polynomial with fractional exponent (m/n = 3/2).
+        #[test]
+        fn test_polynomial_valid_fractional() {
+            // f(x) = (a * (x - s + o)^(m/n)) / d + b.
+            // Here: a = 1, d = 1, m = 3, n = 2, s = 0, o = 0, b = 0.
+            // So f(4) = 4^(3/2) = 8.
+            let dist = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 3,
+                n: 2,
+                o: 0,
+                s: Some(0),
+                b: 0,
+                min_value: Some(0),
+                max_value: Some(100),
+            };
+            let eval_result = dist.evaluate(4);
+            assert_eq!(
+                eval_result.unwrap(),
+                8,
+                "Expected f(4) to be 8 for a fractional exponent of 3/2"
+            );
+            let validation_result = dist.validate(4);
+            assert!(
+                validation_result
+                    .expect("expected valid")
+                    .first_error()
+                    .is_none(),
+                "Expected no validation errors for a properly configured fractional exponent function"
+            );
+        }
+    }
+    mod exp {
+        use super::*;
+        #[test]
+        fn test_exponential_valid() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 10,
+                m: 1,
+                n: 2,
+                o: -3999,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(1000000),
+            };
+            let result = dist.validate(START_MOMENT);
+            if let Err(err) = &result {
+                panic!("Test failed: unexpected error: {:?}", err);
+            }
+            if let Some(error) = result
+                .expect("no error on test_exponential_valid")
+                .first_error()
+            {
+                panic!("Test failed: validation error: {:?}", error);
             }
         }
-    }
-    #[test]
-    fn test_polynomial_invalid_divide_by_zero() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 0,
-            m: 2,
-            n: 3,
-            o: 0,
-            s: Some(0),
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_polynomial_invalid_divide_by_zero")
-            .first_error()
-            .is_some());
-    }
 
-    // 1. Test invalid: n is zero (division by zero in exponent)
-    #[test]
-    fn test_polynomial_invalid_n_zero() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 0, // Invalid: n == 0
-            o: 0,
-            s: Some(0),
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an error when n is zero"
-        );
-    }
-
-    // 2. Test invalid: shift parameter s exceeds MAX_DISTRIBUTION_PARAM.
-    #[test]
-    fn test_polynomial_invalid_s_exceeds_max() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 3,
-            o: 0,
-            s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s too large
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an error when s exceeds MAX_DISTRIBUTION_PARAM"
-        );
-    }
-
-    // 3. Test invalid: offset o is too high.
-    #[test]
-    fn test_polynomial_invalid_o_too_high() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 3,
-            o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: o too high
-            s: Some(0),
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an error when o is above the allowed maximum"
-        );
-    }
-
-    // 4. Test invalid: offset o is too low.
-    #[test]
-    fn test_polynomial_invalid_o_too_low() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 3,
-            o: -(MAX_DISTRIBUTION_PARAM as i64) - 1, // Invalid: o too low
-            s: Some(0),
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an error when o is below the allowed minimum"
-        );
-    }
-
-    // 5. Test invalid: max_value exceeds MAX_DISTRIBUTION_PARAM.
-    #[test]
-    fn test_polynomial_invalid_max_exceeds_max_distribution() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 3,
-            o: 0,
-            s: Some(0),
-            b: 5,
-            min_value: Some(1),
-            max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too high
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an error when max_value exceeds MAX_DISTRIBUTION_PARAM"
-        );
-    }
-
-    // 6. Test invalid: min_value is greater than max_value.
-    #[test]
-    fn test_polynomial_invalid_min_greater_than_max() {
-        let dist = DistributionFunction::Polynomial {
-            a: 2,
-            d: 10,
-            m: 2,
-            n: 3,
-            o: 0,
-            s: Some(0),
-            b: 5,
-            min_value: Some(60), // min_value > max_value
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an error when min_value is greater than max_value"
-        );
-    }
-
-    // 7. Test invalid: For an increasing polynomial function, the starting value equals max_value.
-    #[test]
-    fn test_polynomial_invalid_starting_at_max_for_increasing() {
-        // For an increasing function (a > 0, m > 0) evaluated at x = s,
-        // the result is b. If b equals max_value, then the function starts at the maximum.
-        let dist = DistributionFunction::Polynomial {
-            a: 2, // positive
-            d: 10,
-            m: 2, // positive
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 100, // f(0) = 100
-            min_value: Some(1),
-            max_value: Some(100), // Starting at max_value
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an incoherence error when an increasing function starts at max_value"
-        );
-    }
-
-    // 8. Test invalid: For a decreasing polynomial function, the starting value equals min_value.
-    #[test]
-    fn test_polynomial_invalid_starting_at_min_for_decreasing() {
-        // For a decreasing function (a < 0, m > 0 so that a*m < 0),
-        // evaluated at x = s, the result is b. If b equals min_value, then it's invalid.
-        let dist = DistributionFunction::Polynomial {
-            a: -2, // negative
-            d: 10,
-            m: 2, // positive => a*m is negative (decreasing)
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 50,               // f(0) = 50
-            min_value: Some(50), // Starting at min_value
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected error").first_error().is_some(),
-            "Expected an incoherence error when a decreasing function starts at min_value"
-        );
-    }
-
-    // 9. Test valid: Polynomial with no min_value or max_value provided.
-    #[test]
-    fn test_polynomial_valid_no_boundaries() {
-        let dist = DistributionFunction::Polynomial {
-            a: 3,
-            d: 10,
-            m: 2,
-            n: 1,
-            o: 0,
-            s: Some(0),
-            b: 20,
-            min_value: None,
-            max_value: None,
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result.expect("expected valid").first_error().is_none(),
-            "Expected no validation errors when boundaries are omitted"
-        );
-    }
-
-    // 10. Test valid: Polynomial with fractional exponent (m/n = 3/2).
-    #[test]
-    fn test_polynomial_valid_fractional() {
-        // f(x) = (a * (x - s + o)^(m/n)) / d + b.
-        // Here: a = 1, d = 1, m = 3, n = 2, s = 0, o = 0, b = 0.
-        // So f(4) = 4^(3/2) = 8.
-        let dist = DistributionFunction::Polynomial {
-            a: 1,
-            d: 1,
-            m: 3,
-            n: 2,
-            o: 0,
-            s: Some(0),
-            b: 0,
-            min_value: Some(0),
-            max_value: Some(100),
-        };
-        let eval_result = dist.evaluate(4);
-        assert_eq!(
-            eval_result.unwrap(),
-            8,
-            "Expected f(4) to be 8 for a fractional exponent of 3/2"
-        );
-        let validation_result = dist.validate(4);
-        assert!(
-            validation_result
-                .expect("expected valid")
+        #[test]
+        fn test_exponential_invalid_zero_n() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 10,
+                m: 1,
+                n: 0,
+                o: 1,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_exponential_invalid_zero_n")
                 .first_error()
-                .is_none(),
-            "Expected no validation errors for a properly configured fractional exponent function"
-        );
-    }
-
-    #[test]
-    fn test_exponential_valid() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 10,
-            m: 1,
-            n: 2,
-            o: -3999,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(1000000),
-        };
-        let result = dist.validate(START_MOMENT);
-        if let Err(err) = &result {
-            panic!("Test failed: unexpected error: {:?}", err);
+                .is_some());
         }
-        if let Some(error) = result
-            .expect("no error on test_exponential_valid")
-            .first_error()
-        {
-            panic!("Test failed: validation error: {:?}", error);
+
+        #[test]
+        fn test_exponential_invalid_zero_m() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 10,
+                m: 0, // Invalid: `m` should not be zero
+                n: 2,
+                o: 1,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_zero_m")
+                    .first_error()
+                    .is_some(),
+                "Expected error: m should not be zero"
+            );
         }
-    }
 
-    #[test]
-    fn test_exponential_invalid_zero_n() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 10,
-            m: 1,
-            n: 0,
-            o: 1,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_exponential_invalid_zero_n")
-            .first_error()
-            .is_some());
-    }
+        #[test]
+        fn test_exponential_invalid_zero_a() {
+            let dist = DistributionFunction::Exponential {
+                a: 0, // Invalid: `a` cannot be zero
+                d: 10,
+                m: 1,
+                n: 2,
+                o: 1,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_zero_a")
+                    .first_error()
+                    .is_some(),
+                "Expected error: a cannot be zero"
+            );
+        }
 
-    #[test]
-    fn test_exponential_invalid_zero_m() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 10,
-            m: 0, // Invalid: `m` should not be zero
-            n: 2,
-            o: 1,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_zero_m")
+        #[test]
+        fn test_exponential_invalid_max_missing_when_m_positive() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 10,
+                m: 1, // `m > 0`, so `max_value` must be set
+                n: 2,
+                o: 1,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: None, // Invalid: max_value must be set
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_max_missing_when_m_positive")
+                    .first_error()
+                    .is_some(),
+                "Expected error: max_value must be set when m > 0"
+            );
+        }
+
+        #[test]
+        fn test_exponential_invalid_o_too_large() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 10,
+                m: 1,
+                n: 2,
+                o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: `o` exceeds allowed range
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_o_too_large")
+                    .first_error()
+                    .is_some(),
+                "Expected error: o exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        #[test]
+        fn test_exponential_invalid_min_greater_than_max() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 10,
+                m: -1,
+                n: 2,
+                o: 1,
+                s: Some(0),
+                c: 10,
+                min_value: Some(50), // Invalid: min > max
+                max_value: Some(30),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_min_greater_than_max")
+                    .first_error()
+                    .is_some(),
+                "Expected error: min_value > max_value"
+            );
+        }
+
+        #[test]
+        fn test_exponential_valid_with_negative_m() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 5,
+                m: -2, // Valid: Decay function (exponential decrease)
+                n: 4,
+                o: 2,
+                s: Some(START_MOMENT),
+                c: 8,
+                min_value: Some(2),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_exponential_valid_with_negative_m")
                 .first_error()
-                .is_some(),
-            "Expected error: m should not be zero"
-        );
-    }
+                .is_none());
+        }
 
-    #[test]
-    fn test_exponential_invalid_zero_a() {
-        let dist = DistributionFunction::Exponential {
-            a: 0, // Invalid: `a` cannot be zero
-            d: 10,
-            m: 1,
-            n: 2,
-            o: 1,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_zero_a")
+        #[test]
+        fn test_exponential_valid_with_max_boundary() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 5,
+                m: 2,
+                n: 4,
+                o: 1,
+                s: Some(START_MOMENT),
+                c: 8,
+                min_value: Some(2),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_exponential_valid_with_max_boundary")
                 .first_error()
-                .is_some(),
-            "Expected error: a cannot be zero"
-        );
-    }
+                .is_none());
+        }
 
-    #[test]
-    fn test_exponential_invalid_max_missing_when_m_positive() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 10,
-            m: 1, // `m > 0`, so `max_value` must be set
-            n: 2,
-            o: 1,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: None, // Invalid: max_value must be set
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_max_missing_when_m_positive")
-                .first_error()
-                .is_some(),
-            "Expected error: max_value must be set when m > 0"
-        );
-    }
+        #[test]
+        fn test_exponential_invalid_large_start_token_amount() {
+            let dist = DistributionFunction::Exponential {
+                a: MAX_DISTRIBUTION_PARAM,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_large_start_token_amount")
+                    .first_error()
+                    .is_some(),
+                "Expected error: start_token_amount exceeds allowed range"
+            );
+        }
 
-    #[test]
-    fn test_exponential_invalid_o_too_large() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 10,
-            m: 1,
-            n: 2,
-            o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: `o` exceeds allowed range
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_o_too_large")
-                .first_error()
-                .is_some(),
-            "Expected error: o exceeds MAX_DISTRIBUTION_PARAM"
-        );
-    }
+        #[test]
+        fn test_exponential_invalid_a_too_large_for_max() {
+            let dist = DistributionFunction::Exponential {
+                a: MAX_DISTRIBUTION_PARAM, // Large `a`
+                d: 10,
+                m: 2, // Increasing
+                n: 1,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: Some(1),
+                max_value: Some(1000), // Small `max_value`
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_a_too_large_for_max")
+                    .first_error()
+                    .is_some(),
+                "Expected error: `a` is too large, leading to immediate max_value"
+            );
+        }
 
-    #[test]
-    fn test_exponential_invalid_min_greater_than_max() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 10,
-            m: -1,
-            n: 2,
-            o: 1,
-            s: Some(0),
-            c: 10,
-            min_value: Some(50), // Invalid: min > max
-            max_value: Some(30),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_min_greater_than_max")
-                .first_error()
-                .is_some(),
-            "Expected error: min_value > max_value"
-        );
-    }
+        #[test]
+        fn test_exponential_invalid_starts_at_min() {
+            let dist = DistributionFunction::Exponential {
+                a: 5,
+                d: 10,
+                m: -3, // Decreasing
+                n: 2,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: Some(10), // Function starts at `min_value`
+                max_value: Some(1000),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_starts_at_min")
+                    .first_error()
+                    .is_some(),
+                "Expected IncoherenceError: function starts at `min_value`"
+            );
+        }
 
-    #[test]
-    fn test_exponential_valid_with_negative_m() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 5,
-            m: -2, // Valid: Decay function (exponential decrease)
-            n: 4,
-            o: 2,
-            s: Some(START_MOMENT),
-            c: 8,
-            min_value: Some(2),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_exponential_valid_with_negative_m")
-            .first_error()
-            .is_none());
-    }
+        #[test]
+        fn test_exponential_invalid_missing_max_for_positive_m() {
+            let dist = DistributionFunction::Exponential {
+                a: 2,
+                d: 10,
+                m: 3, // Increasing
+                n: 2,
+                o: 1,
+                s: Some(0),
+                c: 5,
+                min_value: Some(1),
+                max_value: None, // Should fail
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_missing_max_for_positive_m")
+                    .first_error()
+                    .is_some(),
+                "Expected error: missing `max_value` when `m > 0`"
+            );
+        }
 
-    #[test]
-    fn test_exponential_valid_with_max_boundary() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 5,
-            m: 2,
-            n: 4,
-            o: 1,
-            s: Some(START_MOMENT),
-            c: 8,
-            min_value: Some(2),
-            max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_exponential_valid_with_max_boundary")
-            .first_error()
-            .is_none());
-    }
+        #[test]
+        fn test_exponential_invalid_large_o_overflow() {
+            let dist = DistributionFunction::Exponential {
+                a: 2,
+                d: 10,
+                m: 1,
+                n: 1,
+                o: i64::MAX / 2, // Large `o`
+                s: Some(0),
+                c: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_large_o_overflow")
+                    .first_error()
+                    .is_some(),
+                "Expected error: `o` is too large and causes overflow"
+            );
+        }
 
-    #[test]
-    fn test_exponential_invalid_large_start_token_amount() {
-        let dist = DistributionFunction::Exponential {
-            a: MAX_DISTRIBUTION_PARAM,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(MAX_DISTRIBUTION_PARAM),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_large_start_token_amount")
-                .first_error()
-                .is_some(),
-            "Expected error: start_token_amount exceeds allowed range"
-        );
-    }
+        #[test]
+        fn test_exponential_invalid_a_too_small() {
+            let dist = DistributionFunction::Exponential {
+                a: 1, // Tiny `a`
+                d: 10,
+                m: -2, // Decreasing
+                n: 2,
+                o: 0,
+                s: Some(0),
+                c: 10,
+                min_value: Some(10),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_a_too_small")
+                    .first_error()
+                    .is_some(),
+                "Expected error: `a` is too small to make meaningful changes"
+            );
+        }
 
-    #[test]
-    fn test_exponential_invalid_a_too_large_for_max() {
-        let dist = DistributionFunction::Exponential {
-            a: MAX_DISTRIBUTION_PARAM, // Large `a`
-            d: 10,
-            m: 2, // Increasing
-            n: 1,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: Some(1),
-            max_value: Some(1000), // Small `max_value`
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_a_too_large_for_max")
-                .first_error()
-                .is_some(),
-            "Expected error: `a` is too large, leading to immediate max_value"
-        );
-    }
+        #[test]
+        fn test_exponential_valid_slow_increase() {
+            let dist = DistributionFunction::Exponential {
+                a: 1,
+                d: 50,
+                m: 1, // Small positive `m`
+                n: 10,
+                o: -3,
+                s: Some(0),
+                c: 5,
+                min_value: Some(10),
+                max_value: Some(1000),
+            };
 
-    #[test]
-    fn test_exponential_invalid_starts_at_min() {
-        let dist = DistributionFunction::Exponential {
-            a: 5,
-            d: 10,
-            m: -3, // Decreasing
-            n: 2,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: Some(10), // Function starts at `min_value`
-            max_value: Some(1000),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_starts_at_min")
-                .first_error()
-                .is_some(),
-            "Expected IncoherenceError: function starts at `min_value`"
-        );
-    }
+            let result = dist.validate(5);
 
-    #[test]
-    fn test_exponential_invalid_missing_max_for_positive_m() {
-        let dist = DistributionFunction::Exponential {
-            a: 2,
-            d: 10,
-            m: 3, // Increasing
-            n: 2,
-            o: 1,
-            s: Some(0),
-            c: 5,
-            min_value: Some(1),
-            max_value: None, // Should fail
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_missing_max_for_positive_m")
-                .first_error()
-                .is_some(),
-            "Expected error: missing `max_value` when `m > 0`"
-        );
-    }
-
-    #[test]
-    fn test_exponential_invalid_large_o_overflow() {
-        let dist = DistributionFunction::Exponential {
-            a: 2,
-            d: 10,
-            m: 1,
-            n: 1,
-            o: i64::MAX / 2, // Large `o`
-            s: Some(0),
-            c: 5,
-            min_value: Some(1),
-            max_value: Some(MAX_DISTRIBUTION_PARAM),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_large_o_overflow")
-                .first_error()
-                .is_some(),
-            "Expected error: `o` is too large and causes overflow"
-        );
-    }
-
-    #[test]
-    fn test_exponential_invalid_a_too_small() {
-        let dist = DistributionFunction::Exponential {
-            a: 1, // Tiny `a`
-            d: 10,
-            m: -2, // Decreasing
-            n: 2,
-            o: 0,
-            s: Some(0),
-            c: 10,
-            min_value: Some(10),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_exponential_invalid_a_too_small")
-                .first_error()
-                .is_some(),
-            "Expected error: `a` is too small to make meaningful changes"
-        );
-    }
-
-    #[test]
-    fn test_exponential_valid_slow_increase() {
-        let dist = DistributionFunction::Exponential {
-            a: 1,
-            d: 50,
-            m: 1, // Small positive `m`
-            n: 10,
-            o: -3,
-            s: Some(0),
-            c: 5,
-            min_value: Some(10),
-            max_value: Some(1000),
-        };
-
-        let result = dist.validate(5);
-
-        match result {
-            Ok(validation_result) => {
-                if let Some(error) = validation_result.first_error() {
-                    panic!("Test failed: Expected no error, but got: {:?}", error);
+            match result {
+                Ok(validation_result) => {
+                    if let Some(error) = validation_result.first_error() {
+                        panic!("Test failed: Expected no error, but got: {:?}", error);
+                    }
+                }
+                Err(protocol_error) => {
+                    panic!(
+                        "Test failed: Expected validation success, but got ProtocolError: {:?}",
+                        protocol_error
+                    );
                 }
             }
-            Err(protocol_error) => {
-                panic!(
-                    "Test failed: Expected validation success, but got ProtocolError: {:?}",
-                    protocol_error
-                );
-            }
+        }
+
+        #[test]
+        fn test_exponential_valid_gentle_decay() {
+            let dist = DistributionFunction::Exponential {
+                a: 3,
+                d: 15,
+                m: -1, // Small negative `m`
+                n: 4,
+                o: 2,
+                s: Some(START_MOMENT),
+                c: 8,
+                min_value: Some(5),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_exponential_valid_gentle_decay")
+                .first_error()
+                .is_none());
+        }
+
+        #[test]
+        fn test_exponential_valid_negative_m_with_o_offset() {
+            let dist = DistributionFunction::Exponential {
+                a: 5,
+                d: 8,
+                m: -2, // Decreasing
+                n: 3,
+                o: 5, // Shift start
+                s: Some(START_MOMENT),
+                c: 10,
+                min_value: Some(5),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_exponential_valid_negative_m_with_o_offset")
+                .first_error()
+                .is_none());
         }
     }
-
-    #[test]
-    fn test_exponential_valid_gentle_decay() {
-        let dist = DistributionFunction::Exponential {
-            a: 3,
-            d: 15,
-            m: -1, // Small negative `m`
-            n: 4,
-            o: 2,
-            s: Some(START_MOMENT),
-            c: 8,
-            min_value: Some(5),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_exponential_valid_gentle_decay")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_exponential_valid_negative_m_with_o_offset() {
-        let dist = DistributionFunction::Exponential {
-            a: 5,
-            d: 8,
-            m: -2, // Decreasing
-            n: 3,
-            o: 5, // Shift start
-            s: Some(START_MOMENT),
-            c: 10,
-            min_value: Some(5),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_exponential_valid_negative_m_with_o_offset")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_logarithmic_valid() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 4,
-            d: 10,
-            m: 1,
-            n: 2,
-            o: 1,
-            s: None,
-            b: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_logarithmic_valid")
-            .first_error()
-            .is_none());
-    }
-
-    #[test]
-    fn test_logarithmic_invalid_zero_d() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 4,
-            d: 0, // Invalid: Division by zero
-            m: 1,
-            n: 2,
-            o: 1,
-            s: Some(0),
-            b: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_logarithmic_invalid_zero_d")
+    mod log {
+        use super::*;
+        #[test]
+        fn test_logarithmic_valid() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 1,
+                n: 2,
+                o: 1,
+                s: None,
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_logarithmic_valid")
                 .first_error()
-                .is_some(),
-            "Expected division by zero error"
-        );
-    }
+                .is_none());
+        }
 
-    #[test]
-    fn test_logarithmic_invalid_zero_n() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 4,
-            d: 10,
-            m: 1,
-            n: 0, // Invalid: Division by zero in log denominator
-            o: 1,
-            s: Some(0),
-            b: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_logarithmic_invalid_zero_n")
+        #[test]
+        fn test_logarithmic_invalid_zero_d() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 0, // Invalid: Division by zero
+                m: 1,
+                n: 2,
+                o: 1,
+                s: Some(0),
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_zero_d")
+                    .first_error()
+                    .is_some(),
+                "Expected division by zero error"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_invalid_zero_n() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 1,
+                n: 0, // Invalid: Division by zero in log denominator
+                o: 1,
+                s: Some(0),
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_zero_n")
+                    .first_error()
+                    .is_some(),
+                "Expected division by zero error"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_invalid_x_s_o_non_positive() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 1,
+                n: 2,
+                o: -5, // Causes (x - s + o) to be <= 0
+                s: Some(START_MOMENT),
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_x_s_o_non_positive")
+                    .first_error()
+                    .is_some(),
+                "Expected error: (x - s + o) must be > 0"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_invalid_max_greater_than_max_param() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 1,
+                n: 2,
+                o: 1,
+                s: Some(0),
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too large
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_max_greater_than_max_param")
+                    .first_error()
+                    .is_some(),
+                "Expected error: max_value exceeds allowed max distribution parameter"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_invalid_min_greater_than_max() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 1,
+                n: 2,
+                o: 1,
+                s: Some(0),
+                b: 10,
+                min_value: Some(50), // Invalid: min > max
+                max_value: Some(30),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_min_greater_than_max")
+                    .first_error()
+                    .is_some(),
+                "Expected error: min_value > max_value"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_valid_with_s_and_o() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 3,
+                d: 5,
+                m: 2,
+                n: 4,
+                o: 3, // Offset ensures (x - s + o) > 0
+                s: Some(START_MOMENT - 2),
+                b: 8,
+                min_value: Some(2),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_logarithmic_valid_with_s_and_o")
                 .first_error()
-                .is_some(),
-            "Expected division by zero error"
-        );
-    }
+                .is_none());
+        }
 
-    #[test]
-    fn test_logarithmic_invalid_x_s_o_non_positive() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 4,
-            d: 10,
-            m: 1,
-            n: 2,
-            o: -5, // Causes (x - s + o) to be <= 0
-            s: Some(START_MOMENT),
-            b: 10,
-            min_value: Some(1),
-            max_value: Some(100),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_logarithmic_invalid_x_s_o_non_positive")
+        #[test]
+        fn test_logarithmic_valid_edge_case_max() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 3,
+                d: 5,
+                m: 2,
+                n: 4,
+                o: 1,
+                s: Some(START_MOMENT),
+                b: 8,
+                min_value: Some(2),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(result
+                .expect("no error on test_logarithmic_valid_edge_case_max")
                 .first_error()
-                .is_some(),
-            "Expected error: (x - s + o) must be > 0"
-        );
+                .is_none());
+        }
     }
+    mod inverted_log {
+        use super::*;
+        #[test]
+        fn test_inverted_logarithmic_valid() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("no error on test_inverted_logarithmic_valid").first_error().is_none(),
+                "Expected valid inverted logarithmic function"
+            );
+        }
 
-    #[test]
-    fn test_logarithmic_invalid_max_greater_than_max_param() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 4,
-            d: 10,
-            m: 1,
-            n: 2,
-            o: 1,
-            s: Some(0),
-            b: 10,
-            min_value: Some(1),
-            max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too large
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_logarithmic_invalid_max_greater_than_max_param")
-                .first_error()
-                .is_some(),
-            "Expected error: max_value exceeds allowed max distribution parameter"
-        );
-    }
+        #[test]
+        fn test_inverted_logarithmic_invalid_divide_by_zero_d() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 0, // Invalid: d = 0 causes division by zero
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: division by zero (d = 0)"
+            );
+        }
 
-    #[test]
-    fn test_logarithmic_invalid_min_greater_than_max() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 4,
-            d: 10,
-            m: 1,
-            n: 2,
-            o: 1,
-            s: Some(0),
-            b: 10,
-            min_value: Some(50), // Invalid: min > max
-            max_value: Some(30),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(
-            result
-                .expect("no error on test_logarithmic_invalid_min_greater_than_max")
-                .first_error()
-                .is_some(),
-            "Expected error: min_value > max_value"
-        );
-    }
+        #[test]
+        fn test_inverted_logarithmic_invalid_zero_n() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 0, // Invalid: n = 0 causes division by zero in log argument
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: division by zero (n = 0)"
+            );
+        }
 
-    #[test]
-    fn test_logarithmic_valid_with_s_and_o() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 3,
-            d: 5,
-            m: 2,
-            n: 4,
-            o: 3, // Offset ensures (x - s + o) > 0
-            s: Some(START_MOMENT - 2),
-            b: 8,
-            min_value: Some(2),
-            max_value: Some(50),
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_logarithmic_valid_with_s_and_o")
-            .first_error()
-            .is_none());
-    }
+        #[test]
+        fn test_inverted_logarithmic_invalid_zero_m() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 0, // Invalid: m = 0 causes invalid log argument
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: division by zero (m = 0)"
+            );
+        }
 
-    #[test]
-    fn test_logarithmic_valid_edge_case_max() {
-        let dist = DistributionFunction::Logarithmic {
-            a: 3,
-            d: 5,
-            m: 2,
-            n: 4,
-            o: 1,
-            s: Some(START_MOMENT),
-            b: 8,
-            min_value: Some(2),
-            max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
-        };
-        let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_logarithmic_valid_edge_case_max")
-            .first_error()
-            .is_none());
+        #[test]
+        fn test_inverted_logarithmic_invalid_negative_log_argument() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: -10, // Causes log argument to be non-positive
+                s: Some(START_MOMENT),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: log argument must be positive"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_exceeds_max_distribution_param() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds max
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: s exceeds MAX_DISTRIBUTION_PARAM"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_min_greater_than_max() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(60), // Invalid: min > max
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: min_value > max_value"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_valid_with_max_boundary() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected valid").first_error().is_none(),
+                "Expected valid function with max boundary"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_starting_at_max_for_increasing() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -10, // Increasing function
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 50, // Starts at max_value
+                min_value: Some(1),
+                max_value: Some(50), // Function already at max
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: increasing function starts at max_value"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_starting_at_min_for_decreasing() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 10, // Decreasing function
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                s: Some(0),
+                b: 1, // Starts at min_value
+                min_value: Some(1),
+                max_value: Some(50), // Function already at min
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected error").first_error().is_some(),
+                "Expected error: decreasing function starts at min_value"
+            );
+        }
     }
 }
