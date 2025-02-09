@@ -13,6 +13,11 @@ impl Encode for DistributionFunction {
                 0u8.encode(encoder)?;
                 n.encode(encoder)?;
             }
+            DistributionFunction::Random { min, max } => {
+                1u8.encode(encoder)?;
+                min.encode(encoder)?;
+                max.encode(encoder)?;
+            }
             DistributionFunction::StepDecreasingAmount {
                 step_count,
                 decrease_per_interval_numerator,
@@ -21,7 +26,7 @@ impl Encode for DistributionFunction {
                 n,
                 min_value,
             } => {
-                1u8.encode(encoder)?;
+                2u8.encode(encoder)?;
                 step_count.encode(encoder)?;
                 decrease_per_interval_numerator.encode(encoder)?;
                 decrease_per_interval_denominator.encode(encoder)?;
@@ -30,7 +35,7 @@ impl Encode for DistributionFunction {
                 min_value.encode(encoder)?;
             }
             DistributionFunction::Stepwise(steps) => {
-                2u8.encode(encoder)?;
+                3u8.encode(encoder)?;
                 steps.encode(encoder)?;
             }
             DistributionFunction::Linear {
@@ -41,7 +46,7 @@ impl Encode for DistributionFunction {
                 min_value,
                 max_value,
             } => {
-                3u8.encode(encoder)?;
+                4u8.encode(encoder)?;
                 a.encode(encoder)?;
                 d.encode(encoder)?;
                 s.encode(encoder)?;
@@ -60,7 +65,7 @@ impl Encode for DistributionFunction {
                 min_value,
                 max_value,
             } => {
-                4u8.encode(encoder)?;
+                5u8.encode(encoder)?;
                 a.encode(encoder)?;
                 d.encode(encoder)?;
                 m.encode(encoder)?;
@@ -82,7 +87,7 @@ impl Encode for DistributionFunction {
                 min_value,
                 max_value,
             } => {
-                5u8.encode(encoder)?;
+                6u8.encode(encoder)?;
                 a.encode(encoder)?;
                 d.encode(encoder)?;
                 m.encode(encoder)?;
@@ -104,7 +109,7 @@ impl Encode for DistributionFunction {
                 min_value,
                 max_value,
             } => {
-                6u8.encode(encoder)?;
+                7u8.encode(encoder)?;
                 a.encode(encoder)?;
                 d.encode(encoder)?;
                 m.encode(encoder)?;
@@ -126,7 +131,7 @@ impl Encode for DistributionFunction {
                 min_value,
                 max_value,
             } => {
-                7u8.encode(encoder)?;
+                8u8.encode(encoder)?;
                 a.encode(encoder)?;
                 d.encode(encoder)?;
                 m.encode(encoder)?;
@@ -153,6 +158,11 @@ impl Decode for DistributionFunction {
                 Ok(Self::FixedAmount { n })
             }
             1 => {
+                let min = TokenAmount::decode(decoder)?;
+                let max = TokenAmount::decode(decoder)?;
+                Ok(Self::Random { min, max })
+            }
+            2 => {
                 let step_count = u32::decode(decoder)?;
                 let decrease_per_interval_numerator = u16::decode(decoder)?;
                 let decrease_per_interval_denominator = u16::decode(decoder)?;
@@ -168,11 +178,11 @@ impl Decode for DistributionFunction {
                     min_value,
                 })
             }
-            2 => {
+            3 => {
                 let steps = BTreeMap::<u64, TokenAmount>::decode(decoder)?;
                 Ok(Self::Stepwise(steps))
             }
-            3 => {
+            4 => {
                 let a = i64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
                 let s = Option::<u64>::decode(decoder)?;
@@ -188,7 +198,7 @@ impl Decode for DistributionFunction {
                     max_value,
                 })
             }
-            4 => {
+            5 => {
                 let a = i64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
                 let m = i64::decode(decoder)?;
@@ -210,7 +220,7 @@ impl Decode for DistributionFunction {
                     max_value,
                 })
             }
-            5 => {
+            6 => {
                 let a = u64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
                 let m = i64::decode(decoder)?;
@@ -232,7 +242,7 @@ impl Decode for DistributionFunction {
                     max_value,
                 })
             }
-            6 => {
+            7 => {
                 let a = i64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
                 let m = u64::decode(decoder)?;
@@ -254,7 +264,7 @@ impl Decode for DistributionFunction {
                     max_value,
                 })
             }
-            7 => {
+            8 => {
                 let a = i64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
                 let m = u64::decode(decoder)?;
@@ -294,6 +304,11 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 Ok(Self::FixedAmount { n })
             }
             1 => {
+                let min = TokenAmount::borrow_decode(decoder)?;
+                let max = TokenAmount::borrow_decode(decoder)?;
+                Ok(Self::Random { min, max })
+            }
+            2 => {
                 let step_count = u32::borrow_decode(decoder)?;
                 let decrease_per_interval_numerator = u16::borrow_decode(decoder)?;
                 let decrease_per_interval_denominator = u16::borrow_decode(decoder)?;
@@ -309,11 +324,11 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     min_value,
                 })
             }
-            2 => {
+            3 => {
                 let steps = BTreeMap::<u64, TokenAmount>::borrow_decode(decoder)?;
                 Ok(Self::Stepwise(steps))
             }
-            3 => {
+            4 => {
                 let a = i64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
                 let s = Option::<u64>::borrow_decode(decoder)?;
@@ -329,7 +344,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     max_value,
                 })
             }
-            4 => {
+            5 => {
                 let a = i64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
                 let m = i64::borrow_decode(decoder)?;
@@ -351,7 +366,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     max_value,
                 })
             }
-            5 => {
+            6 => {
                 let a = u64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
                 let m = i64::borrow_decode(decoder)?;
@@ -373,7 +388,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     max_value,
                 })
             }
-            6 => {
+            7 => {
                 let a = i64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
                 let m = u64::borrow_decode(decoder)?;
@@ -395,7 +410,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     max_value,
                 })
             }
-            7 => {
+            8 => {
                 let a = i64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
                 let m = u64::borrow_decode(decoder)?;

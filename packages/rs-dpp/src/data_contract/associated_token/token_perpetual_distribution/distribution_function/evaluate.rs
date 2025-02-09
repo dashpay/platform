@@ -17,6 +17,30 @@ impl DistributionFunction {
                 // For fixed amount, simply return n.
                 Ok(*n)
             }
+            DistributionFunction::Random { min, max } => {
+                // Ensure that min is not greater than max.
+                if *min > *max {
+                    return Err(ProtocolError::Overflow(
+                        "Random: min must be less than or equal to max".into(),
+                    ));
+                }
+
+                // Use x (the period) as the seed for the PRF.
+                let seed = x;
+                // A simple SplitMix64-based PRF.
+                let mut z = seed.wrapping_add(0x9E3779B97F4A7C15);
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+                z = z ^ (z >> 31);
+
+                // Calculate the range size: (max - min + 1)
+                let range = max.wrapping_sub(*min).wrapping_add(1);
+
+                // Map the pseudorandom number into the desired range.
+                let value = min.wrapping_add(z % range);
+
+                Ok(value)
+            }
 
             DistributionFunction::StepDecreasingAmount {
                 step_count,
@@ -229,9 +253,9 @@ impl DistributionFunction {
                         Ok(*min_value)
                     } else {
                         Ok(0)
-                    }
+                    };
                 }
-                
+
                 let value_u64 = value as u64;
                 if let Some(min_value) = min_value {
                     if value_u64 < *min_value {
@@ -293,7 +317,7 @@ impl DistributionFunction {
                         Ok(*min_value)
                     } else {
                         Ok(0)
-                    }
+                    };
                 }
                 let value_u64 = value as u64;
                 if let Some(min_value) = min_value {
@@ -303,7 +327,17 @@ impl DistributionFunction {
                 }
                 Ok(value_u64)
             }
-            DistributionFunction::InvertedLogarithmic { a, d, m, n, o, s, b, min_value, max_value } => {
+            DistributionFunction::InvertedLogarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
                 // Check for division-by-zero: d, n, and m must be non-zero.
                 if *d == 0 {
                     return Err(ProtocolError::DivideByZero(
@@ -359,7 +393,9 @@ impl DistributionFunction {
 
                 // Clamp to max_value if provided.
                 if let Some(max_value) = max_value {
-                    if value > *max_value as f64 || (value.is_infinite() && value.is_sign_positive()) {
+                    if value > *max_value as f64
+                        || (value.is_infinite() && value.is_sign_positive())
+                    {
                         return Ok(*max_value);
                     }
                 }
@@ -370,15 +406,15 @@ impl DistributionFunction {
                         "InvertedLogarithmic: evaluation overflow".into(),
                     ));
                 }
-                
+
                 if value < 0.0 {
                     return if let Some(min_value) = min_value {
                         Ok(*min_value)
                     } else {
                         Ok(0)
-                    }
+                    };
                 }
-                
+
                 let value_u64 = value as u64;
 
                 // Clamp to min_value if provided.
@@ -456,6 +492,76 @@ mod tests {
             distribution.evaluate(10),
             Err(ProtocolError::DivideByZero(_))
         ));
+    }
+    mod random {
+        use super::*;
+
+        #[test]
+        fn test_random_distribution_with_valid_range() {
+            let distribution = DistributionFunction::Random { min: 10, max: 100 };
+
+            for x in 0..100 {
+                let result = distribution.evaluate(x).unwrap();
+                assert!(
+                    (10..=100).contains(&result),
+                    "Random value {} is out of range for x = {}",
+                    result,
+                    x
+                );
+            }
+        }
+
+        #[test]
+        fn test_random_distribution_with_single_value_range() {
+            let distribution = DistributionFunction::Random { min: 42, max: 42 };
+
+            for x in 0..10 {
+                let result = distribution.evaluate(x).unwrap();
+                assert_eq!(
+                    result, 42,
+                    "Expected fixed output 42, got {} for x = {}",
+                    result, x
+                );
+            }
+        }
+
+        #[test]
+        fn test_random_distribution_invalid_range() {
+            let distribution = DistributionFunction::Random { min: 50, max: 40 };
+
+            let result = distribution.evaluate(0);
+            assert!(
+                matches!(result, Err(ProtocolError::Overflow(_))),
+                "Expected ProtocolError::Overflow but got {:?}",
+                result
+            );
+        }
+
+        #[test]
+        fn test_random_distribution_deterministic_for_same_x() {
+            let distribution = DistributionFunction::Random { min: 10, max: 100 };
+
+            let value1 = distribution.evaluate(42).unwrap();
+            let value2 = distribution.evaluate(42).unwrap();
+
+            assert_eq!(
+                value1, value2,
+                "Random distribution should be deterministic for the same x"
+            );
+        }
+
+        #[test]
+        fn test_random_distribution_varies_for_different_x() {
+            let distribution = DistributionFunction::Random { min: 10, max: 100 };
+
+            let value1 = distribution.evaluate(1).unwrap();
+            let value2 = distribution.evaluate(2).unwrap();
+
+            assert_ne!(
+                value1, value2,
+                "Random distribution should vary for different x values"
+            );
+        }
     }
     mod linear {
         use super::*;
@@ -1040,7 +1146,7 @@ mod tests {
                 min_value: None,
                 max_value: None,
             };
-            
+
             let val1000 = distribution.evaluate(1000).unwrap();
             let val2000 = distribution.evaluate(2000).unwrap();
             let val3000 = distribution.evaluate(3000).unwrap();

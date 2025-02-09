@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 mod encode;
-mod methods;
+mod evaluate;
+mod evaluate_interval;
 mod validation;
 
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
@@ -27,6 +28,50 @@ pub enum DistributionFunction {
     /// # Example
     /// - If `n = 5` tokens per block, then after 3 blocks the total emission is 15 tokens.
     FixedAmount { n: TokenAmount },
+
+    /// Emits a random number of tokens within a specified range.
+    ///
+    /// # Description
+    /// - This function selects a **random** token emission amount between `min` and `max`.
+    /// - The value is drawn **uniformly** between the bounds.
+    /// - The randomness uses a Pseudo Random Function (PRF) from x.
+    ///
+    /// # Formula
+    /// For any period `x`, the emitted tokens follow:
+    ///
+    /// ```text
+    /// f(x) ∈ [min, max]
+    /// ```
+    ///
+    /// # Parameters
+    /// - `min`: The **minimum** possible number of tokens emitted.
+    /// - `max`: The **maximum** possible number of tokens emitted.
+    ///
+    /// # Use Cases
+    /// - **Stochastic Rewards**: Introduces randomness into rewards to incentivize unpredictability.
+    /// - **Lottery-Based Systems**: Used for randomized emissions, such as block rewards with probabilistic payouts.
+    ///
+    /// # Example
+    /// Suppose a system emits **between 10 and 100 tokens per period**.
+    ///
+    /// ```text
+    /// Random { min: 10, max: 100 }
+    /// ```
+    ///
+    /// | Period (x) | Emitted Tokens (Random) |
+    /// |------------|------------------------|
+    /// | 1          | 27                     |
+    /// | 2          | 94                     |
+    /// | 3          | 63                     |
+    /// | 4          | 12                     |
+    ///
+    /// - Each period, the function emits a **random number of tokens** between `min = 10` and `max = 100`.
+    /// - Over time, the **average reward trends toward the midpoint** `(min + max) / 2`.
+    ///
+    /// # Constraints
+    /// - **`min` must be ≤ `max`**, otherwise the function is invalid.
+    /// - If `min == max`, this behaves like a `FixedAmount` function with a constant emission.
+    Random { min: TokenAmount, max: TokenAmount },
 
     /// Emits tokens that decrease in discrete steps at fixed intervals.
     ///
@@ -472,6 +517,9 @@ impl fmt::Display for DistributionFunction {
         match self {
             DistributionFunction::FixedAmount { n } => {
                 write!(f, "FixedAmount: {} tokens per period", n)
+            }
+            DistributionFunction::Random { min, max } => {
+                write!(f, "Random: tokens ∈ [{}, {}] per period", min, max)
             }
             DistributionFunction::StepDecreasingAmount {
                 step_count,

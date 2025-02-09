@@ -29,6 +29,32 @@ impl DistributionFunction {
                     ));
                 }
             }
+            DistributionFunction::Random { min, max } => {
+                // Ensure that `min` is not greater than `max`
+                if *min > *max {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                            "min".to_string(),
+                            "max".to_string(),
+                            "smaller than or equal to".to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+
+                // Ensure that `max` is within valid bounds
+                if *max > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "max".to_string(),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+            }
 
             DistributionFunction::StepDecreasingAmount {
                 step_count,
@@ -686,7 +712,17 @@ impl DistributionFunction {
                 }
             }
             // f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
-            DistributionFunction::InvertedLogarithmic { a, d, m, n, o, s, b, min_value, max_value } => {
+            DistributionFunction::InvertedLogarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
                 // Check for division by zero.
                 if *d == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -701,7 +737,7 @@ impl DistributionFunction {
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
-                            .into(),
+                        .into(),
                     ));
                 }
                 if *m == 0 {
@@ -720,7 +756,7 @@ impl DistributionFunction {
                                 MAX_DISTRIBUTION_PARAM as i64,
                                 None,
                             )
-                                .into(),
+                            .into(),
                         ));
                     }
                 }
@@ -733,7 +769,7 @@ impl DistributionFunction {
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
-                            .into(),
+                        .into(),
                     ));
                 }
                 if *o < -(MAX_DISTRIBUTION_PARAM as i64) {
@@ -744,7 +780,7 @@ impl DistributionFunction {
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
-                            .into(),
+                        .into(),
                     ));
                 }
                 // Validate max_value if provided.
@@ -757,7 +793,7 @@ impl DistributionFunction {
                                 MAX_DISTRIBUTION_PARAM as i64,
                                 None,
                             )
-                                .into(),
+                            .into(),
                         ));
                     }
                 }
@@ -770,7 +806,7 @@ impl DistributionFunction {
                                 "max_value".to_string(),
                                 "smaller than or equal to".to_string(),
                             )
-                                .into(),
+                            .into(),
                         ));
                     }
                 }
@@ -801,7 +837,7 @@ impl DistributionFunction {
                     min_value: *min_value,
                     max_value: *max_value,
                 }
-                    .evaluate(start_moment)?;
+                .evaluate(start_moment)?;
 
                 // Determine the function's monotonicity.
                 // For InvertedLogarithmic, f'(x) = -a / (d * (x - s + o)).
@@ -2115,7 +2151,10 @@ mod tests {
             };
             let result = dist.validate(START_MOMENT);
             assert!(
-                result.expect("no error on test_inverted_logarithmic_valid").first_error().is_none(),
+                result
+                    .expect("no error on test_inverted_logarithmic_valid")
+                    .first_error()
+                    .is_none(),
                 "Expected valid inverted logarithmic function"
             );
         }

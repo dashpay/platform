@@ -11,6 +11,7 @@ use std::fmt;
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum RewardDistributionType {
     /// An amount of tokens is emitted every n blocks
+    /// The start and end are included if set
     BlockBasedDistribution {
         interval: BlockHeightInterval,
         amount: TokenAmount,
@@ -19,6 +20,7 @@ pub enum RewardDistributionType {
         end: Option<BlockHeight>,
     },
     /// An amount of tokens is emitted every amount of time given
+    /// The start and end are included if set
     TimeBasedDistribution {
         interval: TimestampMillisInterval,
         amount: TokenAmount,
@@ -27,6 +29,7 @@ pub enum RewardDistributionType {
         end: Option<TimestampMillis>,
     },
     /// An amount of tokens is emitted every amount of epochs
+    /// The start and end are included if set
     EpochBasedDistribution {
         interval: EpochInterval,
         amount: TokenAmount,
