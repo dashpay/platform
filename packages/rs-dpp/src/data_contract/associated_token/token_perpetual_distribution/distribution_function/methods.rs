@@ -274,10 +274,13 @@ impl DistributionFunction {
                         return Ok(*max_value);
                     }
                 }
-                if !value.is_finite() || value > (u64::MAX as f64) || value < 0.0 {
+                if !value.is_finite() || value > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
                         "Logarithmic function evaluation overflow or negative",
                     ));
+                }
+                if value < 0.0 {
+                    return Ok(0);
                 }
                 let value_u64 = value as u64;
                 if let Some(min_value) = min_value {
@@ -446,6 +449,157 @@ mod tests {
             "Expected overflow but got {:?}",
             result
         );
+    }
+
+    // Test: Fractional exponent (exponent = 3/2)
+    #[test]
+    fn test_polynomial_function_fraction_exponent() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 1,
+            d: 1,
+            m: 3, // exponent is 3/2
+            n: 2,
+            o: 0,
+            s: Some(0),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        };
+        // (4 - 0 + 0)^(3/2) = 4^(3/2) = (sqrt(4))^3 = 2^3 = 8.
+        assert_eq!(distribution.evaluate(4).unwrap(), 8);
+    }
+
+    // Test: Negative coefficient a (should flip the sign)
+    #[test]
+    fn test_polynomial_function_negative_a() {
+        let distribution = DistributionFunction::Polynomial {
+            a: -1,
+            d: 1,
+            m: 2,
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = -1 * (x^2). For x = 3: -1 * (3^2) = -9.
+        assert_eq!(distribution.evaluate(3).unwrap(), 0);
+    }
+
+    // Test: Non-zero shift parameter s (shifting the x coordinate)
+    #[test]
+    fn test_polynomial_function_with_shift() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 2,
+            d: 1,
+            m: 2,
+            n: 1,
+            o: 0,
+            s: Some(2),
+            b: 10,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = 2 * ((x - 2)^2) + 10.
+        // At x = 2: (0)^2 = 0, f(2) = 10.
+        assert_eq!(distribution.evaluate(2).unwrap(), 10);
+        // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
+        assert_eq!(distribution.evaluate(3).unwrap(), 12);
+    }
+
+    // Test: Non-zero offset o (shifting the base of the power)
+    #[test]
+    fn test_polynomial_function_with_offset() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 2,
+            d: 1,
+            m: 2,
+            n: 1,
+            o: 3,
+            s: Some(0),
+            b: 10,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = 2 * ((x - 0 + 3)^2) + 10.
+        // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
+        assert_eq!(distribution.evaluate(1).unwrap(), 42);
+    }
+
+    // Test: Constant function when m = 0 (should ignore x)
+    #[test]
+    fn test_polynomial_function_constant() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 5,
+            d: 1,
+            m: 0, // exponent 0 => (x-s+o)^0 = 1 (for any x where x-s+o ≠ 0)
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 3,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = 5*1 + 3 = 8 for any x.
+        for x in [0, 10, 100].iter() {
+            assert_eq!(distribution.evaluate(*x).unwrap(), 8);
+        }
+    }
+
+    // Test: Linear function when exponent is 1 (m = 1, n = 1)
+    #[test]
+    fn test_polynomial_function_linear() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 3,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 5,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = 3*x + 5. At x = 10, f(10) = 30 + 5 = 35.
+        assert_eq!(distribution.evaluate(10).unwrap(), 35);
+    }
+
+    // Test: Cubic function (m = 3, n = 1)
+    #[test]
+    fn test_polynomial_function_cubic() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 1,
+            d: 1,
+            m: 3,
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = x^3. At x = 4, f(4) = 64.
+        assert_eq!(distribution.evaluate(4).unwrap(), 64);
+    }
+
+    // Test: Combination of non-zero offset and shift
+    #[test]
+    fn test_polynomial_function_with_offset_and_shift() {
+        let distribution = DistributionFunction::Polynomial {
+            a: 1,
+            d: 1,
+            m: 2,
+            n: 1,
+            o: 2,
+            s: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        };
+        // f(x) = ( (x - 1 + 2)^2 ).
+        // At x = 3: (3 - 1 + 2) = 4, and 4^2 = 16.
+        assert_eq!(distribution.evaluate(3).unwrap(), 16);
     }
 
     #[test]

@@ -95,15 +95,96 @@ pub enum DistributionFunction {
     /// - If `a > 0`, emissions increase over time.
     /// - If `a < 0`, emissions decrease over time.
     ///
-    /// # Use Case
-    /// - When a smooth, gradual change in emissions is needed.
-    /// - Useful when fractional (floating-point) rate adjustments are desired.
+    /// # Behavior
+    /// - **If `a > 0`**, emissions increase linearly over time.
+    /// - **If `a < 0`**, emissions decrease linearly over time.
+    /// - **If `a = 0`**, emissions remain constant at `b`.
     ///
-    /// # Example
-    /// - Starting at 50 tokens and increasing by 0.5 tokens per period:
-    ///   ```text
-    ///   f(x) = 0.5 * (x - s) / d + 50
-    ///   ```
+    /// # Use Cases
+    /// - **Predictable Inflation or Deflation:** A simple mechanism to adjust token supply dynamically.
+    /// - **Long-Term Incentive Structures:** Ensures steady and measurable growth or reduction of rewards.
+    /// - **Decaying Emissions:** Can be used to gradually taper off token rewards over time.
+    /// - **Sustained Growth Models:** Encourages prolonged engagement by steadily increasing rewards.
+    ///
+    /// # Examples
+    ///
+    /// ## **1️⃣ Increasing Linear Emission (`a > 0`)**
+    /// - Tokens increase by **1 token per block** starting from 10.
+    ///
+    /// ```text
+    /// f(x) = (1 * (x - 0) / 1) + 10
+    /// ```
+    ///
+    /// | Block (x) | f(x) (Tokens) |
+    /// |-----------|---------------|
+    /// | 0         | 10            |
+    /// | 1         | 11            |
+    /// | 2         | 12            |
+    /// | 3         | 13            |
+    ///
+    /// **Use Case:** Encourages continued participation by providing increasing rewards over time.
+    ///
+    /// ---
+    ///
+    /// ## **2️⃣ Decreasing Linear Emission (`a < 0`)**
+    /// - Tokens **start at 100 and decrease by 2 per period**.
+    ///
+    /// ```text
+    /// f(x) = (-2 * (x - 0) / 1) + 100
+    /// ```
+    ///
+    /// | Block (x) | f(x) (Tokens) |
+    /// |-----------|---------------|
+    /// | 0         | 100           |
+    /// | 1         | 98            |
+    /// | 2         | 96            |
+    /// | 3         | 94            |
+    ///
+    /// **Use Case:** Suitable for deflationary models where rewards need to decrease over time.
+    ///
+    /// ---
+    ///
+    /// ## **3️⃣ Emission with a Delayed Start (`s > 0`)**
+    /// - **No emissions before `x = s`** (e.g., rewards start at block `10`).
+    ///
+    /// ```text
+    /// f(x) = (5 * (x - 10) / 1) + 50
+    /// ```
+    ///
+    /// | Block (x) | f(x) (Tokens) |
+    /// |-----------|---------------|
+    /// | 9         | 50 (no change)|
+    /// | 10        | 50            |
+    /// | 11        | 55            |
+    /// | 12        | 60            |
+    ///
+    /// **Use Case:** Useful when rewards should only begin at a specific milestone.
+    ///
+    /// ---
+    ///
+    /// ## **4️⃣ Clamping Emissions with `min_value` and `max_value`**
+    /// - **Start at 50, increase by 2, but never exceed 60.**
+    ///
+    /// ```text
+    /// f(x) = (2 * (x - 0) / 1) + 50
+    /// ```
+    ///
+    /// | Block (x) | f(x) (Tokens) |
+    /// |-----------|---------------|
+    /// | 0         | 50            |
+    /// | 1         | 52            |
+    /// | 2         | 54            |
+    /// | 5         | 60 (max cap)  |
+    ///
+    /// **Use Case:** Prevents runaway inflation by limiting the emission range.
+    ///
+    /// ---
+    ///
+    /// # Summary
+    /// - **Increasing rewards (`a > 0`)**: Encourages longer participation.
+    /// - **Decreasing rewards (`a < 0`)**: Supports controlled deflation.
+    /// - **Delayed start (`s > 0`)**: Ensures rewards only begin at a specific point.
+    /// - **Clamping (`min_value`, `max_value`)**: Maintains controlled emission boundaries.
     Linear {
         a: i64,
         d: u64,
@@ -131,18 +212,65 @@ pub enum DistributionFunction {
     /// - `b`: An offset added to the computed value.
     /// - `min_value` / `max_value`: Optional bounds to constrain the emission.
     ///
-    /// # Use Case
-    /// - Reward systems where returns diminish (or increase) non-linearly over time.
+    /// # Behavior & Use Cases
+    /// The polynomial function's behavior depends on the values of `a` (scaling factor) and `m` (exponent numerator).
     ///
-    /// # Example
-    /// - A quadratic emission curve might look like:
+    /// ## **1️⃣ `a > 0`, `m > 0` (Increasing Polynomial Growth)**
+    /// - **Behavior**: Emissions **increase at an accelerating rate** over time.
+    /// - **Use Case**: Suitable for models where incentives start small and grow over time (e.g., boosting late-stage participation).
+    /// - **Example**:
     ///   ```text
-    ///   f(x) = 2 * (x - s + o)^2 / d + 20
+    ///   f(x) = (2 * (x - s + o)^2) / d + 10
     ///   ```
+    ///   - If `s = 0`, `o = 0`, and `d = 1`, then:
+    ///     - `f(1) = 12`
+    ///     - `f(2) = 18`
+    ///     - `f(3) = 28` (Emissions **accelerate over time**)
+    ///
+    /// ## **2️⃣ `a > 0`, `m < 0` (Decreasing Polynomial Decay)**
+    /// - **Behavior**: Emissions **start high and gradually decline**.
+    /// - **Use Case**: Useful for front-loaded incentives where rewards are larger at the beginning and taper off over time.
+    /// - **Example**:
+    ///   ```text
+    ///   f(x) = (5 * (x - s + o)^(-1)) / d + 10
+    ///   ```
+    ///   - If `s = 0`, `o = 0`, and `d = 1`, then:
+    ///     - `f(1) = 15`
+    ///     - `f(2) = 12.5`
+    ///     - `f(3) = 11.67` (Emissions **shrink but never hit zero**)
+    ///
+    /// ## **3️⃣ `a < 0`, `m > 0` (Inverted Growth → Decreasing Over Time)**
+    /// - **Behavior**: Emissions **start large but decrease faster over time**.
+    /// - **Use Case**: Suitable for cases where high initial incentives quickly drop off (e.g., limited early rewards).
+    /// - **Example**:
+    ///   ```text
+    ///   f(x) = (-3 * (x - s + o)^2) / d + 50
+    ///   ```
+    ///   - If `s = 0`, `o = 0`, and `d = 1`, then:
+    ///     - `f(1) = 47`
+    ///     - `f(2) = 38`
+    ///     - `f(3) = 23` (Emissions **fall sharply**)
+    ///
+    /// ## **4️⃣ `a < 0`, `m < 0` (Inverted Decay → Slowing Increase)**
+    /// - **Behavior**: Emissions **start low, rise gradually, and then flatten out**.
+    /// - **Use Case**: Useful for controlled inflation where rewards increase over time but approach a stable maximum.
+    /// - **Example**:
+    ///   ```text
+    ///   f(x) = (-10 * (x - s + o)^(-2)) / d + 50
+    ///   ```
+    ///   - If `s = 0`, `o = 0`, and `d = 1`, then:
+    ///     - `f(1) = 40`
+    ///     - `f(2) = 47.5`
+    ///     - `f(3) = 48.89` (Growth **slows as it approaches 50**)
+    ///
+    /// # Summary
+    /// - **Positive `a` means increasing emissions**, while **negative `a` means decreasing emissions**.
+    /// - **Positive `m` leads to growth**, while **negative `m` leads to decay**.
+    /// - The combination of `a` and `m` defines whether emissions accelerate, decay, or remain stable.
     Polynomial {
         a: i64,
         d: u64,
-        m: u64,
+        m: i64,
         n: u64,
         o: i64,
         s: Option<u64>,
@@ -169,14 +297,35 @@ pub enum DistributionFunction {
     /// - `c`: An offset added to the result.
     /// - `min_value` / `max_value`: Optional constraints on the emitted tokens.
     ///
-    /// # Use Case
-    /// - Reward systems where early contributors receive disproportionately higher rewards.
+    /// # Use Cases
+    /// ## **Exponential Growth (`m > 0`):**
+    /// - **Incentivized Spending**: Higher emissions over time increase the circulating supply, encouraging users to spend tokens.
+    /// - **Progressive Emission Models**: Useful for models where early emissions are low but increase significantly over time.
+    /// - **Early-Stage Adoption Strategies**: Helps drive later participation by offering increasing rewards as time progresses.
     ///
-    /// # Example
-    /// - Starting with 100 tokens and halving emissions each interval (with a minimum of 5 tokens):
+    /// ## **Exponential Decay (`m < 0`):**
+    /// - **Deflationary Reward Models**: Reduces emissions over time, ensuring token scarcity.
+    /// - **Early Participation Incentives**: Encourages early users by distributing more tokens initially and gradually decreasing rewards.
+    /// - **Sustainable Emission Models**: Helps manage token supply while preventing runaway inflation.
+    ///
+    /// # Examples
+    /// ## **Example 1: Exponential Growth (`m > 0`)**
+    /// - **Use Case**: A staking model where rewards increase over time to encourage long-term participation.
+    /// - **Parameters**: `a = 100`, `m = 2`, `n = 50`, `d = 10`, `c = 5`
+    /// - **Formula**:
     ///   ```text
-    ///   f(x) = 100 * e^(m * (x - s + o) / n) / d + 5
+    ///   f(x) = (100 * e^(2 * (x - s) / 50)) / 10 + 5
     ///   ```
+    /// - **Effect**: Emissions start small but **increase exponentially** over time, rewarding late stakers more than early ones.
+    ///
+    /// ## **Example 2: Exponential Decay (`m < 0`)**
+    /// - **Use Case**: A deflationary model where emissions start high and gradually decrease to ensure scarcity.
+    /// - **Parameters**: `a = 500`, `m = -3`, `n = 100`, `d = 20`, `c = 10`
+    /// - **Formula**:
+    ///   ```text
+    ///   f(x) = (500 * e^(-3 * (x - s) / 100)) / 20 + 10
+    ///   ```
+    /// - **Effect**: Emissions start **high and decay exponentially**, ensuring early participants get larger rewards.
     Exponential {
         a: u64,
         d: u64,
@@ -208,17 +357,107 @@ pub enum DistributionFunction {
     /// - `min_value` / `max_value`: Optional bounds to ensure the emission remains within limits.
     ///
     /// # Use Case
-    /// - Suitable for long-term reward schedules where emissions need to increase at a diminishing rate.
+    /// - **Gradual Growth with a Slowing Rate**: Suitable for reward schedules where the emission
+    ///   starts at a lower rate, increases quickly at first, but then slows down over time.
+    /// - **Predictable Emission Scaling**: Ensures a growing but controlled emission curve that
+    ///   does not escalate too quickly.
+    /// - **Sustainability and Inflation Control**: Helps prevent runaway token supply growth
+    ///   by ensuring rewards increase at a decreasing rate.
     ///
     /// # Example
-    /// - An emission function following a logarithmic curve:
+    /// - Suppose we want token emissions to start at a low value and grow over time, but at a
+    ///   **decreasing rate**, ensuring controlled long-term growth.
+    ///
+    /// - Given the formula:
     ///   ```text
-    ///   f(x) = 20 * log(m * (x - s) / n) / d + 5
+    ///   f(x) = (a * log(m * (x - s + o) / n)) / d + b
     ///   ```
+    ///
+    /// - Let’s assume the following parameters:
+    ///   - `a = 100`: Scaling factor.
+    ///   - `d = 10`: Divisor to control overall scaling.
+    ///   - `m = 2`, `n = 1`: Adjust the logarithmic input.
+    ///   - `s = 0`, `o = 1`: Starting conditions.
+    ///   - `b = 50`: Base amount added.
+    ///
+    /// - This results in:
+    ///   ```text
+    ///   f(x) = (100 * log(2 * (x + 1) / 1)) / 10 + 50
+    ///   ```
+    ///
+    /// - **Expected Behavior:**
+    ///   - At `x = 1`, emission = `f(1) = (100 * log(4)) / 10 + 50 ≈ 82`
+    ///   - At `x = 10`, emission = `f(10) = (100 * log(22)) / 10 + 50 ≈ 106`
+    ///   - At `x = 100`, emission = `f(100) = (100 * log(202)) / 10 + 50 ≈ 130`
+    ///
+    /// - **Observations:**
+    ///   - The emission **increases** over time, but at a **slowing rate**.
+    ///   - Early increases are more pronounced, but as `x` grows, the additional reward per
+    ///     period gets smaller.
+    ///   - This makes it ideal for long-term, controlled emission models.
     Logarithmic {
         a: i64,
         d: u64,
-        m: i64,
+        m: u64,
+        n: u64,
+        o: i64,
+        s: Option<u64>,
+        b: TokenAmount,
+        min_value: Option<u64>,
+        max_value: Option<u64>,
+    },
+    /// Emits tokens following an inverted logarithmic function.
+    ///
+    /// # Formula
+    /// The emission at period `x` is given by:
+    ///
+    /// ```text
+    /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
+    /// ```
+    ///
+    /// # Parameters
+    /// - `a`: Scaling factor.
+    /// - `d`: Divisor for scaling.
+    /// - `m` and `n`: Together control the logarithm argument inversion.
+    /// - `o`: Offset applied inside the logarithm.
+    /// - `s`: Optional start period offset.
+    /// - `b`: Offset added to the computed value.
+    /// - `min_value` / `max_value`: Optional boundaries for the emission.
+    ///
+    /// # Use Case
+    /// - **Gradual Decay of Rewards**: Suitable when early adopters should receive higher rewards,
+    ///   but later participants should receive smaller but still meaningful amounts.
+    /// - **Resource Draining / Controlled Burn**: Used when token emissions should drop significantly
+    ///   at first but slow down over time to preserve capital.
+    /// - **Airdrop or Grant System**: Ensures early claimants receive larger distributions, but later
+    ///   claimants receive diminishing rewards.
+    ///
+    /// # Example
+    /// - Suppose a system starts with **500 tokens per period** and gradually reduces over time:
+    ///
+    ///   ```text
+    ///   f(x) = (1000 * log(5000 / (5 * (x - 1000)))) / 10 + 10
+    ///   ```
+    ///
+    ///   Example values:
+    ///
+    ///   | Period (x) | Emission (f(x)) |
+    ///   |------------|----------------|
+    ///   | 1000       | 500 tokens      |
+    ///   | 1500       | 230 tokens      |
+    ///   | 2000       | 150 tokens      |
+    ///   | 5000       | 50 tokens       |
+    ///   | 10,000     | 20 tokens       |
+    ///   | 50,000     | 10 tokens       |
+    ///
+    ///   - The emission **starts high** and **gradually decreases**, ensuring early adopters receive
+    ///     more tokens while later participants still get rewards.
+    ///   - The function **slows down the rate of decrease** over time, preventing emissions from
+    ///     hitting zero too quickly.
+    InvertedLogarithmic {
+        a: i64,
+        d: u64,
+        m: u64,
         n: u64,
         o: i64,
         s: Option<u64>,
@@ -363,6 +602,36 @@ impl fmt::Display for DistributionFunction {
                     write!(f, " + {})", o)?;
                 }
                 write!(f, " / {} ) / {} + {}", n, d, b)?;
+                if let Some(min) = min_value {
+                    write!(f, ", min: {}", min)?;
+                }
+                if let Some(max) = max_value {
+                    write!(f, ", max: {}", max)?;
+                }
+                Ok(())
+            }
+            DistributionFunction::InvertedLogarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                write!(
+                    f,
+                    "InvertedLogarithmic: f(x) = {} * log( {} / ({} * (x",
+                    a, n, m
+                )?;
+                if let Some(start) = s {
+                    write!(f, " - {} + {})", start, o)?;
+                } else {
+                    write!(f, " + {})", o)?;
+                }
+                write!(f, ") ) / {} + {}", d, b)?;
                 if let Some(min) = min_value {
                     write!(f, ", min: {}", min)?;
                 }

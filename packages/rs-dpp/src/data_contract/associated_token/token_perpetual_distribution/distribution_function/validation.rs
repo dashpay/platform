@@ -231,6 +231,7 @@ impl DistributionFunction {
                 };
             }
 
+            // f(x) = (a * (x - s + o)^(m/n)) / d + b
             DistributionFunction::Polynomial {
                 a,
                 d,
@@ -326,35 +327,36 @@ impl DistributionFunction {
                     o: *o,
                     s: Some(s.unwrap_or(start_moment)),
                     b: *b,
-                    min_value: None,
-                    max_value: None,
+                    min_value: *min_value,
+                    max_value: *max_value,
                 }
                 .evaluate(start_moment)?;
 
-                if let Some(min) = min_value {
-                    if start_token_amount < *min {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenDistributionFunctionInvalidParameterError::new(
-                                "start_token_amount".to_string(),
-                                *min as i64,
-                                max_value.unwrap_or(MAX_DISTRIBUTION_PARAM) as i64,
-                                None,
-                            )
-                            .into(),
-                        ));
+                // Now, based on the monotonicity implied by (*a) * (*m),
+                // check for incoherence:
+                if (*a) * (*m) > 0 {
+                    // The function is increasing.
+                    if let Some(max) = max_value {
+                        if start_token_amount == *max {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidTokenDistributionFunctionIncoherenceError::new(
+                                    "Since a and m imply an increasing function, but the start amount is already at the maximum, the function would never produce a higher value."
+                                        .to_string(),
+                                ).into(),
+                            ));
+                        }
                     }
-                }
-                if let Some(max) = max_value {
-                    if start_token_amount > *max {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenDistributionFunctionInvalidParameterError::new(
-                                "start_token_amount".to_string(),
-                                0,
-                                *max as i64,
-                                None,
-                            )
-                            .into(),
-                        ));
+                } else if (*a) * (*m) < 0 {
+                    // The function is decreasing.
+                    if let Some(min) = min_value {
+                        if start_token_amount == *min {
+                            return Ok(SimpleConsensusValidationResult::new_with_error(
+                                InvalidTokenDistributionFunctionIncoherenceError::new(
+                                    "Since a and m imply a decreasing function, but the start amount is already at the minimum, the function would never produce a lower value."
+                                        .to_string(),
+                                ).into(),
+                            ));
+                        }
                     }
                 }
             }
@@ -558,6 +560,28 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
+                if *m == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "m".to_string(),
+                            1,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+                if *a == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "a".to_string(),
+                            1,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
 
                 if let Some(s) = s {
                     if *s > MAX_DISTRIBUTION_PARAM {
@@ -645,34 +669,18 @@ impl DistributionFunction {
                     o: *o,
                     s: Some(s.unwrap_or(start_moment)),
                     b: *b,
-                    min_value: None,
-                    max_value: None,
+                    min_value: *min_value,
+                    max_value: *max_value,
                 }
                 .evaluate(start_moment)?;
 
-                if let Some(min) = min_value {
-                    if start_token_amount < *min {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenDistributionFunctionInvalidParameterError::new(
-                                "start_token_amount".to_string(),
-                                *min as i64,
-                                max_value.unwrap_or(MAX_DISTRIBUTION_PARAM) as i64,
-                                None,
-                            )
-                            .into(),
-                        ));
-                    }
-                }
                 if let Some(max) = max_value {
-                    if start_token_amount > *max {
+                    if start_token_amount == *max {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenDistributionFunctionInvalidParameterError::new(
-                                "start_token_amount".to_string(),
-                                0,
-                                *max as i64,
-                                None,
+                            InvalidTokenDistributionFunctionIncoherenceError::new(
+                                "The log function will always increase, however it starts at the maximum value already which makes the function never used".to_string(),
                             )
-                            .into(),
+                                .into(),
                         ));
                     }
                 }
@@ -1071,6 +1079,7 @@ mod tests {
 
     #[test]
     fn test_polynomial_valid() {
+        // f(x) = (2 * x^(2/3)) / 10 + 5
         let dist = DistributionFunction::Polynomial {
             a: 2,
             d: 10,
@@ -1080,15 +1089,21 @@ mod tests {
             s: Some(0),
             b: 5,
             min_value: Some(1),
-            max_value: Some(50),
+            max_value: Some(80),
         };
         let result = dist.validate(START_MOMENT);
-        assert!(result
-            .expect("no error on test_polynomial_valid")
-            .first_error()
-            .is_none());
-    }
 
+        match &result {
+            Ok(validation_result) => {
+                if let Some(error) = validation_result.first_error() {
+                    panic!("Test failed: validation error found: {:?}", error);
+                }
+            }
+            Err(protocol_error) => {
+                panic!("Test failed: ProtocolError: {:?}", protocol_error);
+            }
+        }
+    }
     #[test]
     fn test_polynomial_invalid_divide_by_zero() {
         let dist = DistributionFunction::Polynomial {
@@ -1107,6 +1122,232 @@ mod tests {
             .expect("no error on test_polynomial_invalid_divide_by_zero")
             .first_error()
             .is_some());
+    }
+
+    // 1. Test invalid: n is zero (division by zero in exponent)
+    #[test]
+    fn test_polynomial_invalid_n_zero() {
+        let dist = DistributionFunction::Polynomial {
+            a: 2,
+            d: 10,
+            m: 2,
+            n: 0, // Invalid: n == 0
+            o: 0,
+            s: Some(0),
+            b: 5,
+            min_value: Some(1),
+            max_value: Some(50),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an error when n is zero"
+        );
+    }
+
+    // 2. Test invalid: shift parameter s exceeds MAX_DISTRIBUTION_PARAM.
+    #[test]
+    fn test_polynomial_invalid_s_exceeds_max() {
+        let dist = DistributionFunction::Polynomial {
+            a: 2,
+            d: 10,
+            m: 2,
+            n: 3,
+            o: 0,
+            s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s too large
+            b: 5,
+            min_value: Some(1),
+            max_value: Some(50),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an error when s exceeds MAX_DISTRIBUTION_PARAM"
+        );
+    }
+
+    // 3. Test invalid: offset o is too high.
+    #[test]
+    fn test_polynomial_invalid_o_too_high() {
+        let dist = DistributionFunction::Polynomial {
+            a: 2,
+            d: 10,
+            m: 2,
+            n: 3,
+            o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: o too high
+            s: Some(0),
+            b: 5,
+            min_value: Some(1),
+            max_value: Some(50),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an error when o is above the allowed maximum"
+        );
+    }
+
+    // 4. Test invalid: offset o is too low.
+    #[test]
+    fn test_polynomial_invalid_o_too_low() {
+        let dist = DistributionFunction::Polynomial {
+            a: 2,
+            d: 10,
+            m: 2,
+            n: 3,
+            o: -(MAX_DISTRIBUTION_PARAM as i64) - 1, // Invalid: o too low
+            s: Some(0),
+            b: 5,
+            min_value: Some(1),
+            max_value: Some(50),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an error when o is below the allowed minimum"
+        );
+    }
+
+    // 5. Test invalid: max_value exceeds MAX_DISTRIBUTION_PARAM.
+    #[test]
+    fn test_polynomial_invalid_max_exceeds_max_distribution() {
+        let dist = DistributionFunction::Polynomial {
+            a: 2,
+            d: 10,
+            m: 2,
+            n: 3,
+            o: 0,
+            s: Some(0),
+            b: 5,
+            min_value: Some(1),
+            max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too high
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an error when max_value exceeds MAX_DISTRIBUTION_PARAM"
+        );
+    }
+
+    // 6. Test invalid: min_value is greater than max_value.
+    #[test]
+    fn test_polynomial_invalid_min_greater_than_max() {
+        let dist = DistributionFunction::Polynomial {
+            a: 2,
+            d: 10,
+            m: 2,
+            n: 3,
+            o: 0,
+            s: Some(0),
+            b: 5,
+            min_value: Some(60), // min_value > max_value
+            max_value: Some(50),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an error when min_value is greater than max_value"
+        );
+    }
+
+    // 7. Test invalid: For an increasing polynomial function, the starting value equals max_value.
+    #[test]
+    fn test_polynomial_invalid_starting_at_max_for_increasing() {
+        // For an increasing function (a > 0, m > 0) evaluated at x = s,
+        // the result is b. If b equals max_value, then the function starts at the maximum.
+        let dist = DistributionFunction::Polynomial {
+            a: 2, // positive
+            d: 10,
+            m: 2, // positive
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 100, // f(0) = 100
+            min_value: Some(1),
+            max_value: Some(100), // Starting at max_value
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an incoherence error when an increasing function starts at max_value"
+        );
+    }
+
+    // 8. Test invalid: For a decreasing polynomial function, the starting value equals min_value.
+    #[test]
+    fn test_polynomial_invalid_starting_at_min_for_decreasing() {
+        // For a decreasing function (a < 0, m > 0 so that a*m < 0),
+        // evaluated at x = s, the result is b. If b equals min_value, then it's invalid.
+        let dist = DistributionFunction::Polynomial {
+            a: -2, // negative
+            d: 10,
+            m: 2, // positive => a*m is negative (decreasing)
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 50,               // f(0) = 50
+            min_value: Some(50), // Starting at min_value
+            max_value: Some(100),
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected error").first_error().is_some(),
+            "Expected an incoherence error when a decreasing function starts at min_value"
+        );
+    }
+
+    // 9. Test valid: Polynomial with no min_value or max_value provided.
+    #[test]
+    fn test_polynomial_valid_no_boundaries() {
+        let dist = DistributionFunction::Polynomial {
+            a: 3,
+            d: 10,
+            m: 2,
+            n: 1,
+            o: 0,
+            s: Some(0),
+            b: 20,
+            min_value: None,
+            max_value: None,
+        };
+        let result = dist.validate(START_MOMENT);
+        assert!(
+            result.expect("expected valid").first_error().is_none(),
+            "Expected no validation errors when boundaries are omitted"
+        );
+    }
+
+    // 10. Test valid: Polynomial with fractional exponent (m/n = 3/2).
+    #[test]
+    fn test_polynomial_valid_fractional() {
+        // f(x) = (a * (x - s + o)^(m/n)) / d + b.
+        // Here: a = 1, d = 1, m = 3, n = 2, s = 0, o = 0, b = 0.
+        // So f(4) = 4^(3/2) = 8.
+        let dist = DistributionFunction::Polynomial {
+            a: 1,
+            d: 1,
+            m: 3,
+            n: 2,
+            o: 0,
+            s: Some(0),
+            b: 0,
+            min_value: Some(0),
+            max_value: Some(100),
+        };
+        let eval_result = dist.evaluate(4);
+        assert_eq!(
+            eval_result.unwrap(),
+            8,
+            "Expected f(4) to be 8 for a fractional exponent of 3/2"
+        );
+        let validation_result = dist.validate(4);
+        assert!(
+            validation_result
+                .expect("expected valid")
+                .first_error()
+                .is_none(),
+            "Expected no validation errors for a properly configured fractional exponent function"
+        );
     }
 
     #[test]

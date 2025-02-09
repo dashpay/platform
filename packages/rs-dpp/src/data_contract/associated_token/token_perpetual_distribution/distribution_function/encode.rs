@@ -115,6 +115,28 @@ impl Encode for DistributionFunction {
                 min_value.encode(encoder)?;
                 max_value.encode(encoder)?;
             }
+            DistributionFunction::InvertedLogarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                7u8.encode(encoder)?;
+                a.encode(encoder)?;
+                d.encode(encoder)?;
+                m.encode(encoder)?;
+                n.encode(encoder)?;
+                o.encode(encoder)?;
+                s.encode(encoder)?;
+                b.encode(encoder)?;
+                min_value.encode(encoder)?;
+                max_value.encode(encoder)?;
+            }
         }
         Ok(())
     }
@@ -169,7 +191,7 @@ impl Decode for DistributionFunction {
             4 => {
                 let a = i64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
-                let m = u64::decode(decoder)?;
+                let m = i64::decode(decoder)?;
                 let n = u64::decode(decoder)?;
                 let o = i64::decode(decoder)?;
                 let s = Option::<u64>::decode(decoder)?;
@@ -213,7 +235,7 @@ impl Decode for DistributionFunction {
             6 => {
                 let a = i64::decode(decoder)?;
                 let d = u64::decode(decoder)?;
-                let m = i64::decode(decoder)?;
+                let m = u64::decode(decoder)?;
                 let n = u64::decode(decoder)?;
                 let o = i64::decode(decoder)?;
                 let s = Option::<u64>::decode(decoder)?;
@@ -221,6 +243,28 @@ impl Decode for DistributionFunction {
                 let min_value = Option::<u64>::decode(decoder)?;
                 let max_value = Option::<u64>::decode(decoder)?;
                 Ok(Self::Logarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    s,
+                    b,
+                    min_value,
+                    max_value,
+                })
+            }
+            7 => {
+                let a = i64::decode(decoder)?;
+                let d = u64::decode(decoder)?;
+                let m = u64::decode(decoder)?;
+                let n = u64::decode(decoder)?;
+                let o = i64::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                let max_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::InvertedLogarithmic {
                     a,
                     d,
                     m,
@@ -288,7 +332,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
             4 => {
                 let a = i64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
-                let m = u64::borrow_decode(decoder)?;
+                let m = i64::borrow_decode(decoder)?;
                 let n = u64::borrow_decode(decoder)?;
                 let o = i64::borrow_decode(decoder)?;
                 let s = Option::<u64>::borrow_decode(decoder)?;
@@ -332,7 +376,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
             6 => {
                 let a = i64::borrow_decode(decoder)?;
                 let d = u64::borrow_decode(decoder)?;
-                let m = i64::borrow_decode(decoder)?;
+                let m = u64::borrow_decode(decoder)?;
                 let n = u64::borrow_decode(decoder)?;
                 let o = i64::borrow_decode(decoder)?;
                 let s = Option::<u64>::borrow_decode(decoder)?;
@@ -340,6 +384,28 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 let min_value = Option::<u64>::borrow_decode(decoder)?;
                 let max_value = Option::<u64>::borrow_decode(decoder)?;
                 Ok(Self::Logarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    s,
+                    b,
+                    min_value,
+                    max_value,
+                })
+            }
+            7 => {
+                let a = i64::borrow_decode(decoder)?;
+                let d = u64::borrow_decode(decoder)?;
+                let m = u64::borrow_decode(decoder)?;
+                let n = u64::borrow_decode(decoder)?;
+                let o = i64::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                let max_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::InvertedLogarithmic {
                     a,
                     d,
                     m,
