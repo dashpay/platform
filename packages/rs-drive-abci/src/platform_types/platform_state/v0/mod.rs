@@ -114,6 +114,10 @@ impl Debug for PlatformStateV0 {
                 "instant_lock_validating_quorums",
                 &self.instant_lock_validating_quorums,
             )
+            .field(
+                "previous_fee_versions",
+                &self.previous_fee_versions,
+            )
             .finish()
     }
 }
