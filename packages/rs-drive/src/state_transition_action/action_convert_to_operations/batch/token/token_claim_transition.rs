@@ -87,7 +87,7 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                                 owner_id,
                                 last_release_moment: *last_release_moment,
                                 next_release_moment: *next_release_moment,
-                                recipient: *self.recipient(),
+                                recipient: self.recipient(),
                             },
                         ));
                     }

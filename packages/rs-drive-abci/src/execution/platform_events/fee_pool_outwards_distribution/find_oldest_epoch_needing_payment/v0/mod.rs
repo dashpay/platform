@@ -36,6 +36,18 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
 
+        let epoch_start_time = self.drive.get_epoch_start_time(
+            &unpaid_epoch,
+            transaction,
+            platform_version,
+        )?;
+
+        let epoch_protocol_version = self.drive.get_epoch_protocol_version(
+            &unpaid_epoch,
+            transaction,
+            platform_version,
+        )?;
+
         let start_block_height = self.drive.get_epoch_start_block_height(
             &unpaid_epoch,
             transaction,
@@ -43,6 +55,12 @@ impl<C> Platform<C> {
         )?;
 
         let start_block_core_height = self.drive.get_epoch_start_block_core_height(
+            &unpaid_epoch,
+            transaction,
+            platform_version,
+        )?;
+
+        let fee_multiplier = self.drive.get_epoch_fee_multiplier(
             &unpaid_epoch,
             transaction,
             platform_version,
@@ -117,10 +135,13 @@ impl<C> Platform<C> {
         Ok(Some(unpaid_epoch::v0::UnpaidEpochV0 {
             epoch_index: unpaid_epoch_index,
             next_unpaid_epoch_index: next_unpaid_epoch_info.epoch_index,
+            epoch_start_time,
             start_block_height,
             next_epoch_start_block_height: next_unpaid_epoch_info.start_block_height,
             start_block_core_height,
             next_epoch_start_block_core_height: next_unpaid_epoch_info.start_block_core_height,
+            protocol_version: epoch_protocol_version,
+            fee_multiplier,
         }))
     }
 }

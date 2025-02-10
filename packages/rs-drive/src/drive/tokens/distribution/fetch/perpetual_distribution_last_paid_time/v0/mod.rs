@@ -1,4 +1,4 @@
-use crate::drive::tokens::paths::{token_perpetual_distributions_next_not_done_event_path};
+use crate::drive::tokens::paths::{token_perpetual_distributions_identity_last_claimed_time_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -39,7 +39,7 @@ impl Drive {
     ) -> Result<Option<TimestampMillis>, Error> {
         let direct_query_type = DirectQueryType::StatefulDirectQuery;
 
-        let perpetual_distributions_path = token_perpetual_distributions_next_not_done_event_path(&token_id);
+        let perpetual_distributions_path = token_perpetual_distributions_identity_last_claimed_time_path(&token_id);
 
         match self.grove_get_raw_optional(
             (&perpetual_distributions_path).into(),

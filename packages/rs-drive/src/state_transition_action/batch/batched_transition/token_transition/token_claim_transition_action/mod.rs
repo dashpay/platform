@@ -43,21 +43,9 @@ impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionAction {
         }
     }
 
-    fn recipient(&self) -> &TokenDistributionRecipient {
+    fn recipient(&self) -> TokenDistributionRecipient {
         match self {
-            TokenClaimTransitionAction::V0(v0) => &v0.recipient,
-        }
-    }
-
-    fn recipient_owned(self) -> TokenDistributionRecipient {
-        match self {
-            TokenClaimTransitionAction::V0(v0) => v0.recipient,
-        }
-    }
-
-    fn set_recipient(&mut self, recipient: TokenDistributionRecipient) {
-        match self {
-            TokenClaimTransitionAction::V0(v0) => v0.recipient = recipient,
+            TokenClaimTransitionAction::V0(v0) => v0.recipient(),
         }
     }
 

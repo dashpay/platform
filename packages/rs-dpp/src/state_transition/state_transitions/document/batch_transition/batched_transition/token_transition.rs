@@ -13,7 +13,6 @@ use crate::data_contract::associated_token::token_distribution_key::{TokenDistri
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
-use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::data_contract::DataContract;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
@@ -416,11 +415,9 @@ impl TokenTransitionV0Methods for TokenTransition {
                 let distribution_rules = token_configuration.distribution_rules();
                 let distribution_recipient = match claim.distribution_type() {
                     TokenDistributionType::PreProgrammed => {
-                        let Some(pre_programmed_distribution) =
-                            distribution_rules.pre_programmed_distribution()
-                        else {
-                            return Err(ProtocolError::NotSupported("Token claiming of perpetual distribution is not supported on this token".to_string()));
-                        };
+                        if distribution_rules.pre_programmed_distribution().is_none() {
+                            return Err(ProtocolError::NotSupported("Token claiming of pre programmed distribution is not supported on this token".to_string()));
+                        }
                         TokenDistributionTypeWithResolvedRecipient::PreProgrammed(owner_id)
                     }
                     TokenDistributionType::Perpetual => {

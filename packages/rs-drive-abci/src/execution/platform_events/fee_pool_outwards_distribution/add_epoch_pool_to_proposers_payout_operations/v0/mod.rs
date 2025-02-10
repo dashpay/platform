@@ -6,10 +6,11 @@ use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::pool_credits::StorageAndProcessingPoolCredits;
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-
+use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::query::proposer_block_count_query::ProposerQueryType;
@@ -31,7 +32,7 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<u16, Error> {
+    ) -> Result<(StorageAndProcessingPoolCredits, Vec<(Identifier, u64)>), Error> {
         let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
@@ -44,7 +45,7 @@ impl<C> Platform<C> {
             )
             .map_err(Error::Drive)?;
 
-        let total_payouts = storage_and_processing_fees
+        let total_payouts = storage_and_processing_fees.total_credits
             .checked_add(core_block_rewards)
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::Overflow("overflow when adding reward fees"))
@@ -78,11 +79,11 @@ impl<C> Platform<C> {
             unpaid_epoch.epoch_index(),
         );
 
-        for (i, (proposer_tx_hash, proposed_block_count)) in proposers.into_iter().enumerate() {
+        for (i, (proposer_tx_hash, proposed_block_count)) in proposers.iter().enumerate() {
             let i = i as u16;
 
             let total_masternode_payout = total_payouts
-                .checked_mul(proposed_block_count)
+                .checked_mul(*proposed_block_count)
                 .and_then(|r| r.checked_div(unpaid_epoch_block_count))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow when getting masternode reward division",
@@ -91,7 +92,7 @@ impl<C> Platform<C> {
             let mut masternode_payout_leftover = total_masternode_payout;
 
             let documents = self.fetch_reward_shares_list_for_masternode(
-                &proposer_tx_hash,
+                proposer_tx_hash.as_bytes(),
                 Some(transaction),
                 platform_version,
             )?;
@@ -148,14 +149,8 @@ impl<C> Platform<C> {
                 masternode_payout_leftover
             };
 
-            let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
-                Error::Execution(ExecutionError::DriveIncoherence(
-                    "proposer_tx_hash is not 32 bytes long",
-                ))
-            })?;
-
             drive_operations.push(IdentityOperation(AddToIdentityBalance {
-                identity_id: proposer,
+                identity_id: proposer_tx_hash.to_buffer(),
                 added_balance: proposer_payout,
             }));
         }
@@ -169,7 +164,7 @@ impl<C> Platform<C> {
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
 
-        Ok(proposers_len)
+        Ok((storage_and_processing_fees,proposers))
     }
 }
 
@@ -290,6 +285,8 @@ mod tests {
                 start_block_core_height: 1,
                 next_unpaid_epoch_index: 0,
                 next_epoch_start_block_core_height: 1,
+                epoch_start_time: 0,
+                protocol_version: platform_version.protocol_version,
             };
 
             let proposers_paid_count = platform
@@ -300,7 +297,7 @@ mod tests {
                     &mut batch,
                     platform_version,
                 )
-                .expect("should distribute fees");
+                .expect("should distribute fees").1;
 
             platform
                 .drive
@@ -314,7 +311,7 @@ mod tests {
                 )
                 .expect("should apply batch");
 
-            assert_eq!(proposers_paid_count, 10);
+            assert_eq!(proposers_paid_count.len(), 10);
 
             // check we paid 500 to every mn identity
             let paid_mn_identities_balances = platform

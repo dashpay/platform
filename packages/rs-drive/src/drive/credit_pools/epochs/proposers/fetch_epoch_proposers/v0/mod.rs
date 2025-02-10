@@ -6,6 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::proposer_block_count_query::ProposerQueryType;
 use dpp::block::epoch::Epoch;
+use dpp::prelude::Identifier;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -26,7 +27,7 @@ impl Drive {
     /// # Returns
     ///
     /// A `Result` containing:
-    /// - `Vec<(Vec<u8>, u64)>`: A vector of tuples where each tuple contains:
+    /// - `Vec<(Identifier, u64)>`: A vector of tuples where each tuple contains:
     ///   - A byte vector (`Vec<u8>`) representing the proposer's transaction hash.
     ///   - A `u64` representing the number of blocks proposed by that proposer.
     /// - `Error`: An error if the query fails due to an invalid platform version, transaction issues, or invalid epoch data.
@@ -43,7 +44,7 @@ impl Drive {
         query_type: ProposerQueryType,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
+    ) -> Result<Vec<(Identifier, u64)>, Error> {
         let use_optional = query_type.allows_optional();
 
         let path_query = query_type.into_path_query(epoch_tree);
@@ -76,7 +77,11 @@ impl Drive {
                         }
                     };
 
-                    Ok((pro_tx_hash, block_count))
+                    let identifier = pro_tx_hash.try_into().map_err(|_| Error::Drive(DriveError::CorruptedDriveState(
+                        "pro_tx_hash should be 32 bytes".to_string(),
+                    )))?;
+
+                    Ok((identifier, block_count))
                 })
                 .collect::<Result<_, _>>()
         } else {
@@ -112,8 +117,12 @@ impl Drive {
                             )))
                         })?,
                     );
+                    
+                    let identifier = pro_tx_hash.try_into().map_err(|_| Error::Drive(DriveError::CorruptedDriveState(
+                        "pro_tx_hash should be 32 bytes".to_string(),
+                    )))?;
 
-                    Ok((pro_tx_hash, block_count))
+                    Ok((identifier, block_count))
                 })
                 .collect::<Result<_, _>>()
         }?;
@@ -129,7 +138,7 @@ mod tests {
     use crate::util::batch::GroveDbOpBatch;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
-
+    use dpp::identifier::Identifier;
     use crate::query::proposer_block_count_query::ProposerQueryType;
     use dpp::version::PlatformVersion;
 
@@ -139,7 +148,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
-        let pro_tx_hash: [u8; 32] = rand::random();
+        let pro_tx_hash = Identifier::random();
         let block_count = 42;
 
         let epoch = Epoch::new(0).unwrap();
@@ -148,7 +157,7 @@ mod tests {
 
         batch.push(epoch.init_proposers_tree_operation());
 
-        batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, block_count));
+        batch.push(epoch.update_proposer_block_count_operation(pro_tx_hash.as_bytes(), block_count));
 
         drive
             .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
@@ -163,6 +172,6 @@ mod tests {
             )
             .expect("should get proposers");
 
-        assert_eq!(result, vec!((pro_tx_hash.to_vec(), block_count)));
+        assert_eq!(result, vec!((pro_tx_hash, block_count)));
     }
 }

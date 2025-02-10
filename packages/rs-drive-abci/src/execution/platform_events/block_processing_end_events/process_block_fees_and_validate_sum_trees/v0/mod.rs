@@ -110,6 +110,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 epoch_info.current_epoch_index(),
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,
+                storage_fee_distribution_outcome.map(|s| s.total_distributed_storage_fees).unwrap_or_default(),
                 transaction,
                 &mut batch,
                 platform_version,
@@ -181,7 +182,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                         credits_verified,
                         credits_verified
                             .total_in_trees()
-                            .unwrap()
+                            .expect("we already checked that there was no overflow in credits_verified.ok()")
                             .abs_diff(credits_verified.total_credits_in_platform)
                     )),
                 ));

@@ -29,6 +29,8 @@ pub struct DriveCreditPoolEpochsMethodVersions {
     pub add_update_pending_epoch_refunds_operations: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
     pub add_epoch_processing_credits_for_distribution_operation: FeatureVersion,
+    pub add_epoch_final_info_operation: FeatureVersion,
+    pub get_epoch_protocol_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

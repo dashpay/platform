@@ -17,8 +17,6 @@ pub struct TokenClaimTransitionActionV0 {
     /// if this is a release to Evonodes or a group, this is the total amount that later needs
     /// to be split up
     pub amount: TokenAmount,
-    /// The recipient
-    pub recipient: TokenDistributionRecipient,
     /// The type of distribution we are targeting
     pub distribution_info: TokenDistributionInfo,
     /// A public note
@@ -65,13 +63,7 @@ pub trait TokenClaimTransitionActionAccessorsV0 {
     fn set_amount(&mut self, amount: TokenAmount);
 
     /// Returns the recipient of the distribution
-    fn recipient(&self) -> &TokenDistributionRecipient;
-
-    /// Returns the recipient (owned)
-    fn recipient_owned(self) -> TokenDistributionRecipient;
-
-    /// Sets the recipient
-    fn set_recipient(&mut self, recipient: TokenDistributionRecipient);
+    fn recipient(&self) -> TokenDistributionRecipient;
 
     /// Returns the type of distribution with its recipient
     fn distribution_info(&self) -> &TokenDistributionInfo;
@@ -106,16 +98,11 @@ impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionActionV0 {
         self.amount = amount;
     }
 
-    fn recipient(&self) -> &TokenDistributionRecipient {
-        &self.recipient
-    }
-
-    fn recipient_owned(self) -> TokenDistributionRecipient {
-        self.recipient
-    }
-
-    fn set_recipient(&mut self, recipient: TokenDistributionRecipient) {
-        self.recipient = recipient;
+    fn recipient(&self) -> TokenDistributionRecipient {
+        match &self.distribution_info {
+            TokenDistributionInfo::PreProgrammed(_, identifier) => { TokenDistributionRecipient::Identity(*identifier)}
+            TokenDistributionInfo::Perpetual(_, _, resolved_recipient) => { resolved_recipient.into() }
+        }
     }
 
     fn distribution_info(&self) -> &TokenDistributionInfo {

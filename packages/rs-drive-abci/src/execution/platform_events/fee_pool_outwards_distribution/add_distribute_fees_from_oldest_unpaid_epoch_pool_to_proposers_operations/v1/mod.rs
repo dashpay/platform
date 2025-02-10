@@ -2,15 +2,19 @@ use crate::error::Error;
 use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
+use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
+use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
 use dpp::core_subsidy::NetworkCoreSubsidy;
+use dpp::fee::Credits;
+use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use drive::util::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 
-use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
+use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods};
 
 use drive::grovedb::Transaction;
 
@@ -19,11 +23,12 @@ impl<C> Platform<C> {
     /// from the oldest unpaid epoch pool to proposers.
     ///
     /// Returns `ProposersPayouts` if there are any.
-    pub(super) fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0(
+    pub(super) fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v1(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
+        total_distributed_storage_fees: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
@@ -76,13 +81,13 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = unpaid_epoch.into();
 
-        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
+        let (storage_and_processing_credits, block_proposers) = self.add_epoch_pool_to_proposers_payout_operations(
             &unpaid_epoch,
             core_block_rewards,
             transaction,
             batch,
             platform_version,
-        )?.1;
+        )?;
 
         let mut inner_batch = GroveDbOpBatch::new();
 
@@ -94,16 +99,35 @@ impl<C> Platform<C> {
             unpaid_epoch.next_unpaid_epoch_index(),
         ));
 
+        let finalized_epoch_info : FinalizedEpochInfo = FinalizedEpochInfoV0 {
+            first_block_time: unpaid_epoch.epoch_start_time(),
+            first_block_height: unpaid_epoch.start_block_height(),
+            total_blocks_in_epoch: unpaid_epoch.block_count()?,
+            first_core_block_height: start_block_core_height,
+            next_epoch_start_core_block_height: unpaid_epoch.next_epoch_start_block_core_height(),
+            total_processing_fees: storage_and_processing_credits.processing_pool_credits,
+            total_distributed_storage_fees: storage_and_processing_credits.storage_pool_credits,
+            total_created_storage_fees: total_distributed_storage_fees,
+            core_block_rewards,
+            block_proposers,
+            fee_multiplier_permille: unpaid_epoch.fee_multiplier(),
+            protocol_version: unpaid_epoch.protocol_version(),
+        }.into();
+        
+        let add_epoch_final_info_operation = self.drive.add_epoch_final_info_operation(&unpaid_epoch_tree, finalized_epoch_info, platform_version)?;
+
+        inner_batch.push(add_epoch_final_info_operation);
+        
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
         // We paid to all epoch proposers last block. Since proposers paid count
         // was equal to proposers limit, we paid to 0 proposers this block
-        if proposers_paid_count.len() == 0 {
+        if block_proposers.len() == 0 {
             return Ok(None);
         }
 
         Ok(Some(proposer_payouts::v0::ProposersPayouts {
-            proposers_paid_count: proposers_paid_count.len() as u16,
+            proposers_paid_count,
             paid_epoch_index: unpaid_epoch.epoch_index(),
         }))
     }

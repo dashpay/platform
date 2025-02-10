@@ -125,7 +125,6 @@ impl TokenClaimTransitionActionV0 {
                 TokenClaimTransitionActionV0 {
                     base: base_action,
                     amount: 0, //todo
-                    recipient,
                     distribution_info: todo!(),
                     public_note,
                 }
@@ -200,7 +199,7 @@ impl TokenClaimTransitionActionV0 {
                 platform_version,
             )?;
 
-        let fee_result = Drive::calculate_fee(
+        let mut fee_result = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -291,7 +290,20 @@ impl TokenClaimTransitionActionV0 {
                     ));
                 };
 
-                let last_paid_time = drive.fetch_perpetual_distribution_last_paid_time_operations(base.token_id().to_buffer(), );
+                let mut last_paid_time_operations = vec![];
+
+                let last_paid_time = drive.fetch_perpetual_distribution_last_paid_time_operations(base.token_id().to_buffer(), owner_id, &mut last_paid_time_operations, transaction, platform_version)?;
+
+                let last_paid_time_fee_result = Drive::calculate_fee(
+                    None,
+                    Some(last_paid_time_operations),
+                    &block_info.epoch,
+                    drive.config.epochs_per_era,
+                    platform_version,
+                    None,
+                )?;
+                
+                fee_result.checked_add_assign(last_paid_time_fee_result)?;
 
                 let recipient = match perpetual_distribution.distribution_recipient() {
                     TokenDistributionRecipient::ContractOwner => {
@@ -316,7 +328,6 @@ impl TokenClaimTransitionActionV0 {
                 TokenClaimTransitionActionV0 {
                     base: base_action,
                     amount,
-                    recipient: *recipient,
                     distribution_info,
                     public_note: public_note.clone(),
                 }

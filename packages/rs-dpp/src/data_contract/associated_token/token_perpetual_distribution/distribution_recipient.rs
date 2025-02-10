@@ -1,4 +1,3 @@
-use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_distribution_key::{
     TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
 };
@@ -7,7 +6,6 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(
@@ -117,6 +115,38 @@ pub enum TokenDistributionResolvedRecipient {
     Identity(Identifier),
     /// A single Evonode recipient that should share the token reward
     Evonode(Identifier),
+}
+
+impl From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient {
+    fn from(value: TokenDistributionResolvedRecipient) -> Self {
+        match value {
+            TokenDistributionResolvedRecipient::ContractOwnerIdentity(_) => {
+                TokenDistributionRecipient::ContractOwner
+            }
+            TokenDistributionResolvedRecipient::Identity(identifier) => {
+                TokenDistributionRecipient::Identity(identifier)
+            }
+            TokenDistributionResolvedRecipient::Evonode(_) => {
+                TokenDistributionRecipient::EvonodesByParticipation
+            }
+        }
+    }
+}
+
+impl From<&TokenDistributionResolvedRecipient> for TokenDistributionRecipient {
+    fn from(value: &TokenDistributionResolvedRecipient) -> Self {
+        match value {
+            TokenDistributionResolvedRecipient::ContractOwnerIdentity(_) => {
+                TokenDistributionRecipient::ContractOwner
+            }
+            TokenDistributionResolvedRecipient::Identity(identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionResolvedRecipient::Evonode(_) => {
+                TokenDistributionRecipient::EvonodesByParticipation
+            }
+        }
+    }
 }
 
 impl fmt::Display for TokenDistributionRecipient {

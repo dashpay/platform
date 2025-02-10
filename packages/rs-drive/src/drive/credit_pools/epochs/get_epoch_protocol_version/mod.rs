@@ -1,44 +1,44 @@
 mod v0;
 
-use grovedb::TransactionArg;
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
-use dpp::prelude::FeeMultiplier;
+
+use grovedb::TransactionArg;
+
 use dpp::version::PlatformVersion;
+use platform_version::version::ProtocolVersion;
 
 impl Drive {
-    /// Gets the Fee Multiplier for the Epoch.
+    /// Returns the protocol version for the epoch
     ///
     /// # Arguments
     ///
-    /// * `epoch_tree` - A reference to the Epoch.
+    /// * `epoch_tree` - An Epoch instance.
     /// * `transaction` - A TransactionArg instance.
     /// * `platform_version` - A PlatformVersion instance representing the version of Platform.
     ///
     /// # Returns
     ///
-    /// A Result containing either the fee multiplier for the epoch, if found,
-    /// or an Error if something goes wrong.
-    pub fn get_epoch_fee_multiplier(
+    /// A Result containing the start block height or an Error.
+    pub fn get_epoch_protocol_version(
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<FeeMultiplier, Error> {
+    ) -> Result<ProtocolVersion, Error> {
         match platform_version
             .drive
             .methods
             .credit_pools
             .epochs
-            .get_epoch_fee_multiplier
+            .get_epoch_protocol_version
         {
-            0 => self.get_epoch_fee_multiplier_v0(epoch_tree, transaction, platform_version),
+            0 => self.get_epoch_protocol_version_v0(epoch_tree, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "get_epoch_fee_multiplier".to_string(),
+                method: "get_epoch_protocol_version".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
