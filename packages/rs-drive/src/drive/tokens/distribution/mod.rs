@@ -11,3 +11,4 @@ mod mark_pre_programmed_release_as_distributed;
 mod prove;
 /// Token distribution queries
 pub mod queries;
+mod set_perpetual_distribution_next_event_for_identity_id;

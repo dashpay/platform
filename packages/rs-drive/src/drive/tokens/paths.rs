@@ -185,6 +185,28 @@ pub fn token_perpetual_distributions_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>
     ]
 }
 
+/// The path for the token perpetual distributions tree for a token
+pub fn token_perpetual_distributions_next_not_done_event_path(token_id: &[u8; 32]) -> [&[u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DISTRIBUTIONS_KEY],
+        &[TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+        token_id,
+        &[TOKEN_PERPETUAL_DISTRIBUTIONS_NEXT_EVENT_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token as a vector
+pub fn token_perpetual_distributions_next_not_done_event_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DISTRIBUTIONS_KEY],
+        vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+        token_id.to_vec(),
+        vec![TOKEN_PERPETUAL_DISTRIBUTIONS_NEXT_EVENT_KEY],
+    ]
+}
+
 /// The path for the token pre-programmed distributions tree
 pub fn token_root_pre_programmed_distributions_path() -> [&'static [u8]; 3] {
     [
@@ -438,13 +460,13 @@ pub trait TokenPerpetualDistributionPaths {
 impl TokenPerpetualDistributionPaths for TokenPerpetualDistribution {
     fn root_distribution_path(&self) -> Vec<Vec<u8>> {
         match self.distribution_type() {
-            RewardDistributionType::BlockBasedDistribution(_, _, _) => {
+            RewardDistributionType::BlockBasedDistribution { .. } => {
                 token_block_timed_distributions_path_vec()
             }
-            RewardDistributionType::TimeBasedDistribution(_, _, _) => {
+            RewardDistributionType::TimeBasedDistribution{ .. } => {
                 token_ms_timed_distributions_path_vec()
             }
-            RewardDistributionType::EpochBasedDistribution(_, _, _) => {
+            RewardDistributionType::EpochBasedDistribution{ .. } => {
                 token_epoch_timed_distributions_path_vec()
             }
         }
@@ -452,13 +474,13 @@ impl TokenPerpetualDistributionPaths for TokenPerpetualDistribution {
 
     fn distribution_path(&self, unit: u64) -> Vec<Vec<u8>> {
         match self.distribution_type() {
-            RewardDistributionType::BlockBasedDistribution(_, _, _) => {
+            RewardDistributionType::BlockBasedDistribution{ .. } => {
                 token_block_timed_at_block_distributions_path_vec(unit)
             }
-            RewardDistributionType::TimeBasedDistribution(_, _, _) => {
+            RewardDistributionType::TimeBasedDistribution{ .. } => {
                 token_ms_timed_at_time_distributions_path_vec(unit)
             }
-            RewardDistributionType::EpochBasedDistribution(_, _, _) => {
+            RewardDistributionType::EpochBasedDistribution{ .. } => {
                 token_epoch_timed_at_epoch_distributions_path_vec(unit as EpochIndex)
             }
         }
@@ -470,19 +492,19 @@ impl TokenPerpetualDistributionPaths for TokenPerpetualDistribution {
     ) -> Vec<Vec<u8>> {
         match self.distribution_type() {
             // If the distribution is based on block height, return the next height where emissions occur.
-            RewardDistributionType::BlockBasedDistribution(interval, _, _) => {
+            RewardDistributionType::BlockBasedDistribution{ interval, .. } => {
                 let height = block_info.height - block_info.height % interval + interval;
                 token_block_timed_at_block_distributions_path_vec(height)
             }
 
             // If the distribution is based on time, return the next timestamp in milliseconds.
-            RewardDistributionType::TimeBasedDistribution(interval, _, _) => {
+            RewardDistributionType::TimeBasedDistribution{ interval, .. } => {
                 let time = block_info.time_ms - block_info.time_ms % interval + interval;
                 token_ms_timed_at_time_distributions_path_vec(time)
             }
 
             // If the distribution is based on epochs, return the next epoch index.
-            RewardDistributionType::EpochBasedDistribution(interval, _, _) => {
+            RewardDistributionType::EpochBasedDistribution{ interval, .. } => {
                 let index = block_info.epoch.index - block_info.epoch.index % interval + interval;
                 token_epoch_timed_at_epoch_distributions_path_vec(index)
             }

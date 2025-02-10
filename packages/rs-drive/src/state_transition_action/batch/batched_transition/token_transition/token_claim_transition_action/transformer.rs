@@ -6,23 +6,23 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_release_transition_action::{TokenReleaseTransitionActionV0, TokenReleaseTransitionAction};
-use dpp::state_transition::batch_transition::token_release_transition::TokenReleaseTransition;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionActionV0, TokenClaimTransitionAction};
+use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::state_transition_action::batch::BatchedTransitionAction;
 
-/// Implement methods to transform a `TokenReleaseTransition` into a `TokenReleaseTransitionAction`.
-impl TokenReleaseTransitionAction {
-    /// Transform a `TokenReleaseTransition` into a `TokenReleaseTransitionAction` using the provided data contract lookup.
+/// Implement methods to transform a `TokenClaimTransition` into a `TokenClaimTransitionAction`.
+impl TokenClaimTransitionAction {
+    /// Transform a `TokenClaimTransition` into a `TokenClaimTransitionAction` using the provided data contract lookup.
     ///
     /// # Arguments
     ///
     /// * `drive` - A reference to the `Drive` instance used for accessing the system.
     /// * `owner_id` - The identifier of the owner initiating the release transition.
     /// * `transaction` - The transaction argument used for state changes.
-    /// * `value` - A `TokenReleaseTransition` instance.
+    /// * `value` - A `TokenClaimTransition` instance.
     /// * `approximate_without_state_for_costs` - A flag indicating whether to approximate state costs without full state.
     /// * `drive_operations` - A mutable reference to the vector of low-level operations that need to be performed.
     /// * `get_data_contract` - A closure that fetches the `DataContractFetchInfo` given a contract ID.
@@ -30,11 +30,11 @@ impl TokenReleaseTransitionAction {
     ///
     /// # Returns
     ///
-    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenReleaseTransitionAction` if successful, otherwise `ProtocolError`.
-    pub fn try_from_token_release_transition_with_contract_lookup(
+    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenClaimTransitionAction` if successful, otherwise `ProtocolError`.
+    pub fn try_from_token_claim_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
-        value: TokenReleaseTransition,
+        value: TokenClaimTransition,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -49,8 +49,8 @@ impl TokenReleaseTransitionAction {
         Error,
     > {
         match value {
-            TokenReleaseTransition::V0(v0) => {
-                TokenReleaseTransitionActionV0::try_from_token_release_transition_with_contract_lookup(
+            TokenClaimTransition::V0(v0) => {
+                TokenClaimTransitionActionV0::try_from_token_claim_transition_with_contract_lookup(
                     drive,
                     owner_id,
                     v0,
@@ -65,14 +65,14 @@ impl TokenReleaseTransitionAction {
         }
     }
 
-    /// Transform a borrowed `TokenReleaseTransition` into a `TokenReleaseTransitionAction` using the provided data contract lookup.
+    /// Transform a borrowed `TokenClaimTransition` into a `TokenClaimTransitionAction` using the provided data contract lookup.
     ///
     /// # Arguments
     ///
     /// * `drive` - A reference to the `Drive` instance used for accessing the system.
     /// * `owner_id` - The identifier of the owner initiating the release transition.
     /// * `transaction` - The transaction argument used for state changes.
-    /// * `value` - A reference to a `TokenReleaseTransition`.
+    /// * `value` - A reference to a `TokenClaimTransition`.
     /// * `approximate_without_state_for_costs` - A flag indicating whether to approximate state costs without full state.
     /// * `drive_operations` - A mutable reference to the vector of low-level operations that need to be performed.
     /// * `get_data_contract` - A closure that fetches the `DataContractFetchInfo` given a contract ID.
@@ -80,11 +80,11 @@ impl TokenReleaseTransitionAction {
     ///
     /// # Returns
     ///
-    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenReleaseTransitionAction` if successful, otherwise `ProtocolError`.
-    pub fn try_from_borrowed_token_release_transition_with_contract_lookup(
+    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenClaimTransitionAction` if successful, otherwise `ProtocolError`.
+    pub fn try_from_borrowed_token_claim_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
-        value: &TokenReleaseTransition,
+        value: &TokenClaimTransition,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -99,8 +99,8 @@ impl TokenReleaseTransitionAction {
         Error,
     > {
         match value {
-            TokenReleaseTransition::V0(v0) => {
-                TokenReleaseTransitionActionV0::try_from_borrowed_token_release_transition_with_contract_lookup(
+            TokenClaimTransition::V0(v0) => {
+                TokenClaimTransitionActionV0::try_from_borrowed_token_claim_transition_with_contract_lookup(
                     drive,
                     owner_id,
                     v0,

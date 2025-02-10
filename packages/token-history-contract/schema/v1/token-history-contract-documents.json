@@ -514,7 +514,7 @@
     ],
     "additionalProperties": false
   },
-  "release": {
+  "claim": {
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": false,

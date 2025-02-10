@@ -1,16 +1,16 @@
 use crate::consensus::basic::token::InvalidTokenNoteTooBigError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::state_transition::batch_transition::token_release_transition::v0::v0_methods::TokenReleaseTransitionV0Methods;
-use crate::state_transition::batch_transition::TokenReleaseTransition;
+use crate::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
+use crate::state_transition::batch_transition::TokenClaimTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
-pub(super) trait TokenReleaseTransitionActionStructureValidationV0 {
+pub(super) trait TokenClaimTransitionActionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
-impl TokenReleaseTransitionActionStructureValidationV0 for TokenReleaseTransition {
+impl TokenClaimTransitionActionStructureValidationV0 for TokenClaimTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         if let Some(public_note) = self.public_note() {
             if public_note.len() > MAX_TOKEN_NOTE_LEN {

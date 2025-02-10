@@ -47,7 +47,7 @@ pub enum TokenEvent {
         TokenEventPersonalEncryptedNote,
         TokenAmount,
     ),
-    Release(
+    Claim(
         TokenDistributionTypeWithResolvedRecipient,
         TokenAmount,
         TokenEventPublicNote,
@@ -65,7 +65,7 @@ impl TokenEvent {
             TokenEvent::Unfreeze(..) => "unfreeze",
             TokenEvent::DestroyFrozenFunds(..) => "destroyFrozenFunds",
             TokenEvent::Transfer(..) => "transfer",
-            TokenEvent::Release(..) => "release",
+            TokenEvent::Claim(..) => "claim",
             TokenEvent::EmergencyAction(..) => "emergencyAction",
             TokenEvent::ConfigUpdate(..) => "configUpdate",
         }
@@ -214,7 +214,7 @@ impl TokenEvent {
                 }
                 properties
             }
-            TokenEvent::Release(recipient, amount, public_note) => {
+            TokenEvent::Claim(recipient, amount, public_note) => {
                 let (recipient_type, recipient_id, distribution_type) = match recipient {
                     TokenDistributionTypeWithResolvedRecipient::PreProgrammed(identifier) => {
                         (1u8, Some(identifier.into()), 0u8)
@@ -226,8 +226,8 @@ impl TokenEvent {
                         TokenDistributionResolvedRecipient::Identity(identifier),
                     ) => (1, Some(identifier.into()), 1),
                     TokenDistributionTypeWithResolvedRecipient::Perpetual(
-                        TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(_),
-                    ) => (2, None, 1),
+                        TokenDistributionResolvedRecipient::Evonode(identifier),
+                    ) => (2, Some(identifier.into()), 1),
                 };
 
                 let mut properties = BTreeMap::from([

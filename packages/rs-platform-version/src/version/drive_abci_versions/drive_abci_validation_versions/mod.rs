@@ -117,8 +117,8 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_config_update_transition_structure_validation: FeatureVersion,
     pub token_config_update_transition_state_validation: FeatureVersion,
     pub token_base_transition_group_action_validation: FeatureVersion,
-    pub token_release_transition_structure_validation: FeatureVersion,
-    pub token_release_transition_state_validation: FeatureVersion,
+    pub token_claim_transition_structure_validation: FeatureVersion,
+    pub token_claim_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

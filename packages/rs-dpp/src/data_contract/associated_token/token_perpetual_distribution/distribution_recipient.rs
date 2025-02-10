@@ -1,3 +1,4 @@
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_distribution_key::{
     TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
 };
@@ -6,6 +7,7 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(
@@ -38,13 +40,13 @@ impl TokenDistributionRecipient {
     /// Simple resolve matches the contract owner but does not try to resolve the evonodes
     pub fn simple_resolve_with_distribution_type(
         &self,
-        contract_owner_id: Identifier,
+        owner_id: Identifier,
         distribution_type: TokenDistributionType,
     ) -> Result<TokenDistributionTypeWithResolvedRecipient, ProtocolError> {
         match distribution_type {
             TokenDistributionType::PreProgrammed => match self {
                 TokenDistributionRecipient::ContractOwner => Ok(
-                    TokenDistributionTypeWithResolvedRecipient::PreProgrammed(contract_owner_id),
+                    TokenDistributionTypeWithResolvedRecipient::PreProgrammed(owner_id),
                 ),
                 TokenDistributionRecipient::Identity(identity) => Ok(
                     TokenDistributionTypeWithResolvedRecipient::PreProgrammed(*identity),
@@ -59,9 +61,7 @@ impl TokenDistributionRecipient {
             TokenDistributionType::Perpetual => match self {
                 TokenDistributionRecipient::ContractOwner => {
                     Ok(TokenDistributionTypeWithResolvedRecipient::Perpetual(
-                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(
-                            contract_owner_id,
-                        ),
+                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(owner_id),
                     ))
                 }
                 TokenDistributionRecipient::Identity(identity) => {
@@ -71,7 +71,7 @@ impl TokenDistributionRecipient {
                 }
                 TokenDistributionRecipient::EvonodesByParticipation => {
                     Ok(TokenDistributionTypeWithResolvedRecipient::Perpetual(
-                        TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(vec![]),
+                        TokenDistributionResolvedRecipient::Evonode(owner_id),
                     ))
                 }
             },
@@ -80,6 +80,22 @@ impl TokenDistributionRecipient {
 }
 
 pub type TokenDistributionWeight = u64;
+
+// #[derive(
+//     Serialize,
+//     Deserialize,
+//     Decode,
+//     Encode,
+//     Debug,
+//     Clone,
+//     PartialEq,
+//     Eq,
+//     PartialOrd,
+// )]
+// pub struct EpochProposedBlocks {
+//     pub block_count: u64,
+//     pub total_blocks: u64,
+// }
 
 #[derive(
     Serialize,
@@ -99,8 +115,8 @@ pub enum TokenDistributionResolvedRecipient {
     ContractOwnerIdentity(Identifier),
     /// Distribute to a single identity
     Identity(Identifier),
-    /// Distribute to many identities
-    ResolvedEvonodesByParticipation(Vec<(Identifier, TokenDistributionWeight)>),
+    /// A single Evonode recipient that should share the token reward
+    Evonode(Identifier),
 }
 
 impl fmt::Display for TokenDistributionRecipient {
@@ -129,15 +145,8 @@ impl fmt::Display for TokenDistributionResolvedRecipient {
             TokenDistributionResolvedRecipient::Identity(id) => {
                 write!(f, "Identity({})", id)
             }
-            TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(identities) => {
-                write!(f, "Identities[")?;
-                for (i, (id, amount)) in identities.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "({}, {})", id, amount)?;
-                }
-                write!(f, "]")
+            TokenDistributionResolvedRecipient::Evonode(id) => {
+                write!(f, "Evonode({})", id)
             }
         }
     }

@@ -531,7 +531,7 @@ impl Drive {
                                 }
                                 Ok((root_hash, VerifiedDataContract(updated_contract)))
                             }
-                            TokenTransition::Release(_) => historical_query(),
+                            TokenTransition::Claim(_) => historical_query(),
                         }
                     }
                 }

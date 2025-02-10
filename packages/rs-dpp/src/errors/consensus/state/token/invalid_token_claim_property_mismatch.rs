@@ -15,13 +15,13 @@ use thiserror::Error;
     token_id
 )]
 #[platform_serialize(unversioned)]
-pub struct InvalidTokenReleasePropertyMismatch {
+pub struct InvalidTokenClaimPropertyMismatch {
     property: String,
     token_id: Identifier,
 }
 
-impl InvalidTokenReleasePropertyMismatch {
-    /// Creates a new `InvalidTokenReleasePropertyMismatch` error.
+impl InvalidTokenClaimPropertyMismatch {
+    /// Creates a new `InvalidTokenClaimPropertyMismatch` error.
     pub fn new(property: impl Into<String>, token_id: Identifier) -> Self {
         Self {
             property: property.into(),
@@ -40,8 +40,8 @@ impl InvalidTokenReleasePropertyMismatch {
     }
 }
 
-impl From<InvalidTokenReleasePropertyMismatch> for ConsensusError {
-    fn from(err: InvalidTokenReleasePropertyMismatch) -> Self {
-        Self::StateError(StateError::InvalidTokenReleasePropertyMismatch(err))
+impl From<InvalidTokenClaimPropertyMismatch> for ConsensusError {
+    fn from(err: InvalidTokenClaimPropertyMismatch) -> Self {
+        Self::StateError(StateError::InvalidTokenClaimPropertyMismatch(err))
     }
 }

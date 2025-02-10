@@ -13,81 +13,81 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 
 /// Token release transition action
 #[derive(Debug, Clone, From)]
-pub enum TokenReleaseTransitionAction {
+pub enum TokenClaimTransitionAction {
     /// v0
-    V0(TokenReleaseTransitionActionV0),
+    V0(TokenClaimTransitionActionV0),
 }
 
-impl TokenReleaseTransitionActionAccessorsV0 for TokenReleaseTransitionAction {
+impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionAction {
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => &v0.base,
+            TokenClaimTransitionAction::V0(v0) => &v0.base,
         }
     }
 
     fn base_owned(self) -> TokenBaseTransitionAction {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.base,
+            TokenClaimTransitionAction::V0(v0) => v0.base,
         }
     }
 
     fn amount(&self) -> TokenAmount {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.amount,
+            TokenClaimTransitionAction::V0(v0) => v0.amount,
         }
     }
 
     fn set_amount(&mut self, amount: TokenAmount) {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.amount = amount,
+            TokenClaimTransitionAction::V0(v0) => v0.amount = amount,
         }
     }
 
     fn recipient(&self) -> &TokenDistributionRecipient {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => &v0.recipient,
+            TokenClaimTransitionAction::V0(v0) => &v0.recipient,
         }
     }
 
     fn recipient_owned(self) -> TokenDistributionRecipient {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.recipient,
+            TokenClaimTransitionAction::V0(v0) => v0.recipient,
         }
     }
 
     fn set_recipient(&mut self, recipient: TokenDistributionRecipient) {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.recipient = recipient,
+            TokenClaimTransitionAction::V0(v0) => v0.recipient = recipient,
         }
     }
 
     fn distribution_info(&self) -> &TokenDistributionInfo {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => &v0.distribution_info,
+            TokenClaimTransitionAction::V0(v0) => &v0.distribution_info,
         }
     }
 
     fn set_distribution_info(&mut self, distribution_info: TokenDistributionInfo) {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.distribution_info = distribution_info,
+            TokenClaimTransitionAction::V0(v0) => v0.distribution_info = distribution_info,
         }
     }
 
     fn public_note(&self) -> Option<&String> {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.public_note.as_ref(),
+            TokenClaimTransitionAction::V0(v0) => v0.public_note.as_ref(),
         }
     }
 
     fn public_note_owned(self) -> Option<String> {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.public_note,
+            TokenClaimTransitionAction::V0(v0) => v0.public_note,
         }
     }
 
     fn set_public_note(&mut self, public_note: Option<String>) {
         match self {
-            TokenReleaseTransitionAction::V0(v0) => v0.public_note = public_note,
+            TokenClaimTransitionAction::V0(v0) => v0.public_note = public_note,
         }
     }
 }

@@ -40,6 +40,6 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 token_emergency_action_transition: 0,
                 token_destroy_frozen_funds_transition: 0,
                 token_config_update_transition: 0,
-                token_release_transition: 0,
+                token_claim_transition: 0,
             },
     };

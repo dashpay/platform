@@ -26,7 +26,7 @@ use crate::state_transition::batch_transition::token_destroy_frozen_funds_transi
 use crate::state_transition::batch_transition::token_emergency_action_transition::validate_structure::TokenEmergencyActionTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_freeze_transition::validate_structure::TokenFreezeTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_mint_transition::validate_structure::TokenMintTransitionStructureValidation;
-use crate::state_transition::batch_transition::token_release_transition::validate_structure::TokenReleaseTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_claim_transition::validate_structure::TokenClaimTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
@@ -167,7 +167,7 @@ impl BatchTransition {
                 TokenTransition::ConfigUpdate(config_update_transition) => {
                     config_update_transition.validate_structure(platform_version)?;
                 }
-                TokenTransition::Release(release_transition) => {
+                TokenTransition::Claim(release_transition) => {
                     release_transition.validate_structure(platform_version)?;
                 }
             }

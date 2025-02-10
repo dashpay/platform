@@ -10,7 +10,7 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 
 /// Token release transition action v0
 #[derive(Debug, Clone)]
-pub struct TokenReleaseTransitionActionV0 {
+pub struct TokenClaimTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
     /// Amount to be released,
@@ -25,8 +25,8 @@ pub struct TokenReleaseTransitionActionV0 {
     pub public_note: Option<String>,
 }
 
-/// Accessors for `TokenReleaseTransitionActionV0`
-pub trait TokenReleaseTransitionActionAccessorsV0 {
+/// Accessors for `TokenClaimTransitionActionV0`
+pub trait TokenClaimTransitionActionAccessorsV0 {
     /// Returns a reference to the base token transition action
     fn base(&self) -> &TokenBaseTransitionAction;
 
@@ -89,7 +89,7 @@ pub trait TokenReleaseTransitionActionAccessorsV0 {
     fn set_public_note(&mut self, public_note: Option<String>);
 }
 
-impl TokenReleaseTransitionActionAccessorsV0 for TokenReleaseTransitionActionV0 {
+impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionActionV0 {
     fn base(&self) -> &TokenBaseTransitionAction {
         &self.base
     }

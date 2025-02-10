@@ -3,19 +3,20 @@ use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::InvalidTokenReleasePropertyMismatch;
+use dpp::consensus::state::token::InvalidTokenClaimPropertyMismatch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_key::{TokenDistributionInfo, TokenDistributionType};
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::identifier::Identifier;
-use dpp::state_transition::batch_transition::token_release_transition::v0::TokenReleaseTransitionV0;
+use dpp::state_transition::batch_transition::token_claim_transition::v0::TokenClaimTransitionV0;
 use dpp::ProtocolError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
-use crate::state_transition_action::batch::batched_transition::token_transition::token_release_transition_action::v0::TokenReleaseTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::v0::TokenClaimTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -27,8 +28,8 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
-impl TokenReleaseTransitionActionV0 {
-    /// Converts a `TokenReleaseTransitionV0` into a `TokenReleaseTransitionActionV0` using the provided contract lookup.
+impl TokenClaimTransitionActionV0 {
+    /// Converts a `TokenClaimTransitionV0` into a `TokenClaimTransitionActionV0` using the provided contract lookup.
     ///
     /// This method processes the token releasing transition and returns the corresponding transition action
     /// while looking up necessary data contracts and applying the relevant logic for releasing.
@@ -39,7 +40,7 @@ impl TokenReleaseTransitionActionV0 {
     /// * `owner_id` - The identifier of the owner initiating the releasing transition. This is typically the identity
     ///   performing the transaction, such as the user's ID.
     /// * `transaction` - A transaction context that includes the necessary state and other details for the transition.
-    /// * `value` - The `TokenReleaseTransitionV0` struct containing the transition data, including token amount and recipient.
+    /// * `value` - The `TokenClaimTransitionV0` struct containing the transition data, including token amount and recipient.
     /// * `approximate_without_state_for_costs` - A flag to determine if costs should be approximated without considering
     ///   the full state for the operation. Useful for optimizing the transaction cost calculations.
     /// * `block_info` - Information about the current block to calculate fees.
@@ -49,12 +50,12 @@ impl TokenReleaseTransitionActionV0 {
     ///
     /// # Returns
     ///
-    /// * `Result<ConsensusValidationResult<TokenReleaseTransitionActionV0>, Error>` - Returns the constructed `TokenReleaseTransitionActionV0` if successful,
+    /// * `Result<ConsensusValidationResult<TokenClaimTransitionActionV0>, Error>` - Returns the constructed `TokenClaimTransitionActionV0` if successful,
     ///   or an error if any issue arises, such as missing data or an invalid state transition.
-    pub fn try_from_token_release_transition_with_contract_lookup(
+    pub fn try_from_token_claim_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
-        value: TokenReleaseTransitionV0,
+        value: TokenClaimTransitionV0,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -68,7 +69,7 @@ impl TokenReleaseTransitionActionV0 {
         ),
         Error,
     > {
-        let TokenReleaseTransitionV0 {
+        let TokenClaimTransitionV0 {
             base,
             recipient,
             distribution_type,
@@ -120,8 +121,8 @@ impl TokenReleaseTransitionActionV0 {
         };
 
         Ok((
-            BatchedTransitionAction::TokenAction(TokenTransitionAction::ReleaseAction(
-                TokenReleaseTransitionActionV0 {
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::ClaimAction(
+                TokenClaimTransitionActionV0 {
                     base: base_action,
                     amount: 0, //todo
                     recipient,
@@ -135,7 +136,7 @@ impl TokenReleaseTransitionActionV0 {
         ))
     }
 
-    /// Converts a borrowed `TokenReleaseTransitionV0` into a `TokenReleaseTransitionActionV0` using the provided contract lookup.
+    /// Converts a borrowed `TokenClaimTransitionV0` into a `TokenClaimTransitionActionV0` using the provided contract lookup.
     ///
     /// This method processes the token releasing transition and constructs the corresponding transition action while
     /// looking up necessary data contracts and applying the relevant releasing logic. It does not require `drive_operations`
@@ -146,7 +147,7 @@ impl TokenReleaseTransitionActionV0 {
     /// * `drive` - A reference to the `Drive` instance that handles data storage and retrieval.
     /// * `owner_id` - The identifier of the owner initiating the releasing transition. This is typically the identity
     ///   performing the transaction, such as the user's ID.
-    /// * `value` - A reference to the `TokenReleaseTransitionV0` struct containing the transition data, including token
+    /// * `value` - A reference to the `TokenClaimTransitionV0` struct containing the transition data, including token
     ///   amount and recipient.
     /// * `approximate_without_state_for_costs` - A flag to indicate whether costs should be approximated without full
     ///   state consideration. Useful for optimizing transaction cost calculations in scenarios where full state is not needed.
@@ -158,14 +159,14 @@ impl TokenReleaseTransitionActionV0 {
     ///
     //// # Returns
     ///
-    /// * `Result<(ConsensusValidationResult<TokenReleaseTransitionActionV0>, FeeResult), Error>` - Returns a tuple containing the constructed
-    ///   `TokenReleaseTransitionActionV0` and a `FeeResult` if successful. If an error occurs (e.g., missing data or
+    /// * `Result<(ConsensusValidationResult<TokenClaimTransitionActionV0>, FeeResult), Error>` - Returns a tuple containing the constructed
+    ///   `TokenClaimTransitionActionV0` and a `FeeResult` if successful. If an error occurs (e.g., missing data or
     ///   invalid state transition), it returns an `Error`.
     ///
-    pub fn try_from_borrowed_token_release_transition_with_contract_lookup(
+    pub fn try_from_borrowed_token_claim_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
-        value: &TokenReleaseTransitionV0,
+        value: &TokenClaimTransitionV0,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -179,9 +180,8 @@ impl TokenReleaseTransitionActionV0 {
         ),
         Error,
     > {
-        let TokenReleaseTransitionV0 {
+        let TokenClaimTransitionV0 {
             base,
-            recipient,
             distribution_type,
             public_note,
         } = value;
@@ -251,33 +251,20 @@ impl TokenReleaseTransitionActionV0 {
                         ConsensusValidationResult::new_with_data_and_errors(
                             batched_action.into(),
                             vec![ConsensusError::StateError(
-                                StateError::InvalidTokenReleasePropertyMismatch(InvalidTokenReleasePropertyMismatch::new("pre programmed distribution", base.token_id())),
+                                StateError::InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch::new("pre programmed distribution", base.token_id())),
                             )],
                         ),
                         fee_result,
                     ));
                 };
 
-                let recipient = match recipient {
-                    TokenDistributionRecipient::ContractOwner => {
-                        base_action.data_contract_fetch_info().contract.owner_id()
-                    }
-                    TokenDistributionRecipient::Identity(identifier) => {
-                        *identifier
-                    }
-                    TokenDistributionRecipient::EvonodesByParticipation => {
-                        // This should have already been snuffed out in basic structure validation
-                        return Err(Error::Protocol(ProtocolError::CorruptedCodeExecution("trying to transform with EvonodesByParticipation that should already have been validated in basic structure validation".to_string())));
-                    }
-                };
-
                 // We need to find the oldest pre-programmed distribution that wasn't yet claimed
                 // for this identity
-                let oldest_time = ;
+                let oldest_time = 0;
                 
-                let amount = ;
+                let amount = 0;
 
-                (amount, TokenDistributionInfo::PreProgrammed(0, recipient))
+                (amount, TokenDistributionInfo::PreProgrammed(0, owner_id))
             }
             TokenDistributionType::Perpetual => {
                 // we need to validate that we have a perpetual distribution
@@ -297,14 +284,16 @@ impl TokenReleaseTransitionActionV0 {
                         ConsensusValidationResult::new_with_data_and_errors(
                             batched_action.into(),
                             vec![ConsensusError::StateError(
-                                StateError::InvalidTokenReleasePropertyMismatch(InvalidTokenReleasePropertyMismatch::new("perpetual distribution", value.base().token_id())),
+                                StateError::InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch::new("perpetual distribution", value.base().token_id())),
                             )],
                         ),
                         fee_result,
                     ));
                 };
 
-                let recipient = match recipient {
+                let last_paid_time = drive.fetch_perpetual_distribution_last_paid_time_operations(base.token_id().to_buffer(), );
+
+                let recipient = match perpetual_distribution.distribution_recipient() {
                     TokenDistributionRecipient::ContractOwner => {
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(base_action.data_contract_fetch_info().contract.owner_id())
                     }
@@ -316,15 +305,15 @@ impl TokenReleaseTransitionActionV0 {
                     }
                 };
 
-                let amount = ;
+                let amount = perpetual_distribution.distribution_type().rewards_in_interval(last_paid_time, block_info)?;
 
                 (amount, TokenDistributionInfo::Perpetual(RewardDistributionMoment::TimeBasedMoment(0),RewardDistributionMoment::TimeBasedMoment(0), recipient))
             }
         };
 
         Ok((
-            BatchedTransitionAction::TokenAction(TokenTransitionAction::ReleaseAction(
-                TokenReleaseTransitionActionV0 {
+            BatchedTransitionAction::TokenAction(TokenTransitionAction::ClaimAction(
+                TokenClaimTransitionActionV0 {
                     base: base_action,
                     amount,
                     recipient: *recipient,

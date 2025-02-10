@@ -4,9 +4,9 @@ use crate::state_transition::batch_transition::batched_transition::{
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition,
-    TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition,
-    TokenReleaseTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
+    TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
+    TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition,
 };
 
 impl BatchTransitionResolversV0 for BatchedTransition {
@@ -89,10 +89,10 @@ impl BatchTransitionResolversV0 for BatchedTransition {
         }
     }
 
-    fn as_transition_token_release(&self) -> Option<&TokenReleaseTransition> {
+    fn as_transition_token_claim(&self) -> Option<&TokenClaimTransition> {
         match self {
             BatchedTransition::Document(_) => None,
-            BatchedTransition::Token(token) => token.as_transition_token_release(),
+            BatchedTransition::Token(token) => token.as_transition_token_claim(),
         }
     }
 
@@ -191,10 +191,10 @@ impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
         }
     }
 
-    fn as_transition_token_release(&self) -> Option<&TokenReleaseTransition> {
+    fn as_transition_token_claim(&self) -> Option<&TokenClaimTransition> {
         match self {
             BatchedTransitionRef::Document(_) => None,
-            BatchedTransitionRef::Token(token) => token.as_transition_token_release(),
+            BatchedTransitionRef::Token(token) => token.as_transition_token_claim(),
         }
     }
 

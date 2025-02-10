@@ -8,12 +8,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_release_transition_action::{TokenReleaseTransitionAction, TokenReleaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionAction, TokenClaimTransitionActionAccessorsV0};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use crate::util::batch::drive_op_batch::TokenOperationType;
 use crate::util::batch::DriveOperation::{IdentityOperation, TokenOperation};
 
-impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
+impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
         self,
         _epoch: &Epoch,
@@ -25,7 +25,7 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
             .methods
             .state_transitions
             .convert_to_high_level_operations
-            .token_release_transition
+            .token_claim_transition
         {
             0 => {
                 let data_contract_id = self.base().data_contract_id();
@@ -51,25 +51,15 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                         _,
                         _,
                         TokenDistributionResolvedRecipient::Identity(identity),
+                    ) | TokenDistributionInfo::Perpetual(
+                        _,
+                        _,
+                        TokenDistributionResolvedRecipient::Evonode(identity),
                     ) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMint {
                             token_id: self.token_id(),
                             identity_balance_holder_id: *identity,
                             mint_amount: self.amount(),
-                            allow_first_mint: false,
-                        }));
-                    }
-                    TokenDistributionInfo::Perpetual(
-                        _,
-                        _,
-                        TokenDistributionResolvedRecipient::ResolvedEvonodesByParticipation(
-                            weighted_identities,
-                        ),
-                    ) => {
-                        ops.push(TokenOperation(TokenOperationType::TokenMintMany {
-                            token_id: self.token_id(),
-                            mint_amount: self.amount(),
-                            recipients: weighted_identities.clone(),
                             allow_first_mint: false,
                         }));
                     }
@@ -106,7 +96,7 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                     token_id: self.token_id(),
                     owner_id,
                     nonce: identity_contract_nonce,
-                    event: TokenEvent::Release(
+                    event: TokenEvent::Claim(
                         self.distribution_info().into(),
                         self.amount(),
                         self.public_note_owned(),
@@ -116,7 +106,7 @@ impl DriveHighLevelBatchOperationConverter for TokenReleaseTransitionAction {
                 Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "TokenReleaseTransitionAction::into_high_level_document_drive_operations"
+                method: "TokenClaimTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

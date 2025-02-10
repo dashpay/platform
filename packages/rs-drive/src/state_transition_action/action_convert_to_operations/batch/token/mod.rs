@@ -4,7 +4,7 @@ mod token_destroy_frozen_funds_transition;
 mod token_emergency_action_transition;
 mod token_freeze_transition;
 mod token_mint_transition;
-mod token_release_transition;
+mod token_claim_transition;
 mod token_transfer_transition;
 mod token_transition;
 mod token_unfreeze_transition;

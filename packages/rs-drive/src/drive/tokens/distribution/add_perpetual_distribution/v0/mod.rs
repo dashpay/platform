@@ -1,8 +1,4 @@
-use crate::drive::tokens::paths::{
-    token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec,
-    TokenPerpetualDistributionPaths, TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY,
-    TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
-};
+use crate::drive::tokens::paths::{token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec, TokenPerpetualDistributionPaths, TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_NEXT_EVENT_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -96,7 +92,7 @@ impl Drive {
         self.batch_insert(
             PathKeyElementInfo::<0>::PathKeyElement((
                 perpetual_distributions_path,
-                vec![TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY],
+                vec![TOKEN_PERPETUAL_DISTRIBUTIONS_NEXT_EVENT_KEY],
                 Element::new_item(next_interval.to_be_bytes().to_vec()),
             )),
             batch_operations,

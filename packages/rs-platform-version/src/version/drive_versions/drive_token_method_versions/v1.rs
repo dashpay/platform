@@ -16,6 +16,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         token_total_supply: 0,
         token_total_aggregated_identity_balances: 0,
         pre_programmed_distributions: 0,
+        perpetual_distribution_last_paid_time: 0,
     },
     prove: DriveTokenProveMethodVersions {
         identity_token_balance: 0,
@@ -42,6 +43,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         freeze: 0,
         unfreeze: 0,
         apply_status: 0,
+        perpetual_distribution_next_event_for_identity_id: 0,
     },
     calculate_total_tokens_balance: 0,
     distribution: DriveTokenDistributionMethodVersions {

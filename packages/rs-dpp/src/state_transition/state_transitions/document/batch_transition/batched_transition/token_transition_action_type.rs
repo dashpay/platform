@@ -11,7 +11,7 @@ pub enum TokenTransitionActionType {
     Freeze,
     Unfreeze,
     DestroyFrozenFunds,
-    Release,
+    Claim,
     EmergencyAction,
     ConfigUpdate,
 }
@@ -25,7 +25,7 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Freeze => "Freeze",
             TokenTransitionActionType::Unfreeze => "Unfreeze",
             TokenTransitionActionType::DestroyFrozenFunds => "DestroyFrozenFunds",
-            TokenTransitionActionType::Release => "Release",
+            TokenTransitionActionType::Claim => "Claim",
             TokenTransitionActionType::EmergencyAction => "EmergencyAction",
             TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
         };
@@ -46,7 +46,7 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::Freeze(_) => TokenTransitionActionType::Freeze,
             TokenTransition::Unfreeze(_) => TokenTransitionActionType::Unfreeze,
             TokenTransition::DestroyFrozenFunds(_) => TokenTransitionActionType::DestroyFrozenFunds,
-            TokenTransition::Release(_) => TokenTransitionActionType::Release,
+            TokenTransition::Claim(_) => TokenTransitionActionType::Claim,
             TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionActionType::ConfigUpdate,
         }
@@ -63,7 +63,7 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "transfer" => Ok(TokenTransitionActionType::Transfer),
             "freeze" => Ok(TokenTransitionActionType::Freeze),
             "unfreeze" => Ok(TokenTransitionActionType::Unfreeze),
-            "release" => Ok(TokenTransitionActionType::Release),
+            "claim" => Ok(TokenTransitionActionType::Claim),
             "destroy_frozen_funds" | "destroyFrozenFunds" => {
                 Ok(TokenTransitionActionType::DestroyFrozenFunds)
             }
