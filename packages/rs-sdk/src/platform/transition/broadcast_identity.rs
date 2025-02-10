@@ -10,7 +10,6 @@ use std::fmt::Debug;
 use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
-#[cfg(not(target_arch = "wasm32"))]
 use dpp::native_bls::NativeBlsModule;
 use dpp::prelude::{AssetLockProof, Identity};
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
@@ -105,22 +104,16 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
         signer: &S,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
-        #[cfg(target_arch = "wasm32")]
-        unimplemented!("NativeBlsModule not implemented for wasm32");
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let identity_create_transition =
-                IdentityCreateTransition::try_from_identity_with_signer(
-                    self,
-                    asset_lock_proof,
-                    asset_lock_proof_private_key.inner.as_ref(),
-                    signer,
-                    &NativeBlsModule,
-                    0,
-                    platform_version,
-                )?;
-            let request = identity_create_transition.broadcast_request_for_state_transition()?;
-            Ok((identity_create_transition, request))
-        }
+        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
+            self,
+            asset_lock_proof,
+            asset_lock_proof_private_key.inner.as_ref(),
+            signer,
+            &NativeBlsModule,
+            0,
+            platform_version,
+        )?;
+        let request = identity_create_transition.broadcast_request_for_state_transition()?;
+        Ok((identity_create_transition, request))
     }
 }
