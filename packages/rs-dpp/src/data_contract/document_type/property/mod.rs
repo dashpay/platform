@@ -13,6 +13,7 @@ use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
+use itertools::Itertools;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -2031,29 +2032,7 @@ impl TryFrom<&BTreeMap<String, &Value>> for DocumentPropertyType {
                 let maximum = value.get_optional_integer::<i64>(property_names::MAXIMUM)?;
 
                 match (minimum, maximum) {
-                    (Some(min), Some(max)) => {
-                        if min >= 0 {
-                            if max <= u8::MAX as i64 {
-                                Self::U8
-                            } else if max <= u16::MAX as i64 {
-                                Self::U16
-                            } else if max <= u32::MAX as i64 {
-                                Self::U32
-                            } else {
-                                Self::U64
-                            }
-                        } else {
-                            if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
-                                Self::I8
-                            } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
-                                Self::I16
-                            } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
-                                Self::I32
-                            } else {
-                                Self::I64
-                            }
-                        }
-                    }
+                    (Some(min), Some(max)) => find_integer_type_for_min_and_max_values(min, max),
                     (Some(min), None) => {
                         if min >= 0 {
                             Self::U64
@@ -2061,14 +2040,35 @@ impl TryFrom<&BTreeMap<String, &Value>> for DocumentPropertyType {
                             Self::I64
                         }
                     }
-                    (None, Some(max)) => {
-                        if max >= 0 {
-                            Self::U64
+                    (None, Some(max)) => find_unsigned_integer_type_for_max_value(max),
+                    (None, None) => {
+                        // If enum is defined, we can try to figure out type based on minimal and maximal values
+                        let enum_type = if let Some(enum_values) =
+                            value.get_optional_inner_value_array::<Vec<_>>(property_names::ENUM)?
+                        {
+                            match enum_values
+                                .into_iter()
+                                .filter_map(|v| v.as_integer())
+                                .minmax()
+                            {
+                                itertools::MinMaxResult::MinMax(min, max) => {
+                                    Some(find_integer_type_for_min_and_max_values(min, max))
+                                }
+                                itertools::MinMaxResult::OneElement(val) => {
+                                    Some(find_unsigned_integer_type_for_max_value(val))
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(enum_type) = enum_type {
+                            enum_type
                         } else {
                             Self::I64
                         }
                     }
-                    (None, None) => Self::I64,
                 }
             }
             "string" => DocumentPropertyType::String(StringPropertySizes {
@@ -2111,5 +2111,33 @@ impl TryFrom<&BTreeMap<String, &Value>> for DocumentPropertyType {
         };
 
         Ok(property_type)
+    }
+}
+
+fn find_unsigned_integer_type_for_max_value(max_value: i64) -> DocumentPropertyType {
+    if max_value <= u8::MAX as i64 {
+        DocumentPropertyType::U8
+    } else if max_value <= u16::MAX as i64 {
+        DocumentPropertyType::U16
+    } else if max_value <= u32::MAX as i64 {
+        DocumentPropertyType::U32
+    } else {
+        DocumentPropertyType::U64
+    }
+}
+
+fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPropertyType {
+    if min >= 0 {
+        find_unsigned_integer_type_for_max_value(max)
+    } else {
+        if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
+            DocumentPropertyType::I8
+        } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
+            DocumentPropertyType::I16
+        } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
+            DocumentPropertyType::I32
+        } else {
+            DocumentPropertyType::I64
+        }
     }
 }
