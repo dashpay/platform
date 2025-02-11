@@ -7,6 +7,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod v0;
+mod v1;
 
 impl DocumentType {
     pub fn try_from_schema(
@@ -29,6 +30,19 @@ impl DocumentType {
             .try_from_schema
         {
             0 => DocumentTypeV0::try_from_schema_v0(
+                data_contract_id,
+                name,
+                schema,
+                schema_defs,
+                default_keeps_history,
+                default_mutability,
+                default_can_be_deleted,
+                full_validation,
+                validation_operations,
+                platform_version,
+            )
+            .map(|document_type| document_type.into()),
+            1 => DocumentTypeV0::try_from_schema_v1(
                 data_contract_id,
                 name,
                 schema,

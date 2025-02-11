@@ -26,7 +26,7 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 0,
+            try_from_schema: 1, //changed to detect more granular number types based on `type`, `min` and `max`
             create_document_types_from_document_schemas: 1, //changed to allow contracts with only tokens
         },
         structure_version: 0,

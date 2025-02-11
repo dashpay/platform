@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -5,12 +6,14 @@ use std::io::{BufReader, Cursor, Read};
 use crate::data_contract::errors::DataContractError;
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::document_type::property_names;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
@@ -67,6 +70,7 @@ pub enum DocumentPropertyType {
 }
 
 impl DocumentPropertyType {
+    #[deprecated = "this method is missing required information to create a type. Use TryFrom<&Value> instead."]
     pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
         match name {
             "u128" => Ok(DocumentPropertyType::U128),
@@ -2013,4 +2017,99 @@ fn get_field_type_matching_error(value: &Value) -> DataContractError {
         "document field type doesn't match \"{}\" document value",
         value
     ))
+}
+
+impl TryFrom<&BTreeMap<String, &Value>> for DocumentPropertyType {
+    type Error = DataContractError;
+
+    fn try_from(value: &BTreeMap<String, &Value>) -> Result<Self, Self::Error> {
+        let type_value = value.get_str(property_names::TYPE)?;
+
+        let property_type = match type_value {
+            "integer" => {
+                let minimum = value.get_optional_integer::<i64>(property_names::MINIMUM)?;
+                let maximum = value.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+
+                match (minimum, maximum) {
+                    (Some(min), Some(max)) => {
+                        if min >= 0 {
+                            if max <= u8::MAX as i64 {
+                                Self::U8
+                            } else if max <= u16::MAX as i64 {
+                                Self::U16
+                            } else if max <= u32::MAX as i64 {
+                                Self::U32
+                            } else {
+                                Self::U64
+                            }
+                        } else {
+                            if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
+                                Self::I8
+                            } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
+                                Self::I16
+                            } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
+                                Self::I32
+                            } else {
+                                Self::I64
+                            }
+                        }
+                    }
+                    (Some(min), None) => {
+                        if min >= 0 {
+                            Self::U64
+                        } else {
+                            Self::I64
+                        }
+                    }
+                    (None, Some(max)) => {
+                        if max >= 0 {
+                            Self::U64
+                        } else {
+                            Self::I64
+                        }
+                    }
+                    (None, None) => Self::I64,
+                }
+            }
+            "string" => DocumentPropertyType::String(StringPropertySizes {
+                min_length: value.get_optional_integer(property_names::MIN_LENGTH)?,
+                max_length: value.get_optional_integer(property_names::MAX_LENGTH)?,
+            }),
+            "array" => {
+                // Only handling bytearrays for v1
+                // Return an error if it is not a byte array
+                let Some(is_byte_array) = value.get_optional_bool(property_names::BYTE_ARRAY)?
+                else {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "only byte arrays are supported now".to_string(),
+                    ));
+                };
+
+                if !is_byte_array {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "byteArray should always be true if defined".to_string(),
+                    ));
+                }
+
+                match value.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                    Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
+                    Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                        min_size: value.get_optional_integer(property_names::MIN_ITEMS)?,
+                        max_size: value.get_optional_integer(property_names::MAX_ITEMS)?,
+                    }),
+                }
+            }
+            "object" => Self::Object(Default::default()),
+            "boolean" => DocumentPropertyType::Boolean,
+            "number" => DocumentPropertyType::F64,
+            _ => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "unsupported property type: {}",
+                    type_value
+                )));
+            }
+        };
+
+        Ok(property_type)
+    }
 }
