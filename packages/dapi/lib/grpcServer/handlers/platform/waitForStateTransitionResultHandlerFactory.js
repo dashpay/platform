@@ -49,9 +49,13 @@ function waitForStateTransitionResultHandlerFactory(
 
     const error = new StateTransitionBroadcastError();
 
+    const metadata = grpcError.getRawMetadata();
+    if (metadata['dash-serialized-consensus-error-bin']) {
+      error.setData(metadata['dash-serialized-consensus-error-bin']);
+    }
+
     error.setCode(txDeliverResult.code);
     error.setMessage(grpcError.getMessage());
-    error.setData(cbor.encode(grpcError.getRawMetadata()));
 
     return error;
   }
