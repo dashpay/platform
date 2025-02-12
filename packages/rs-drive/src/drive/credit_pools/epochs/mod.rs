@@ -32,3 +32,6 @@ pub mod start_time;
 mod has_epoch_tree_exists;
 #[cfg(feature = "server")]
 mod get_epoch_protocol_version;
+
+#[cfg(feature = "server")]
+mod get_finalized_epoch_info;

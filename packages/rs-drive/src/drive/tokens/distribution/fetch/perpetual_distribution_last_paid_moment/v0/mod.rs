@@ -5,10 +5,11 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::identifier::Identifier;
-use dpp::identity::TimestampMillis;
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
 impl Drive {
     /// Fetches the last paid timestamp for a perpetual distribution for a given identity.
@@ -27,16 +28,17 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// A `Result` containing `Some(TimestampMillis)` if a record exists, `None` if no record is found,
+    /// A `Result` containing `Some(RewardDistributionMoment)` if a record exists, `None` if no record is found,
     /// or an `Error` if retrieval fails.
-    pub(super) fn fetch_perpetual_distribution_last_paid_time_operations_v0(
+    pub(super) fn fetch_perpetual_distribution_last_paid_moment_operations_v0(
         &self,
         token_id: [u8; 32],
         identity_id: Identifier,
+        distribution_type: &RewardDistributionType,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<TimestampMillis>, Error> {
+    ) -> Result<Option<RewardDistributionMoment>, Error> {
         let direct_query_type = DirectQueryType::StatefulDirectQuery;
 
         let perpetual_distributions_path = token_perpetual_distributions_identity_last_claimed_time_path(&token_id);
@@ -50,23 +52,19 @@ impl Drive {
             &platform_version.drive,
         ) {
             Ok(Some(Item(value, _))) => {
-                if value.len() != 8 {
-                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                        format!(
-                            "Last paid timestamp must be 8 bytes, but got {} bytes",
-                            value.len()
-                        ),
-                    )));
-                }
-                let mut timestamp_bytes = [0u8; 8];
-                timestamp_bytes.copy_from_slice(&value);
-                Ok(Some(TimestampMillis::from_be_bytes(timestamp_bytes)))
+                let moment = distribution_type.moment_from_bytes(&value).map_err(|e| Error::Drive(DriveError::CorruptedDriveState(
+                    format!(
+                        "Moment should be specific amount of bytes: {}",
+                        e
+                    ),
+                )))?;
+                Ok(Some(moment))
             }
 
             Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
 
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
-                "Last paid timestamp was present but was not an item",
+                "Last moment was present but was not an item",
             ))),
 
             Err(e) => Err(e),

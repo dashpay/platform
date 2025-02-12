@@ -1,2 +1,2 @@
 mod pre_programmed_distributions;
-mod perpetual_distribution_last_paid_time;
+mod perpetual_distribution_last_paid_moment;

@@ -10,6 +10,8 @@ use crate::prelude::{
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+use crate::ProtocolError;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum RewardDistributionType {
@@ -40,6 +42,63 @@ pub enum RewardDistributionType {
         start: Option<EpochIndex>,
         end: Option<EpochIndex>,
     },
+}
+
+impl RewardDistributionType {
+    /// Converts a byte slice into the corresponding `RewardDistributionMoment` variant
+    /// based on the type of reward distribution.
+    ///
+    /// This method interprets the provided bytes according to the expected type of the distribution:
+    /// - `BlockBasedDistribution`: Interprets the bytes as a `BlockHeight` (`u64`).
+    /// - `TimeBasedDistribution`: Interprets the bytes as a `TimestampMillis` (`u64`).
+    /// - `EpochBasedDistribution`: Interprets the bytes as an `EpochIndex` (`u16`).
+    ///
+    /// # Parameters
+    ///
+    /// - `bytes`: A byte slice containing the serialized representation of the moment.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(RewardDistributionMoment)`: The successfully parsed reward distribution moment.
+    /// - `Err(ProtocolError)`: If the provided bytes are of incorrect length.
+    ///
+    /// # Errors
+    ///
+    /// - `ProtocolError::DecodingError`: If the provided bytes slice does not have the expected length
+    pub fn moment_from_bytes(&self, bytes: &[u8]) -> Result<RewardDistributionMoment, ProtocolError> {
+        match self {
+            RewardDistributionType::BlockBasedDistribution { .. } => {
+                if bytes.len() != 8 {
+                    return Err(ProtocolError::DecodingError(
+                        "Expected 8 bytes for BlockBasedMoment".to_string(),
+                    ));
+                }
+                let mut array = [0u8; 8];
+                array.copy_from_slice(bytes);
+                Ok(RewardDistributionMoment::BlockBasedMoment(u64::from_be_bytes(array)))
+            }
+            RewardDistributionType::TimeBasedDistribution { .. } => {
+                if bytes.len() != 8 {
+                    return Err(ProtocolError::DecodingError(
+                        "Expected 8 bytes for TimeBasedMoment".to_string(),
+                    ));
+                }
+                let mut array = [0u8; 8];
+                array.copy_from_slice(bytes);
+                Ok(RewardDistributionMoment::TimeBasedMoment(u64::from_be_bytes(array)))
+            }
+            RewardDistributionType::EpochBasedDistribution { .. } => {
+                if bytes.len() != 2 {
+                    return Err(ProtocolError::DecodingError(
+                        "Expected 2 bytes for EpochBasedMoment".to_string(),
+                    ));
+                }
+                let mut array = [0u8; 2];
+                array.copy_from_slice(bytes);
+                Ok(RewardDistributionMoment::EpochBasedMoment(u16::from_be_bytes(array)))
+            }
+        }
+    }
 }
 impl fmt::Display for RewardDistributionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

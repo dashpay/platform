@@ -23,6 +23,7 @@ use dpp::state_transition::batch_transition::token_base_transition::token_base_t
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
@@ -292,7 +293,7 @@ impl TokenClaimTransitionActionV0 {
 
                 let mut last_paid_time_operations = vec![];
 
-                let last_paid_time = drive.fetch_perpetual_distribution_last_paid_time_operations(base.token_id().to_buffer(), owner_id, &mut last_paid_time_operations, transaction, platform_version)?;
+                let last_paid_moment = drive.fetch_perpetual_distribution_last_paid_moment_operations(base.token_id().to_buffer(), owner_id, perpetual_distribution.distribution_type(), &mut last_paid_time_operations, transaction, platform_version)?;
 
                 let last_paid_time_fee_result = Drive::calculate_fee(
                     None,
@@ -313,11 +314,15 @@ impl TokenClaimTransitionActionV0 {
                         TokenDistributionResolvedRecipient::Identity(*identifier)
                     }
                     TokenDistributionRecipient::EvonodesByParticipation => {
-                        todo!(),
+                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) = last_paid_moment else {
+                            return Err(Error::Drive(DriveError::NotSupported("evonodes by participation can only use epoch based distribution")));
+                        };
+                        drive.get_finalized_epoch_infos(epoch_index, true, block_info.epoch.index, false, transaction, platform_version)?;
+                        TokenDistributionResolvedRecipient::Evonode(*owner_id)
                     }
                 };
 
-                let amount = perpetual_distribution.distribution_type().rewards_in_interval(last_paid_time, block_info)?;
+                let amount = perpetual_distribution.distribution_type().rewards_in_interval(last_paid_moment, block_info)?;
 
                 (amount, TokenDistributionInfo::Perpetual(RewardDistributionMoment::TimeBasedMoment(0),RewardDistributionMoment::TimeBasedMoment(0), recipient))
             }
