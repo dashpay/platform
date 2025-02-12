@@ -4,6 +4,7 @@ pub const DRIVE_ABCI_STRUCTURE_VERSIONS_V1: DriveAbciStructureVersions =
     DriveAbciStructureVersions {
         platform_state_structure: 0,
         platform_state_for_saving_structure_default: 0,
+        reduced_platform_state_for_saving_structure_default: 0,
         state_transition_execution_context: 0,
         commit: 0,
         masternode: 0,

@@ -31,6 +31,21 @@ pub trait PlatformSerializable {
     }
 }
 
+pub trait ReducedPlatformSerializable {
+    type Error;
+    fn reduced_serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error>;
+}
+
+pub trait ReducedPlatformDeserializable {
+    type Error;
+    fn versioned_deserialize(
+        data: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
 pub trait PlatformSerializableWithPlatformVersion {
     type Error;
     /// Version based serialization is done based on the desired structure version.

@@ -60,12 +60,19 @@ pub struct DriveMethodVersions {
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
+    pub reduced_platform_state: DriveReducedPlatformStateMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveReducedPlatformStateMethodVersions {
+    pub fetch_reduced_platform_state_bytes: FeatureVersion,
+    pub store_reduced_platform_state_bytes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
