@@ -43,7 +43,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
-        let (root_hash, identity_id) = Self::verify_identity_id_by_public_key_hash(
+        let (root_hash, identity_id) = Self::verify_identity_id_by_unique_public_key_hash(
             proof,
             true,
             public_key_hash,
