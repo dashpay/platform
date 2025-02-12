@@ -1,3 +1,4 @@
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::validation::operations::ProtocolValidationOperation;
@@ -7,7 +8,6 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod v0;
-mod v1;
 
 impl DocumentType {
     pub fn try_from_schema(
@@ -15,9 +15,7 @@ impl DocumentType {
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
-        default_keeps_history: bool,
-        default_mutability: bool,
-        default_can_be_deleted: bool,
+        data_contact_config: &DataContractConfig,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -34,22 +32,7 @@ impl DocumentType {
                 name,
                 schema,
                 schema_defs,
-                default_keeps_history,
-                default_mutability,
-                default_can_be_deleted,
-                full_validation,
-                validation_operations,
-                platform_version,
-            )
-            .map(|document_type| document_type.into()),
-            1 => DocumentTypeV0::try_from_schema_v1(
-                data_contract_id,
-                name,
-                schema,
-                schema_defs,
-                default_keeps_history,
-                default_mutability,
-                default_can_be_deleted,
+                data_contact_config,
                 full_validation,
                 validation_operations,
                 platform_version,
