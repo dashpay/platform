@@ -14,7 +14,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const cbor = require('cbor');
 const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
 const TransactionErrorResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
