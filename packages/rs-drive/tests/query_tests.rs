@@ -59,6 +59,7 @@ use base64::Engine;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
@@ -76,12 +77,11 @@ use dpp::tests::json_document::json_document_to_contract;
 use dpp::util::cbor_serializer;
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
-use once_cell::sync::Lazy;
-use rand::prelude::StdRng;
-
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use once_cell::sync::Lazy;
+use rand::prelude::StdRng;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "server")]
@@ -880,7 +880,7 @@ pub fn setup_withdrawal_tests(
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = setup_contract(
+    let mut contract = setup_contract(
         &drive,
         "tests/supporting_files/contract/withdrawals/withdrawals-contract.json",
         None,
@@ -889,6 +889,10 @@ pub fn setup_withdrawal_tests(
         Some(&db_transaction),
         None,
     );
+
+    contract
+        .config_mut()
+        .set_granular_integer_types_enabled(false);
 
     add_withdrawals_to_contract(
         &drive,

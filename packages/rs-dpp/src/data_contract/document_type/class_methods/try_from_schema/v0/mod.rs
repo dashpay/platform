@@ -31,6 +31,7 @@ use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesE
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
@@ -267,6 +268,7 @@ impl DocumentTypeV0 {
                 property_key.clone(),
                 property_value,
                 &root_schema,
+                data_contact_config,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -277,6 +279,7 @@ impl DocumentTypeV0 {
                 property_key,
                 property_value,
                 &root_schema,
+                data_contact_config,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
         }
@@ -589,6 +592,7 @@ fn insert_values(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
+    config: &DataContractConfig,
 ) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
@@ -610,7 +614,7 @@ fn insert_values(
         let is_required = known_required.contains(&prefixed_property_key);
         let is_transient = known_transient.contains(&prefixed_property_key);
 
-        match DocumentPropertyType::try_from(&inner_properties)? {
+        match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
             DocumentPropertyType::Object(_) => {
                 if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
                 {
@@ -637,6 +641,8 @@ fn insert_values(
                 }
             }
             property_type => {
+                if !config.granular_integer_types() && property_type.is_integer() {}
+
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -658,6 +664,7 @@ fn insert_values_nested(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
+    config: &DataContractConfig,
 ) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -671,75 +678,78 @@ fn insert_values_nested(
 
     let is_transient = known_transient.contains(&property_key);
 
-    let property_type = match DocumentPropertyType::try_from(&inner_properties)? {
-        DocumentPropertyType::Object(_) => {
-            let mut nested_properties = IndexMap::new();
-            if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
-                let properties =
-                    properties_as_value
-                        .as_map()
-                        .ok_or(DataContractError::ValueWrongType(
-                            "properties must be a map".to_string(),
-                        ))?;
+    let property_type =
+        match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
+            DocumentPropertyType::Object(_) => {
+                let mut nested_properties = IndexMap::new();
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                {
+                    let properties =
+                        properties_as_value
+                            .as_map()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "properties must be a map".to_string(),
+                            ))?;
 
-                let mut sorted_properties: Vec<_> = properties.iter().collect();
+                    let mut sorted_properties: Vec<_> = properties.iter().collect();
 
-                sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
-                    let pos_1: u64 = value_1
-                        .get_integer(property_names::POSITION)
-                        .expect("expected a position");
-                    let pos_2: u64 = value_2
-                        .get_integer(property_names::POSITION)
-                        .expect("expected a position");
-                    pos_1.cmp(&pos_2)
-                });
+                    sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
+                        let pos_1: u64 = value_1
+                            .get_integer(property_names::POSITION)
+                            .expect("expected a position");
+                        let pos_2: u64 = value_2
+                            .get_integer(property_names::POSITION)
+                            .expect("expected a position");
+                        pos_1.cmp(&pos_2)
+                    });
 
-                // Create a new set with the prefix removed from the keys
-                let stripped_required: BTreeSet<String> = known_required
-                    .iter()
-                    .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                    // Create a new set with the prefix removed from the keys
+                    let stripped_required: BTreeSet<String> = known_required
+                        .iter()
+                        .filter_map(|key| {
+                            if key.starts_with(&property_key) && key.len() > property_key.len() {
+                                Some(key[property_key.len() + 1..].to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
 
-                let stripped_transient: BTreeSet<String> = known_transient
-                    .iter()
-                    .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                    let stripped_transient: BTreeSet<String> = known_transient
+                        .iter()
+                        .filter_map(|key| {
+                            if key.starts_with(&property_key) && key.len() > property_key.len() {
+                                Some(key[property_key.len() + 1..].to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
 
-                for (object_property_key, object_property_value) in properties.iter() {
-                    let object_property_string = object_property_key
-                        .as_text()
-                        .ok_or(DataContractError::KeyWrongType(
-                            "property key must be a string".to_string(),
-                        ))?
-                        .to_string();
+                    for (object_property_key, object_property_value) in properties.iter() {
+                        let object_property_string = object_property_key
+                            .as_text()
+                            .ok_or(DataContractError::KeyWrongType(
+                                "property key must be a string".to_string(),
+                            ))?
+                            .to_string();
 
-                    insert_values_nested(
-                        &mut nested_properties,
-                        &stripped_required,
-                        &stripped_transient,
-                        object_property_string,
-                        object_property_value,
-                        root_schema,
-                    )?;
+                        insert_values_nested(
+                            &mut nested_properties,
+                            &stripped_required,
+                            &stripped_transient,
+                            object_property_string,
+                            object_property_value,
+                            root_schema,
+                            config,
+                        )?;
+                    }
                 }
-            }
 
-            DocumentPropertyType::Object(nested_properties)
-        }
-        property_type => property_type,
-    };
+                DocumentPropertyType::Object(nested_properties)
+            }
+            property_type => property_type,
+        };
 
     document_properties.insert(
         property_key,

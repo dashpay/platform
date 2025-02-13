@@ -4,6 +4,7 @@ pub const DEFAULT_CONTRACT_MUTABILITY: bool = true;
 pub const DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY: bool = false;
 pub const DEFAULT_CONTRACT_DOCUMENT_MUTABILITY: bool = true;
 pub const DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED: bool = true;
+pub const DEFAULT_GRANULAR_NUMERIC_TYPES: bool = true;
 
 pub mod property {
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
@@ -17,4 +18,5 @@ pub mod property {
         "requiresIdentityEncryptionBoundedKey";
     pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityDecryptionBoundedKey";
+    pub const GRANULAR_NUMERIC_TYPES: &str = "granular_numeric_types";
 }
