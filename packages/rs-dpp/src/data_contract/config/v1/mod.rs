@@ -134,7 +134,7 @@ impl DataContractConfigV1 {
             .transpose()?;
 
         let requires_identity_decryption_bounded_key = contract
-            .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
+            .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)?
             .map(|int| int.try_into())
             .transpose()?;
 

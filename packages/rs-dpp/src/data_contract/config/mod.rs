@@ -228,7 +228,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
 impl DataContractConfigGettersV1 for DataContractConfig {
     fn granular_integer_types(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => false,
+            DataContractConfig::V0(_) => false,
             DataContractConfig::V1(v1) => v1.granular_integer_types,
         }
     }
