@@ -254,6 +254,7 @@ impl ErrorWithCode for StateError {
             Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40158,
             Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
             Self::InvalidGroupPositionError(_) => 40160,
+            Self::TokenIsPausedError(_) => 40161,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
