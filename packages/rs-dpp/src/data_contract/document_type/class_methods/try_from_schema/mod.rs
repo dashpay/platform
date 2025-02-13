@@ -40,7 +40,7 @@ impl DocumentType {
             .map(|document_type| document_type.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "try_from_schema".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
