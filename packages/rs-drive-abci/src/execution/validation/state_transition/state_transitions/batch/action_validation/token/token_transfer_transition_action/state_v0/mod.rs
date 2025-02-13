@@ -75,12 +75,15 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         }
 
         // We need to verify that our token account is not frozen
-        let info = platform.drive.fetch_identity_token_info(
+        let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
             self.token_id().to_buffer(),
             owner_id.to_buffer(),
+            block_info,
+            true,
             transaction,
             platform_version,
         )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
         if let Some(info) = info {
             if info.frozen() == true {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -96,11 +99,14 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         };
 
         // We need to verify that the token is not paused
-        let token_status = platform.drive.fetch_token_status(
+        let (token_status, fee_result) = platform.drive.fetch_token_status_with_costs(
             self.token_id().to_buffer(),
+            block_info,
+            true,
             transaction,
             platform_version,
         )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
         if let Some(status) = token_status {
             if status.paused() {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
