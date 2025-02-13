@@ -52,6 +52,7 @@ use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::V
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
+use super::token::TokenIsPausedError;
 
 #[derive(
     Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
@@ -255,6 +256,9 @@ pub enum StateError {
 
     #[error(transparent)]
     InvalidGroupPositionError(InvalidGroupPositionError),
+
+    #[error(transparent)]
+    TokenIsPausedError(TokenIsPausedError),
 }
 
 impl From<StateError> for ConsensusError {
