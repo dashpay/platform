@@ -138,8 +138,8 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, nonce: u32) {
-        self.0.set_identity_contract_nonce(nonce as u64);
+    pub fn set_identity_contract_nonce(&mut self, nonce: u64) {
+        self.0.set_identity_contract_nonce(nonce);
     }
 
     // #[wasm_bindgen(js_name=toJSON)]

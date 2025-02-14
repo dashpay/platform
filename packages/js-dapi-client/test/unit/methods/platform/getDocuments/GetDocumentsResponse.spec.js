@@ -36,6 +36,8 @@ describe('GetDocumentsResponse', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
       new GetDocumentsResponseV0()
@@ -82,12 +84,14 @@ describe('GetDocumentsResponse', () => {
     expect(getDocumentsResponse).to.be.an.instanceOf(GetDocumentsResponseClass);
     expect(getDocumentsResponse.getDocuments()).to.deep.equal(serializedDocuments);
 
-    expect(getDocumentsResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getDocumentsResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getDocumentsResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getDocumentsResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getDocumentsResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getDocumentsResponse.getProof()).to.equal(undefined);
   });
@@ -106,12 +110,14 @@ describe('GetDocumentsResponse', () => {
     expect(getDocumentsResponse).to.be.an.instanceOf(GetDocumentsResponseClass);
     expect(getDocumentsResponse.getDocuments()).to.deep.members([]);
 
-    expect(getDocumentsResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getDocumentsResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getDocumentsResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getDocumentsResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getDocumentsResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getDocumentsResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);

@@ -10,6 +10,7 @@ import identitiesFixtures from '../../../../../../tests/fixtures/identities.json
 import 'mocha';
 import { ClientApps } from '../../../ClientApps';
 
+const DataContractHistoryEntry = require('@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/DataContractHistoryEntry');
 const GetDataContractHistoryResponse = require('@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse');
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
@@ -56,7 +57,7 @@ describe('Client - Platform - Contracts - .history()', () => {
 
       if (id.equals(fixtureIdentifier)) {
         return new GetDataContractHistoryResponse(
-          { 1000: dataContractFixture.toBuffer() },
+          [new DataContractHistoryEntry(BigInt(1000), dataContractFixture.toBuffer())],
           metadataFixture,
         );
       }

@@ -67,12 +67,23 @@ describe('GetIdentityByPublicKeyHashResponse', () => {
 
     const identity = getIdentityResponse.getIdentity();
     const proof = getIdentityResponse.getProof();
+    const metadata = getIdentityResponse.getMetadata();
 
     expect(identity).to.equal(undefined);
+
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+
+    expect(metadata.getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(metadata.getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(metadata.getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(metadata.getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
   });
 
   it('should create an instance from proto', () => {
@@ -108,7 +119,15 @@ describe('GetIdentityByPublicKeyHashResponse', () => {
       GetIdentityByPublicKeyHashResponseClass,
     );
     expect(getIdentityResponse.getIdentity()).to.deep.equal(Buffer.alloc(0));
-    expect(getIdentityResponse.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getIdentityResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getIdentityResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentityResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentityResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getIdentityResponse.getProof())
       .to.be.an.instanceOf(Proof);

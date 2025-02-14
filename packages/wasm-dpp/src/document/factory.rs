@@ -13,11 +13,6 @@ use dpp::document::Document;
 
 use dpp::prelude::ExtendedDocument;
 
-use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use dpp::version::PlatformVersion;
-use std::convert::TryFrom;
-
 use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
@@ -25,6 +20,11 @@ use crate::{
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, ExtendedDocumentWasm,
 };
+use dpp::identifier::Identifier;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::version::PlatformVersion;
+use std::convert::TryFrom;
+use std::str::FromStr;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -128,7 +128,12 @@ impl DocumentFactoryWASM {
                         .for_each(|entry| {
                             let key_value = js_sys::Array::from(&entry);
                             let contract_id = identifier_from_js_value(&key_value.get(0)).unwrap();
-                            let nonce = key_value.get(1).as_f64().unwrap() as u64;
+                            let nonce = key_value
+                                .get(1)
+                                .as_string()
+                                .unwrap()
+                                .parse::<u64>()
+                                .unwrap();
                             nonce_counter.insert((identity_id, contract_id), nonce);
                         });
                 });

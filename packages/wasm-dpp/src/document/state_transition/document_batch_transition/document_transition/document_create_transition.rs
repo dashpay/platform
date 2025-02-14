@@ -79,8 +79,8 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter, js_name=INITIAL_REVISION)]
-    pub fn initial_revision() -> u32 {
-        INITIAL_REVISION as u32
+    pub fn initial_revision() -> u64 {
+        INITIAL_REVISION
     }
 
     #[wasm_bindgen(js_name = getEntropy)]
@@ -90,11 +90,11 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getIdentityContractNonce)]
     pub fn get_identity_contract_nonce(&self) -> u64 {
-        self.inner.base().identity_contract_nonce() as u64
+        self.inner.base().identity_contract_nonce()
     }
 
     #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) -> () {
+    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) {
         let mut base = self.inner.base().clone();
 
         base.set_identity_contract_nonce(identity_contract_nonce);

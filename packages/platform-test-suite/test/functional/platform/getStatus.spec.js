@@ -17,12 +17,9 @@ describe('Platform', () => {
     it('should return status', async () => {
       const status = await client.dapiClient.platform.getStatus();
 
-      expect(status).to.be.a.property('version');
-      expect(status.version).to.have.property('software');
-      expect(status.version.software).to.have.an('object');
-      expect(status.version.software.dapi).to.be.a('string').and.not.be.empty();
-      expect(status.version.software.drive).to.be.a('string').and.not.be.empty();
-      expect(status.version.software.tenderdash).to.be.a('string').and.not.be.empty();
+      expect(status.getVersionStatus().getDapiVersion()).to.be.a('string').to.exist();
+      expect(status.getVersionStatus().getDriveVersion()).to.be.a('string').and.not.be.empty();
+      expect(status.getVersionStatus().getTenderdashVersion()).to.be.a('string').and.not.be.empty();
     });
   });
 });
