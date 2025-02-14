@@ -7,9 +7,6 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-mod property_names {
-    pub const AMOUNT: &str = "$amount";
-}
 /// The Identifier fields in [`TokenUnfreezeTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 

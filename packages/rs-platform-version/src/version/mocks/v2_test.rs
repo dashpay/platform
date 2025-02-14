@@ -242,6 +242,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                token_pre_programmed_distributions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
             validator_queries: DriveAbciQueryValidatorVersions {
                 proposed_block_counts_by_evonode_ids: FeatureVersionBounds {

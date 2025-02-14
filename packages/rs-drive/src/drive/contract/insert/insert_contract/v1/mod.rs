@@ -215,6 +215,37 @@ impl Drive {
                 &platform_version.drive,
             )?;
 
+            if let Some(perpetual_distribution) =
+                token_config.distribution_rules().perpetual_distribution()
+            {
+                self.add_perpetual_distribution(
+                    token_id.to_buffer(),
+                    contract.owner_id().to_buffer(),
+                    perpetual_distribution,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
+            if let Some(pre_programmed_distribution) = token_config
+                .distribution_rules()
+                .pre_programmed_distribution()
+            {
+                self.add_pre_programmed_distributions(
+                    token_id.to_buffer(),
+                    contract.owner_id().to_buffer(),
+                    pre_programmed_distribution,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    &mut batch_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+
             let path_holding_total_token_supply = total_tokens_root_supply_path_vec();
 
             if token_config.base_supply() > 0 {

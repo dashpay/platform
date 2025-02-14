@@ -60,6 +60,7 @@ service Platform {
   rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
   rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
   rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+  rpc getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse);
   rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
   rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
@@ -1414,6 +1415,50 @@ message GetTokenStatusesResponse {
   }
   oneof version {
     GetTokenStatusesResponseV0 v0 = 1;
+  }
+}
+
+message GetTokenPreProgrammedDistributionsRequest {
+  message GetTokenPreProgrammedDistributionsRequestV0 {
+    bytes token_id = 1;
+    message StartAtInfo {
+      uint64 start_time_ms = 1;
+      optional bytes start_recipient = 2;
+      optional bool start_recipient_included = 3;
+    }
+    optional StartAtInfo start_at_info = 2;
+    optional uint32 limit = 3;
+    bool prove = 4;
+  }
+  oneof version {
+    GetTokenPreProgrammedDistributionsRequestV0 v0 = 1;
+  }
+}
+
+message GetTokenPreProgrammedDistributionsResponse {
+  message GetTokenPreProgrammedDistributionsResponseV0 {
+    message TokenDistributionEntry {
+      bytes recipient_id = 1;
+      uint64 amount = 2;
+    }
+
+    message TokenTimedDistributionEntry {
+      uint64 timestamp = 1;
+      repeated TokenDistributionEntry distributions = 2;
+    }
+
+    message TokenDistributions {
+      repeated TokenTimedDistributionEntry token_distributions = 1;
+    }
+
+    oneof result {
+      TokenDistributions token_distributions = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetTokenPreProgrammedDistributionsResponseV0 v0 = 1;
   }
 }
 

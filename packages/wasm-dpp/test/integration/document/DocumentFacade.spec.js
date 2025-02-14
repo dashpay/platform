@@ -95,7 +95,7 @@ describe('DocumentFacade', () => {
   });
 
   describe('createStateTransition', () => {
-    it('should create DocumentsBatchTransition with passed documents - Rust', () => {
+    it('should create BatchTransition with passed documents - Rust', () => {
       const identityId = documents[0].getOwnerId();
       const contractId = documents[0].getDataContractId();
 

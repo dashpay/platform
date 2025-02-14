@@ -13,6 +13,8 @@ const { default: loadWasmDpp, DashPlatformProtocol, StateTransitionTypes } = req
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
+const getBlsAdapterMock = require('@dashevo/wasm-dpp/lib/test/mocks/getBlsAdapterMock');
+const createStateRepositoryMock = require('@dashevo/wasm-dpp/lib/test/mocks/createStateRepositoryMock');
 const fetchProofForStateTransitionFactory = require('../../../../lib/externalApis/drive/fetchProofForStateTransitionFactory');
 const getBlsAdapterMock = require('@dashevo/wasm-dpp/lib/test/mocks/getBlsAdapterMock');
 const createStateRepositoryMock = require('@dashevo/wasm-dpp/lib/test/mocks/createStateRepositoryMock');
@@ -102,7 +104,7 @@ describe('fetchProofForStateTransition', () => {
       .equal(dataContractsProofResponse.serializeBinary());
   });
 
-  it('should fetch documents proofs', async function it() {
+  it('should fetch documents proofs', async () => {
     const documents = await getDocumentsFixture();
 
     const identityId = documents[0].getOwnerId();

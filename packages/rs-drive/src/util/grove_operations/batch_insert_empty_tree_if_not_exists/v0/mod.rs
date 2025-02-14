@@ -16,7 +16,7 @@ use grovedb::{TransactionArg, TreeType};
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
-    pub(crate) fn batch_insert_empty_tree_if_not_exists_v0<const N: usize>(
+    pub(super) fn batch_insert_empty_tree_if_not_exists_v0<const N: usize>(
         &self,
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,

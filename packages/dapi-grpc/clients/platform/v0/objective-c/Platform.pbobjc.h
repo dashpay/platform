@@ -194,6 +194,12 @@ CF_EXTERN_C_BEGIN
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive;
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash;
 @class GetStatusResponse_GetStatusResponseV0_Version_Software;
+@class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0;
+@class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo;
+@class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0;
+@class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry;
+@class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions;
+@class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry;
 @class GetTokenStatusesRequest_GetTokenStatusesRequestV0;
 @class GetTokenStatusesResponse_GetTokenStatusesResponseV0;
 @class GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenStatusEntry;
@@ -5849,6 +5855,178 @@ GPB_FINAL @interface GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenSt
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenStatusEntry*> *tokenStatusesArray;
 /** The number of items in @c tokenStatusesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger tokenStatusesArray_Count;
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsRequest
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsRequest_FieldNumber) {
+  GetTokenPreProgrammedDistributionsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsRequest_Version_OneOfCase) {
+  GetTokenPreProgrammedDistributionsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPreProgrammedDistributionsRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPreProgrammedDistributionsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenPreProgrammedDistributionsRequest_ClearVersionOneOfCase(GetTokenPreProgrammedDistributionsRequest *message);
+
+#pragma mark - GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber) {
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_TokenId = 1,
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_StartAtInfo = 2,
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_Limit = 3,
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_FieldNumber_Prove = 4,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo *startAtInfo;
+/** Test to see if @c startAtInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAtInfo;
+
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber) {
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber_StartTimeMs = 1,
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber_StartRecipient = 2,
+  GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo_FieldNumber_StartRecipientIncluded = 3,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startTimeMs;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startRecipient;
+/** Test to see if @c startRecipient has been set. */
+@property(nonatomic, readwrite) BOOL hasStartRecipient;
+
+@property(nonatomic, readwrite) BOOL startRecipientIncluded;
+
+@property(nonatomic, readwrite) BOOL hasStartRecipientIncluded;
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_FieldNumber) {
+  GetTokenPreProgrammedDistributionsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_Version_OneOfCase) {
+  GetTokenPreProgrammedDistributionsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPreProgrammedDistributionsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPreProgrammedDistributionsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenPreProgrammedDistributionsResponse_ClearVersionOneOfCase(GetTokenPreProgrammedDistributionsResponse *message);
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber) {
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber_TokenDistributions = 1,
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber_Proof = 2,
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_Result_OneOfCase) {
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_Result_OneOfCase_TokenDistributions = 1,
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions *tokenDistributions;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_ClearResultOneOfCase(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0 *message);
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry_FieldNumber) {
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry_FieldNumber_RecipientId = 1,
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry_FieldNumber_Amount = 2,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *recipientId;
+
+@property(nonatomic, readwrite) uint64_t amount;
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry_FieldNumber) {
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry_FieldNumber_Timestamp = 1,
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry_FieldNumber_DistributionsArray = 2,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timestamp;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributionEntry*> *distributionsArray;
+/** The number of items in @c distributionsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger distributionsArray_Count;
+
+@end
+
+#pragma mark - GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions
+
+typedef GPB_ENUM(GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions_FieldNumber) {
+  GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions_FieldNumber_TokenDistributionsArray = 1,
+};
+
+GPB_FINAL @interface GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenDistributions : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0_TokenTimedDistributionEntry*> *tokenDistributionsArray;
+/** The number of items in @c tokenDistributionsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenDistributionsArray_Count;
 
 @end
 
