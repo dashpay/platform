@@ -82,7 +82,8 @@
   "files": [
     "docs",
     "lib",
-    "polyfills"
+    "polyfills",
+    "dist"
   ],
   "scripts": {
     "build:web": "webpack",

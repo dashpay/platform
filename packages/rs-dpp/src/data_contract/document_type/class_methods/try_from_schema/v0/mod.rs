@@ -721,6 +721,8 @@ fn insert_values(
 
     Ok(())
 }
+
+// TODO: This is quite big
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,

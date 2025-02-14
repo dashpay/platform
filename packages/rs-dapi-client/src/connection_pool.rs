@@ -3,12 +3,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use dapi_grpc::tonic::transport::Uri;
 use lru::LruCache;
 
 use crate::{
     request_settings::AppliedRequestSettings,
     transport::{CoreGrpcClient, PlatformGrpcClient},
+    Uri,
 };
 
 /// ConnectionPool represents pool of connections to DAPI nodes.

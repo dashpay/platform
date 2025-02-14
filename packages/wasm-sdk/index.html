@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    #preloader {
+      display: none;
+    }
+
+    .container {
+      padding: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="preloader">Loading...</div>
+  <div class="container">
+    <input type="text" id="identityInput" placeholder="Enter Identity ID" />
+    <button id="fetchButton">Fetch Identity</button>
+  </div>
+
+  <div class="container">
+    <input type="text" id="identityInput2" placeholder="Enter Data Contract ID" />
+    <button id="fetchButton2">Fetch Data Contract</button>
+  </div>
+  <div id="identityInfo"></div>
+
+  <script type="module">
+    import init, { start, WasmSdkBuilder, identity_fetch, data_contract_fetch } from './pkg/wasm_sdk.js';
+
+    async function run() {
+      await init();
+
+      const sdk = await WasmSdkBuilder.new_mainnet().build();
+      console.log(sdk);
+
+      document.getElementById('fetchButton').addEventListener('click', async () => {
+        const identityId = document.getElementById('identityInput').value;
+        const preloader = document.getElementById('preloader');
+        const identityInfo = document.getElementById('identityInfo');
+
+        preloader.style.display = 'block';
+        identityInfo.textContent = '';
+
+        try {
+          const identity = await identity_fetch(sdk, identityId);
+          console.log("fetched identity");
+          console.log(identity);
+          identityInfo.textContent = JSON.stringify(identity.toJSON(), null, 2);
+        } catch (error) {
+          console.error("Error fetching identity:", error);
+          identityInfo.textContent = `Error fetching identity: ${error}`;
+        } finally {
+          preloader.style.display = 'none';
+        }
+      });
+
+      document.getElementById('fetchButton2').addEventListener('click', async () => {
+        const identityId = document.getElementById('identityInput2').value;
+        const preloader = document.getElementById('preloader');
+        const identityInfo = document.getElementById('identityInfo');
+
+        preloader.style.display = 'block';
+        identityInfo.textContent = '';
+
+        try {
+          const dataContract = await data_contract_fetch(sdk, identityId);
+          console.log("fetched data contract");
+          console.log(dataContract);
+          identityInfo.textContent = JSON.stringify(dataContract.toJSON(), null, 2);
+        } catch (error) {
+          console.error("Error fetching contract:", error);
+          identityInfo.textContent = `Error fetching contract: ${error}`;
+        } finally {
+          preloader.style.display = 'none';
+        }
+      });
+    }
+
+    run();
+  </script>
+</body>
+
+</html>

@@ -24,7 +24,6 @@ pub mod version;
 
 pub mod errors;
 
-pub mod schema;
 pub mod validation;
 
 #[cfg(feature = "client")]
