@@ -180,12 +180,18 @@ impl<C> Platform<C> {
     {
         let config = config.unwrap_or(PlatformConfig::default_testnet());
 
-        let (drive, current_protocol_version) =
-            Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
+        let default_initial_platform_version = initial_protocol_version
+            .map(|protocol_version| PlatformVersion::get(protocol_version))
+            .transpose()?;
 
-        if let Some(protocol_version) = current_protocol_version {
-            let platform_version = PlatformVersion::get(protocol_version)?;
+        let (drive, current_platform_version) = Drive::open(
+            path,
+            Some(config.drive.clone()),
+            default_initial_platform_version,
+        )
+        .map_err(Error::Drive)?;
 
+        if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
             else {

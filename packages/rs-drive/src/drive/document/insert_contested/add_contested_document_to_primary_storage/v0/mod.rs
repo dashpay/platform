@@ -1,7 +1,7 @@
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 use std::collections::HashMap;
 
@@ -203,7 +203,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_using_sums: false,
+                    in_tree_type: TreeType::NormalTree,
                     target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
                 }
             };

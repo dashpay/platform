@@ -40,6 +40,7 @@ use crate::{
 
 use dashcore::consensus::encode::Error as DashCoreError;
 
+use crate::tokens::errors::TokenError;
 use crate::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
 use platform_version::error::PlatformVersionError;
@@ -133,6 +134,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     Document(Box<DocumentError>),
+
+    #[error(transparent)]
+    Token(Box<TokenError>),
 
     #[error("Generic Error: {0}")]
     Generic(String),
@@ -232,6 +236,12 @@ pub enum ProtocolError {
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
 
+    #[error("group member not found in contract: {0}")]
+    GroupMemberNotFound(String),
+
+    #[error("group not found in contract: {0}")]
+    GroupNotFound(String),
+
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
 
@@ -284,6 +294,12 @@ impl From<ConsensusError> for ProtocolError {
 impl From<DocumentError> for ProtocolError {
     fn from(e: DocumentError) -> Self {
         ProtocolError::Document(Box::new(e))
+    }
+}
+
+impl From<TokenError> for ProtocolError {
+    fn from(e: TokenError) -> Self {
+        ProtocolError::Token(Box::new(e))
     }
 }
 

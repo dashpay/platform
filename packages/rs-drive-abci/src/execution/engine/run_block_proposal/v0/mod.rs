@@ -368,7 +368,7 @@ where
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees
-        let processed_block_fees = self.process_block_fees(
+        let processed_block_fees = self.process_block_fees_and_validate_sum_trees(
             &block_execution_context,
             block_fees_v0.into(),
             transaction,

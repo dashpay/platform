@@ -196,10 +196,14 @@ impl PersonWithOptionalValues {
 
 #[cfg(feature = "server")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
-pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
+pub fn setup_family_tests(
+    count: u32,
+    seed: u64,
+    platform_version: &PlatformVersion,
+) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let drive = setup_drive(Some(drive_config));
+    let drive = setup_drive(Some(drive_config), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -207,8 +211,6 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
     let mut batch = GroveDbOpBatch::new();
 
     add_init_contracts_structure_operations(&mut batch);
-
-    let platform_version = PlatformVersion::latest();
 
     drive
         .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
@@ -219,7 +221,10 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
         &drive,
         "tests/supporting_files/contract/family/family-contract.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        Some(platform_version),
     );
 
     let people = Person::random_people(count, seed);
@@ -269,7 +274,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
 pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let drive = setup_drive(Some(drive_config));
+    let drive = setup_drive(Some(drive_config), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -289,7 +294,10 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
         &drive,
         "tests/supporting_files/contract/family/family-contract-fields-optional.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        None,
     );
 
     let people = PersonWithOptionalValues::random_people(count, seed);
@@ -338,7 +346,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
 pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let drive = setup_drive(Some(drive_config));
+    let drive = setup_drive(Some(drive_config), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -358,7 +366,10 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
         &drive,
         "tests/supporting_files/contract/family/family-contract-only-first-name-index.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        None,
     );
 
     let people = Person::random_people(count, seed);
@@ -803,8 +814,9 @@ pub fn setup_dpns_tests_with_batches(
     count: u32,
     total_owners: Option<u32>,
     seed: u64,
+    platform_version: &PlatformVersion,
 ) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -812,8 +824,6 @@ pub fn setup_dpns_tests_with_batches(
     let mut batch = GroveDbOpBatch::new();
 
     add_init_contracts_structure_operations(&mut batch);
-
-    let platform_version = PlatformVersion::latest();
 
     drive
         .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
@@ -824,7 +834,10 @@ pub fn setup_dpns_tests_with_batches(
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        Some(platform_version),
     );
 
     add_domains_to_contract(
@@ -851,7 +864,7 @@ pub fn setup_withdrawal_tests(
     total_owners: Option<u32>,
     seed: u64,
 ) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -871,7 +884,10 @@ pub fn setup_withdrawal_tests(
         &drive,
         "tests/supporting_files/contract/withdrawals/withdrawals-contract.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        None,
     );
 
     add_withdrawals_to_contract(
@@ -894,7 +910,7 @@ pub fn setup_withdrawal_tests(
 #[cfg(feature = "server")]
 /// Sets up the References contract to test queries on.
 pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -914,7 +930,10 @@ pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) 
         &drive,
         "tests/supporting_files/contract/references/references_with_contract_history.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        None,
     );
 
     drive
@@ -929,7 +948,7 @@ pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) 
 #[cfg(feature = "server")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, DataContract) {
-    let drive = setup_drive(Some(DriveConfig::default()));
+    let drive = setup_drive(Some(DriveConfig::default()), None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -949,7 +968,10 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Dat
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract-label-not-required.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        None,
     );
 
     add_domains_to_contract(&drive, &contract, Some(&db_transaction), count, None, seed);
@@ -965,7 +987,7 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Dat
 #[cfg(feature = "server")]
 /// Sets up the DPNS contract and inserts data from the given path to test queries on.
 pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
-    let drive = setup_drive(None);
+    let drive = setup_drive(None, None);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -984,7 +1006,10 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
         None,
+        None,
+        None::<fn(&mut DataContract)>,
         Some(&db_transaction),
+        None,
     );
 
     let file = File::open(path).expect("should read domains from file");
@@ -1037,7 +1062,8 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
 #[test]
 #[ignore]
 fn test_query_many() {
-    let (drive, contract) = setup_family_tests(1600, 73509);
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_family_tests(1600, 73509, platform_version);
     let db_transaction = drive.grove.start_transaction();
 
     let platform_version = PlatformVersion::latest();
@@ -1179,9 +1205,9 @@ fn test_non_existence_reference_proof_single_index() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_family_basic_queries() {
-    let (drive, contract) = setup_family_tests(10, 73509);
-    let platform_version = PlatformVersion::latest();
+fn test_family_basic_queries_first_version() {
+    let platform_version = PlatformVersion::first();
+    let (drive, contract) = setup_family_tests(10, 73509, platform_version);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2507,7 +2533,1342 @@ fn test_family_basic_queries() {
         root_hash.as_slice(),
         vec![
             251, 69, 177, 93, 128, 236, 106, 87, 205, 123, 80, 61, 44, 107, 186, 193, 22, 192, 239,
-            7, 107, 110, 97, 197, 59, 245, 26, 12, 63, 91, 248, 231,
+            7, 107, 110, 97, 197, 59, 245, 26, 12, 63, 91, 248, 231
+        ],
+    );
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_family_basic_queries() {
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let expected_app_hash = vec![
+        63, 90, 74, 129, 70, 204, 232, 67, 190, 85, 133, 79, 254, 245, 203, 180, 77, 67, 94, 22,
+        180, 99, 51, 251, 82, 117, 211, 14, 136, 51, 228, 177,
+    ];
+
+    assert_eq!(root_hash.as_slice(), expected_app_hash);
+
+    let all_names = [
+        "Adey".to_string(),
+        "Briney".to_string(),
+        "Cammi".to_string(),
+        "Celinda".to_string(),
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Kevina".to_string(),
+        "Meta".to_string(),
+        "Noellyn".to_string(),
+        "Prissie".to_string(),
+    ];
+
+    // A query getting all elements by firstName
+
+    let query_value = json!({
+        "where": [
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    assert_eq!(names, all_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name is Adey (which should exist)
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Adey"]
+        ]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(results.len(), 1);
+
+    let (proof_root_hash, proof_results, _) = drive
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name is Adey and lastName Randolf
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Adey"],
+            ["lastName", "==", "Randolf"]
+        ],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let (proof_root_hash, proof_results, _) = drive
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    let document = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize from bytes");
+    let last_name = document
+        .get("lastName")
+        .expect("we should be able to get the last name")
+        .as_text()
+        .expect("last name must be a string");
+
+    assert_eq!(last_name, "Randolf");
+
+    // A query getting all people who's first name is in a range with a single element Adey,
+    // order by lastName (this should exist)
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", ["Adey"]]
+        ],
+        "orderBy": [
+            ["firstName", "asc"],
+            ["lastName", "asc"]
+        ]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let (proof_root_hash, proof_results, _) = drive
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name is Adey, order by lastName (which should exist)
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Adey"]
+        ],
+        "orderBy": [
+            ["lastName", "asc"]
+        ]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let (proof_root_hash, proof_results, _) = drive
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    let document = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize from bytes");
+    let last_name = document
+        .get("lastName")
+        .expect("we should be able to get the last name")
+        .as_text()
+        .expect("last name must be a string");
+
+    assert_eq!(last_name, "Randolf");
+
+    // A query getting all people who's first name is Chris (which is not exist)
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Chris"]
+        ]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 0);
+
+    let (proof_root_hash, proof_results, _) = drive
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting a middle name
+
+    let query_value = json!({
+        "where": [
+            ["middleName", "==", "Briggs"]
+        ]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    let (proof_root_hash, proof_results, _) = drive
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            None,
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name is before Chris
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "<", "Chris"]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_names_before_chris = [
+        "Adey".to_string(),
+        "Briney".to_string(),
+        "Cammi".to_string(),
+        "Celinda".to_string(),
+    ];
+    assert_eq!(names, expected_names_before_chris);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name starts with C
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "StartsWith", "C"]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_names_starting_with_c = ["Cammi".to_string(), "Celinda".to_string()];
+    assert_eq!(names, expected_names_starting_with_c);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name starts with C, but limit to 1 and be descending
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "StartsWith", "C"]
+        ],
+        "limit": 1,
+        "orderBy": [
+            ["firstName", "desc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_names_starting_with_c_desc_1 = ["Celinda".to_string()];
+    assert_eq!(names, expected_names_starting_with_c_desc_1);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting all people who's first name is between Chris and Noellyn included
+
+    let query_value = json!({
+        "where": [
+            ["firstName", ">", "Chris"],
+            ["firstName", "<=", "Noellyn"]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    assert_eq!(results.len(), 5);
+
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_between_names = [
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Kevina".to_string(),
+        "Meta".to_string(),
+        "Noellyn".to_string(),
+    ];
+
+    assert_eq!(names, expected_between_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting back elements having specific names
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", names]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    assert_eq!(names, expected_between_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", names]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "desc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_reversed_between_names = [
+        "Noellyn".to_string(),
+        "Meta".to_string(),
+        "Kevina".to_string(),
+        "Gilligan".to_string(),
+        "Dalia".to_string(),
+    ];
+
+    assert_eq!(names, expected_reversed_between_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting back elements having specific names and over a certain age
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", names],
+            ["age", ">=", 45]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"],
+            ["age", "desc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    let expected_names_45_over = [
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Kevina".to_string(),
+        "Meta".to_string(),
+    ];
+
+    assert_eq!(names, expected_names_45_over);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    // A query getting back elements having specific names and over a certain age
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "in", names],
+            ["age", ">", 48]
+        ],
+        "limit": 100,
+        "orderBy": [
+            ["firstName", "asc"],
+            ["age", "desc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let first_name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let first_name = first_name_value
+                .as_text()
+                .expect("the first name should be a string");
+            String::from(first_name)
+        })
+        .collect();
+
+    // Kevina is 48 so she should be now excluded, Dalia is 68, Gilligan is 49 and Meta is 59
+
+    let expected_names_over_48 = [
+        "Dalia".to_string(),
+        "Gilligan".to_string(),
+        "Meta".to_string(),
+    ];
+
+    assert_eq!(names, expected_names_over_48);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+
+    let ages: HashMap<String, u8> = results
+        .into_iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let name_value = document
+                .get("firstName")
+                .expect("we should be able to get the first name");
+            let name = name_value
+                .as_text()
+                .expect("the first name should be a string")
+                .to_string();
+            let age_value = document
+                .get("age")
+                .expect("we should be able to get the age");
+            let age: u8 = age_value.to_integer().expect("expected u8 value");
+            (name, age)
+        })
+        .collect();
+
+    let meta_age = ages
+        .get("Meta")
+        .expect("we should be able to get Kevina as she is 48");
+
+    assert_eq!(*meta_age, 59);
+
+    // fetching by $id
+    let mut rng = rand::rngs::StdRng::seed_from_u64(84594);
+    let id_bytes = bs58::decode("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD")
+        .into_vec()
+        .expect("this should decode");
+
+    let owner_id_bytes = bs58::decode("BYR3zJgXDuz1BYAkEagwSjVqTcE1gbqEojd6RwAGuMzj")
+        .into_vec()
+        .expect("this should decode");
+
+    let fixed_person = Person {
+        id: id_bytes,
+        owner_id: owner_id_bytes,
+        first_name: String::from("Wisdom"),
+        middle_name: String::from("Madabuchukwu"),
+        last_name: String::from("Ogwu"),
+        age: rng.gen_range(0..85),
+    };
+    let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
+    let person_cbor = cbor_serializer::serializable_value_to_cbor(&serialized_person, Some(0))
+        .expect("expected to serialize to cbor");
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
+        .expect("document should be properly deserialized");
+
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected to get document type");
+
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, storage_flags)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::genesis(),
+            true,
+            Some(&db_transaction),
+            platform_version,
+            None,
+        )
+        .expect("document should be inserted");
+
+    let id_two_bytes = bs58::decode("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")
+        .into_vec()
+        .expect("should decode");
+    let owner_id_bytes = bs58::decode("Di8dtJXv3L2YnzDNUN4w5rWLPSsSAzv6hLMMQbg3eyVA")
+        .into_vec()
+        .expect("this should decode");
+    let next_person = Person {
+        id: id_two_bytes,
+        owner_id: owner_id_bytes,
+        first_name: String::from("Wdskdfslgjfdlj"),
+        middle_name: String::from("Mdsfdsgsdl"),
+        last_name: String::from("dkfjghfdk"),
+        age: rng.gen_range(0..85),
+    };
+    let serialized_person = serde_json::to_value(next_person).expect("serialized person");
+    let person_cbor = cbor_serializer::serializable_value_to_cbor(&serialized_person, Some(0))
+        .expect("expected to serialize to cbor");
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
+        .expect("document should be properly deserialized");
+
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected to get document type");
+
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, storage_flags)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::genesis(),
+            true,
+            Some(&db_transaction),
+            platform_version,
+            None,
+        )
+        .expect("document should be inserted");
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", vec![String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    // TODO: Add test for proofs after transaction
+    // drive.grove.commit_transaction(db_transaction).expect("unable to commit transaction");
+    // let (proof_root_hash, proof_results) = drive
+    //     .query_documents_from_contract_as_grove_proof_only_get_elements(
+    //         &contract,
+    //         person_document_type,
+    //         query_cbor.as_slice(),
+    //         None,
+    //     )
+    //     .expect("query should be executed");
+    // assert_eq!(root_hash, proof_root_hash);
+    // assert_eq!(results, proof_results);
+    // let db_transaction = drive.grove.start_transaction();
+
+    // fetching by $id with order by
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "orderBy": [["$id", "asc"]],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 2);
+
+    let last_person = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the document");
+
+    assert_eq!(
+        last_person.id().to_vec(),
+        vec![
+            76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
+            116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
+        ]
+    );
+
+    // fetching by $id with order by desc
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "orderBy": [["$id", "desc"]],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 2);
+
+    let last_person = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the document");
+
+    assert_eq!(
+        last_person.id().to_vec(),
+        vec![
+            140, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
+            189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
+        ]
+    );
+
+    //
+    // // fetching with empty where and orderBy
+    //
+    let query_value = json!({});
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 12);
+
+    //
+    // // fetching with empty where and orderBy $id desc
+    //
+    let query_value = json!({
+        "orderBy": [["$id", "desc"]]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 12);
+
+    let last_person = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the document");
+
+    assert_eq!(
+        last_person.id().to_vec(),
+        vec![
+            249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
+            107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
+        ]
+    );
+
+    //
+    // // fetching with ownerId in a set of values
+    //
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "in", ["BYR3zJgXDuz1BYAkEagwSjVqTcE1gbqEojd6RwAGuMzj", "Di8dtJXv3L2YnzDNUN4w5rWLPSsSAzv6hLMMQbg3eyVA"]]
+        ],
+        "orderBy": [["$ownerId", "desc"]]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 2);
+
+    //
+    // // fetching with ownerId equal and orderBy
+    //
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "==", "BYR3zJgXDuz1BYAkEagwSjVqTcE1gbqEojd6RwAGuMzj"]
+        ],
+        "orderBy": [["$ownerId", "asc"]]
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    // query empty contract with nested path queries
+
+    let dashpay_contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to get cbor document");
+
+    drive
+        .apply_contract(
+            &dashpay_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply contract successfully");
+
+    let query_value = json!({
+        "where": [
+            ["$ownerId", "==", "BYR3zJgXDuz1BYAkEagwSjVqTcE1gbqEojd6RwAGuMzj"],
+            ["toUserId", "==", "BYR3zJgXDuz1BYAkEagwSjVqTcE1gbqEojd6RwAGuMzj"],
+        ],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &dashpay_contract,
+            dashpay_contract
+                .document_type_for_name("contactRequest")
+                .expect("should have contact document type"),
+            &query_cbor,
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 0);
+
+    // using non existing document in startAt
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("5A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF178")]],
+        ],
+        "orderBy": [["$id", "asc"]],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let (results, _, _) = drive
+        .query_documents_cbor_from_contract(
+            &contract,
+            person_document_type,
+            query_cbor.as_slice(),
+            None,
+            Some(&db_transaction),
+            Some(platform_version.protocol_version),
+        )
+        .expect("query should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    // using non existing document in startAt
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "startAt": String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF178"),
+        "orderBy": [["$id", "asc"]],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let result = drive.query_documents_cbor_from_contract(
+        &contract,
+        person_document_type,
+        query_cbor.as_slice(),
+        None,
+        Some(&db_transaction),
+        Some(platform_version.protocol_version),
+    );
+
+    assert!(
+        matches!(result, Err(Error::Query(QuerySyntaxError::StartDocumentNotFound(message))) if message == "startAt document not found")
+    );
+
+    // using non existing document in startAfter
+
+    let query_value = json!({
+        "where": [
+            ["$id", "in", [String::from("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD"), String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF179")]],
+        ],
+        "startAfter": String::from("6A8SGgdmj2NtWCYoYDPDpbsYkq2MCbgi6Lx4ALLfF178"),
+        "orderBy": [["$id", "asc"]],
+    });
+
+    let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+
+    let person_document_type = contract
+        .document_type_for_name("person")
+        .expect("contract should have a person document type");
+
+    let result = drive.query_documents_cbor_from_contract(
+        &contract,
+        person_document_type,
+        query_cbor.as_slice(),
+        None,
+        Some(&db_transaction),
+        Some(platform_version.protocol_version),
+    );
+
+    assert!(
+        matches!(result, Err(Error::Query(QuerySyntaxError::StartDocumentNotFound(message))) if message == "startAfter document not found")
+    );
+
+    // validate eventual root hash
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    assert_eq!(
+        root_hash.as_slice(),
+        vec![
+            187, 202, 114, 108, 228, 21, 246, 191, 11, 30, 112, 178, 38, 36, 145, 109, 238, 11,
+            210, 210, 0, 227, 175, 151, 149, 166, 143, 15, 144, 255, 82, 229,
         ],
     );
 }
@@ -2515,9 +3876,8 @@ fn test_family_basic_queries() {
 #[cfg(feature = "server")]
 #[test]
 fn test_family_person_update() {
-    let (drive, contract) = setup_family_tests(10, 73509);
-
     let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_family_tests(10, 73509, platform_version);
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
@@ -2645,9 +4005,8 @@ fn test_family_person_update() {
 #[cfg(feature = "server")]
 #[test]
 fn test_family_starts_at_queries() {
-    let (drive, contract) = setup_family_tests(10, 73509);
-
     let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_family_tests(10, 73509, platform_version);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2658,8 +4017,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152, 86,
-        46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
+        63, 90, 74, 129, 70, 204, 232, 67, 190, 85, 133, 79, 254, 245, 203, 180, 77, 67, 94, 22,
+        180, 99, 51, 251, 82, 117, 211, 14, 136, 51, 228, 177,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2908,10 +4267,11 @@ fn test_family_starts_at_queries() {
 #[cfg(feature = "server")]
 #[test]
 fn test_family_sql_query() {
+    let platform_version = PlatformVersion::latest();
     // These helpers confirm that sql statements produce the same drive query
     // as their json counterparts, helpers above confirm that the json queries
     // produce the correct result set
-    let (drive, contract) = setup_family_tests(10, 73509);
+    let (drive, contract) = setup_family_tests(10, 73509, platform_version);
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
@@ -3109,8 +4469,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        92, 186, 224, 49, 242, 195, 32, 14, 46, 55, 244, 57, 55, 191, 10, 119, 228, 132, 91, 235,
-        170, 114, 36, 41, 126, 136, 180, 51, 132, 17, 26, 182,
+        144, 185, 8, 30, 191, 97, 149, 182, 117, 203, 98, 187, 156, 93, 168, 171, 134, 112, 221,
+        230, 249, 131, 86, 1, 26, 92, 242, 25, 251, 187, 192, 182,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3219,9 +4579,8 @@ fn test_family_with_nulls_query() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_with_cached_contract() {
-    let (drive, contract) = setup_family_tests(10, 73509);
-
     let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_family_tests(10, 73509, platform_version);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -3233,8 +4592,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152, 86,
-        46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
+        63, 90, 74, 129, 70, 204, 232, 67, 190, 85, 133, 79, 254, 245, 203, 180, 77, 67, 94, 22,
+        180, 99, 51, 251, 82, 117, 211, 14, 136, 51, 228, 177,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3292,9 +4651,8 @@ fn test_query_with_cached_contract() {
 #[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_contract_verification() {
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
-
     let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
     let root_hash = drive
         .grove
@@ -3368,10 +4726,9 @@ fn test_contract_keeps_history_fetch_and_verification() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_dpns_query() {
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
-
-    let platform_version = PlatformVersion::latest();
+fn test_dpns_query_first_version() {
+    let platform_version = PlatformVersion::first();
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, &platform_version);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -3919,9 +5276,10 @@ fn test_dpns_insertion_with_aliases() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_dpns_query_start_at() {
+fn test_dpns_query_start_at_first_version() {
+    let platform_version = PlatformVersion::first();
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4013,9 +5371,10 @@ fn test_dpns_query_start_at() {
 
 #[cfg(feature = "server")]
 #[test]
-fn test_dpns_query_start_after() {
+fn test_dpns_query_start_at_latest_version() {
+    let platform_version = PlatformVersion::latest();
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4028,8 +5387,103 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
-        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
+        248, 74, 104, 110, 129, 228, 194, 1, 4, 239, 134, 54, 105, 172, 221, 43, 101, 133, 235,
+        146, 182, 153, 212, 118, 189, 99, 227, 14, 94, 83, 17, 98,
+    ];
+
+    assert_eq!(root_hash.as_slice(), expected_app_hash,);
+
+    // let all_names = [
+    //     "amalle".to_string(),
+    //     "anna-diane".to_string(),
+    //     "atalanta".to_string(),
+    //     "eden".to_string(),
+    //     "laureen".to_string(),
+    //     "leone".to_string(),
+    //     "marilyn".to_string(),
+    //     "minna".to_string(),
+    //     "mora".to_string(),
+    //     "phillie".to_string(),
+    // ];
+
+    // A query getting one element starting with a in dash parent domain asc
+
+    let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+        .expect("expected to decode id");
+    let encoded_start_at = bs58::encode(anna_id).into_string();
+
+    let query_value = json!({
+        "where": [
+            ["normalizedParentDomainName", "==", "dash"]
+        ],
+        "startAt":  encoded_start_at,
+        "limit": 1,
+        "orderBy": [
+            ["normalizedLabel", "asc"]
+        ]
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let domain_document_type = contract
+        .document_type_for_name("domain")
+        .expect("contract should have a domain document type");
+    let query = DriveDocumentQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        domain_document_type,
+        &drive.config,
+    )
+    .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+        .expect("proof should be executed");
+    let names: Vec<String> = results
+        .iter()
+        .map(|result| {
+            let document =
+                Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
+                    .expect("we should be able to deserialize the document");
+            let normalized_label_value = document
+                .get("normalizedLabel")
+                .expect("we should be able to get the first name");
+            let normalized_label = normalized_label_value
+                .as_text()
+                .expect("the normalized label should be a string");
+            String::from(normalized_label)
+        })
+        .collect();
+
+    let a_names = ["anna-diane".to_string()];
+
+    assert_eq!(names, a_names);
+
+    let (proof_root_hash, proof_results, _) = query
+        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+        .expect("we should be able to a proof");
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(results, proof_results);
+}
+
+#[cfg(feature = "server")]
+#[test]
+fn test_dpns_query_start_after() {
+    let platform_version = PlatformVersion::latest();
+    // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
+
+    let platform_version = PlatformVersion::latest();
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let root_hash = drive
+        .grove
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let expected_app_hash = vec![
+        248, 74, 104, 110, 129, 228, 194, 1, 4, 239, 134, 54, 105, 172, 221, 43, 101, 133, 235,
+        146, 182, 153, 212, 118, 189, 99, 227, 14, 94, 83, 17, 98,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4108,8 +5562,9 @@ fn test_dpns_query_start_after() {
 #[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_at_desc() {
+    let platform_version = PlatformVersion::latest();
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4122,8 +5577,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
-        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
+        248, 74, 104, 110, 129, 228, 194, 1, 4, 239, 134, 54, 105, 172, 221, 43, 101, 133, 235,
+        146, 182, 153, 212, 118, 189, 99, 227, 14, 94, 83, 17, 98,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4202,8 +5657,9 @@ fn test_dpns_query_start_at_desc() {
 #[cfg(feature = "server")]
 #[test]
 fn test_dpns_query_start_after_desc() {
+    let platform_version = PlatformVersion::latest();
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4216,8 +5672,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
-        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
+        248, 74, 104, 110, 129, 228, 194, 1, 4, 239, 134, 54, 105, 172, 221, 43, 101, 133, 235,
+        146, 182, 153, 212, 118, 189, 99, 227, 14, 94, 83, 17, 98,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4410,8 +5866,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        72, 138, 172, 70, 225, 95, 64, 122, 142, 96, 131, 223, 154, 119, 132, 79, 182, 97, 202, 63,
-        120, 116, 39, 217, 25, 208, 176, 49, 242, 138, 67, 112,
+        11, 67, 98, 193, 214, 56, 66, 244, 193, 131, 252, 190, 5, 52, 29, 96, 160, 27, 222, 78, 91,
+        150, 54, 85, 81, 249, 14, 74, 213, 181, 254, 120,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4615,8 +6071,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        72, 138, 172, 70, 225, 95, 64, 122, 142, 96, 131, 223, 154, 119, 132, 79, 182, 97, 202, 63,
-        120, 116, 39, 217, 25, 208, 176, 49, 242, 138, 67, 112,
+        11, 67, 98, 193, 214, 56, 66, 244, 193, 131, 252, 190, 5, 52, 29, 96, 160, 27, 222, 78, 91,
+        150, 54, 85, 81, 249, 14, 74, 213, 181, 254, 120,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4823,8 +6279,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        72, 138, 172, 70, 225, 95, 64, 122, 142, 96, 131, 223, 154, 119, 132, 79, 182, 97, 202, 63,
-        120, 116, 39, 217, 25, 208, 176, 49, 242, 138, 67, 112,
+        11, 67, 98, 193, 214, 56, 66, 244, 193, 131, 252, 190, 5, 52, 29, 96, 160, 27, 222, 78, 91,
+        150, 54, 85, 81, 249, 14, 74, 213, 181, 254, 120,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -5036,8 +6492,8 @@ fn test_withdrawals_query_by_owner_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
-        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+        27, 172, 224, 121, 173, 248, 170, 255, 202, 209, 7, 83, 203, 185, 208, 102, 157, 75, 55,
+        21, 217, 212, 91, 174, 144, 146, 135, 92, 97, 156, 166, 6,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5116,8 +6572,8 @@ fn test_withdrawals_query_start_after_query_by_owner_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
-        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+        27, 172, 224, 121, 173, 248, 170, 255, 202, 209, 7, 83, 203, 185, 208, 102, 157, 75, 55,
+        21, 217, 212, 91, 174, 144, 146, 135, 92, 97, 156, 166, 6,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5217,8 +6673,8 @@ fn test_withdrawals_query_start_after_query_by_owner_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        144, 177, 24, 41, 104, 174, 220, 135, 164, 0, 240, 215, 42, 60, 249, 142, 150, 169, 135,
-        72, 151, 35, 238, 131, 164, 229, 106, 83, 198, 109, 65, 211,
+        27, 172, 224, 121, 173, 248, 170, 255, 202, 209, 7, 83, 203, 185, 208, 102, 157, 75, 55,
+        21, 217, 212, 91, 174, 144, 146, 135, 92, 97, 156, 166, 6,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);

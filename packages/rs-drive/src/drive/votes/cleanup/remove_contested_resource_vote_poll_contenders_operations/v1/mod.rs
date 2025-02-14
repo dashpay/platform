@@ -10,7 +10,7 @@ use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -35,7 +35,7 @@ impl Drive {
                     path.as_slice().into(),
                     resource_vote_choice.to_key().as_slice(),
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     batch_operations,
@@ -47,7 +47,7 @@ impl Drive {
                 path.as_slice().into(),
                 &RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32,
                 BatchDeleteApplyType::StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum: Some((false, false)),
+                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
                 transaction,
                 batch_operations,
@@ -58,7 +58,7 @@ impl Drive {
                 path.as_slice().into(),
                 &RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
                 BatchDeleteApplyType::StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum: Some((false, false)),
+                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
                 transaction,
                 batch_operations,
