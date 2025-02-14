@@ -13,19 +13,19 @@ use dpp::document::Document;
 
 use dpp::prelude::ExtendedDocument;
 
-use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use dpp::version::PlatformVersion;
-use std::convert::TryFrom;
-use dpp::fee::Credits;
 use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
+use crate::identifier::IdentifierWrapper;
 use crate::{
     identifier::identifier_from_js_value,
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, ExtendedDocumentWasm,
 };
-use crate::identifier::IdentifierWrapper;
+use dpp::fee::Credits;
+use dpp::identifier::Identifier;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::version::PlatformVersion;
+use std::convert::TryFrom;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -111,7 +111,7 @@ impl DocumentFactoryWASM {
         documents: &JsValue,
         nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
         recipient: Option<IdentifierWrapper>,
-        price: Option<Credits>
+        price: Option<Credits>,
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         let mut nonce_counter = BTreeMap::new();
         let mut contract_ids_to_check = HashSet::<&Identifier>::new();
@@ -184,7 +184,12 @@ impl DocumentFactoryWASM {
 
         let batch_transition = self
             .0
-            .create_state_transition(documents, &mut nonce_counter, recipient.map(|e| { Identifier::from(e)}), price)
+            .create_state_transition(
+                documents,
+                &mut nonce_counter,
+                recipient.map(|e| Identifier::from(e)),
+                price,
+            )
             .with_js_error()?;
 
         Ok(batch_transition.into())
@@ -287,14 +292,18 @@ fn extract_documents_by_action(
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
     let documents_delete = extract_documents_of_action(documents, "delete").with_js_error()?;
     let documents_transfer = extract_documents_of_action(documents, "transfer").with_js_error()?;
-    let documents_update_price = extract_documents_of_action(documents, "updatePrice").with_js_error()?;
+    let documents_update_price =
+        extract_documents_of_action(documents, "updatePrice").with_js_error()?;
     let documents_purchase = extract_documents_of_action(documents, "purchase").with_js_error()?;
 
     documents_by_action.insert(DocumentTransitionActionType::Create, documents_create);
     documents_by_action.insert(DocumentTransitionActionType::Replace, documents_replace);
     documents_by_action.insert(DocumentTransitionActionType::Delete, documents_delete);
     documents_by_action.insert(DocumentTransitionActionType::Transfer, documents_transfer);
-    documents_by_action.insert(DocumentTransitionActionType::UpdatePrice, documents_update_price);
+    documents_by_action.insert(
+        DocumentTransitionActionType::UpdatePrice,
+        documents_update_price,
+    );
     documents_by_action.insert(DocumentTransitionActionType::Purchase, documents_purchase);
 
     Ok(documents_by_action)

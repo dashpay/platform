@@ -1,9 +1,9 @@
-use std::rc::Rc;
-use wasm_bindgen::{prelude::*, JsValue};
-use dpp::fee::Credits;
-use dpp::identifier::Identifier;
 use crate::document::factory::DocumentFactoryWASM;
 use crate::{DataContractWasm, ExtendedDocumentWasm};
+use dpp::fee::Credits;
+use dpp::identifier::Identifier;
+use std::rc::Rc;
+use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::document::state_transition::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::identifier::IdentifierWrapper;
@@ -99,7 +99,7 @@ impl DocumentFacadeWasm {
         documents: &JsValue,
         nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce (BigInt)
         recipient: Option<IdentifierWrapper>,
-        price: Option<Credits>
+        price: Option<Credits>,
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         self.factory
             .create_state_transition(documents, nonce_counter_value, recipient, price)

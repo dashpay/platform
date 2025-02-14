@@ -79,7 +79,7 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         DocumentError::InvalidActionError(action) => InvalidActionError::new(action.into()).into(),
         DocumentError::TryingToDeleteIndelibleDocument { document } => {
             TryingToDeleteImmutableDocumentError::new((*document).into()).into()
-        },
+        }
         DocumentError::TryingToTransferNonTransferableDocument { document } => {
             TryingToTransferNonTransferableDocumentError::new((*document).into()).into()
         }

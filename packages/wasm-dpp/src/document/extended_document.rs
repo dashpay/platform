@@ -1,4 +1,6 @@
-use dpp::document::{DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
+use dpp::document::{
+    DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
+};
 use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
@@ -9,13 +11,17 @@ use dpp::util::json_value::JsonValueExt;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition,
+};
+use dpp::state_transition::documents_batch_transition::{
+    DocumentsBatchTransition, DocumentsBatchTransitionV0,
+};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
-use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 
 use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
