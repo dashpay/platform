@@ -1,3 +1,24 @@
+### [1.8.1](https://github.com/dashpay/platform/compare/v1.8.0...v1.8.1) (2025-02-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** bigint for uint64 values (#2443)
+
+### Features
+
+* **dpp:** extra methods for state transitions in wasm ([#2462](https://github.com/dashpay/platform/issues/2462))
+
+
+### Bug Fixes
+
+* **sdk:** bigint for uint64 values ([#2443](https://github.com/dashpay/platform/issues/2443))
+
+
+### Miscellaneous Chores
+
+* **platform:** npm audit fix ([#2463](https://github.com/dashpay/platform/issues/2463))
+
 ## [1.8.0](https://github.com/dashpay/platform/compare/v1.7.1...v1.8.0) (2025-01-16)
 
 
