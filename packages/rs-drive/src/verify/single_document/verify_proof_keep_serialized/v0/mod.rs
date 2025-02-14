@@ -38,17 +38,9 @@ impl SingleDocumentDriveQuery {
     ) -> Result<(RootHash, Option<Vec<u8>>), Error> {
         let path_query = self.construct_path_query(platform_version)?;
         let (root_hash, mut proved_key_values) = if is_subset {
-            GroveDb::verify_subset_query_with_absence_proof(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query_with_absence_proof(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         if proved_key_values.len() != 1 {

@@ -152,7 +152,7 @@
       "amount": {
         "type": "integer",
         "minimum": 0,
-        "description": "The amount that was burned",
+        "description": "The amount that was minted",
         "position": 2
       },
       "note": {

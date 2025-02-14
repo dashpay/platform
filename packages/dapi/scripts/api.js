@@ -131,7 +131,7 @@ async function main() {
   });
   logger.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
-  const dpp = new DashPlatformProtocol(null, 1);
+  const dpp = new DashPlatformProtocol(null, 9);
 
   // Start GRPC server
   logger.info('Starting GRPC server');
