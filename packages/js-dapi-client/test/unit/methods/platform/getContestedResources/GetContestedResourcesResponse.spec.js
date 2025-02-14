@@ -1,75 +1,70 @@
-const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const {
   v0: {
-    GetDocumentsResponse,
+    GetContestedResourcesResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetDocumentsResponseClass = require('../../../../../lib/methods/platform/getDocuments/GetDocumentsResponse');
+const GetContestedResourceResponseClass = require('../../../../../lib/methods/platform/getContestedResources/getContestedResourcesResponse');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
 
-describe('GetDocumentsResponse', () => {
-  let getDocumentsResponse;
+describe('GetContestedResourcesResponse', () => {
+  let getContestedResourcesResponse;
   let metadataFixture;
-  let documentsFixture;
   let proto;
-  let serializedDocuments;
   let proofFixture;
+  let contestedResourceValues;
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    documentsFixture = await getDocumentsFixture();
     proofFixture = getProofFixture();
+    contestedResourceValues = ['EgRkYXNo'];
 
-    serializedDocuments = documentsFixture
-      .map((document) => Buffer.from(JSON.stringify(document)));
-
-    const { GetDocumentsResponseV0 } = GetDocumentsResponse;
-    proto = new GetDocumentsResponse();
+    const { GetContestedResourcesResponseV0 } = GetContestedResourcesResponse;
+    proto = new GetContestedResourcesResponse();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
     proto.setV0(
-      new GetDocumentsResponseV0()
-        .setDocuments(
-          new GetDocumentsResponseV0.Documents()
-            .setDocumentsList(serializedDocuments),
-        ).setMetadata(metadata),
+      new GetContestedResourcesResponseV0()
+        .setContestedResourceValues(new GetContestedResourcesResponseV0
+          .ContestedResourceValues([contestedResourceValues]))
+        .setMetadata(metadata),
     );
 
-    getDocumentsResponse = new GetDocumentsResponseClass(
-      serializedDocuments,
+    getContestedResourcesResponse = new GetContestedResourceResponseClass(
+      contestedResourceValues,
+      1,
       new Metadata(metadataFixture),
     );
   });
 
-  it('should return documents', () => {
-    const documents = getDocumentsResponse.getDocuments();
-    const proof = getDocumentsResponse.getProof();
+  it('should return contested resources', () => {
+    const contestedResources = getContestedResourcesResponse.getContestedResources();
+    const proof = getContestedResourcesResponse.getProof();
 
-    expect(documents).to.deep.equal(serializedDocuments);
+    expect(contestedResources).to.deep.equal(contestedResourceValues);
     expect(proof).to.equal(undefined);
   });
 
   it('should return proof', async () => {
-    getDocumentsResponse = new GetDocumentsResponseClass(
-      [],
+    getContestedResourcesResponse = new GetContestedResourceResponseClass(
+      '',
+      1,
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
+    const contestedResources = getContestedResourcesResponse.getContestedResources();
+    const proof = getContestedResourcesResponse.getProof();
 
-    const documents = getDocumentsResponse.getDocuments();
-    const proof = getDocumentsResponse.getProof();
-
-    expect(documents).to.deep.equal([]);
+    expect(contestedResources).to.equal('');
 
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
@@ -78,18 +73,19 @@ describe('GetDocumentsResponse', () => {
   });
 
   it('should create an instance from proto', () => {
-    getDocumentsResponse = GetDocumentsResponseClass.createFromProto(proto);
-    expect(getDocumentsResponse).to.be.an.instanceOf(GetDocumentsResponseClass);
-    expect(getDocumentsResponse.getDocuments()).to.deep.equal(serializedDocuments);
+    getContestedResourcesResponse = GetContestedResourceResponseClass.createFromProto(proto);
+    expect(getContestedResourcesResponse).to.be.an.instanceOf(GetContestedResourceResponseClass);
+    expect(getContestedResourcesResponse.getContestedResources())
+      .to.deep.equal(contestedResourceValues);
 
-    expect(getDocumentsResponse.getMetadata())
+    expect(getContestedResourcesResponse.getMetadata())
       .to.be.an.instanceOf(Metadata);
-    expect(getDocumentsResponse.getMetadata().getHeight())
+    expect(getContestedResourcesResponse.getMetadata().getHeight())
       .to.equal(metadataFixture.height);
-    expect(getDocumentsResponse.getMetadata().getCoreChainLockedHeight())
+    expect(getContestedResourcesResponse.getMetadata().getCoreChainLockedHeight())
       .to.equal(metadataFixture.coreChainLockedHeight);
 
-    expect(getDocumentsResponse.getProof()).to.equal(undefined);
+    expect(getContestedResourcesResponse.getProof()).to.equal(undefined);
   });
 
   it('should create an instance with proof from proto', () => {
@@ -101,19 +97,19 @@ describe('GetDocumentsResponse', () => {
 
     proto.getV0().setProof(proofProto);
 
-    getDocumentsResponse = GetDocumentsResponseClass.createFromProto(proto);
+    getContestedResourcesResponse = GetContestedResourceResponseClass.createFromProto(proto);
 
-    expect(getDocumentsResponse).to.be.an.instanceOf(GetDocumentsResponseClass);
-    expect(getDocumentsResponse.getDocuments()).to.deep.members([]);
+    expect(getContestedResourcesResponse).to.be.an.instanceOf(GetContestedResourceResponseClass);
+    expect(getContestedResourcesResponse.getContestedResources()).to.equal('');
 
-    expect(getDocumentsResponse.getMetadata())
+    expect(getContestedResourcesResponse.getMetadata())
       .to.be.an.instanceOf(Metadata);
-    expect(getDocumentsResponse.getMetadata().getHeight())
+    expect(getContestedResourcesResponse.getMetadata().getHeight())
       .to.equal(metadataFixture.height);
-    expect(getDocumentsResponse.getMetadata().getCoreChainLockedHeight())
+    expect(getContestedResourcesResponse.getMetadata().getCoreChainLockedHeight())
       .to.equal(metadataFixture.coreChainLockedHeight);
 
-    const proof = getDocumentsResponse.getProof();
+    const proof = getContestedResourcesResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -124,7 +120,7 @@ describe('GetDocumentsResponse', () => {
     proto.getV0().setMetadata(undefined);
 
     try {
-      getDocumentsResponse = GetDocumentsResponseClass.createFromProto(proto);
+      getContestedResourcesResponse = GetContestedResourceResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {
