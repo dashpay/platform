@@ -16,8 +16,6 @@ const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocu
 const getBlsAdapterMock = require('@dashevo/wasm-dpp/lib/test/mocks/getBlsAdapterMock');
 const createStateRepositoryMock = require('@dashevo/wasm-dpp/lib/test/mocks/createStateRepositoryMock');
 const fetchProofForStateTransitionFactory = require('../../../../lib/externalApis/drive/fetchProofForStateTransitionFactory');
-const getBlsAdapterMock = require('@dashevo/wasm-dpp/lib/test/mocks/getBlsAdapterMock');
-const createStateRepositoryMock = require('@dashevo/wasm-dpp/lib/test/mocks/createStateRepositoryMock');
 
 describe('fetchProofForStateTransition', () => {
   let driveClientMock;
