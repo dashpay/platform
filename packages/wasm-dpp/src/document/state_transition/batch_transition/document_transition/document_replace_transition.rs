@@ -3,11 +3,15 @@ use std::convert::TryInto;
 
 use serde_json::Value as JsonValue;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
 };
 use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::{
     prelude::{DataContract, Identifier},
     state_transition::documents_batch_transition::{
@@ -18,10 +22,6 @@ use dpp::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 
 use crate::{
     buffer::Buffer,
@@ -31,7 +31,7 @@ use crate::{
     utils::{ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::state_transition::batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 #[wasm_bindgen(js_name=DocumentReplaceTransition)]
 #[derive(Debug, Clone)]

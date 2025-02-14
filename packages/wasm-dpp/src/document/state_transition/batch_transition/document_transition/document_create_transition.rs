@@ -4,9 +4,10 @@ use dpp::state_transition::batch_transition::document_create_transition::Documen
 
 use dpp::document::INITIAL_REVISION;
 
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use wasm_bindgen::prelude::*;
+use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
 #[wasm_bindgen(js_name=DocumentCreateTransition)]
 #[derive(Debug, Clone)]
@@ -90,11 +91,11 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getIdentityContractNonce)]
     pub fn get_identity_contract_nonce(&self) -> u64 {
-        self.inner.base().identity_contract_nonce() as u64
+        self.inner.base().identity_contract_nonce()
     }
 
     #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) -> () {
+    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) {
         let mut base = self.inner.base().clone();
 
         base.set_identity_contract_nonce(identity_contract_nonce);

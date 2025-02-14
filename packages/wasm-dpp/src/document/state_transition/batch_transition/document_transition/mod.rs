@@ -18,11 +18,11 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use dpp::fee::Credits;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},
@@ -62,10 +62,10 @@ impl DocumentTransitionWasm {
                     .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
                     .unwrap()
             }
-            DocumentTransition::Delete(document_delete_transition) => JsValue::null(),
-            DocumentTransition::Transfer(document_transfer_transition) => JsValue::null(),
-            DocumentTransition::UpdatePrice(document_update_price_transition) => JsValue::null(),
-            DocumentTransition::Purchase(document_purchase_transition) => JsValue::null(),
+            DocumentTransition::Delete(_) => JsValue::null(),
+            DocumentTransition::Transfer(_) => JsValue::null(),
+            DocumentTransition::UpdatePrice(_) => JsValue::null(),
+            DocumentTransition::Purchase(_) => JsValue::null(),
         }
     }
 
@@ -109,7 +109,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=get_price)]
     pub fn get_price(&self) -> Option<Credits> {
         match &self.0 {
-            DocumentTransition::Create(create) => None,
+            DocumentTransition::Create(_) => None,
             DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(_) => None,
@@ -121,12 +121,12 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getReceiverId)]
     pub fn get_receiver_id(&self) -> Option<IdentifierWrapper> {
         match &self.0 {
-            DocumentTransition::Create(create) => None,
+            DocumentTransition::Create(_) => None,
             DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(transfer) => Some(transfer.recipient_owner_id().into()),
-            DocumentTransition::UpdatePrice(update_price) => None,
-            DocumentTransition::Purchase(purchase) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 
