@@ -87,13 +87,12 @@ Refer to rich comments / help in the forementioned scripts for more details.
 
 To generate test vectors for offline testing, you need to have access acredentials to Dash Platform instance, either by
 specifying configuration manually in `packages/rs-sdk/tests/.env`. or starting a local devnet.
-
-When you start local dev environment of Dash Platform using `yarn start`, the `.env` file is automatically generated during `yarn setup` or `yarn reset`, using `platform/scripts/configure_dotenv.sh` script. See [Dash Platform documentation](../../README.md) for more details about starting and using local devnet.
+The `.env` file is automatically generated during `yarn setup` or `yarn reset`, using `platform/scripts/configure_dotenv.sh` script. See [Dash Platform documentation](../../README.md) for more details about starting and using local devnet.
 
 To generate test vectors:
 
-1. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
-2. Uncomment `create_sdk_test_data(...)` in `create_genesis_state()` function in `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`.
+1. Start local dev environment of Dash Platform using `SDK_TEST_DATA=true yarn start`.
+2. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
 3. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
 4. (Optional) commit generated files with `git commit packages/rs-sdk/tests/vectors/`.
 
@@ -142,6 +141,5 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
 10. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
 12. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
 13. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
-14. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
-15. [ ] Uncomment `create_sdk_test_data(...)` in `create_genesis_state()` function in `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`.
-16. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
+14. [ ] Start local devnet with `yarn reset ; yarn setup && SDK_TEST_DATA=true yarn start`
+15. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`

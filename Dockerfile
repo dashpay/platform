@@ -400,6 +400,9 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
+ARG SDK_TEST_DATA
+
+
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
@@ -417,6 +420,13 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         mv .cargo/config-release.toml .cargo/config.toml; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
+    fi && \
+    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+        if [ -z "${FEATURES_FLAG}" ]; then \
+            export FEATURES_FLAG="--features=sdk-test-data"; \
+        else \
+            export FEATURES_FLAG="${FEATURES_FLAG},sdk-test-data"; \
+        fi; \
     fi && \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -478,6 +488,13 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
+    fi && \
+    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+        if [ -z "${FEATURES_FLAG}" ]; then \
+            export FEATURES_FLAG="--features=sdk-test-data"; \
+        else \
+            export FEATURES_FLAG="${FEATURES_FLAG},sdk-test-data"; \
+        fi; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
