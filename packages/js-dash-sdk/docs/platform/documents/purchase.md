@@ -26,7 +26,7 @@ const [document] = await dash.platform.documents.get(
   { where: [['$id', '==', documentId]] },
 );
 
-await dash.platform.documents.broadcast({ updatePrice: [document], }, identity, { price, receiver: receiverIdentity.getId() });
+await dash.platform.documents.broadcast({ purchase: [document], }, identity, { price, receiver: receiverIdentity.getId() });
 ```
 **Note**: This method will change the ownership of the document to your identity, and seller identity will be credited with the amount specified in the updatePrice deducted from your balance.
 
