@@ -30,7 +30,7 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
 
     const requestV0 = new GetProofsRequestV0();
 
-    let dataContractsCache = {};
+    const dataContractsCache = {};
 
     if (stateTransition.isDocumentStateTransition()) {
       const {

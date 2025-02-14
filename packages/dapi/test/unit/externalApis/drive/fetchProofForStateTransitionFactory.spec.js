@@ -8,9 +8,13 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const { StateTransitionTypes } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol, StateTransitionTypes } = require('@dashevo/wasm-dpp');
 
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+
+const getBlsAdapterMock = require('@dashevo/wasm-dpp/lib/test/mocks/getBlsAdapterMock');
+const createStateRepositoryMock = require('@dashevo/wasm-dpp/lib/test/mocks/createStateRepositoryMock');
 const fetchProofForStateTransitionFactory = require('../../../../lib/externalApis/drive/fetchProofForStateTransitionFactory');
 
 describe('fetchProofForStateTransition', () => {
@@ -21,6 +25,25 @@ describe('fetchProofForStateTransition', () => {
   let documentsProofResponse;
   let masternodeVoteResponse;
   let stateTransitionFixture;
+
+  let dpp;
+
+  before(async () => {
+    await loadWasmDpp();
+  });
+
+  beforeEach(async function beforeEachHandler() {
+    const blsAdapter = await getBlsAdapterMock();
+    const stateRepositoryMock = createStateRepositoryMock(this.sinon);
+
+    dpp = new DashPlatformProtocol(
+      blsAdapter,
+      1,
+      stateRepositoryMock,
+      { generate: () => crypto.randomBytes(32) },
+      1,
+    );
+  });
 
   beforeEach(async function beforeEach() {
     const { GetProofsResponseV0 } = GetProofsResponse;
@@ -79,18 +102,21 @@ describe('fetchProofForStateTransition', () => {
       .equal(dataContractsProofResponse.serializeBinary());
   });
 
-  it('should fetch documents proofs', async function it() {
-    stateTransitionFixture.isDocumentStateTransition.returns(true);
-    stateTransitionFixture.getTransitions = this.sinon.stub().returns([
-      {
-        getDataContractId: this.sinon.stub().returns(await generateRandomIdentifierAsync()),
-        getType: this.sinon.stub().returns('niceDocument'),
-        getId: this.sinon.stub().returns(await generateRandomIdentifierAsync()),
-        hasPrefundedBalance: this.sinon.stub().returns(true),
-      },
-    ]);
+  it('should fetch documents proofs', async () => {
+    const documents = await getDocumentsFixture();
 
-    const result = await fetchProofForStateTransition(stateTransitionFixture);
+    const identityId = documents[0].getOwnerId();
+    const contractId = documents[0].getDataContractId();
+
+    const transition = dpp.document.createStateTransition({
+      create: documents,
+    }, {
+      [identityId.toString()]: {
+        [contractId.toString()]: 1,
+      },
+    });
+
+    const result = await fetchProofForStateTransition(transition);
     expect(result.serializeBinary()).to.deep
       .equal(documentsProofResponse.serializeBinary());
   });
