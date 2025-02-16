@@ -24,6 +24,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
+    DriveAbciReducedPlatformStateStorageMethodVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciTokensProcessingMethodVersions,
     DriveAbciVotingMethodVersions,
 };
@@ -50,7 +51,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             engine: DriveAbciEngineMethodVersions {
                 init_chain: 0,
                 check_tx: 0,
-                run_block_proposal: 0,
+                run_block_proposal: 1,
                 finalize_block_proposal: 0,
                 consensus_params_update: 1,
             },
@@ -155,6 +156,10 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,
                 store_platform_state: 0,
+            },
+            platform_reduced_state_storage: DriveAbciReducedPlatformStateStorageMethodVersions {
+                fetch_reduced_platform_state: 0,
+                store_reduced_platform_state: 0,
             },
         },
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V3,

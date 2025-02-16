@@ -15,7 +15,9 @@ use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructure, PlatformSerializable, ReducedPlatformSerializable,
+};
 use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
@@ -27,6 +29,8 @@ use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
+use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -57,6 +61,24 @@ impl PlatformSerializable for PlatformState {
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
             ProtocolError::PlatformSerializationError(format!(
                 "unable to serialize PlatformState: {}",
+                e
+            ))
+            .into()
+        })
+    }
+}
+
+impl ReducedPlatformSerializable for PlatformState {
+    type Error = Error;
+
+    fn reduced_serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        let platform_version = self.current_platform_version()?;
+        let config = config::standard().with_big_endian().with_no_limit();
+        let reduced_platform_state_for_saving: ReducedPlatformStateForSaving =
+            self.clone().try_into_platform_versioned(platform_version)?;
+        bincode::encode_to_vec(reduced_platform_state_for_saving, config).map_err(|e| {
+            ProtocolError::PlatformSerializationError(format!(
+                "unable to serialize ReducedPlatformState: {}",
                 e
             ))
             .into()
@@ -192,6 +214,36 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
                                 .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                }
+            }
+        }
+    }
+}
+
+impl TryFromPlatformVersioned<PlatformState> for ReducedPlatformStateForSaving {
+    type Error = Error;
+    fn try_from_platform_versioned(
+        value: PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        match value {
+            PlatformState::V0(v0) => {
+                match platform_version
+                    .drive_abci
+                    .structs
+                    .reduced_platform_state_for_saving_structure_default
+                {
+                    0 => {
+                        let reduced_saving_v0: ReducedPlatformStateForSavingV0 = v0.try_into()?;
+                        Ok(ReducedPlatformStateForSaving::V0(reduced_saving_v0))
+                    }
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method:
+                        "ReducedPlatformStateForSaving::try_from_platform_versioned(PlatformState)"
+                            .to_string(),
                         known_versions: vec![0],
                         received: version,
                     })),
