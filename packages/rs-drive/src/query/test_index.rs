@@ -1,15 +1,15 @@
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use crate::config::DriveConfig;
+    use crate::error::{query::QuerySyntaxError, Error};
+    use crate::query::DriveDocumentQuery;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::platform_value::{platform_value, Identifier};
     use dpp::util::cbor_serializer;
     use serde_json::json;
-
-    use crate::config::DriveConfig;
-    use crate::error::{query::QuerySyntaxError, Error};
-    use crate::query::DriveDocumentQuery;
-    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -77,14 +77,15 @@ mod tests {
             "additionalProperties": false,
         });
 
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+
         DocumentType::try_from_schema(
             Identifier::random(),
             "indexed_type",
             schema,
             None,
-            false,
-            false,
-            false,
+            &config,
             true,
             &mut vec![],
             platform_version,

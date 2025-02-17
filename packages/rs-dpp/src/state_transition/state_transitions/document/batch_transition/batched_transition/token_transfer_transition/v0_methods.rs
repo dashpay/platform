@@ -4,7 +4,7 @@ use crate::state_transition::batch_transition::batched_transition::token_transfe
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::TokenTransferTransition;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
+use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 
 impl TokenBaseTransitionAccessors for TokenTransferTransition {
     fn base(&self) -> &TokenBaseTransition {

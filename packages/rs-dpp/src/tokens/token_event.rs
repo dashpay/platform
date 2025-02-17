@@ -21,8 +21,8 @@ pub type TokenEventPersonalEncryptedNote = Option<(
     Vec<u8>,
 )>;
 use crate::serialization::PlatformSerializableWithPlatformVersion;
-use crate::state_transition::batch_transition::token_transfer_transition::SharedEncryptedNote;
 use crate::tokens::emergency_action::TokenEmergencyAction;
+use crate::tokens::SharedEncryptedNote;
 use crate::ProtocolError;
 
 pub type RecipientIdentifier = Identifier;
