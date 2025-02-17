@@ -4,20 +4,11 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 
 pub use super::super::token_base_transition::IDENTIFIER_FIELDS;
-use crate::prelude::{
-    DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex,
-};
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
-
-pub type SharedEncryptedNote = (SenderKeyIndex, RecipientKeyIndex, Vec<u8>);
-pub type PrivateEncryptedNote = (
-    RootEncryptionKeyIndex,
-    DerivationEncryptionKeyIndex,
-    Vec<u8>,
-);
 
 mod property_names {
     pub const AMOUNT: &str = "$amount";
