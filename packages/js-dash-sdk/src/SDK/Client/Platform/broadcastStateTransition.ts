@@ -89,11 +89,7 @@ export default async function broadcastStateTransition(
     // instead of passing it as GrpcError constructor argument
     // Otherwise it will be converted to grpc-js metadata
     // Which is not compatible with web
-    if (error.data) {
-      grpcError.metadata = {
-        'dash-serialized-consensus-error-bin': error.data.toString('base64'),
-      };
-    }
+    grpcError.metadata = error.data;
 
     let cause = await createGrpcTransportError(grpcError);
 

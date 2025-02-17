@@ -1,3 +1,5 @@
+const cbor = require('cbor');
+
 const AbstractResponse = require('../response/AbstractResponse');
 const Metadata = require('../response/Metadata');
 const Proof = require('../response/Proof');
@@ -36,9 +38,9 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
 
     if (proto.getV0().getError()) {
       let data;
-
-      if (proto.getV0().getError().getData()) {
-        data = Buffer.from(proto.getV0().getError().getData());
+      const rawData = proto.getV0().getError().getData();
+      if (rawData) {
+        data = cbor.decode(Buffer.from(rawData));
       }
 
       error = new ErrorResult(
