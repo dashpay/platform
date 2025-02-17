@@ -9,12 +9,9 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
-use dpp::state_transition::batch_transition::token_transfer_transition::{
-    PrivateEncryptedNote, SharedEncryptedNote,
-};
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
-use dpp::tokens::calculate_token_id;
+use dpp::tokens::{calculate_token_id, PrivateEncryptedNote, SharedEncryptedNote};
 use dpp::version::PlatformVersion;
 
 /// A builder to configure and broadcast token transfer transitions
