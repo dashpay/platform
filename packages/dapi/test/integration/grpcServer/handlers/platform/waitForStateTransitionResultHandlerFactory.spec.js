@@ -64,7 +64,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     errorInfo = {
       message: 'Identity not found',
       metadata: {
-        error: 'some data',
+        'dash-serialized-consensus-error-bin': Buffer.from('0122a249dac309c9a8b775316c905688da04bf0ee05b3861db05814540c32fba4179', 'hex'),
       },
     };
 
@@ -305,26 +305,28 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
   it('should wait for state transition and return result with error', (done) => {
     waitForStateTransitionResultHandler(call).then((result) => {
-      expect(result).to.be.an.instanceOf(WaitForStateTransitionResultResponse);
-      expect(result.getV0().getProof()).to.be.undefined();
+      try {
+        expect(result).to.be.an.instanceOf(WaitForStateTransitionResultResponse);
+        expect(result.getV0().getProof()).to.be.undefined();
 
-      const error = result.getV0().getError();
-      expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
+        const error = result.getV0().getError();
+        expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
 
-      const errorData = error.getData();
-      const errorCode = error.getCode();
-      const errorMessage = error.getMessage();
+        const errorData = error.getData();
+        const errorCode = error.getCode();
+        const errorMessage = error.getMessage();
 
-      expect(createGrpcErrorFromDriveResponseMock).to.be.calledOnceWithExactly(
-        wsMessagesFixture.error.data.value.result.code,
-        wsMessagesFixture.error.data.value.result.info,
-      );
+        expect(createGrpcErrorFromDriveResponseMock).to.be.calledOnceWithExactly(
+          wsMessagesFixture.error.data.value.result.code,
+          wsMessagesFixture.error.data.value.result.info,
+        );
 
-      expect(errorCode).to.equal(wsMessagesFixture.error.data.value.result.code);
-      expect(errorData).to.deep.equal(cbor.encode(errorInfo.metadata));
-      expect(errorMessage).to.equal(errorInfo.message);
-
-      done();
+        expect(errorCode).to.equal(wsMessagesFixture.error.data.value.result.code);
+        expect(errorData).to.deep.equal(cbor.encode(errorInfo.metadata));
+        expect(errorMessage).to.equal(errorInfo.message);
+      } finally {
+        done();
+      }
     });
 
     process.nextTick(() => {
