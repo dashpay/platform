@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 
-use dpp::data_contract::DataContractFacade;
+use dpp::data_contract::{DataContractFacade, DataContractFactoryV0, TokenConfiguration, TokenContractPosition};
 use dpp::identifier::Identifier;
 
 use crate::data_contract::state_transition::DataContractCreateTransitionWasm;
@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use dpp::prelude::IdentityNonce;
 use wasm_bindgen::prelude::*;
+use dpp::data_contract::accessors::v1::DataContractV1Setters;
 
 impl From<DataContractFacade> for DataContractFacadeWasm {
     fn from(facade: DataContractFacade) -> Self {
@@ -80,13 +81,21 @@ impl DataContractFacadeWasm {
             false
         };
 
-        self.0
+        let mut data_contract = self.0
             .create_from_object(
                 js_raw_data_contract.with_serde_to_platform_value()?,
                 skip_validation,
-            )
+            )?;
+
+
+        // Sample
+        let token_configuration = TokenConfiguration::default();
+
+        data_contract.add_token(1u16, token_configuration);
+
+        Ok(data_contract
             .map(DataContractWasm::from)
-            .map_err(from_protocol_error)
+            .map_err(from_protocol_error))
     }
 
     /// Create Data Contract from buffer
