@@ -28,8 +28,8 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::state_transition::documents_batch_transition::{
     document_transition::{
         action_type::DocumentTransitionActionType, DocumentCreateTransition,
-        DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,
-        DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition
+        DocumentDeleteTransition, DocumentPurchaseTransition, DocumentReplaceTransition,
+        DocumentTransferTransition, DocumentTransition, DocumentUpdatePriceTransition,
     },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
