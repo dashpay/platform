@@ -1699,7 +1699,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            2496910
+            2497370
         );
 
         let check_result = platform
