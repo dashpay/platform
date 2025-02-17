@@ -24,14 +24,12 @@ use crate::document::{
 };
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
-use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition,
-};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
     document_transition::{
         action_type::DocumentTransitionActionType, DocumentCreateTransition,
         DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,
+        DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition
     },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
