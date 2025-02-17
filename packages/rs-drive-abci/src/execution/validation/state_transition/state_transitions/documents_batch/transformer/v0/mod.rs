@@ -720,7 +720,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
                     document_id,
                     Some(previous_revision),
-                    transition_revision,
+                    expected_revision,
                 )),
             ))
         }

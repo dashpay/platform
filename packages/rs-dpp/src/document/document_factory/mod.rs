@@ -12,6 +12,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::fee::Credits;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
     document_transition::action_type::DocumentTransitionActionType, DocumentsBatchTransition,
@@ -120,9 +121,13 @@ impl DocumentFactory {
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
+        recipient: Option<Identifier>,
+        price: Option<Credits>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter, nonce_counter),
+            DocumentFactory::V0(v0) => {
+                v0.create_state_transition(documents_iter, nonce_counter, recipient, price)
+            }
         }
     }
 

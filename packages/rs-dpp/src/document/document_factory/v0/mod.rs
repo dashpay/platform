@@ -22,12 +22,14 @@ use crate::document::{
     extended_document::v0::ExtendedDocumentV0,
     serialization_traits::DocumentPlatformConversionMethodsV0, ExtendedDocument,
 };
+use crate::fee::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
     document_transition::{
         action_type::DocumentTransitionActionType, DocumentCreateTransition,
-        DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,
+        DocumentDeleteTransition, DocumentPurchaseTransition, DocumentReplaceTransition,
+        DocumentTransferTransition, DocumentTransition, DocumentUpdatePriceTransition,
     },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
@@ -209,7 +211,9 @@ impl DocumentFactoryV0 {
                 Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
-        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce,
+        recipient: Option<Identifier>,
+        price: Option<Credits>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
@@ -262,9 +266,43 @@ impl DocumentFactoryV0 {
                     nonce_counter,
                     platform_version,
                 ),
-                _ => Err(ProtocolError::InvalidStateTransitionType(
-                    "action type not accounted for".to_string(),
-                )),
+                DocumentTransitionActionType::Transfer => Self::document_transfer_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    nonce_counter,
+                    platform_version,
+                    recipient,
+                ),
+                DocumentTransitionActionType::UpdatePrice => {
+                    Self::document_update_price_transitions(
+                        documents
+                            .into_iter()
+                            .map(|(document, document_type, _)| (document, document_type))
+                            .collect(),
+                        nonce_counter,
+                        platform_version,
+                        price,
+                    )
+                }
+                DocumentTransitionActionType::Purchase => Self::document_purchase_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    nonce_counter,
+                    platform_version,
+                    price,
+                    recipient,
+                ),
+                _ => {
+                    let action_type_name: &str = action.into();
+
+                    Err(ProtocolError::InvalidStateTransitionType(
+                        action_type_name.to_string(),
+                    ))
+                }
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
@@ -535,6 +573,140 @@ impl DocumentFactoryV0 {
                 let transition = DocumentDeleteTransition::from_document(
                     document,
                     document_type,
+                    *nonce,
+                    platform_version,
+                    None,
+                    None,
+                )?;
+
+                *nonce += 1;
+
+                Ok(transition.into())
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "state-transitions")]
+    fn document_transfer_transitions(
+        documents: Vec<(Document, DocumentTypeRef)>,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
+        platform_version: &PlatformVersion,
+        recipient_owner_id: Option<Identifier>,
+    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
+        documents
+            .into_iter()
+            .map(|(mut document, document_type)| {
+                if !document_type.documents_transferable().is_transferable() {
+                    return Err(DocumentError::TryingToTransferNonTransferableDocument {
+                        document: Box::new(document),
+                    }
+                    .into());
+                }
+                let Some(_document_revision) = document.revision() else {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                };
+
+                document.increment_revision()?;
+                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
+
+                let nonce = nonce_counter
+                    .entry((document.owner_id(), document_type.data_contract_id()))
+                    .or_default();
+
+                let transition = DocumentTransferTransition::from_document(
+                    document,
+                    document_type,
+                    *nonce,
+                    recipient_owner_id.unwrap(),
+                    platform_version,
+                    None,
+                    None,
+                )?;
+
+                *nonce += 1;
+
+                Ok(transition.into())
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "state-transitions")]
+    fn document_update_price_transitions(
+        documents: Vec<(Document, DocumentTypeRef)>,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
+        platform_version: &PlatformVersion,
+        price: Option<Credits>,
+    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
+        documents
+            .into_iter()
+            .map(|(mut document, document_type)| {
+                let Some(_document_revision) = document.revision() else {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                };
+
+                let nonce = nonce_counter
+                    .entry((document.owner_id(), document_type.data_contract_id()))
+                    .or_default();
+
+                let now = Utc::now().timestamp_millis() as TimestampMillis;
+
+                document.increment_revision()?;
+                document.set_updated_at(Some(now));
+                document.set_transferred_at(Some(now));
+
+                let transition = DocumentUpdatePriceTransition::from_document(
+                    document,
+                    document_type,
+                    price.unwrap(),
+                    *nonce,
+                    platform_version,
+                    None,
+                    None,
+                )?;
+
+                *nonce += 1;
+
+                Ok(transition.into())
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "state-transitions")]
+    fn document_purchase_transitions(
+        documents: Vec<(Document, DocumentTypeRef)>,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
+        platform_version: &PlatformVersion,
+        price: Option<Credits>,
+        recipient: Option<Identifier>,
+    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
+        documents
+            .into_iter()
+            .map(|(mut document, document_type)| {
+                let Some(_document_revision) = document.revision() else {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                };
+
+                let nonce = nonce_counter
+                    .entry((recipient.unwrap(), document_type.data_contract_id()))
+                    .or_default();
+
+                //document.set_owner_id(recipient.unwrap());
+                document.increment_revision()?;
+                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
+
+                let transition = DocumentPurchaseTransition::from_document(
+                    document,
+                    document_type,
+                    price.unwrap(),
                     *nonce,
                     platform_version,
                     None,

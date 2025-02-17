@@ -47,6 +47,9 @@ pub enum DocumentError {
     #[error("Trying to delete indelible document")]
     TryingToDeleteIndelibleDocument { document: Box<Document> },
 
+    #[error("Trying to transfer non-transferable document")]
+    TryingToTransferNonTransferableDocument { document: Box<Document> },
+
     #[error("Documents have mixed owner ids")]
     MismatchOwnerIdsError { documents: Vec<Document> },
 
