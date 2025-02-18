@@ -81,7 +81,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<Option<Credits>, Error>` - The token info of the Identity if successful, or an error.
+    /// * `Result<Option<TokenStatus>, Error>` - The token info of the Identity if successful, or an error.
     pub fn fetch_token_status_operations(
         &self,
         token_id: [u8; 32],
