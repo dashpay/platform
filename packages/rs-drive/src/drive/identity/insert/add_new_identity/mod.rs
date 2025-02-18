@@ -150,7 +150,9 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let expected_fee_result = FeeResult {
             storage_fee: 128871000,
-            processing_fee: 2330320,
+            // 2 extra loaded bytes because the token tree is no longer empty
+            // these 2 loaded bytes cost 20 credits each
+            processing_fee: 2330360,
             ..Default::default()
         };
 
@@ -186,7 +188,7 @@ mod tests {
         platform_version: &PlatformVersion,
         expected_fee_result: FeeResult,
     ) {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
 
         let transaction = drive.grove.start_transaction();
 

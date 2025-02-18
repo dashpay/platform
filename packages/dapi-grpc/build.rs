@@ -63,7 +63,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 30] = [
+    const VERSIONED_REQUESTS: [&str; 34] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -94,6 +94,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetEvonodesProposedEpochBlocksByIdsRequest",
         "GetEvonodesProposedEpochBlocksByRangeRequest",
         "GetStatusRequest",
+        "GetIdentityTokenBalancesRequest",
+        "GetIdentitiesTokenBalancesRequest",
+        "GetIdentityTokenInfosRequest",
+        "GetIdentitiesTokenInfosRequest",
     ];
 
     // The following responses are excluded as they don't support proofs:
@@ -101,7 +105,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetStatusResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 29] = [
+    const VERSIONED_RESPONSES: [&str; 33] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -131,6 +135,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetVotePollsByEndDateResponse",
         "GetTotalCreditsInPlatformResponse",
         "GetEvonodesProposedEpochBlocksResponse",
+        "GetIdentityTokenBalancesResponse",
+        "GetIdentitiesTokenBalancesResponse",
+        "GetIdentityTokenInfosResponse",
+        "GetIdentitiesTokenInfosResponse",
     ];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");

@@ -15,9 +15,9 @@ use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::util::type_constants::{
     DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8,
@@ -84,7 +84,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -108,7 +108,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(document_id_in_primary_path),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
                     estimated_layer_sizes: Mix {
                         subtrees_size: None,
@@ -137,7 +137,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,

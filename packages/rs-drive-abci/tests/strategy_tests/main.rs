@@ -27,6 +27,7 @@ mod masternodes;
 mod patch_platform_tests;
 mod query;
 mod strategy;
+mod token_tests;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
 mod voting_tests;
@@ -462,7 +463,86 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_one_identity_in_solitude() {
+    fn run_chain_one_identity_in_solitude_first_protocol_version() {
+        let platform_version = PlatformVersion::first();
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(1)
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None);
+
+        let balance = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identity_balance(
+                outcome.identities.first().unwrap().id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balances")
+            .expect("expected to have an identity to get balance from");
+
+        assert_eq!(balance, 99864012200)
+    }
+
+    #[test]
+    fn run_chain_one_identity_in_solitude_latest_protocol_version() {
+        // This is different because in the root tree we added GroupActions
+        //                                                                                DataContract_Documents 64
+        //                                 /                                                                                                       \
+        //                       Identities 32                                                                                                 Balances 96
+        //             /                            \                                                                        /                                                       \
+        //   Token_Balances 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
+        //       /      \                           /                     \                                         /                           \                            /                          \
+        //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)     SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
+
+        // This will cause the costs of insertion of a spent asset lock transition, since group actions now exist we will see a slight difference in processing costs
+        // This is because WithdrawalTransactions will have a right element in the tree.
+
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -510,7 +590,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
+        let outcome = run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None);
 
         let balance = outcome
             .abci_app
@@ -524,7 +604,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864012200)
+        assert_eq!(balance, 99864009940)
     }
 
     #[test]
@@ -2270,10 +2350,7 @@ mod tests {
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
-                assert!(!matches!(
-                    state_transition,
-                    StateTransition::DocumentsBatch(_)
-                ));
+                assert!(!matches!(state_transition, StateTransition::Batch(_)));
             }
         }
     }
@@ -2576,28 +2653,22 @@ mod tests {
 
         let mut simple_signer = SimpleSigner::default();
 
-        let (identity1, keys1) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity1, keys1) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
         simple_signer.add_keys(keys1);
 
-        let (identity2, keys2) =
-            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
-                2,
-                &mut rng,
-                platform_version,
-            )
-            .unwrap();
+        let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(2, &mut rng, platform_version)
+        .unwrap();
 
         simple_signer.add_keys(keys2);
 
         let start_identities = create_state_transitions_for_identities(
-            vec![identity1, identity2],
+            vec![&mut identity1, &mut identity2],
             &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,

@@ -15,6 +15,8 @@ pub struct SystemDataContracts {
     dashpay: ArcSwap<DataContract>,
     /// Masternode reward shares contract
     masternode_reward_shares: ArcSwap<DataContract>,
+    /// Token history contract
+    token_history: ArcSwap<DataContract>,
 }
 
 impl SystemDataContracts {
@@ -39,12 +41,21 @@ impl SystemDataContracts {
                 SystemDataContract::MasternodeRewards,
                 platform_version,
             )?),
+            token_history: ArcSwap::from_pointee(load_system_data_contract(
+                SystemDataContract::TokenHistory,
+                platform_version,
+            )?),
         })
     }
 
     /// Returns withdrawals contract
     pub fn load_withdrawals(&self) -> Guard<Arc<DataContract>> {
         self.withdrawals.load()
+    }
+
+    /// Returns token history contract
+    pub fn load_token_history(&self) -> Guard<Arc<DataContract>> {
+        self.token_history.load()
     }
 
     /// Returns DPNS contract

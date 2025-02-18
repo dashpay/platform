@@ -231,8 +231,11 @@ mod tests {
                 .expect("failed to convert data contract");
 
             // Make the contract invalid
-            let DataContractInSerializationFormat::V0(ref mut contract) =
-                data_contract_for_serialization;
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
 
             contract
                 .document_schemas
@@ -553,8 +556,11 @@ mod tests {
                 .expect("failed to convert data contract");
 
             // Make the contract invalid
-            let DataContractInSerializationFormat::V0(ref mut contract) =
-                data_contract_for_serialization;
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
 
             contract
                 .document_schemas

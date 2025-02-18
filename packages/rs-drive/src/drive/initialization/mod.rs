@@ -2,6 +2,7 @@
 
 mod genesis_core_height;
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -24,9 +25,10 @@ impl Drive {
             .create_initial_state_structure
         {
             0 => self.create_initial_state_structure_0(transaction, platform_version),
+            1 => self.create_initial_state_structure_1(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_initial_state_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

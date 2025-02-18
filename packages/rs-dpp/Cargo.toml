@@ -14,6 +14,7 @@ authors = [
 [dependencies]
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
+ordered-float = { version = "4.6.0", features = ["serde"]}
 base64 = "0.22.1"
 bs58 = "0.5"
 byteorder = { version = "1.4" }
@@ -21,7 +22,7 @@ chrono = { version = "0.4.35", default-features = false, features = [
   "wasmbind",
   "clock",
 ] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
+ciborium = { version = "0.2.2", optional = true }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "std",
   "secp-recovery",

@@ -19,7 +19,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::{HashMap, HashSet};
 
 impl Drive {
@@ -198,7 +198,7 @@ impl Drive {
     }
 
     /// operations for updating a contract.
-    fn update_contract_operations_v0(
+    pub(in crate::drive::contract::update::update_contract) fn update_contract_operations_v0(
         &self,
         contract_element: Element,
         contract: &DataContract,
@@ -300,8 +300,8 @@ impl Drive {
                     BatchInsertTreeApplyType::StatefulBatchInsertTree
                 } else {
                     BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        in_tree_using_sums: false,
-                        is_sum_tree: false,
+                        in_tree_type: TreeType::NormalTree,
+                        tree_type: TreeType::NormalTree,
                         flags_len: element_flags
                             .as_ref()
                             .map(|e| e.len() as u32)
@@ -317,7 +317,7 @@ impl Drive {
                     if !index_cache.contains(index_bytes) {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
-                            false,
+                            TreeType::NormalTree,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,

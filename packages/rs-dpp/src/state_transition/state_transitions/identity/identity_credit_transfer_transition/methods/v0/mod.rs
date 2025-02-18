@@ -6,6 +6,8 @@ use crate::{
     ProtocolError,
 };
 #[cfg(feature = "state-transition-signing")]
+use platform_value::Identifier;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 use crate::state_transition::StateTransitionType;
@@ -14,7 +16,7 @@ pub trait IdentityCreditTransferTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
         identity: &Identity,
-        to_identity_with_identifier: platform_value::Identifier,
+        to_identity_with_identifier: Identifier,
         amount: u64,
         user_fee_increase: UserFeeIncrease,
         signer: S,

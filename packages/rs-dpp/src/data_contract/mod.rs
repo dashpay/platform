@@ -3,10 +3,12 @@ use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
+use std::collections::BTreeMap;
 
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
+use once_cell::sync::Lazy;
 
 pub mod errors;
 pub mod extra;
@@ -17,7 +19,8 @@ mod generate_data_contract;
 pub mod created_data_contract;
 pub mod document_type;
 
-mod v0;
+pub mod v0;
+pub mod v1;
 
 #[cfg(feature = "factories")]
 pub mod factory;
@@ -37,10 +40,11 @@ mod methods;
 pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
+pub mod associated_token;
+pub mod change_control_rules;
 pub mod config;
+pub mod group;
 pub mod storage_requirements;
-
-pub use v0::*;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
@@ -51,6 +55,10 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
+pub use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::group::Group;
+use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
@@ -58,9 +66,17 @@ pub use serde_json::Value as JsonValue;
 type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;
+pub type TokenName = String;
+pub type GroupContractPosition = u16;
+pub type TokenContractPosition = u16;
 type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
+
+// Define static empty BTreeMaps
+static EMPTY_GROUPS: Lazy<BTreeMap<GroupContractPosition, Group>> = Lazy::new(|| BTreeMap::new());
+static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
+    Lazy::new(|| BTreeMap::new());
 
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.
@@ -90,6 +106,7 @@ pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
 pub enum DataContract {
     V0(DataContractV0),
+    V1(DataContractV1),
 }
 
 impl PlatformSerializableWithPlatformVersion for DataContract {
@@ -219,18 +236,66 @@ impl DataContract {
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
+            _ => None,
         }
     }
 
     pub fn as_v0_mut(&mut self) -> Option<&mut DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
+            _ => None,
         }
     }
 
     pub fn into_v0(self) -> Option<DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
+            _ => None,
+        }
+    }
+
+    pub fn as_v1(&self) -> Option<&DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    pub fn as_v1_mut(&mut self) -> Option<&mut DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    pub fn into_v1(self) -> Option<DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    /// This should only ever be used in tests, as it will change
+    #[cfg(test)]
+    pub fn into_latest(self) -> Option<DataContractV1> {
+        self.into_v1()
+    }
+
+    /// This should only ever be used in tests, as it will change
+    #[cfg(test)]
+    pub fn as_latest(&self) -> Option<&DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
+        }
+    }
+
+    /// This should only ever be used in tests, as it will change
+    #[cfg(test)]
+    pub fn as_latest_mut(&mut self) -> Option<&mut DataContractV1> {
+        match self {
+            DataContract::V1(v1) => Some(v1),
+            _ => None,
         }
     }
 

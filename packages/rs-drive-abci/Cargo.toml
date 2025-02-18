@@ -15,7 +15,7 @@ license = "MIT"
 [dependencies]
 arc-swap = "1.7.0"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -77,7 +77,7 @@ tokio-util = { version = "0.7" }
 derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3", optional = true}
 
 [dev-dependencies]
 bs58 = { version = "0.5.0" }
@@ -97,19 +97,20 @@ dpp = { path = "../rs-dpp", features = [
   "data-contract-json-conversion",
   "data-contract-cbor-conversion",
 ] }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 strategy-tests = { path = "../strategy-tests" }
 assert_matches = "1.5.0"
-drive-abci = { path = ".", features = ["testing-config"] }
+drive-abci = { path = ".", features = ["testing-config", "mocks"] }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3"}
+mockall = { version = "0.13" }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.23.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-
-default = ["mocks"]
-mocks = ["mockall", "drive/fixtures-and-mocks"]
+default = []
+mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 grovedbg = ["drive/grovedbg"]

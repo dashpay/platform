@@ -98,7 +98,7 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::DocumentsBatch(st) => st.transform_into_action(
+            StateTransition::Batch(st) => st.transform_into_action(
                 platform,
                 block_info,
                 validation_mode,

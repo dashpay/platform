@@ -1,4 +1,5 @@
 use crate::drive::contract::paths::DataContractPaths;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::Error;
 #[cfg(feature = "server")]
@@ -6,6 +7,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;

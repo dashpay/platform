@@ -29,6 +29,7 @@ members = [
     "packages/rs-json-schema-compatibility-validator",
     "packages/check-features",
     "packages/wallet-utils-contract",
+    "packages/token-history-contract"
 ]
 
 exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use

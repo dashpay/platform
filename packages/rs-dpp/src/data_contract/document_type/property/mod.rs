@@ -1761,6 +1761,7 @@ impl DocumentPropertyType {
     }
 
     pub fn encode_u16(val: u16) -> Vec<u8> {
+        //todo this should just be to_be_bytes (and for all unsigned integers)
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -1785,7 +1786,7 @@ impl DocumentPropertyType {
         wtr
     }
 
-    /// Decodes an unsigned integer on 32 bits.
+    /// Decodes an unsigned integer on 16 bits.
     pub fn decode_u16(val: &[u8]) -> Option<u16> {
         // Flip the sign bit
         // to deal with interaction between the domains

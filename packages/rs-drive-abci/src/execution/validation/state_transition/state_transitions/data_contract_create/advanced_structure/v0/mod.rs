@@ -4,19 +4,22 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::consensus::basic::data_contract::{
-    InvalidDataContractIdError, InvalidDataContractVersionError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
+    NonContiguousContractTokenPositionsError,
 };
 use dpp::consensus::basic::BasicError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::ConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionAdvancedStructureValidationV0 {
-    fn validate_advanced_structure_v0(&self, execution_context: &mut StateTransitionExecutionContext) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    fn validate_advanced_structure_v0(&self, execution_context: &mut StateTransitionExecutionContext, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
@@ -25,6 +28,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
     fn validate_advanced_structure_v0(
         &self,
         execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         if self.data_contract().version() != INITIAL_DATA_CONTRACT_VERSION {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
@@ -65,6 +69,69 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                     .into(),
                 ],
             ));
+        }
+
+        let groups = self.data_contract().groups();
+        if !groups.is_empty() {
+            let validation_result = DataContract::validate_groups(groups, platform_version)?;
+
+            if !validation_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
+            }
+        }
+
+        let expected_position = 0;
+
+        for (token_contract_position, token_configuration) in self.data_contract().tokens() {
+            if expected_position != *token_contract_position {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![NonContiguousContractTokenPositionsError::new(
+                        expected_position,
+                        *token_contract_position,
+                    )
+                    .into()],
+                ));
+            }
+
+            if token_configuration.base_supply() > i64::MAX as u64 {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![
+                        InvalidTokenBaseSupplyError::new(token_configuration.base_supply()).into(),
+                    ],
+                ));
+            }
+
+            let validation_result = token_configuration.validate_token_config_groups_exist(
+                self.data_contract().groups(),
+                platform_version,
+            )?;
+            if !validation_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
+            }
         }
 
         Ok(ConsensusValidationResult::default())
@@ -118,7 +185,7 @@ mod tests {
                     .expect("failed to create execution context");
 
             let result = transition
-                .validate_advanced_structure_v0(&mut execution_context)
+                .validate_advanced_structure_v0(&mut execution_context, platform_version)
                 .expect("failed to validate advanced structure");
 
             assert_matches!(execution_context.operations_slice(), []);
@@ -168,7 +235,7 @@ mod tests {
                     .expect("failed to create execution context");
 
             let result = transition
-                .validate_advanced_structure_v0(&mut execution_context)
+                .validate_advanced_structure_v0(&mut execution_context, platform_version)
                 .expect("failed to validate advanced structure");
 
             assert_matches!(

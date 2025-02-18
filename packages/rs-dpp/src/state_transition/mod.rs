@@ -1,8 +1,7 @@
 use derive_more::From;
-use documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use documents_batch_transition::document_transition::DocumentTransition;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
+use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 
 pub use abstract_state_transition::state_transition_helpers;
 
@@ -72,18 +71,15 @@ use crate::identity::Purpose;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
-pub use state_transitions::*;
-
 use crate::serialization::Signable;
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
-};
-use crate::state_transition::documents_batch_transition::{
-    DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
@@ -108,11 +104,14 @@ use crate::state_transition::identity_topup_transition::{
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
+pub use state_transitions::*;
 
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -122,7 +121,7 @@ macro_rules! call_method {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
-            StateTransition::DocumentsBatch(st) => st.$method($args),
+            StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(st) => st.$method($args),
             StateTransition::IdentityTopUp(st) => st.$method($args),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
@@ -135,7 +134,7 @@ macro_rules! call_method {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
-            StateTransition::DocumentsBatch(st) => st.$method(),
+            StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => st.$method(),
             StateTransition::IdentityTopUp(st) => st.$method(),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
@@ -151,7 +150,7 @@ macro_rules! call_getter_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method($args)),
             StateTransition::DataContractUpdate(st) => Some(st.$method($args)),
-            StateTransition::DocumentsBatch(st) => Some(st.$method($args)),
+            StateTransition::Batch(st) => Some(st.$method($args)),
             StateTransition::IdentityCreate(_) => None,
             StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method($args)),
@@ -164,7 +163,7 @@ macro_rules! call_getter_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method()),
             StateTransition::DataContractUpdate(st) => Some(st.$method()),
-            StateTransition::DocumentsBatch(st) => Some(st.$method()),
+            StateTransition::Batch(st) => Some(st.$method()),
             StateTransition::IdentityCreate(_) => None,
             StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
@@ -180,7 +179,7 @@ macro_rules! call_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
-            StateTransition::DocumentsBatch(st) => st.$method($args),
+            StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(_st) => {}
             StateTransition::IdentityTopUp(_st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
@@ -193,7 +192,7 @@ macro_rules! call_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
-            StateTransition::DocumentsBatch(st) => st.$method(),
+            StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => {}
             StateTransition::IdentityTopUp(st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
@@ -210,7 +209,7 @@ macro_rules! call_errorable_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
-            StateTransition::DocumentsBatch(st) => st.$method($args),
+            StateTransition::Batch(st) => st.$method($args),
             StateTransition::IdentityCreate(_st) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
             )),
@@ -227,7 +226,7 @@ macro_rules! call_errorable_method_identity_signed {
         match $state_transition {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
-            StateTransition::DocumentsBatch(st) => st.$method(),
+            StateTransition::Batch(st) => st.$method(),
             StateTransition::IdentityCreate(st) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
             )),
@@ -241,27 +240,6 @@ macro_rules! call_errorable_method_identity_signed {
         }
     };
 }
-
-// TODO unused macros below
-// macro_rules! call_static_method {
-//     ($state_transition:expr, $method:ident ) => {
-//         match $state_transition {
-//             StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
-//             StateTransition::DataContractUpdate(_) => DataContractUpdateTransition::$method(),
-//             StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
-//             StateTransition::IdentityCreate(_) => IdentityCreateTransition::$method(),
-//             StateTransition::IdentityTopUp(_) => IdentityTopUpTransition::$method(),
-//             StateTransition::IdentityCreditWithdrawal(_) => {
-//                 IdentityCreditWithdrawalTransition::$method()
-//             }
-//             StateTransition::IdentityUpdate(_) => IdentityUpdateTransition::$method(),
-//             StateTransition::IdentityCreditTransfer(_) => {
-//                 IdentityCreditTransferTransition::$method()
-//             }
-//             StateTransition::MasternodeVote(_) => MasternodeVote::$method(),
-//         }
-//     };
-// }
 
 #[derive(
     Debug,
@@ -284,7 +262,7 @@ macro_rules! call_errorable_method_identity_signed {
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
-    DocumentsBatch(DocumentsBatchTransition),
+    Batch(BatchTransition),
     IdentityCreate(IdentityCreateTransition),
     IdentityTopUp(IdentityTopUpTransition),
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
@@ -349,22 +327,42 @@ impl StateTransition {
         match self {
             Self::DataContractCreate(_) => "DataContractCreate".to_string(),
             Self::DataContractUpdate(_) => "DataContractUpdate".to_string(),
-            Self::DocumentsBatch(documents_batch_transition) => {
+            Self::Batch(batch_transition) => {
                 let mut document_transition_types = vec![];
-                match documents_batch_transition {
-                    DocumentsBatchTransition::V0(documents_batch_transition_v0) => {
-                        for transition in documents_batch_transition_v0.transitions().iter() {
-                            let document_transition_name = match transition {
-                                DocumentTransition::Create(_) => "Create",
-                                DocumentTransition::Replace(_) => "Replace",
-                                DocumentTransition::Delete(_) => "Delete",
-                                DocumentTransition::Transfer(_) => "Transfer",
-                                DocumentTransition::UpdatePrice(_) => "UpdatePrice",
-                                DocumentTransition::Purchase(_) => "Purchase",
-                            };
-                            document_transition_types.push(document_transition_name);
+                for transition in batch_transition.transitions_iter() {
+                    let document_transition_name = match transition {
+                        BatchedTransitionRef::Document(DocumentTransition::Create(_)) => "Create",
+                        BatchedTransitionRef::Document(DocumentTransition::Replace(_)) => "Replace",
+                        BatchedTransitionRef::Document(DocumentTransition::Delete(_)) => "Delete",
+                        BatchedTransitionRef::Document(DocumentTransition::Transfer(_)) => {
+                            "Transfer"
                         }
-                    }
+                        BatchedTransitionRef::Document(DocumentTransition::UpdatePrice(_)) => {
+                            "UpdatePrice"
+                        }
+                        BatchedTransitionRef::Document(DocumentTransition::Purchase(_)) => {
+                            "Purchase"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::Transfer(_)) => {
+                            "TokenTransfer"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::Mint(_)) => "TokenMint",
+                        BatchedTransitionRef::Token(TokenTransition::Burn(_)) => "TokenBurn",
+                        BatchedTransitionRef::Token(TokenTransition::Freeze(_)) => "TokenFreeze",
+                        BatchedTransitionRef::Token(TokenTransition::Unfreeze(_)) => {
+                            "TokenUnfreeze"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::DestroyFrozenFunds(_)) => {
+                            "TokenDestroyFrozenFunds"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::EmergencyAction(_)) => {
+                            "TokenEmergencyAction"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(_)) => {
+                            "TokenConfigUpdate"
+                        }
+                    };
+                    document_transition_types.push(document_transition_name);
                 }
                 format!("DocumentsBatch([{}])", document_transition_types.join(", "))
             }
@@ -452,7 +450,7 @@ impl StateTransition {
                 st.verify_public_key_level_and_purpose(identity_public_key)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
-            StateTransition::DocumentsBatch(st) => {
+            StateTransition::Batch(st) => {
                 if identity_public_key.purpose() != Purpose::AUTHENTICATION {
                     return Err(ProtocolError::WrongPublicKeyPurposeError(
                         WrongPublicKeyPurposeError::new(
@@ -745,93 +743,3 @@ impl StateTransition {
             })
     }
 }
-//
-// impl StateTransition {
-//     fn signature_property_paths(&self) -> Vec<&'static str> {
-//         call_static_method!(self, signature_property_paths)
-//     }
-//
-//     fn identifiers_property_paths(&self) -> Vec<&'static str> {
-//         call_static_method!(self, identifiers_property_paths)
-//     }
-//
-//     fn binary_property_paths(&self) -> Vec<&'static str> {
-//         call_static_method!(self, binary_property_paths)
-//     }
-//
-//     pub fn get_owner_id(&self) -> &Identifier {
-//         call_method!(self, get_owner_id)
-//     }
-// }
-//
-// impl StateTransitionFieldTypes for StateTransition {
-//     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-//         if skip_signature {
-//             Ok(hash::hash_to_vec(self.signable_bytes()?))
-//         } else {
-//             Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(self)?))
-//         }
-//     }
-//
-//     #[cfg(feature = "state-transition-cbor-conversion")]
-//     fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
-//         call_method!(self, to_cbor_buffer, true)
-//     }
-//
-//     #[cfg(feature = "state-transition-json-conversion")]
-//     fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
-//         call_method!(self, to_json, skip_signature)
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_object(
-//         &self,
-//         skip_signature: bool,
-//     ) -> Result<platform_value::Value, crate::ProtocolError> {
-//         call_method!(self, to_object, skip_signature)
-//     }
-//
-//     fn signature_property_paths() -> Vec<&'static str> {
-//         panic!("Static call is not supported")
-//     }
-//
-//     fn identifiers_property_paths() -> Vec<&'static str> {
-//         panic!("Static call is not supported")
-//     }
-//
-//     fn binary_property_paths() -> Vec<&'static str> {
-//         panic!("Static call is not supported")
-//     }
-//
-//     #[cfg(feature = "state-transition-value-conversion")]
-//     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-//         call_method!(self, to_cleaned_object, skip_signature)
-//     }
-// }
-//
-// impl StateTransitionLike for StateTransition {
-//     fn state_transition_protocol_version(&self) -> FeatureVersion {
-//         call_method!(self, state_transition_protocol_version)
-//     }
-//     /// returns the type of State Transition
-//     fn state_transition_type(&self) -> StateTransitionType {
-//         call_method!(self, state_transition_type)
-//     }
-//     /// returns the signature as a byte-array
-//     fn signature(&self) -> &BinaryData {
-//         call_method!(self, signature)
-//     }
-//
-//     /// set a new signature
-//     fn set_signature(&mut self, signature: BinaryData) {
-//         call_method!(self, set_signature, signature)
-//     }
-//
-//     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-//         call_method!(self, set_signature_bytes, signature)
-//     }
-//
-//     fn modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
-//         call_method!(self, modified_data_ids)
-//     }
-// }
