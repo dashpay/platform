@@ -36,9 +36,9 @@ describe('Token History Contract', () => {
 
   it('should have a valid contract definition', async () => {
     expect(() => dpp.dataContract.create(identityId, BigInt(1), tokenHistoryContractDocumentsSchema))
-        .to
-        .not
-        .throw();
+      .to
+      .not
+      .throw();
   });
 
   describe('documents', () => {
