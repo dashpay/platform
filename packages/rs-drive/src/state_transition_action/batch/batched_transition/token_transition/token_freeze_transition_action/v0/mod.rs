@@ -11,7 +11,7 @@ pub struct TokenFreezeTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
     /// The identity to freeze
-    pub identity_id_to_freeze: Identifier,
+    pub identity_to_freeze_id: Identifier,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -75,11 +75,11 @@ impl TokenFreezeTransitionActionAccessorsV0 for TokenFreezeTransitionActionV0 {
     }
 
     fn identity_to_freeze_id(&self) -> Identifier {
-        self.identity_id_to_freeze
+        self.identity_to_freeze_id
     }
 
     fn set_identity_to_freeze_id(&mut self, frozen_identity_id: Identifier) {
-        self.identity_id_to_freeze = frozen_identity_id;
+        self.identity_to_freeze_id = frozen_identity_id;
     }
 
     fn public_note(&self) -> Option<&String> {

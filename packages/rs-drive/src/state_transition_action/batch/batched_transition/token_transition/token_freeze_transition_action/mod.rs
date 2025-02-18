@@ -31,13 +31,13 @@ impl TokenFreezeTransitionActionAccessorsV0 for TokenFreezeTransitionAction {
 
     fn identity_to_freeze_id(&self) -> Identifier {
         match self {
-            TokenFreezeTransitionAction::V0(v0) => v0.identity_id_to_freeze,
+            TokenFreezeTransitionAction::V0(v0) => v0.identity_to_freeze_id,
         }
     }
 
     fn set_identity_to_freeze_id(&mut self, id: Identifier) {
         match self {
-            TokenFreezeTransitionAction::V0(v0) => v0.identity_id_to_freeze = id,
+            TokenFreezeTransitionAction::V0(v0) => v0.identity_to_freeze_id = id,
         }
     }
 
