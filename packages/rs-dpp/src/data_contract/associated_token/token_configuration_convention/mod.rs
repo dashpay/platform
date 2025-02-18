@@ -3,6 +3,8 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
+mod accessors;
+mod methods;
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
