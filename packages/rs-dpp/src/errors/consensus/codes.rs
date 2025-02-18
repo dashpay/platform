@@ -102,6 +102,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenBaseSupplyError(_) => 10251,
             Self::NonContiguousContractGroupPositionsError(_) => 10252,
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
+            Self::MissingDefaultLocalizationError(_) => 10254,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
