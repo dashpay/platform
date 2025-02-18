@@ -51,8 +51,10 @@ impl DriveHighLevelBatchOperationConverter for TokenFreezeTransitionAction {
                     ..
                 }) = self.base().store_in_group()
                 {
-                    let event =
-                        TokenEvent::Freeze(self.frozen_identity_id(), self.public_note().cloned());
+                    let event = TokenEvent::Freeze(
+                        self.identity_to_freeze_id(),
+                        self.public_note().cloned(),
+                    );
 
                     let initialize_with_insert_action_info = if *action_is_proposer {
                         Some(GroupAction::V0(GroupActionV0 {
@@ -75,7 +77,7 @@ impl DriveHighLevelBatchOperationConverter for TokenFreezeTransitionAction {
                 if self.base().perform_action() {
                     ops.push(TokenOperation(TokenOperationType::TokenFreeze {
                         token_id: self.token_id(),
-                        frozen_identity_id: self.frozen_identity_id(),
+                        frozen_identity_id: self.identity_to_freeze_id(),
                     }));
 
                     let token_configuration = self.base().token_configuration()?;
@@ -85,7 +87,7 @@ impl DriveHighLevelBatchOperationConverter for TokenFreezeTransitionAction {
                             owner_id,
                             nonce: identity_contract_nonce,
                             event: TokenEvent::Freeze(
-                                self.frozen_identity_id(),
+                                self.identity_to_freeze_id(),
                                 self.public_note_owned(),
                             ),
                         }));

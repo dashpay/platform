@@ -111,7 +111,7 @@ impl TokenFreezeTransitionActionV0 {
             BatchedTransitionAction::TokenAction(TokenTransitionAction::FreezeAction(
                 TokenFreezeTransitionActionV0 {
                     base: base_action,
-                    frozen_identity_id,
+                    identity_id_to_freeze: frozen_identity_id,
                     public_note,
                 }
                 .into(),
@@ -220,7 +220,7 @@ impl TokenFreezeTransitionActionV0 {
             BatchedTransitionAction::TokenAction(TokenTransitionAction::FreezeAction(
                 TokenFreezeTransitionActionV0 {
                     base: base_action,
-                    frozen_identity_id: *frozen_identity_id,
+                    identity_id_to_freeze: *frozen_identity_id,
                     public_note: public_note.clone(),
                 }
                 .into(),
