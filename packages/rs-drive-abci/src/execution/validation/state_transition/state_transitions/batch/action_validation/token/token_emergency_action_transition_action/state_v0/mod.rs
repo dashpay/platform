@@ -96,7 +96,7 @@ impl TokenEmergencyActionTransitionActionStateValidationV0
                     }
                 }
                 TokenEmergencyAction::Resume => {
-                    if token_status.paused() {
+                    if !token_status.paused() {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             ConsensusError::StateError(StateError::TokenNotPausedError(
                                 TokenNotPausedError::new(
