@@ -14,6 +14,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 pub type TokenEventPublicNote = Option<String>;
+#[cfg(feature = "state-transitions")]
 pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;
 pub type TokenEventPersonalEncryptedNote = Option<(
     RootEncryptionKeyIndex,
@@ -21,6 +22,7 @@ pub type TokenEventPersonalEncryptedNote = Option<(
     Vec<u8>,
 )>;
 use crate::serialization::PlatformSerializableWithPlatformVersion;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::token_transfer_transition::SharedEncryptedNote;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::ProtocolError;
