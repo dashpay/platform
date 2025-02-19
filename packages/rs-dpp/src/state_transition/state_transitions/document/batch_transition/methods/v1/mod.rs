@@ -15,6 +15,7 @@ use crate::state_transition::batch_transition::accessors::DocumentsBatchTransiti
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
