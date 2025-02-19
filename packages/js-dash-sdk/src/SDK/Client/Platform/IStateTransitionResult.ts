@@ -7,6 +7,6 @@ export interface IStateTransitionResult {
   error?: {
     code: number,
     message: string,
-    data: any,
+    data?: Buffer,
   }
 }
