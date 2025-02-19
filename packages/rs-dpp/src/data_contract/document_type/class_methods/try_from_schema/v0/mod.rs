@@ -641,8 +641,6 @@ fn insert_values(
                 }
             }
             property_type => {
-                if !config.granular_integer_types() && property_type.is_integer() {}
-
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
