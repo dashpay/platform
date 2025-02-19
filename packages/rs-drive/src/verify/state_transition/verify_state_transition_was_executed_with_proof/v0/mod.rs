@@ -471,11 +471,9 @@ impl Drive {
                                             false,
                                             platform_version,
                                         )?;
-                                    if !(maybe_token_amount == Some(0)
-                                        || maybe_token_amount == None)
-                                    {
+                                    if maybe_token_amount != Some(0) {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof contained non-zero token balance for identity {} expected to be zero or not exist because of state transition (token destroy frozen funds)", destroy_frozen_funds_transition.frozen_identity_id()))));
+                                            format!("proof contained non-zero token balance for identity {} expected to be zero because of state transition (token destroy frozen funds)", destroy_frozen_funds_transition.frozen_identity_id()))));
                                     };
                                     Ok((
                                         root_hash,
