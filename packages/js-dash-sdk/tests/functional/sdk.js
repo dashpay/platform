@@ -18,6 +18,10 @@ describe('SDK', function suite() {
   let dpnsContractId;
   let clientInstance;
 
+  before(async () => {
+    console.log('before');
+  });
+
   beforeEach(async () => {
     dpnsContractId = Identifier.from(dpnsContractIdString);
 
@@ -33,8 +37,9 @@ describe('SDK', function suite() {
         },
       },
     };
-
+    console.log('clientOpts', clientOpts);
     clientInstance = new Dash.Client(clientOpts);
+    console.log('clientInstance', clientInstance);
   });
 
   it('should init a Client', async () => {
