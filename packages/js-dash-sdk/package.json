@@ -16,7 +16,7 @@
     "test": "yarn run test:types && yarn run test:unit && yarn run test:browsers",
     "test:browsers": "karma start ./karma/karma.conf.js --single-run",
     "test:browsers:functional": "LOAD_ENV=true karma start ./karma/karma.functional.conf.js --single-run",
-    "test:unit": "tsc -p tsconfig.build.json && mocha build/**/*.spec.js",
+    "test:unit": "tsc -p tsconfig.mocha.json && mocha build/**/*.spec.js",
     "test:functional": "yarn run build:ts && LOAD_ENV=true mocha --recursive tests/functional/**/*.js",
     "test:types": "yarn pnpify tsd",
     "prepublishOnly": "yarn run build",
