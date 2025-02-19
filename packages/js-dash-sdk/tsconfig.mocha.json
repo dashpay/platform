@@ -6,5 +6,5 @@
     "esModuleInterop": true,
     "outDir": "./build",
   },
-  "include": ["src/**/*.spec.ts"],
+  "include": ["src/**/*.spec.ts", "src/test/**/*.ts"],
 }
