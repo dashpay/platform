@@ -9,6 +9,13 @@
       "$format_version": "0",
       "conventions": {
         "$format_version": "0",
+        "localizations": {
+          "en": {
+            "shouldCapitalize": false,
+            "pluralForm": "tests",
+            "singularForm": "test"
+          }
+        },
         "decimals": 8
       },
       "baseSupply": 100000,
