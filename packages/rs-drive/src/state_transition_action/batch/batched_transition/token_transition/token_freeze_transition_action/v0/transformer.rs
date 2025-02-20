@@ -59,7 +59,7 @@ impl TokenFreezeTransitionActionV0 {
     > {
         let TokenFreezeTransitionV0 {
             base,
-            frozen_identity_id,
+            identity_to_freeze_id,
             public_note,
         } = value;
 
@@ -111,7 +111,7 @@ impl TokenFreezeTransitionActionV0 {
             BatchedTransitionAction::TokenAction(TokenTransitionAction::FreezeAction(
                 TokenFreezeTransitionActionV0 {
                     base: base_action,
-                    identity_to_freeze_id: frozen_identity_id,
+                    identity_to_freeze_id,
                     public_note,
                 }
                 .into(),
@@ -167,7 +167,7 @@ impl TokenFreezeTransitionActionV0 {
     > {
         let TokenFreezeTransitionV0 {
             base,
-            frozen_identity_id,
+            identity_to_freeze_id,
             public_note,
         } = value;
 
@@ -220,7 +220,7 @@ impl TokenFreezeTransitionActionV0 {
             BatchedTransitionAction::TokenAction(TokenTransitionAction::FreezeAction(
                 TokenFreezeTransitionActionV0 {
                     base: base_action,
-                    identity_to_freeze_id: *frozen_identity_id,
+                    identity_to_freeze_id: *identity_to_freeze_id,
                     public_note: public_note.clone(),
                 }
                 .into(),

@@ -651,7 +651,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 token_id,
                 using_group_info: None,
             }),
-            frozen_identity_id,
+            identity_to_freeze_id: frozen_identity_id,
             public_note,
         });
 
