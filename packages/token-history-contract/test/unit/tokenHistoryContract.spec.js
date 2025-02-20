@@ -9,16 +9,10 @@ const tokenHistoryContractDocumentsSchema = require('../../schema/v1/token-histo
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
-  expect(errors)
-      .to
-      .have
-      .length(errorCount);
+  expect(errors).to.have.length(errorCount);
 
   const error = validationResult.getErrors()[0];
-  expect(error)
-      .to
-      .be
-      .instanceof(JsonSchemaError);
+  expect(error).to.be.instanceof(JsonSchemaError);
 
   return error;
 };
@@ -31,14 +25,21 @@ describe('Token History Contract', () => {
   beforeEach(async () => {
     dpp = new DashPlatformProtocol({ generate: () => crypto.randomBytes(32) });
     identityId = await generateRandomIdentifier();
-    dataContract = dpp.dataContract.create(identityId, BigInt(1), tokenHistoryContractDocumentsSchema);
+    dataContract = dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      tokenHistoryContractDocumentsSchema,
+    );
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, BigInt(1), tokenHistoryContractDocumentsSchema))
-        .to
-        .not
-        .throw();
+    const createContract = () => dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      tokenHistoryContractDocumentsSchema,
+    );
+
+    expect(createContract).to.not.throw();
   });
 
   describe('documents', () => {
@@ -50,8 +51,6 @@ describe('Token History Contract', () => {
           tokenId: crypto.randomBytes(32),
           amount: 100,
           note: 'Burning tokens',
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 42,
         };
       });
 
@@ -63,15 +62,6 @@ describe('Token History Contract', () => {
           const error = expectJsonSchemaError(validationResult);
           expect(error.keyword).to.equal('required');
           expect(error.params.missingProperty).to.equal('tokenId');
-        });
-
-        it('should be 32 bytes', async () => {
-          rawBurnDocument.tokenId = crypto.randomBytes(31);
-          const document = dpp.document.create(dataContract, identityId, 'burn', rawBurnDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/tokenId');
         });
       });
 
@@ -94,24 +84,16 @@ describe('Token History Contract', () => {
         });
       });
 
-      describe('$createdAt / $createdAtBlockHeight', () => {
-        it('should be defined', async () => {
-          delete rawBurnDocument.$createdAt;
-          const document = dpp.document.create(dataContract, identityId, 'burn', rawBurnDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('$createdAt');
-        });
-      });
-
       it('should not have additional properties', async () => {
         rawBurnDocument.extraProp = 123;
         const document = dpp.document.create(dataContract, identityId, 'burn', rawBurnDocument);
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult);
+
         expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['extraProp']);
+        expect(error.params.additionalProperties).to.deep.equal([
+          'extraProp',
+        ]);
       });
 
       it('should be valid', async () => {
@@ -130,19 +112,17 @@ describe('Token History Contract', () => {
           recipientId: crypto.randomBytes(32),
           amount: 1000,
           note: 'Minting tokens',
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 50,
         };
       });
 
       describe('tokenId', () => {
-        it('should be 32 bytes', async () => {
-          rawMintDocument.tokenId = crypto.randomBytes(31);
+        it('should be defined', async () => {
+          delete rawMintDocument.tokenId;
           const document = dpp.document.create(dataContract, identityId, 'mint', rawMintDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/tokenId');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('tokenId');
         });
       });
 
@@ -154,15 +134,6 @@ describe('Token History Contract', () => {
           const error = expectJsonSchemaError(validationResult);
           expect(error.keyword).to.equal('required');
           expect(error.params.missingProperty).to.equal('recipientId');
-        });
-
-        it('should be 32 bytes', async () => {
-          rawMintDocument.recipientId = crypto.randomBytes(31);
-          const document = dpp.document.create(dataContract, identityId, 'mint', rawMintDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/recipientId');
         });
       });
 
@@ -207,19 +178,17 @@ describe('Token History Contract', () => {
           recipientKeyIndex: 1,
           rootEncryptionKeyIndex: 2,
           derivationEncryptionKeyIndex: 3,
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 100,
         };
       });
 
       describe('tokenId', () => {
-        it('should be 32 bytes', async () => {
-          rawTransferDocument.tokenId = crypto.randomBytes(31);
+        it('should be defined', async () => {
+          delete rawTransferDocument.tokenId;
           const document = dpp.document.create(dataContract, identityId, 'transfer', rawTransferDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/tokenId');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('tokenId');
         });
       });
 
@@ -267,8 +236,6 @@ describe('Token History Contract', () => {
         rawFreezeDocument = {
           tokenId: crypto.randomBytes(32),
           frozenIdentityId: crypto.randomBytes(32),
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 123,
         };
       });
 
@@ -284,13 +251,13 @@ describe('Token History Contract', () => {
       });
 
       describe('frozenIdentityId', () => {
-        it('should be 32 bytes', async () => {
-          rawFreezeDocument.frozenIdentityId = crypto.randomBytes(31);
+        it('should be defined', async () => {
+          delete rawFreezeDocument.frozenIdentityId;
           const document = dpp.document.create(dataContract, identityId, 'freeze', rawFreezeDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/frozenIdentityId');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('frozenIdentityId');
         });
       });
 
@@ -317,8 +284,6 @@ describe('Token History Contract', () => {
         rawUnfreezeDocument = {
           tokenId: crypto.randomBytes(32),
           frozenIdentityId: crypto.randomBytes(32),
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 150,
         };
       });
 
@@ -356,26 +321,24 @@ describe('Token History Contract', () => {
         rawDestroyFrozenFundsDocument = {
           tokenId: crypto.randomBytes(32),
           frozenIdentityId: crypto.randomBytes(32),
-          amount: 500,
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 222,
+          destroyedAmount: 500,
         };
       });
 
       describe('frozenIdentityId', () => {
-        it('should be 32 bytes', async () => {
-          rawDestroyFrozenFundsDocument.frozenIdentityId = crypto.randomBytes(31);
+        it('should be defined', async () => {
+          delete rawDestroyFrozenFundsDocument.frozenIdentityId;
           const document = dpp.document.create(dataContract, identityId, 'destroyFrozenFunds', rawDestroyFrozenFundsDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/frozenIdentityId');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('frozenIdentityId');
         });
       });
 
-      describe('amount', () => {
+      describe('destroyedAmount', () => {
         it('should be non-negative', async () => {
-          rawDestroyFrozenFundsDocument.amount = -1;
+          rawDestroyFrozenFundsDocument.destroyedAmount = -1;
           const document = dpp.document.create(dataContract, identityId, 'destroyFrozenFunds', rawDestroyFrozenFundsDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
@@ -406,8 +369,6 @@ describe('Token History Contract', () => {
         rawEmergencyActionDocument = {
           tokenId: crypto.randomBytes(32),
           action: 1,
-          $createdAt: Math.ceil(Date.now() / 1000),
-          $createdAtBlockHeight: 300,
         };
       });
 
