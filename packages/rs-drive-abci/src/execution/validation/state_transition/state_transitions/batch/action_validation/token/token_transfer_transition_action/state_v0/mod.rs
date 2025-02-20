@@ -85,7 +85,7 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
         if let Some(info) = info {
-            if info.frozen() == true {
+            if info.frozen() {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
                         IdentityTokenAccountFrozenError::new(

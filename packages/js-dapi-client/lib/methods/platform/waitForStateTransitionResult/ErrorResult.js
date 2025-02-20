@@ -2,7 +2,7 @@ class ErrorResult {
   /**
    * @param {number} code
    * @param {string} message
-   * @param {*} data
+   * @param {Buffer|undefined} data
    */
   constructor(code, message, data) {
     this.code = code;
@@ -25,7 +25,7 @@ class ErrorResult {
   }
 
   /**
-   * @returns {*}
+   * @returns {Buffer|undefined}
    */
   getData() {
     return this.data;

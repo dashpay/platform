@@ -83,7 +83,7 @@ impl TokenTransitionAction {
                 )
             }
             TokenTransitionAction::FreezeAction(freeze_action) => TokenEvent::Freeze(
-                freeze_action.frozen_identity_id(),
+                freeze_action.identity_to_freeze_id(),
                 freeze_action.public_note().cloned(),
             ),
             TokenTransitionAction::UnfreezeAction(unfreeze_action) => TokenEvent::Unfreeze(

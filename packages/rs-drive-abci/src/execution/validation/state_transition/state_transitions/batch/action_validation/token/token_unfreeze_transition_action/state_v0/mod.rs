@@ -50,30 +50,6 @@ impl TokenUnfreezeTransitionActionStateValidationV0 for TokenUnfreezeTransitionA
             return Ok(validation_result);
         }
 
-        // We need to validate that we are frozen
-
-        let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
-            self.token_id().to_buffer(),
-            self.frozen_identity_id().to_buffer(),
-            block_info,
-            true,
-            transaction,
-            platform_version,
-        )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
-
-        if info.is_none() || !info.unwrap().frozen() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::StateError(StateError::IdentityTokenAccountNotFrozenError(
-                    IdentityTokenAccountNotFrozenError::new(
-                        self.token_id(),
-                        self.frozen_identity_id(),
-                        "destroy_frozen_funds".to_string(),
-                    ),
-                )),
-            ));
-        }
-
         // Let's first check to see if we are authorized to perform this action
         let contract = &self.data_contract_fetch_info_ref().contract;
         let token_configuration = contract.expected_token_configuration(self.token_position())?;
@@ -91,6 +67,28 @@ impl TokenUnfreezeTransitionActionStateValidationV0 for TokenUnfreezeTransitionA
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        // Then validate that the identity is frozen
+        let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
+            self.token_id().to_buffer(),
+            self.frozen_identity_id().to_buffer(),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+        if info.is_none() || !info.unwrap().frozen() {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::IdentityTokenAccountNotFrozenError(
+                    IdentityTokenAccountNotFrozenError::new(
+                        self.token_id(),
+                        self.frozen_identity_id(),
+                        "Unfreeze".to_string(),
+                    ),
+                )),
+            ));
         }
 
         Ok(SimpleConsensusValidationResult::new())
