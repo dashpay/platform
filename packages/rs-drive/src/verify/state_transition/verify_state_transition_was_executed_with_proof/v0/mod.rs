@@ -472,7 +472,7 @@ impl Drive {
                                 TokenTransition::DestroyFrozenFunds(
                                     destroy_frozen_funds_transition,
                                 ) => {
-                                    let (root_hash, None) =
+                                    let (root_hash, maybe_token_amount) =
                                         Drive::verify_token_balance_for_identity_id(
                                             proof,
                                             token_id.into_buffer(),
@@ -481,10 +481,10 @@ impl Drive {
                                                 .into_buffer(),
                                             false,
                                             platform_version,
-                                        )?
-                                    else {
+                                        )?;
+                                    if maybe_token_amount != Some(0) {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof contained token balance for identity {} expected to not exist because of state transition (token destroy frozen funds)", owner_id))));
+                                            format!("proof contained non-zero token balance for identity {} expected to be zero because of state transition (token destroy frozen funds)", destroy_frozen_funds_transition.frozen_identity_id()))));
                                     };
                                     Ok((
                                         root_hash,
