@@ -82,7 +82,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
         let maybe_token_amount = drive.fetch_identity_token_balance_operations(
             base.token_id().to_buffer(),
-            owner_id.to_buffer(),
+            frozen_identity_id.to_buffer(),
             !approximate_without_state_for_costs,
             transaction,
             &mut drive_operations,
@@ -228,7 +228,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
         let maybe_token_amount = drive.fetch_identity_token_balance_operations(
             base.token_id().to_buffer(),
-            owner_id.to_buffer(),
+            frozen_identity_id.to_buffer(),
             !approximate_without_state_for_costs,
             transaction,
             &mut drive_operations,
