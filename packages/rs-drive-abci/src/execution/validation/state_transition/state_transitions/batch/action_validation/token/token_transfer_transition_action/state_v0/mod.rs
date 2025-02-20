@@ -120,7 +120,7 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
                     ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
                         IdentityTokenAccountFrozenError::new(
                             self.token_id(),
-                            owner_id,
+                            self.recipient_id(),
                             "transfer".to_string(),
                         ),
                     )),
