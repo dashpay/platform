@@ -1,5 +1,6 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
@@ -20,9 +21,6 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
-use crate::state_transition::batch_transition::token_transfer_transition::{
-    PrivateEncryptedNote, SharedEncryptedNote,
-};
 use crate::state_transition::batch_transition::BatchTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransitionV1};
@@ -30,6 +28,8 @@ use crate::state_transition::batch_transition::{BatchTransitionV0, BatchTransiti
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;

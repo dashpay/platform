@@ -53,10 +53,10 @@ impl TokenFreezeTransitionV0Methods for TokenFreezeTransitionV0 {
     }
 
     fn frozen_identity_id(&self) -> Identifier {
-        self.frozen_identity_id
+        self.identity_to_freeze_id
     }
     fn set_frozen_identity_id(&mut self, frozen_identity_id: Identifier) {
-        self.frozen_identity_id = frozen_identity_id;
+        self.identity_to_freeze_id = frozen_identity_id;
     }
 }
 
@@ -64,7 +64,7 @@ impl AllowedAsMultiPartyAction for TokenFreezeTransitionV0 {
     fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         let TokenFreezeTransitionV0 {
             base,
-            frozen_identity_id,
+            identity_to_freeze_id: frozen_identity_id,
             ..
         } = self;
 
