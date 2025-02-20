@@ -10,8 +10,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 pub struct TokenFreezeTransitionActionV0 {
     /// Base token transition action
     pub base: TokenBaseTransitionAction,
-    /// The identity to credit the token to
-    pub frozen_identity_id: Identifier,
+    /// The identity to freeze
+    pub identity_to_freeze_id: Identifier,
     /// A public note
     pub public_note: Option<String>,
 }
@@ -25,10 +25,10 @@ pub trait TokenFreezeTransitionActionAccessorsV0 {
     fn base_owned(self) -> TokenBaseTransitionAction;
 
     /// Consumes self and returns the identity balance holder ID
-    fn frozen_identity_id(&self) -> Identifier;
+    fn identity_to_freeze_id(&self) -> Identifier;
 
     /// Sets the identity balance holder ID
-    fn set_frozen_identity_id(&mut self, frozen_identity_id: Identifier);
+    fn set_identity_to_freeze_id(&mut self, frozen_identity_id: Identifier);
 
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
@@ -74,12 +74,12 @@ impl TokenFreezeTransitionActionAccessorsV0 for TokenFreezeTransitionActionV0 {
         self.base
     }
 
-    fn frozen_identity_id(&self) -> Identifier {
-        self.frozen_identity_id
+    fn identity_to_freeze_id(&self) -> Identifier {
+        self.identity_to_freeze_id
     }
 
-    fn set_frozen_identity_id(&mut self, frozen_identity_id: Identifier) {
-        self.frozen_identity_id = frozen_identity_id;
+    fn set_identity_to_freeze_id(&mut self, frozen_identity_id: Identifier) {
+        self.identity_to_freeze_id = frozen_identity_id;
     }
 
     fn public_note(&self) -> Option<&String> {
