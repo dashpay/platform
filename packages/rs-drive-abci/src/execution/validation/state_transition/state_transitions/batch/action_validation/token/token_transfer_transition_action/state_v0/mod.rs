@@ -59,7 +59,9 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
                 platform_version,
             )?
             .unwrap_or_default();
+
         execution_context.add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
+
         if balance < self.amount() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
@@ -83,9 +85,37 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
             transaction,
             platform_version,
         )?;
+
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
         if let Some(info) = info {
-            if info.frozen() == true {
+            if info.frozen() {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                        IdentityTokenAccountFrozenError::new(
+                            self.token_id(),
+                            owner_id,
+                            "transfer".to_string(),
+                        ),
+                    )),
+                ));
+            }
+        };
+
+        // We need to verify that account we are transferring to not frozen
+        let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
+            self.token_id().to_buffer(),
+            self.recipient_id().to_buffer(),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+        if let Some(info) = info {
+            if info.frozen() {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
                         IdentityTokenAccountFrozenError::new(
@@ -106,7 +136,9 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
             transaction,
             platform_version,
         )?;
+
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
         if let Some(status) = token_status {
             if status.paused() {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
