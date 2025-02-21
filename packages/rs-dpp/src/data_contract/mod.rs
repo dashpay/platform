@@ -26,6 +26,11 @@ pub mod v1;
 pub mod factory;
 #[cfg(feature = "factories")]
 pub use factory::*;
+#[cfg(any(
+    feature = "data-contract-value-conversion",
+    feature = "data-contract-cbor-conversion",
+    feature = "data-contract-json-conversion"
+))]
 pub mod conversion;
 #[cfg(feature = "client")]
 mod data_contract_facade;
