@@ -265,9 +265,6 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
     const request = new GetProofsRequest();
     request.setV0(requestV0);
 
-    // TODO: Remove logging
-    console.dir(request.toObject(), { depth: null });
-
     return driveClient.getProofs(request);
   }
 
