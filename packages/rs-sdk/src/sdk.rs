@@ -10,6 +10,7 @@ use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
@@ -36,6 +37,7 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -274,6 +276,7 @@ impl Sdk {
         Ok(())
     }
 
+    // TODO: Changed to public for tests
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -539,11 +542,14 @@ impl Sdk {
         }
     }
 
+    // TODO: Move to settings
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
         self.proofs
     }
 
+    // TODO: If we remove this setter we don't need to use ArcSwap.
+    //   It's good enough to set Context once when you initialize the SDK.
     /// Set the [ContextProvider] to use.
     ///
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
@@ -753,6 +759,7 @@ pub struct SdkBuilder {
     pub(crate) cancel_token: CancellationToken,
 
     /// CA certificate to use for TLS connections.
+    #[cfg(not(target_arch = "wasm32"))]
     ca_certificate: Option<Certificate>,
 }
 
@@ -784,7 +791,7 @@ impl Default for SdkBuilder {
             cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
-
+            #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
             #[cfg(feature = "mocks")]
@@ -822,6 +829,14 @@ impl SdkBuilder {
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
+    ///
+    /// ## Panics
+    ///
+    /// This method panics if the mainnet configuration cannot be loaded.
+    ///
+    /// ## Unstable
+    ///
+    /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
         unimplemented!(
             "Mainnet address list not implemented yet. Use new() and provide address list."
@@ -841,6 +856,7 @@ impl SdkBuilder {
     /// Used mainly for testing purposes and local networks.
     ///
     /// If not set, uses standard system CA certificates.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
         self.ca_certificate = Some(pem_certificate);
         self
@@ -850,6 +866,7 @@ impl SdkBuilder {
     ///
     /// This is a convenience method that reads the certificate from a file and sets it using
     /// [SdkBuilder::with_ca_certificate()].
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate_file(
         self,
         certificate_file_path: impl AsRef<std::path::Path>,
@@ -1003,7 +1020,9 @@ impl SdkBuilder {
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
+                #[allow(unused_mut)] // needs to be mutable for features other than wasm
                 let mut dapi = DapiClient::new(addresses, dapi_client_settings);
+                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(pem) = self.ca_certificate {
                     dapi = dapi.with_ca_certificate(pem);
                 }
