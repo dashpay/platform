@@ -16,7 +16,6 @@ pub enum ReducedPlatformStateForSaving {
 }
 
 impl ReducedPlatformDeserializable for ReducedPlatformStateForSaving {
-    type Error = ();
 
     fn versioned_deserialize(
         data: &[u8],

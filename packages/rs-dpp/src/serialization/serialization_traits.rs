@@ -37,7 +37,6 @@ pub trait ReducedPlatformSerializable {
 }
 
 pub trait ReducedPlatformDeserializable {
-    type Error;
     fn versioned_deserialize(
         data: &[u8],
         platform_version: &PlatformVersion,
