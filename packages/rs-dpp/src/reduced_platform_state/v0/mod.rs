@@ -8,8 +8,6 @@ use platform_value::Bytes32;
 /// Reduced Platform State for Saving V0
 #[derive(Clone, Debug, Encode, Decode)]
 pub struct ReducedPlatformStateForSavingV0 {
-    /// Information about the genesis block
-    pub genesis_block_info: Option<BlockInfo>,
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version

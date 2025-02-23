@@ -258,7 +258,6 @@ impl TryFrom<PlatformStateV0> for ReducedPlatformStateForSavingV0 {
 
     fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
         Ok(ReducedPlatformStateForSavingV0 {
-            genesis_block_info: value.genesis_block_info,
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
