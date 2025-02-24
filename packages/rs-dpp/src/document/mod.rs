@@ -60,7 +60,7 @@ pub enum Document {
     V0(DocumentV0),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct DocumentTransitionParams {
     pub receiver: Option<Identifier>,
     pub price: Option<u64>,
