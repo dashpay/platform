@@ -15,14 +15,18 @@ use dpp::prelude::ExtendedDocument;
 
 use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
-use crate::{identifier::identifier_from_js_value, utils::{IntoWasm, ToSerdeJSONExt, WithJsError}, DataContractWasm, ExtendedDocumentWasm};
+use crate::{
+    identifier::identifier_from_js_value,
+    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
+    DataContractWasm, ExtendedDocumentWasm,
+};
 use dpp::identifier::Identifier;
+use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
-use std::convert::TryFrom;
 use js_sys::Uint8Array;
+use std::convert::TryFrom;
 use web_sys::console;
-use dpp::platform_value::string_encoding::Encoding::Base58;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -156,11 +160,21 @@ impl DocumentFactoryWASM {
 
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, Option<DocumentTransitionParams>, DocumentTypeRef, Bytes32)>,
+            Vec<(
+                Document,
+                Option<DocumentTransitionParams>,
+                DocumentTypeRef,
+                Bytes32,
+            )>,
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, Option<DocumentTransitionParams>, DocumentTypeRef, Bytes32)> = documents
+                let documents_with_refs: Vec<(
+                    Document,
+                    Option<DocumentTransitionParams>,
+                    DocumentTypeRef,
+                    Bytes32,
+                )> = documents
                     .into_iter()
                     .map(|(extended_document, document_params)| {
                         (
@@ -181,10 +195,7 @@ impl DocumentFactoryWASM {
 
         let batch_transition = self
             .0
-            .create_state_transition(
-                documents,
-                &mut nonce_counter,
-            )
+            .create_state_transition(documents, &mut nonce_counter)
             .with_js_error()?;
 
         Ok(batch_transition.into())
@@ -277,11 +288,19 @@ impl DocumentFactoryWASM {
 //
 fn extract_documents_by_action(
     documents: &JsValue,
-) -> Result<HashMap<DocumentTransitionActionType, Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>>, JsValue> {
+) -> Result<
+    HashMap<
+        DocumentTransitionActionType,
+        Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>,
+    >,
+    JsValue,
+> {
     check_actions(documents)?;
 
-    let mut documents_by_action: HashMap<DocumentTransitionActionType, Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>> =
-        Default::default();
+    let mut documents_by_action: HashMap<
+        DocumentTransitionActionType,
+        Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>,
+    > = Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
@@ -333,7 +352,9 @@ fn extract_documents_of_action(
     let documents_submittable_with_action =
         js_sys::Reflect::get(documents, &action.to_string().into()).unwrap_or(JsValue::NULL);
 
-    if documents_submittable_with_action.is_null() || documents_submittable_with_action.is_undefined() {
+    if documents_submittable_with_action.is_null()
+        || documents_submittable_with_action.is_undefined()
+    {
         return Ok(vec![]);
     }
 
@@ -343,37 +364,49 @@ fn extract_documents_of_action(
     documents_submittable_array
         .iter()
         .map(|js_document_submittable| {
-            let document = js_sys::Reflect::get(&js_document_submittable, &"document".into()).unwrap();
+            let document =
+                js_sys::Reflect::get(&js_document_submittable, &"document".into()).unwrap();
 
-            let params: Option<DocumentTransitionParams> = js_sys::Reflect::get(&js_document_submittable, &"params".to_string().into()).map(|js_value| {
-                if js_value.is_undefined() || js_value.is_null() {
-                    return None
-                }
+            let params: Option<DocumentTransitionParams> =
+                js_sys::Reflect::get(&js_document_submittable, &"params".to_string().into())
+                    .map(|js_value| {
+                        if js_value.is_undefined() || js_value.is_null() {
+                            return None;
+                        }
 
-                let receiver_id = js_sys::Reflect::get(&js_value, &"receiver".to_string().into()).map(|js_value| {
-                    if js_value.is_undefined() || js_value.is_null() {
-                        return None
-                    }
+                        let receiver_id =
+                            js_sys::Reflect::get(&js_value, &"receiver".to_string().into())
+                                .map(|js_value| {
+                                    if js_value.is_undefined() || js_value.is_null() {
+                                        return None;
+                                    }
 
-                    let buffer = Uint8Array::new(&js_value);
-                    let bytes = Identifier::from_vec(buffer.to_vec()).unwrap();
+                                    let buffer = Uint8Array::new(&js_value);
+                                    let bytes = Identifier::from_vec(buffer.to_vec()).unwrap();
 
-                    Some(bytes)
-                }).unwrap();
+                                    Some(bytes)
+                                })
+                                .unwrap();
 
-                let price: Option<u64> = js_sys::Reflect::get(&js_value, &"price".to_string().into()).map(|js_value| {
-                    if js_value.is_undefined() || js_value.is_null() {
-                        return None
-                    }
+                        let price: Option<u64> =
+                            js_sys::Reflect::get(&js_value, &"price".to_string().into())
+                                .map(|js_value| {
+                                    if js_value.is_undefined() || js_value.is_null() {
+                                        return None;
+                                    }
 
-                    let price = u64::try_from(JsValue::from(&js_value)).unwrap();
+                                    let price = u64::try_from(JsValue::from(&js_value)).unwrap();
 
-                    return Some(price);
-                })
-                    .unwrap_or(None);
+                                    return Some(price);
+                                })
+                                .unwrap_or(None);
 
-                Some(DocumentTransitionParams { receiver: receiver_id, price: price.map(|e| e.clone()) })
-            }).unwrap();
+                        Some(DocumentTransitionParams {
+                            receiver: receiver_id,
+                            price: price.map(|e| e.clone()),
+                        })
+                    })
+                    .unwrap();
 
             document
                 .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
