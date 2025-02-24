@@ -100,7 +100,7 @@ describe('DocumentFacade', () => {
       const contractId = documents[0].getDataContractId();
 
       const result = dpp.document.createStateTransition({
-        create: documents,
+        create: documents.map((d) => ({ document: d, params: null })),
       }, {
         [identityId.toString()]: {
           [contractId.toString()]: '1',
