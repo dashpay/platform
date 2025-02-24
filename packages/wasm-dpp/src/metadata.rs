@@ -3,10 +3,8 @@
 pub use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use crate::utils::ToSerdeJSONExt;
 use dpp::metadata::Metadata;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::util::json_value::JsonValueExt;
 
 #[wasm_bindgen(js_name=Metadata)]
 #[derive(Clone, Debug)]

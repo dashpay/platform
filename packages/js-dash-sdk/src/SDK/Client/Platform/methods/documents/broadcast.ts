@@ -3,34 +3,39 @@ import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';
 
-class DocumentTransitionParams {
+interface DocumentTransitionParams {
   receiver?: Identifier;
-
   price?: bigint;
+}
+
+interface DocumentSubmittable {
+  document: ExtendedDocument;
+  params?: DocumentTransitionParams;
 }
 
 /**
  * Broadcast document onto the platform
  *
  * @param {Object} documents
- * @param {ExtendedDocument[]} [documents.create]
- * @param {ExtendedDocument[]} [documents.replace]
- * @param {ExtendedDocument[]} [documents.delete]
+ * @param {DocumentSubmittable[]} [documents.create]
+ * @param {DocumentSubmittable[]} [documents.replace]
+ * @param {DocumentSubmittable[]} [documents.delete]
+ * @param {DocumentSubmittable[]} [documents.transfer]
+ * @param {DocumentSubmittable[]} [documents.updatePrice]
+ * @param {DocumentSubmittable[]} [documents.purchase]
  * @param {Identity} identity
- * @param options {DocumentTransitionParams} optional params for NFT functions
  */
 export default async function broadcast(
   this: Platform,
   documents: {
-    create?: ExtendedDocument[],
-    replace?: ExtendedDocument[],
-    delete?: ExtendedDocument[],
-    transfer?: ExtendedDocument[],
-    updatePrice?: ExtendedDocument[],
-    purchase?: ExtendedDocument[],
+    create?: DocumentSubmittable[],
+    replace?: DocumentSubmittable[],
+    delete?: DocumentSubmittable[],
+    transfer?: DocumentSubmittable[],
+    updatePrice?: DocumentSubmittable[],
+    purchase?: DocumentSubmittable[],
   },
   identity: any,
-  options?: DocumentTransitionParams,
 ): Promise<any> {
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
@@ -52,26 +57,29 @@ export default async function broadcast(
     ...(documents.transfer || []),
     ...(documents.updatePrice || []),
     ...(documents.purchase || []),
-  ][0]?.getDataContractId();
+  ][0]?.document.getDataContractId();
 
   if (!dataContractId) {
     throw new Error('Data contract ID is not found');
   }
 
-  if (documents.transfer?.length && !options?.receiver) {
+  if (documents.transfer?.length && (documents.transfer
+    .some(({ params }) => !params?.receiver))) {
     throw new Error('Receiver identity is not found for transfer transition');
   }
 
-  if (documents.updatePrice?.length && !options?.price) {
+  if (documents.updatePrice?.length && (documents.updatePrice
+    .some(({ params }) => !params?.price))) {
     throw new Error('Price must be provided for UpdatePrice operation');
   }
 
   if (documents.purchase?.length) {
-    if (!options?.price && !options?.receiver) {
-      throw new Error('Price and Receiver must be provided for Purchase operation');
+    if (documents.purchase?.length && (documents.purchase
+      .some(({ params }) => !params?.price && !params?.receiver))) {
+      throw new Error('Price must be provided for UpdatePrice operation');
     }
 
-    documents.purchase.forEach((document) => document.setOwnerId(options.receiver));
+    documents.purchase.forEach(({ document, params }) => document.setOwnerId(params!.receiver));
   }
 
   const identityContractNonce = await this.nonceManager
@@ -86,8 +94,6 @@ export default async function broadcast(
   const documentsBatchTransition = dpp.document.createStateTransition(
     documents,
     identityNonceObj,
-    options?.receiver,
-    options?.price,
   );
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
@@ -100,7 +106,7 @@ export default async function broadcast(
   // Acknowledge documents identifiers to handle retry attempts to mitigate
   // state transition propagation lag
   if (documents.create) {
-    documents.create.forEach((document) => {
+    documents.create.forEach(({ document }) => {
       const documentLocator = `${document.getDataContractId().toString()}/${document.getType()}`;
       this.fetcher.acknowledgeKey(documentLocator);
     });
@@ -108,7 +114,7 @@ export default async function broadcast(
 
   // Forget documents identifiers to not retry on them anymore
   if (documents.delete) {
-    documents.delete.forEach((document) => {
+    documents.delete.forEach(({ document }) => {
       const documentLocator = `${document.getDataContractId().toString()}/${document.getType()}`;
       this.fetcher.forgetKey(documentLocator);
     });

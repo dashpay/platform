@@ -64,10 +64,10 @@ impl DocumentTransitionWasm {
                     .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
                     .unwrap()
             }
-            DocumentTransition::Delete(document_delete_transition) => JsValue::null(),
-            DocumentTransition::Transfer(document_transfer_transition) => JsValue::null(),
-            DocumentTransition::UpdatePrice(document_update_price_transition) => JsValue::null(),
-            DocumentTransition::Purchase(document_purchase_transition) => JsValue::null(),
+            DocumentTransition::Delete(_) => JsValue::null(),
+            DocumentTransition::Transfer(_) => JsValue::null(),
+            DocumentTransition::UpdatePrice(_) => JsValue::null(),
+            DocumentTransition::Purchase(_) => JsValue::null(),
         }
     }
 
@@ -107,7 +107,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=get_price)]
     pub fn get_price(&self) -> Option<Credits> {
         match &self.0 {
-            DocumentTransition::Create(create) => None,
+            DocumentTransition::Create(_) => None,
             DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(_) => None,
@@ -119,12 +119,12 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getReceiverId)]
     pub fn get_receiver_id(&self) -> Option<IdentifierWrapper> {
         match &self.0 {
-            DocumentTransition::Create(create) => None,
+            DocumentTransition::Create(_) => None,
             DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
             DocumentTransition::Transfer(transfer) => Some(transfer.recipient_owner_id().into()),
-            DocumentTransition::UpdatePrice(update_price) => None,
-            DocumentTransition::Purchase(purchase) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 

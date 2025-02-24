@@ -4,19 +4,13 @@ use dpp::document::{
 use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::{Identifier, IdentityNonce, Revision, TimestampMillis, UserFeeIncrease};
+use dpp::prelude::{Identifier, Revision, TimestampMillis};
 
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition,
-};
-use dpp::state_transition::documents_batch_transition::{
-    DocumentsBatchTransition, DocumentsBatchTransitionV0,
-};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -28,7 +22,6 @@ use crate::data_contract::DataContractWasm;
 #[allow(deprecated)] // BinaryType is unsed in unused code below
 use crate::document::BinaryType;
 use crate::document::{ConversionOptions, DocumentWasm};
-use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
