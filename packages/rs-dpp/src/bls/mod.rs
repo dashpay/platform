@@ -1,4 +1,4 @@
-#[cfg(all(not(target_arch = "wasm32"), feature = "bls-signatures"))]
+#[cfg(feature = "bls-signatures")]
 pub mod native_bls;
 
 use crate::{ProtocolError, PublicKeyValidationError};
