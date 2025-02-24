@@ -5,7 +5,7 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 use std::collections::HashMap;
 use std::option::Option::None;
@@ -125,8 +125,8 @@ impl Drive {
                 BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
                 BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                    in_tree_using_sums: false,
-                    is_sum_tree: false,
+                    in_tree_type: TreeType::NormalTree,
+                    tree_type: TreeType::NormalTree,
                     flags_len: storage_flags
                         .map(|s| s.serialized_size())
                         .unwrap_or_default(),
@@ -135,7 +135,7 @@ impl Drive {
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                false,
+                TreeType::NormalTree,
                 storage_flags,
                 apply_type,
                 transaction,
@@ -425,7 +425,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_using_sums: false,
+                    in_tree_type: TreeType::NormalTree,
                     target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
                 }
             };

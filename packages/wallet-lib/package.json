@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "8.7.0",
+  "version": "8.8.0",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
@@ -80,7 +80,7 @@
     "karma-mocha-reporter": "^2.2.5",
     "karma-sourcemap-loader": "^0.3.7",
     "karma-webpack": "^5.0.0",
-    "mocha": "^10.2.0",
+    "mocha": "^11.1.0",
     "node-inspect-extracted": "^1.0.8",
     "nyc": "^15.1.0",
     "os-browserify": "^0.3.0",

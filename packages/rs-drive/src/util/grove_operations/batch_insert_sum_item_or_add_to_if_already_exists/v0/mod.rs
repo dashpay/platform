@@ -178,7 +178,7 @@ impl Drive {
                 if let Element::SumItem(new_value, _) = element {
                     match apply_type {
                         BatchInsertApplyType::StatelessBatchInsert {
-                            in_tree_using_sums, ..
+                            in_tree_type, ..
                         } => {
                             // Estimate if the sum item with the given size already exists
                             drive_operations.push(CalculatedCostOperation(
@@ -186,7 +186,7 @@ impl Drive {
                                     &key_info_path,
                                     &key_info,
                                     element.serialized_size(&drive_version.grove_version)? as u32,
-                                    in_tree_using_sums,
+                                    in_tree_type,
                                     &drive_version.grove_version,
                                 )?,
                             ));

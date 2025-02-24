@@ -74,7 +74,14 @@ cargo test -p dash-sdk --no-default-features --features network-testing
 ## Offline Testing
 
 Offline testing uses the vectors generated using `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
-These vectors must be saved in `packages/rs-sdk/tests/vectors`.
+This script will connect to node defined in `packages/rs-sdk/tests/.env`, execute all tests against it and
+update test vectors in `packages/rs-sdk/tests/vectors`.
+
+To generate test vectors against a testnet node (or other remote node), you can use helper script
+`packages/rs-sdk/scripts/connect_to_remote.sh` which will generate `.env` file for you and tunnel connection to Dash
+Core RPC on the remote host.
+
+Refer to rich comments / help in the forementioned scripts for more details.
 
 ### Generating test vectors
 

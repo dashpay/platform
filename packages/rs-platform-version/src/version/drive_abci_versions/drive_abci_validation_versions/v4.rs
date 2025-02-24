@@ -6,6 +6,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
     DriveAbciValidationVersions, PenaltyAmounts,
 };
 
+// We introduced nonce validation for masternode voting in this version, and changed the call
+// for nonce validation, however the actual validation for masternode voting was faulty, which is
+// why we introduced V5. (We also are making an emergency hard fork).
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -97,7 +100,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
-            documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
+            batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 balance_pre_check: 0,
                 basic_structure: 0,
                 advanced_structure: 0,
@@ -129,9 +132,28 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
+                token_mint_transition_structure_validation: 0,
+                token_burn_transition_structure_validation: 0,
+                token_transfer_transition_structure_validation: 0,
+                token_issuance_transition_state_validation: 0,
+                token_burn_transition_state_validation: 0,
+                token_transfer_transition_state_validation: 0,
+                token_base_transition_structure_validation: 0,
+                token_base_transition_state_validation: 0,
+                token_freeze_transition_structure_validation: 0,
+                token_unfreeze_transition_structure_validation: 0,
+                token_freeze_transition_state_validation: 0,
+                token_unfreeze_transition_state_validation: 0,
+                token_destroy_frozen_funds_transition_structure_validation: 0,
+                token_destroy_frozen_funds_transition_state_validation: 0,
+                token_emergency_action_transition_structure_validation: 0,
+                token_emergency_action_transition_state_validation: 0,
+                token_config_update_transition_structure_validation: 0,
+                token_config_update_transition_state_validation: 0,
+                token_base_transition_group_action_validation: 0,
             },
         },
-        has_nonce_validation: 1,
+        has_nonce_validation: 1, // <---- changed this
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

@@ -4,8 +4,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::balances::balance_path_vec;
 
@@ -56,12 +56,15 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(
                     1,
                     SomeSumTrees {
                         sum_trees_weight: 1,
+                        big_sum_trees_weight: 0,
+                        count_trees_weight: 0,
+                        count_sum_trees_weight: 0,
                         non_sum_trees_weight: 1,
                     },
                     None,
@@ -73,7 +76,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(balance_path_vec()),
             EstimatedLayerInformation {
-                is_sum_tree: true,
+                tree_type: TreeType::SumTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, AVERAGE_BALANCE_SIZE, None),
             },

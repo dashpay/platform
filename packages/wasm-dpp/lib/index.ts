@@ -35,7 +35,7 @@ const loadDppModule = async () => {
     let wasmUrl = URL.createObjectURL(blob);
     await init(wasmUrl);
   } else {
-    dpp_module.initSync(bytes);
+    dpp_module.initSync({ module: bytes });
   }
 }
 

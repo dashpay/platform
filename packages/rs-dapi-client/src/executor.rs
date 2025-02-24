@@ -35,7 +35,7 @@ pub trait InnerInto<T> {
 }
 
 /// Error happened during request execution.
-#[derive(Debug, Clone, thiserror::Error, Eq, PartialEq)]
+#[derive(Debug, Clone, thiserror::Error, Eq)]
 #[error("{inner}")]
 pub struct ExecutionError<E> {
     /// The cause of error
@@ -44,6 +44,12 @@ pub struct ExecutionError<E> {
     pub retries: usize,
     /// The address of the node that was used for the request
     pub address: Option<Address>,
+}
+
+impl<E: PartialEq> PartialEq for ExecutionError<E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.retries == other.retries && self.address == other.address
+    }
 }
 
 impl<F, T> InnerInto<ExecutionError<T>> for ExecutionError<F>

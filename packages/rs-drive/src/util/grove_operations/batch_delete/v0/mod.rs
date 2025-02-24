@@ -32,7 +32,7 @@ impl Drive {
         };
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
-                is_sum_tree,
+                in_tree_type: is_sum_tree,
                 estimated_key_size,
                 estimated_value_size,
             } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(

@@ -721,6 +721,8 @@ fn insert_values(
 
     Ok(())
 }
+
+// TODO: This is quite big
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
@@ -744,7 +746,53 @@ fn insert_values_nested(
     let is_transient = known_transient.contains(&property_key);
 
     let field_type = match type_value {
-        "integer" => DocumentPropertyType::I64,
+        "integer" => {
+            DocumentPropertyType::I64
+            // todo: we might want to do the following in the future (must be versioned)
+            // let minimum = inner_properties.get_optional_integer::<i64>(property_names::MINIMUM)?;
+            // let maximum = inner_properties.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+            //
+            // match (minimum, maximum) {
+            //     (Some(min), Some(max)) => {
+            //         if min >= 0 {
+            //             if max <= u8::MAX as i64 {
+            //                 DocumentPropertyType::U8
+            //             } else if max <= u16::MAX as i64 {
+            //                 DocumentPropertyType::U16
+            //             } else if max <= u32::MAX as i64 {
+            //                 DocumentPropertyType::U32
+            //             } else {
+            //                 DocumentPropertyType::U64
+            //             }
+            //         } else {
+            //             if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
+            //                 DocumentPropertyType::I8
+            //             } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
+            //                 DocumentPropertyType::I16
+            //             } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
+            //                 DocumentPropertyType::I32
+            //             } else {
+            //                 DocumentPropertyType::I64
+            //             }
+            //         }
+            //     }
+            //     (Some(min), None) => {
+            //         if min >= 0 {
+            //             DocumentPropertyType::U64
+            //         } else {
+            //             DocumentPropertyType::I64
+            //         }
+            //     }
+            //     (None, Some(max)) => {
+            //         if max >= 0 {
+            //             DocumentPropertyType::U64
+            //         } else {
+            //             DocumentPropertyType::I64
+            //         }
+            //     }
+            //     (None, None) => DocumentPropertyType::I64,
+            // }
+        }
         "number" => DocumentPropertyType::F64,
         "string" => DocumentPropertyType::String(StringPropertySizes {
             min_length: inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,

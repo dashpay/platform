@@ -1,24 +1,12 @@
-use std::convert::TryInto;
-use std::default::Default;
-
-use serde::{Deserialize, Serialize};
-
-use wasm_bindgen::__rt::Ref;
-use wasm_bindgen::prelude::*;
-
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
-
+use crate::utils::{generic_of_js_val, WithJsError};
 use crate::{
     buffer::Buffer,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     identity::IdentityPublicKeyWasm, with_js_error,
 };
-
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-
-use crate::utils::{generic_of_js_val, WithJsError};
-
-use crate::errors::from_dpp_err;
 use dpp::errors::consensus::signature::SignatureError;
 use dpp::errors::consensus::ConsensusError;
 use dpp::errors::ProtocolError;
@@ -34,6 +22,10 @@ use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::version::PlatformVersion;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
+use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+use std::default::Default;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
 #[derive(Clone)]
@@ -93,11 +85,10 @@ impl IdentityUpdateTransitionWasm {
             keys_to_add = keys
                 .iter()
                 .map(|value| {
-                    let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                        generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                            value,
-                            "IdentityPublicKeyWithWitness",
-                        )?;
+                    let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                        value,
+                        "IdentityPublicKeyWithWitness",
+                    )?;
                     Ok(public_key.clone().into())
                 })
                 .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
@@ -167,6 +158,26 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
         StateTransitionLike::owner_id(&self.0).to_owned().into()
+    }
+
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase() as u16
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_nonce(&self) -> u64 {
+        self.0.nonce()
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, identity_nonce: u64) -> () {
+        self.0.set_nonce(identity_nonce)
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -410,6 +421,11 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
         Buffer::from_bytes_owned(self.0.signature().to_vec())
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(js_name=setSignature)]

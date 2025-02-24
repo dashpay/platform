@@ -1,8 +1,8 @@
 use crate::consensus::basic::data_contract::UnknownDocumentCreationRestrictionModeError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 

@@ -13,7 +13,7 @@ use platform_version::version::drive_versions::DriveVersion;
 impl Drive {
     /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub(crate) fn grove_get_raw_optional_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_get_raw_optional_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],
@@ -24,18 +24,18 @@ impl Drive {
     ) -> Result<Option<Element>, Error> {
         match direct_query_type {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums,
+                in_tree_type: in_tree_using_sums,
                 query_target,
             } => {
                 let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
-                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                    QueryTarget::QueryTargetTree(flags_size, tree_type) => {
                         GroveDb::average_case_for_get_tree(
                             &key_info_path,
                             &key_info,
                             flags_size,
-                            is_sum_tree,
+                            tree_type,
                             in_tree_using_sums,
                             &drive_version.grove_version,
                         )
