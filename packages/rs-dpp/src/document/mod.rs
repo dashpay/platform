@@ -45,9 +45,9 @@ use derive_more::From;
 #[cfg(feature = "document-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use platform_value::Identifier;
 use std::fmt;
 use std::fmt::Formatter;
-use platform_value::Identifier;
 
 #[derive(Clone, Debug, PartialEq, From)]
 #[cfg_attr(
@@ -63,7 +63,7 @@ pub enum Document {
 #[derive(Clone, Debug)]
 pub struct DocumentTransitionParams {
     pub receiver: Option<Identifier>,
-    pub price: Option<u64>
+    pub price: Option<u64>,
 }
 
 impl fmt::Display for Document {

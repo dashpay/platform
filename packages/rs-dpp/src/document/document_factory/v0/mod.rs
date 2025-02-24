@@ -5,7 +5,9 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
-use crate::document::{Document, DocumentTransitionParams, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use crate::document::{
+    Document, DocumentTransitionParams, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION,
+};
 use chrono::Utc;
 use std::collections::BTreeMap;
 
@@ -207,7 +209,12 @@ impl DocumentFactoryV0 {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, Option<DocumentTransitionParams>, DocumentTypeRef<'a>, Bytes32)>,
+                Vec<(
+                    Document,
+                    Option<DocumentTransitionParams>,
+                    DocumentTypeRef<'a>,
+                    Bytes32,
+                )>,
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
@@ -215,7 +222,12 @@ impl DocumentFactoryV0 {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, Option<DocumentTransitionParams>, DocumentTypeRef, Bytes32)>,
+            Vec<(
+                Document,
+                Option<DocumentTransitionParams>,
+                DocumentTypeRef,
+                Bytes32,
+            )>,
         )> = documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
@@ -247,7 +259,7 @@ impl DocumentFactoryV0 {
                 DocumentTransitionActionType::Create => Self::document_create_transitions(
                     documents
                         .into_iter()
-                        .map(|(document, _, document_type, bytes,)| (document, document_type, bytes))
+                        .map(|(document, _, document_type, bytes)| (document, document_type, bytes))
                         .collect(),
                     nonce_counter,
                     platform_version,
@@ -255,7 +267,7 @@ impl DocumentFactoryV0 {
                 DocumentTransitionActionType::Delete => Self::document_delete_transitions(
                     documents
                         .into_iter()
-                        .map(|(document, _, document_type, _,)| (document, document_type))
+                        .map(|(document, _, document_type, _)| (document, document_type))
                         .collect(),
                     nonce_counter,
                     platform_version,
@@ -271,7 +283,9 @@ impl DocumentFactoryV0 {
                 DocumentTransitionActionType::Transfer => Self::document_transfer_transitions(
                     documents
                         .into_iter()
-                        .map(|(document, document_params, document_type, _)| (document, document_params.unwrap(), document_type))
+                        .map(|(document, document_params, document_type, _)| {
+                            (document, document_params.unwrap(), document_type)
+                        })
                         .collect(),
                     nonce_counter,
                     platform_version,
@@ -280,7 +294,9 @@ impl DocumentFactoryV0 {
                     Self::document_update_price_transitions(
                         documents
                             .into_iter()
-                            .map(|(document, document_params, document_type, _)| (document, document_params.unwrap(), document_type))
+                            .map(|(document, document_params, document_type, _)| {
+                                (document, document_params.unwrap(), document_type)
+                            })
                             .collect(),
                         nonce_counter,
                         platform_version,
@@ -289,7 +305,9 @@ impl DocumentFactoryV0 {
                 DocumentTransitionActionType::Purchase => Self::document_purchase_transitions(
                     documents
                         .into_iter()
-                        .map(|(document, document_params, document_type, _)| (document, document_params.unwrap(), document_type))
+                        .map(|(document, document_params, document_type, _)| {
+                            (document, document_params.unwrap(), document_type)
+                        })
                         .collect(),
                     nonce_counter,
                     platform_version,
@@ -588,7 +606,7 @@ impl DocumentFactoryV0 {
     fn document_transfer_transitions(
         documents: Vec<(Document, DocumentTransitionParams, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
@@ -690,7 +708,10 @@ impl DocumentFactoryV0 {
                 };
 
                 let nonce = nonce_counter
-                    .entry((document_params.receiver.unwrap(), document_type.data_contract_id()))
+                    .entry((
+                        document_params.receiver.unwrap(),
+                        document_type.data_contract_id(),
+                    ))
                     .or_default();
 
                 //document.set_owner_id(recipient.unwrap());
