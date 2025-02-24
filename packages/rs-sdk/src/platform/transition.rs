@@ -1,4 +1,5 @@
 //! State transitions used to put changed objects to the Dash Platform.
+pub mod asset_lock;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
