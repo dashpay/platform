@@ -14,7 +14,12 @@ pub fn get_document_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
-            Vec<(Document, Option<DocumentTransitionParams>, DocumentTypeRef<'a>, Bytes32)>,
+            Vec<(
+                Document,
+                Option<DocumentTransitionParams>,
+                DocumentTypeRef<'a>,
+                Bytes32,
+            )>,
         ),
     >,
     nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
