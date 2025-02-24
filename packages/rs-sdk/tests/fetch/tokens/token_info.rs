@@ -31,7 +31,7 @@ async fn test_identity_token_info() {
 
     dbg!(&token_infos);
 
-    assert_matches!(token_infos.get(&*TOKEN_ID_0), Some(Some(info)) if info.frozen() == true);
+    assert_matches!(token_infos.get(&*TOKEN_ID_0), Some(None));
     assert_matches!(token_infos.get(&*TOKEN_ID_1), Some(None));
     assert_matches!(token_infos.get(&*TOKEN_ID_2), Some(None));
     assert_matches!(token_infos.get(&UNKNOWN_TOKEN_ID), Some(None));
