@@ -313,7 +313,7 @@ describe('Dash - Client', function suite() {
       let error;
       try {
         await client.platform.documents.broadcast({
-          create: documentsFixture,
+          create: documentsFixture.map((d) => ({ document: d, params: null })),
         }, identityFixture);
       } catch (e) {
         error = e;
@@ -332,7 +332,7 @@ describe('Dash - Client', function suite() {
       dapiClientMock.platform.waitForStateTransitionResult.resolves(proofResponse);
 
       await client.platform.documents.broadcast({
-        create: documentsFixture,
+        create: documentsFixture.map((d) => ({ document: d, params: null })),
       }, identityFixture);
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
