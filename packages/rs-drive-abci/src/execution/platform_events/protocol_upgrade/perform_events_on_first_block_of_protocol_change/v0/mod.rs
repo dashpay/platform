@@ -21,7 +21,10 @@ use drive::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
-use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
+use drive::drive::prefunded_specialized_balances::{
+    prefunded_specialized_balances_for_voting_path,
+    prefunded_specialized_balances_for_voting_path_vec,
+};
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
     token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
@@ -96,125 +99,6 @@ impl<C> Platform<C> {
         if previous_protocol_version < 9 && platform_version.protocol_version >= 9 {
             self.transition_to_version_9(block_info, transaction, platform_version)?;
         }
-
-        Ok(())
-    }
-
-    /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
-    ///
-    /// This function is called during the transition to protocol version 4 to set up
-    /// an empty sum tree at the specified path if it does not already exist.
-    ///
-    /// # Parameters
-    ///
-    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
-    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())`: If the transition to version 4 was successful.
-    /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
-    fn transition_to_version_4(
-        &self,
-        platform_state: &PlatformState,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        // We are adding the withdrawal transactions sum amount tree
-        let path = get_withdrawal_root_path();
-        self.drive.grove_insert_if_not_exists(
-            (&path).into(),
-            &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
-            Element::empty_sum_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-        // We are adding a tree to store broadcasted transactions that might expire
-        self.drive.grove_insert_if_not_exists(
-            (&path).into(),
-            &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-        // We need to add all masternode owner keys
-        // This is because owner identities only had a withdrawal key
-        // But no owner key
-        for masternode in platform_state.full_masternode_list().values() {
-            let masternode_id = masternode.pro_tx_hash.to_byte_array();
-            let key_request = IdentityKeysRequest {
-                identity_id: masternode_id,
-                request_type: KeyRequestType::AllKeys,
-                limit: None,
-                offset: None,
-            };
-
-            let old_owner_identity_keys = self
-                .drive
-                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
-                    key_request,
-                    Some(transaction),
-                    platform_version,
-                )?;
-
-            if old_owner_identity_keys.is_empty() {
-                continue;
-            }
-
-            let last_key_id = *old_owner_identity_keys
-                .keys()
-                .max()
-                .expect("there must be keys, we already checked");
-
-            let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
-                last_key_id + 1,
-                platform_version,
-            )?;
-
-            tracing::trace!(
-                identity_id = ?masternode_id,
-                withdrawal_key = ?new_owner_key,
-                method = "transition_to_version_4",
-                "add new owner key to owner identity"
-            );
-
-            self.drive.add_new_non_unique_keys_to_identity(
-                masternode_id,
-                vec![new_owner_key],
-                block_info,
-                true,
-                Some(transaction),
-                platform_version,
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Initializes the wallet contract that supports mobile wallets with additional
-    /// functionality
-    ///
-    /// This function is called during the transition from protocol version 5 to protocol version 6
-    /// and higher to set up the wallet contract in the platform.
-    fn transition_to_version_6(
-        &self,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        let contract =
-            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
-
-        self.drive.insert_contract(
-            &contract,
-            *block_info,
-            true,
-            Some(transaction),
-            platform_version,
-        )?;
 
         Ok(())
     }
@@ -343,6 +227,251 @@ impl<C> Platform<C> {
 
         Ok(())
     }
+
+    /// Initializes an empty sum tree for withdrawal transactions required for protocol version 4.
+    ///
+    /// This function is called during the transition to protocol version 4 to set up
+    /// an empty sum tree at the specified path if it does not already exist.
+    ///
+    /// # Parameters
+    ///
+    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
+    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())`: If the transition to version 4 was successful.
+    /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
+    fn transition_to_version_4(
+        &self,
+        platform_state: &PlatformState,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // We are adding the withdrawal transactions sum amount tree
+        let path = get_withdrawal_root_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        // We are adding a tree to store broadcasted transactions that might expire
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        // We need to add all masternode owner keys
+        // This is because owner identities only had a withdrawal key
+        // But no owner key
+        for masternode in platform_state.full_masternode_list().values() {
+            let masternode_id = masternode.pro_tx_hash.to_byte_array();
+            let key_request = IdentityKeysRequest {
+                identity_id: masternode_id,
+                request_type: KeyRequestType::AllKeys,
+                limit: None,
+                offset: None,
+            };
+
+            let old_owner_identity_keys = self
+                .drive
+                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                    key_request,
+                    Some(transaction),
+                    platform_version,
+                )?;
+
+            if old_owner_identity_keys.is_empty() {
+                continue;
+            }
+
+            let last_key_id = *old_owner_identity_keys
+                .keys()
+                .max()
+                .expect("there must be keys, we already checked");
+
+            let new_owner_key = Self::get_owner_identity_owner_key(
+                masternode.state.owner_address,
+                last_key_id + 1,
+                platform_version,
+            )?;
+
+            tracing::trace!(
+                identity_id = ?masternode_id,
+                withdrawal_key = ?new_owner_key,
+                method = "transition_to_version_4",
+                "add new owner key to owner identity"
+            );
+
+            self.drive.add_new_non_unique_keys_to_identity(
+                masternode_id,
+                vec![new_owner_key],
+                block_info,
+                true,
+                Some(transaction),
+                platform_version,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Initializes the wallet contract that supports mobile wallets with additional
+    /// functionality
+    ///
+    /// This function is called during the transition from protocol version 5 to protocol version 6
+    /// and higher to set up the wallet contract in the platform.
+    fn transition_to_version_6(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let contract =
+            load_system_data_contract(SystemDataContract::WalletUtils, platform_version)?;
+
+        self.drive.insert_contract(
+            &contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        Ok(())
+    }
+
+    /*
+    /// When transitioning to version 8 we need to empty some specialized balances
+    fn transition_to_version_8(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // Let's start by getting all the specialized balances that exist
+        let path_holding_specialized_balances =
+            prefunded_specialized_balances_for_voting_path_vec();
+        let path_query = PathQuery::new_single_query_item(
+            path_holding_specialized_balances,
+            QueryItem::RangeFull(RangeFull),
+        );
+        let all_specialized_balances_still_around: HashSet<_> = self
+            .drive
+            .grove_get_path_query(
+                &path_query,
+                Some(transaction),
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )?
+            .0
+            .to_keys()
+            .into_iter()
+            .map(Identifier::try_from)
+            .collect::<Result<HashSet<_>, dpp::platform_value::Error>>()?;
+
+        let path = vote_end_date_queries_tree_path_vec();
+
+        let mut query = Query::new_with_direction(true);
+
+        query.insert_all();
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_all();
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+
+        let current_votes_path_query = PathQuery {
+            path,
+            query: SizedQuery {
+                query,
+                limit: Some(30000), //Just a high number that shouldn't break the system
+                offset: None,
+            },
+        };
+
+        let (query_result_elements, _) = self.drive.grove_get_path_query(
+            &current_votes_path_query,
+            Some(transaction),
+            QueryResultType::QueryElementResultType,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+
+        let active_specialized_balances = query_result_elements
+            .to_elements()
+            .into_iter()
+            .map(|element| {
+                let contested_document_resource_vote_poll_bytes = element
+                    .into_item_bytes()
+                    .map_err(drive::error::Error::GroveDB)?;
+                let vote_poll =
+                    VotePoll::deserialize_from_bytes(&contested_document_resource_vote_poll_bytes)?;
+                match vote_poll {
+                    VotePoll::ContestedDocumentResourceVotePoll(contested) => {
+                        contested.specialized_balance_id().map_err(Error::Protocol)
+                    }
+                }
+            })
+            .collect::<Result<HashSet<Identifier>, Error>>()?;
+
+        // let's get the non-active ones
+        let non_active_specialized_balances =
+            all_specialized_balances_still_around.difference(&active_specialized_balances);
+
+        let mut total_credits_to_add_to_processing: Credits = 0;
+
+        let mut operations = vec![];
+
+        for specialized_balance_id in non_active_specialized_balances {
+            let (credits, mut empty_specialized_balance_operation) =
+                self.drive.empty_prefunded_specialized_balance_operations(
+                    *specialized_balance_id,
+                    false,
+                    &mut None,
+                    Some(transaction),
+                    platform_version,
+                )?;
+            operations.append(&mut empty_specialized_balance_operation);
+            total_credits_to_add_to_processing = total_credits_to_add_to_processing
+                .checked_add(credits)
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "Credits from specialized balances are overflowing",
+                )))?;
+        }
+
+        if total_credits_to_add_to_processing > 0 {
+            operations.push(
+                self.drive
+                    .add_epoch_processing_credits_for_distribution_operation(
+                        &block_info.epoch,
+                        total_credits_to_add_to_processing,
+                        Some(transaction),
+                        platform_version,
+                    )?,
+            );
+        }
+
+        if !operations.is_empty() {
+            self.drive.apply_batch_low_level_drive_operations(
+                None,
+                Some(transaction),
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
+
+        Ok(())
+    }*/
 
     /// Adds all trees needed for tokens, also adds the token history system data contract
     ///

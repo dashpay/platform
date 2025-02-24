@@ -1664,6 +1664,8 @@ mod tests {
 
         // All vote counts are weighted, so for evonodes, these are in multiples of 4
 
+        // 19 votes were cast
+
         assert_eq!(first_contender.vote_count, Some(60));
 
         assert_eq!(second_contender.vote_count, Some(4));
