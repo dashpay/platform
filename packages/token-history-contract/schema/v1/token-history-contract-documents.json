@@ -566,9 +566,11 @@
       },
       "action": {
         "type": "integer",
-        "minimum": 0,
-        "maximum": 255,
-        "description": "The action we are performing",
+        "enum": [
+          0,
+          1
+        ],
+        "description": "The action we are performing. 0 - Pause, 1 - Resume",
         "position": 1
       }
     },
