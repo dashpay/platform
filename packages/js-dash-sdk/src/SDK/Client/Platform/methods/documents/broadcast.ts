@@ -63,23 +63,21 @@ export default async function broadcast(
     throw new Error('Data contract ID is not found');
   }
 
-  if (documents.transfer?.length && (documents.transfer
-    .some(({ params }) => !params?.receiver))) {
+  if (documents.transfer?.length && documents.transfer
+    .some(({ params }) => !params?.receiver)) {
     throw new Error('Receiver identity is not found for transfer transition');
   }
 
-  if (documents.updatePrice?.length && (documents.updatePrice
-    .some(({ params }) => !params?.price))) {
+  if (documents.updatePrice?.length && documents.updatePrice
+    .some(({ params }) => !params?.price)) {
     throw new Error('Price must be provided for UpdatePrice operation');
   }
 
-  if (documents.purchase?.length) {
-    if (documents.purchase?.length && (documents.purchase
-      .some(({ params }) => !params?.price && !params?.receiver))) {
-      throw new Error('Price must be provided for UpdatePrice operation');
-    }
-
-    documents.purchase.forEach(({ document, params }) => document.setOwnerId(params!.receiver));
+  if (documents.purchase?.length && documents.purchase
+    .some(({ params }) => !params?.price && !params?.receiver)) {
+    throw new Error('Receiver and Price must be provided for UpdatePrice operation');
+  } else {
+    documents.purchase!.forEach(({ document, params }) => document.setOwnerId(params!.receiver));
   }
 
   const identityContractNonce = await this.nonceManager

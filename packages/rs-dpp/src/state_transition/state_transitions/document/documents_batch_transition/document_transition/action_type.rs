@@ -55,8 +55,8 @@ impl From<DocumentTransitionActionType> for &str {
             DocumentTransitionActionType::Replace => "Replace",
             DocumentTransitionActionType::Delete => "Delete",
             DocumentTransitionActionType::Transfer => "Transfer",
-            DocumentTransitionActionType::Purchase => "Purchase",
             DocumentTransitionActionType::UpdatePrice => "UpdatePrice",
+            DocumentTransitionActionType::Purchase => "Purchase",
             DocumentTransitionActionType::IgnoreWhileBumpingRevision => {
                 "IgnoreWhileBumpingRevision"
             }

@@ -21,12 +21,10 @@ use crate::{
     DataContractWasm, ExtendedDocumentWasm,
 };
 use dpp::identifier::Identifier;
-use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use js_sys::Uint8Array;
 use std::convert::TryFrom;
-use web_sys::console;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -399,7 +397,7 @@ fn extract_documents_of_action(
 
                                     return Some(price);
                                 })
-                                .unwrap_or(None);
+                                .unwrap();
 
                         Some(DocumentTransitionParams {
                             receiver: receiver_id,

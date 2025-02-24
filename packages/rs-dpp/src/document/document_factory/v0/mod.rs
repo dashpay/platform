@@ -714,7 +714,6 @@ impl DocumentFactoryV0 {
                     ))
                     .or_default();
 
-                //document.set_owner_id(recipient.unwrap());
                 document.increment_revision()?;
                 document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
 
