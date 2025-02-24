@@ -34,11 +34,11 @@ use tenderdash_abci::proto::abci::{
     ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{
     Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
     StateId, VoteExtension, VoteExtensionType,
 };
+use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::Hashable;
 use tenderdash_abci::{proto::version::Consensus, signatures::Signable, Application};
 
@@ -239,7 +239,9 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             app_version,
             core_chain_locked_height: core_height,
             height,
-            time: time.to_milis(),
+            time: time
+                .to_millis()
+                .expect("expected to convert time to millis"),
         };
         let state_id_hash = state_id
             .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)

@@ -26,7 +26,7 @@ indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = [
+dpp = { package = "dpp", path = "../rs-dpp", features = [
   "state-transitions",
 ], default-features = false, optional = true }
 thiserror = { version = "1.0.63" }

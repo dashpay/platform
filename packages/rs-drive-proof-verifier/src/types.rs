@@ -35,10 +35,11 @@ use drive::grovedb::Element;
 pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{dashcore::hashes::Hash, version as platform_version, ProtocolError},
+    dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
@@ -239,6 +240,7 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContestedResource(pub Value);
 
+#[cfg(feature = "mocks")]
 impl ContestedResource {
     /// Get the value.
     pub fn encode_to_vec(

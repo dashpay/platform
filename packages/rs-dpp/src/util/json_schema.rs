@@ -26,6 +26,7 @@ pub trait JsonSchemaExt {
     fn is_type_of_identifier(&self) -> bool;
 }
 
+// TODO: This is big (due to using regex inside?)
 pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, DataContractError> {
     if !uri.starts_with("#/") {
         return Err(DataContractError::InvalidURI(
