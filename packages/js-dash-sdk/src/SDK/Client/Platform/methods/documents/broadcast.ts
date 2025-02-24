@@ -73,11 +73,13 @@ export default async function broadcast(
     throw new Error('Price must be provided for UpdatePrice operation');
   }
 
-  if (documents.purchase?.length && documents.purchase
-    .some(({ params }) => !params?.price && !params?.receiver)) {
-    throw new Error('Receiver and Price must be provided for UpdatePrice operation');
-  } else {
-    documents.purchase!.forEach(({ document, params }) => document.setOwnerId(params!.receiver));
+  if (documents.purchase?.length) {
+    if (documents.purchase
+      .some(({ params }) => !params?.price || !params?.receiver)) {
+      throw new Error('Receiver and Price must be provided for UpdatePrice operation');
+    } else {
+      documents.purchase.forEach(({ document, params }) => document.setOwnerId(params!.receiver));
+    }
   }
 
   const identityContractNonce = await this.nonceManager
