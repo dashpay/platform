@@ -74,7 +74,7 @@ export async function register(
 
   await this.documents.broadcast(
     {
-      create: [preorderDocument],
+      create: [{ document: preorderDocument }],
     },
     identity,
   );
@@ -99,7 +99,7 @@ export async function register(
   // 4. Create and send domain state transition
   await this.documents.broadcast(
     {
-      create: [domainDocument],
+      create: [{ document: domainDocument }],
     },
     identity,
   );

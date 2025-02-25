@@ -260,7 +260,7 @@ describe('DPNS', () => {
 
       try {
         await client.platform.documents.broadcast({
-          delete: [registeredDomain],
+          delete: [{ document: registeredDomain }],
         }, identity);
       } catch (e) {
         broadcastError = e;
