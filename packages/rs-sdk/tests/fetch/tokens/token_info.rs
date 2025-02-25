@@ -19,7 +19,7 @@ async fn test_identity_token_info() {
     let sdk = cfg.setup_api("test_identity_token_info").await;
 
     let query = IdentityTokenInfosQuery {
-        identity_id: IDENTITY_ID_1,
+        identity_id: IDENTITY_ID_2,
         token_ids: vec![*TOKEN_ID_0, *TOKEN_ID_1, *TOKEN_ID_2, UNKNOWN_TOKEN_ID],
     };
 
@@ -29,9 +29,7 @@ async fn test_identity_token_info() {
 
     assert_eq!(token_infos.count(), 4);
 
-    dbg!(&token_infos);
-
-    assert_matches!(token_infos.get(&*TOKEN_ID_0), Some(None));
+    assert_matches!(token_infos.get(&*TOKEN_ID_0), Some(Some(info)) if info.frozen() == true);
     assert_matches!(token_infos.get(&*TOKEN_ID_1), Some(None));
     assert_matches!(token_infos.get(&*TOKEN_ID_2), Some(None));
     assert_matches!(token_infos.get(&UNKNOWN_TOKEN_ID), Some(None));
