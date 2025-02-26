@@ -92,7 +92,7 @@ impl StateSyncAbciConfig {
         Self {
             snapshots_enabled: true,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
-            snapshots_frequency: 10,
+            snapshots_frequency: 5,
             max_num_snapshots: 100,
         }
     }
@@ -101,7 +101,7 @@ impl StateSyncAbciConfig {
         Self {
             snapshots_enabled: true,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
-            snapshots_frequency: 10,
+            snapshots_frequency: 5,
             max_num_snapshots: 100,
         }
     }
@@ -110,7 +110,7 @@ impl StateSyncAbciConfig {
         Self {
             snapshots_enabled: true,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
-            snapshots_frequency: 10,
+            snapshots_frequency: 5,
             max_num_snapshots: 100,
         }
     }
