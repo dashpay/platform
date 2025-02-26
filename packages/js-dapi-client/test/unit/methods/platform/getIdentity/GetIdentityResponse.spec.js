@@ -79,12 +79,14 @@ describe('GetIdentityResponse', () => {
     expect(getIdentityResponse).to.be.an.instanceOf(GetIdentityResponseClass);
     expect(getIdentityResponse.getIdentity()).to.deep.equal(identityFixture.toBuffer());
 
-    expect(getIdentityResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getIdentityResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getIdentityResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentityResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentityResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getIdentityResponse.getProof()).to.equal(undefined);
   });
@@ -103,7 +105,15 @@ describe('GetIdentityResponse', () => {
     getIdentityResponse = GetIdentityResponseClass.createFromProto(proto);
 
     expect(getIdentityResponse.getIdentity()).to.deep.equal(Buffer.alloc(0));
-    expect(getIdentityResponse.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getIdentityResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getIdentityResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getIdentityResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getIdentityResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getIdentityResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);

@@ -2,9 +2,9 @@ class EpochInfo {
   /**
    *
    * @param {number} number
-   * @param {number} firstBlockHeight
+   * @param {bigint} firstBlockHeight
    * @param {number} firstCoreBlockHeight
-   * @param {number} startTime
+   * @param {bigint} startTime
    * @param {number} feeMultiplier
    */
   constructor(number, firstBlockHeight, firstCoreBlockHeight, startTime, feeMultiplier) {
@@ -23,7 +23,7 @@ class EpochInfo {
   }
 
   /**
-   * @returns {number}
+   * @returns {bigint}
    */
   getFirstBlockHeight() {
     return this.firstBlockHeight;
@@ -37,7 +37,7 @@ class EpochInfo {
   }
 
   /**
-   * @returns {number}
+   * @returns {bigint}
    */
   getStartTime() {
     return this.startTime;

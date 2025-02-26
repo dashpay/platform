@@ -13,11 +13,6 @@ use dpp::document::Document;
 
 use dpp::prelude::ExtendedDocument;
 
-use dpp::identifier::Identifier;
-use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
-use dpp::version::PlatformVersion;
-use std::convert::TryFrom;
-
 use crate::batch_transition::BatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
@@ -25,6 +20,11 @@ use crate::{
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, ExtendedDocumentWasm,
 };
+use dpp::identifier::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use dpp::version::PlatformVersion;
+use std::convert::TryFrom;
+use std::str::FromStr;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -128,7 +128,12 @@ impl DocumentFactoryWASM {
                         .for_each(|entry| {
                             let key_value = js_sys::Array::from(&entry);
                             let contract_id = identifier_from_js_value(&key_value.get(0)).unwrap();
-                            let nonce = key_value.get(1).as_f64().unwrap() as u64;
+                            let nonce = key_value
+                                .get(1)
+                                .as_string()
+                                .unwrap()
+                                .parse::<u64>()
+                                .unwrap();
                             nonce_counter.insert((identity_id, contract_id), nonce);
                         });
                 });
@@ -181,6 +186,70 @@ impl DocumentFactoryWASM {
 
         Ok(batch_transition.into())
     }
+    //
+    // #[wasm_bindgen(js_name=createFromObject)]
+    // pub async fn create_from_object(
+    //     &self,
+    //     raw_document_js: JsValue,
+    //     options: JsValue,
+    // ) -> Result<ExtendedDocumentWasm, JsValue> {
+    //     let mut raw_document = raw_document_js.with_serde_to_platform_value()?;
+    //     let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
+    //         let raw_options = options.with_serde_to_json_value()?;
+    //         serde_json::from_value(raw_options).with_js_error()?
+    //     } else {
+    //         Default::default()
+    //     };
+    //     raw_document
+    //         .replace_at_paths(
+    //             extended_document::IDENTIFIER_FIELDS,
+    //             ReplacementType::Identifier,
+    //         )
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //
+    //     let mut document = self
+    //         .0
+    //         .create_from_object(raw_document, options)
+    //         .await
+    //         .with_js_error()?;
+    //     let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = document
+    //         .get_identifiers_and_binary_paths_owned()
+    //         .with_js_error()?;
+    //     // When data contract is available, replace remaining dynamic paths
+    //     let document_data = document.properties_as_mut();
+    //     document_data
+    //         .replace_at_paths(identifier_paths, ReplacementType::Identifier)
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //     document_data
+    //         .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //     Ok(document.into())
+    // }
+    //
+    // #[wasm_bindgen(js_name=createFromBuffer)]
+    // pub async fn create_from_buffer(
+    //     &self,
+    //     buffer: Vec<u8>,
+    //     options: &JsValue,
+    // ) -> Result<ExtendedDocumentWasm, JsValue> {
+    //     // let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
+    //     //     let raw_options = options.with_serde_to_json_value()?;
+    //     //     serde_json::from_value(raw_options).with_js_error()?
+    //     // } else {
+    //     //     Default::default()
+    //     // };
+    //
+    //     let document = self
+    //         .0
+    //         .create_from_buffer(buffer, options)
+    //         .await
+    //         .with_js_error()?;
+    //
+    //     Ok(document.into())
+    // }
     //
     // #[wasm_bindgen(js_name=createFromObject)]
     // pub async fn create_from_object(

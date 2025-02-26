@@ -81,9 +81,9 @@ describe('Client - Platform - Contracts - .get()', () => {
         apps, dpp, client, initialize, logger, fetcher,
       }, dataContractFixture.getId());
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
-      expect(contract.getMetadata().getBlockHeight()).to.equal(10);
+      expect(contract.getMetadata().getBlockHeight()).to.equal(BigInt(10));
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
-      expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
+      expect(contract.getMetadata().getTimeMs()).to.equal(BigInt(metadataFixture.getTimeMs()));
       expect(contract.getMetadata().getProtocolVersion())
         .to.equal(metadataFixture.getProtocolVersion());
       expect(askedFromDapi).to.equal(1);
@@ -95,9 +95,9 @@ describe('Client - Platform - Contracts - .get()', () => {
         apps, dpp, client, initialize, logger, fetcher,
       }, dataContractFixture.getId());
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
-      expect(contract.getMetadata().getBlockHeight()).to.equal(10);
+      expect(contract.getMetadata().getBlockHeight()).to.equal(BigInt(10));
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
-      expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
+      expect(contract.getMetadata().getTimeMs()).to.equal(BigInt(metadataFixture.getTimeMs()));
       expect(contract.getMetadata().getProtocolVersion())
         .to.equal(metadataFixture.getProtocolVersion());
       expect(askedFromDapi).to.equal(1);

@@ -55,8 +55,8 @@ export namespace Proof {
 }
 
 export class ResponseMetadata extends jspb.Message {
-  getHeight(): number;
-  setHeight(value: number): void;
+  getHeight(): string;
+  setHeight(value: string): void;
 
   getCoreChainLockedHeight(): number;
   setCoreChainLockedHeight(value: number): void;
@@ -64,8 +64,8 @@ export class ResponseMetadata extends jspb.Message {
   getEpoch(): number;
   setEpoch(value: number): void;
 
-  getTimeMs(): number;
-  setTimeMs(value: number): void;
+  getTimeMs(): string;
+  setTimeMs(value: string): void;
 
   getProtocolVersion(): number;
   setProtocolVersion(value: number): void;
@@ -85,10 +85,10 @@ export class ResponseMetadata extends jspb.Message {
 
 export namespace ResponseMetadata {
   export type AsObject = {
-    height: number,
+    height: string,
     coreChainLockedHeight: number,
     epoch: number,
-    timeMs: number,
+    timeMs: string,
     protocolVersion: number,
     chainId: string,
   }
@@ -534,8 +534,8 @@ export namespace GetIdentityNonceResponse {
   export class GetIdentityNonceResponseV0 extends jspb.Message {
     hasIdentityNonce(): boolean;
     clearIdentityNonce(): void;
-    getIdentityNonce(): number;
-    setIdentityNonce(value: number): void;
+    getIdentityNonce(): string;
+    setIdentityNonce(value: string): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -560,7 +560,7 @@ export namespace GetIdentityNonceResponse {
 
   export namespace GetIdentityNonceResponseV0 {
     export type AsObject = {
-      identityNonce: number,
+      identityNonce: string,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
@@ -603,8 +603,8 @@ export namespace GetIdentityContractNonceResponse {
   export class GetIdentityContractNonceResponseV0 extends jspb.Message {
     hasIdentityContractNonce(): boolean;
     clearIdentityContractNonce(): void;
-    getIdentityContractNonce(): number;
-    setIdentityContractNonce(value: number): void;
+    getIdentityContractNonce(): string;
+    setIdentityContractNonce(value: string): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -629,7 +629,7 @@ export namespace GetIdentityContractNonceResponse {
 
   export namespace GetIdentityContractNonceResponseV0 {
     export type AsObject = {
-      identityContractNonce: number,
+      identityContractNonce: string,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
@@ -672,8 +672,8 @@ export namespace GetIdentityBalanceResponse {
   export class GetIdentityBalanceResponseV0 extends jspb.Message {
     hasBalance(): boolean;
     clearBalance(): void;
-    getBalance(): number;
-    setBalance(value: number): void;
+    getBalance(): string;
+    setBalance(value: string): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -698,7 +698,7 @@ export namespace GetIdentityBalanceResponse {
 
   export namespace GetIdentityBalanceResponseV0 {
     export type AsObject = {
-      balance: number,
+      balance: string,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
@@ -773,11 +773,11 @@ export namespace GetIdentityBalanceAndRevisionResponse {
     }
 
     export class BalanceAndRevision extends jspb.Message {
-      getBalance(): number;
-      setBalance(value: number): void;
+      getBalance(): string;
+      setBalance(value: string): void;
 
-      getRevision(): number;
-      setRevision(value: number): void;
+      getRevision(): string;
+      setRevision(value: string): void;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): BalanceAndRevision.AsObject;
@@ -791,8 +791,8 @@ export namespace GetIdentityBalanceAndRevisionResponse {
 
     export namespace BalanceAndRevision {
       export type AsObject = {
-        balance: number,
-        revision: number,
+        balance: string,
+        revision: string,
       }
     }
 
@@ -1444,8 +1444,8 @@ export namespace GetEvonodesProposedEpochBlocksResponse {
       getProTxHash_asB64(): string;
       setProTxHash(value: Uint8Array | string): void;
 
-      getCount(): number;
-      setCount(value: number): void;
+      getCount(): string;
+      setCount(value: string): void;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): EvonodeProposedBlocks.AsObject;
@@ -1460,7 +1460,7 @@ export namespace GetEvonodesProposedEpochBlocksResponse {
     export namespace EvonodeProposedBlocks {
       export type AsObject = {
         proTxHash: Uint8Array | string,
-        count: number,
+        count: string,
       }
     }
 
@@ -1702,8 +1702,8 @@ export namespace GetIdentitiesBalancesResponse {
 
       hasBalance(): boolean;
       clearBalance(): void;
-      getBalance(): number;
-      setBalance(value: number): void;
+      getBalance(): string;
+      setBalance(value: string): void;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): IdentityBalance.AsObject;
@@ -1718,7 +1718,7 @@ export namespace GetIdentitiesBalancesResponse {
     export namespace IdentityBalance {
       export type AsObject = {
         identityId: Uint8Array | string,
-        balance: number,
+        balance: string,
       }
     }
 
@@ -2498,8 +2498,8 @@ export namespace GetDataContractHistoryRequest {
     getOffset(): google_protobuf_wrappers_pb.UInt32Value | undefined;
     setOffset(value?: google_protobuf_wrappers_pb.UInt32Value): void;
 
-    getStartAtMs(): number;
-    setStartAtMs(value: number): void;
+    getStartAtMs(): string;
+    setStartAtMs(value: string): void;
 
     getProve(): boolean;
     setProve(value: boolean): void;
@@ -2519,7 +2519,7 @@ export namespace GetDataContractHistoryRequest {
       id: Uint8Array | string,
       limit?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
       offset?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
-      startAtMs: number,
+      startAtMs: string,
       prove: boolean,
     }
   }
@@ -2587,8 +2587,8 @@ export namespace GetDataContractHistoryResponse {
     }
 
     export class DataContractHistoryEntry extends jspb.Message {
-      getDate(): number;
-      setDate(value: number): void;
+      getDate(): string;
+      setDate(value: string): void;
 
       getValue(): Uint8Array | string;
       getValue_asU8(): Uint8Array;
@@ -2607,7 +2607,7 @@ export namespace GetDataContractHistoryResponse {
 
     export namespace DataContractHistoryEntry {
       export type AsObject = {
-        date: number,
+        date: string,
         value: Uint8Array | string,
       }
     }
@@ -3731,14 +3731,14 @@ export namespace GetEpochsInfoResponse {
       getNumber(): number;
       setNumber(value: number): void;
 
-      getFirstBlockHeight(): number;
-      setFirstBlockHeight(value: number): void;
+      getFirstBlockHeight(): string;
+      setFirstBlockHeight(value: string): void;
 
       getFirstCoreBlockHeight(): number;
       setFirstCoreBlockHeight(value: number): void;
 
-      getStartTime(): number;
-      setStartTime(value: number): void;
+      getStartTime(): string;
+      setStartTime(value: string): void;
 
       getFeeMultiplier(): number;
       setFeeMultiplier(value: number): void;
@@ -3759,9 +3759,9 @@ export namespace GetEpochsInfoResponse {
     export namespace EpochInfo {
       export type AsObject = {
         number: number,
-        firstBlockHeight: number,
+        firstBlockHeight: string,
         firstCoreBlockHeight: number,
-        startTime: number,
+        startTime: string,
         feeMultiplier: number,
         protocolVersion: number,
       }
@@ -4063,8 +4063,8 @@ export namespace GetVotePollsByEndDateRequest {
     }
 
     export class StartAtTimeInfo extends jspb.Message {
-      getStartTimeMs(): number;
-      setStartTimeMs(value: number): void;
+      getStartTimeMs(): string;
+      setStartTimeMs(value: string): void;
 
       getStartTimeIncluded(): boolean;
       setStartTimeIncluded(value: boolean): void;
@@ -4081,14 +4081,14 @@ export namespace GetVotePollsByEndDateRequest {
 
     export namespace StartAtTimeInfo {
       export type AsObject = {
-        startTimeMs: number,
+        startTimeMs: string,
         startTimeIncluded: boolean,
       }
     }
 
     export class EndAtTimeInfo extends jspb.Message {
-      getEndTimeMs(): number;
-      setEndTimeMs(value: number): void;
+      getEndTimeMs(): string;
+      setEndTimeMs(value: string): void;
 
       getEndTimeIncluded(): boolean;
       setEndTimeIncluded(value: boolean): void;
@@ -4105,7 +4105,7 @@ export namespace GetVotePollsByEndDateRequest {
 
     export namespace EndAtTimeInfo {
       export type AsObject = {
-        endTimeMs: number,
+        endTimeMs: string,
         endTimeIncluded: boolean,
       }
     }
@@ -4174,8 +4174,8 @@ export namespace GetVotePollsByEndDateResponse {
     }
 
     export class SerializedVotePollsByTimestamp extends jspb.Message {
-      getTimestamp(): number;
-      setTimestamp(value: number): void;
+      getTimestamp(): string;
+      setTimestamp(value: string): void;
 
       clearSerializedVotePollsList(): void;
       getSerializedVotePollsList(): Array<Uint8Array | string>;
@@ -4196,7 +4196,7 @@ export namespace GetVotePollsByEndDateResponse {
 
     export namespace SerializedVotePollsByTimestamp {
       export type AsObject = {
-        timestamp: number,
+        timestamp: string,
         serializedVotePollsList: Array<Uint8Array | string>,
       }
     }
@@ -4431,14 +4431,14 @@ export namespace GetContestedResourceVoteStateResponse {
       getWonByIdentityId_asB64(): string;
       setWonByIdentityId(value: Uint8Array | string): void;
 
-      getFinishedAtBlockHeight(): number;
-      setFinishedAtBlockHeight(value: number): void;
+      getFinishedAtBlockHeight(): string;
+      setFinishedAtBlockHeight(value: string): void;
 
       getFinishedAtCoreBlockHeight(): number;
       setFinishedAtCoreBlockHeight(value: number): void;
 
-      getFinishedAtBlockTimeMs(): number;
-      setFinishedAtBlockTimeMs(value: number): void;
+      getFinishedAtBlockTimeMs(): string;
+      setFinishedAtBlockTimeMs(value: string): void;
 
       getFinishedAtEpoch(): number;
       setFinishedAtEpoch(value: number): void;
@@ -4457,9 +4457,9 @@ export namespace GetContestedResourceVoteStateResponse {
       export type AsObject = {
         finishedVoteOutcome: GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.FinishedVoteOutcomeMap[keyof GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.FinishedVoteOutcomeMap],
         wonByIdentityId: Uint8Array | string,
-        finishedAtBlockHeight: number,
+        finishedAtBlockHeight: string,
         finishedAtCoreBlockHeight: number,
-        finishedAtBlockTimeMs: number,
+        finishedAtBlockTimeMs: string,
         finishedAtEpoch: number,
       }
 
@@ -5128,8 +5128,8 @@ export namespace GetPrefundedSpecializedBalanceResponse {
   export class GetPrefundedSpecializedBalanceResponseV0 extends jspb.Message {
     hasBalance(): boolean;
     clearBalance(): void;
-    getBalance(): number;
-    setBalance(value: number): void;
+    getBalance(): string;
+    setBalance(value: string): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -5154,7 +5154,7 @@ export namespace GetPrefundedSpecializedBalanceResponse {
 
   export namespace GetPrefundedSpecializedBalanceResponseV0 {
     export type AsObject = {
-      balance: number,
+      balance: string,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
@@ -5245,8 +5245,8 @@ export namespace GetTotalCreditsInPlatformResponse {
   export class GetTotalCreditsInPlatformResponseV0 extends jspb.Message {
     hasCredits(): boolean;
     clearCredits(): void;
-    getCredits(): number;
-    setCredits(value: number): void;
+    getCredits(): string;
+    setCredits(value: string): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -5271,7 +5271,7 @@ export namespace GetTotalCreditsInPlatformResponse {
 
   export namespace GetTotalCreditsInPlatformResponseV0 {
     export type AsObject = {
-      credits: number,
+      credits: string,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
@@ -5700,18 +5700,18 @@ export namespace GetStatusResponse {
     }
 
     export class Time extends jspb.Message {
-      getLocal(): number;
-      setLocal(value: number): void;
+      getLocal(): string;
+      setLocal(value: string): void;
 
       hasBlock(): boolean;
       clearBlock(): void;
-      getBlock(): number;
-      setBlock(value: number): void;
+      getBlock(): string;
+      setBlock(value: string): void;
 
       hasGenesis(): boolean;
       clearGenesis(): void;
-      getGenesis(): number;
-      setGenesis(value: number): void;
+      getGenesis(): string;
+      setGenesis(value: string): void;
 
       hasEpoch(): boolean;
       clearEpoch(): void;
@@ -5730,9 +5730,9 @@ export namespace GetStatusResponse {
 
     export namespace Time {
       export type AsObject = {
-        local: number,
-        block: number,
-        genesis: number,
+        local: string,
+        block: string,
+        genesis: string,
         epoch: number,
       }
     }
@@ -5781,8 +5781,8 @@ export namespace GetStatusResponse {
       getLatestAppHash_asB64(): string;
       setLatestAppHash(value: Uint8Array | string): void;
 
-      getLatestBlockHeight(): number;
-      setLatestBlockHeight(value: number): void;
+      getLatestBlockHeight(): string;
+      setLatestBlockHeight(value: string): void;
 
       getEarliestBlockHash(): Uint8Array | string;
       getEarliestBlockHash_asU8(): Uint8Array;
@@ -5794,11 +5794,11 @@ export namespace GetStatusResponse {
       getEarliestAppHash_asB64(): string;
       setEarliestAppHash(value: Uint8Array | string): void;
 
-      getEarliestBlockHeight(): number;
-      setEarliestBlockHeight(value: number): void;
+      getEarliestBlockHeight(): string;
+      setEarliestBlockHeight(value: string): void;
 
-      getMaxPeerBlockHeight(): number;
-      setMaxPeerBlockHeight(value: number): void;
+      getMaxPeerBlockHeight(): string;
+      setMaxPeerBlockHeight(value: string): void;
 
       hasCoreChainLockedHeight(): boolean;
       clearCoreChainLockedHeight(): void;
@@ -5820,11 +5820,11 @@ export namespace GetStatusResponse {
         catchingUp: boolean,
         latestBlockHash: Uint8Array | string,
         latestAppHash: Uint8Array | string,
-        latestBlockHeight: number,
+        latestBlockHeight: string,
         earliestBlockHash: Uint8Array | string,
         earliestAppHash: Uint8Array | string,
-        earliestBlockHeight: number,
-        maxPeerBlockHeight: number,
+        earliestBlockHeight: string,
+        maxPeerBlockHeight: string,
         coreChainLockedHeight: number,
       }
     }
@@ -5858,29 +5858,29 @@ export namespace GetStatusResponse {
     }
 
     export class StateSync extends jspb.Message {
-      getTotalSyncedTime(): number;
-      setTotalSyncedTime(value: number): void;
+      getTotalSyncedTime(): string;
+      setTotalSyncedTime(value: string): void;
 
-      getRemainingTime(): number;
-      setRemainingTime(value: number): void;
+      getRemainingTime(): string;
+      setRemainingTime(value: string): void;
 
       getTotalSnapshots(): number;
       setTotalSnapshots(value: number): void;
 
-      getChunkProcessAvgTime(): number;
-      setChunkProcessAvgTime(value: number): void;
+      getChunkProcessAvgTime(): string;
+      setChunkProcessAvgTime(value: string): void;
 
-      getSnapshotHeight(): number;
-      setSnapshotHeight(value: number): void;
+      getSnapshotHeight(): string;
+      setSnapshotHeight(value: string): void;
 
-      getSnapshotChunksCount(): number;
-      setSnapshotChunksCount(value: number): void;
+      getSnapshotChunksCount(): string;
+      setSnapshotChunksCount(value: string): void;
 
-      getBackfilledBlocks(): number;
-      setBackfilledBlocks(value: number): void;
+      getBackfilledBlocks(): string;
+      setBackfilledBlocks(value: string): void;
 
-      getBackfillBlocksTotal(): number;
-      setBackfillBlocksTotal(value: number): void;
+      getBackfillBlocksTotal(): string;
+      setBackfillBlocksTotal(value: string): void;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): StateSync.AsObject;
@@ -5894,14 +5894,14 @@ export namespace GetStatusResponse {
 
     export namespace StateSync {
       export type AsObject = {
-        totalSyncedTime: number,
-        remainingTime: number,
+        totalSyncedTime: string,
+        remainingTime: string,
         totalSnapshots: number,
-        chunkProcessAvgTime: number,
-        snapshotHeight: number,
-        snapshotChunksCount: number,
-        backfilledBlocks: number,
-        backfillBlocksTotal: number,
+        chunkProcessAvgTime: string,
+        snapshotHeight: string,
+        snapshotChunksCount: string,
+        backfilledBlocks: string,
+        backfillBlocksTotal: string,
       }
     }
   }
