@@ -196,11 +196,4 @@ where
     ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
         handler::apply_snapshot_chunk(self, request).map_err(error_into_exception)
     }
-
-    fn finalize_snapshot(
-        &self,
-        request: proto::RequestFinalizeSnapshot,
-    ) -> Result<proto::ResponseFinalizeSnapshot, proto::ResponseException> {
-        handler::finalize_snapshot(self, request).map_err(error_into_exception)
-    }
 }

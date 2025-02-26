@@ -34,7 +34,7 @@ dpp = { path = "../rs-dpp", features = [
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization", optional = true }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "b55bed9f574b68f2b6c96cbc80da41072056781d", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.3.0", tag = "v1.3.0+1.3.0", features = [
   "crypto",
   "serde",
 ], default-features = false }
