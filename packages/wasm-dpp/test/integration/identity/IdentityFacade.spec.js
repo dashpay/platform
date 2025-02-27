@@ -66,7 +66,7 @@ describe('IdentityFacade', () => {
 
       expect(deserialized).to.be.an.instanceOf(Identity);
 
-      expect(deserialized.toObject()).to.deep.equal(deserialized.toObject());
+      expect(deserialized.toObject()).to.deep.equal(identity.toObject());
     });
   });
 
