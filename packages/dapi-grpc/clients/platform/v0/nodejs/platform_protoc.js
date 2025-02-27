@@ -6728,10 +6728,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.toObject = function(o
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInstance, msg) {
   var f, obj = {
-    height: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    height: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
     epoch: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    timeMs: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    timeMs: jspb.Message.getFieldWithDefault(msg, 4, "0"),
     protocolVersion: jspb.Message.getFieldWithDefault(msg, 5, 0),
     chainId: jspb.Message.getFieldWithDefault(msg, 6, "")
   };
@@ -6771,7 +6771,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setHeight(value);
       break;
     case 2:
@@ -6783,7 +6783,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       msg.setEpoch(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setTimeMs(value);
       break;
     case 5:
@@ -6824,8 +6824,8 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.serializeBinary = fun
 proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
@@ -6845,8 +6845,8 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
     );
   }
   f = message.getTimeMs();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       4,
       f
     );
@@ -6870,19 +6870,19 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
 
 /**
  * optional uint64 height = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
@@ -6924,19 +6924,19 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setEpoch = function(v
 
 /**
  * optional uint64 time_ms = 4;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTimeMs = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
+  return jspb.Message.setProto3StringIntField(this, 4, value);
 };
 
 
@@ -9972,7 +9972,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceRespons
  */
 proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    identityNonce: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    identityNonce: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -10012,7 +10012,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceRespons
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setIdentityNonce(value);
       break;
     case 2:
@@ -10054,9 +10054,9 @@ proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceRespons
  */
 proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = /** @type {number} */ (jspb.Message.getField(message, 1));
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       1,
       f
     );
@@ -10082,15 +10082,15 @@ proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceRespons
 
 /**
  * optional uint64 identity_nonce = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.prototype.getIdentityNonce = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0} returns this
  */
 proto.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.prototype.setIdentityNonce = function(value) {
@@ -10424,7 +10424,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityCont
  */
 proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    identityContractNonce: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    identityContractNonce: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -10464,7 +10464,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityCont
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setIdentityContractNonce(value);
       break;
     case 2:
@@ -10506,9 +10506,9 @@ proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityCont
  */
 proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = /** @type {number} */ (jspb.Message.getField(message, 1));
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       1,
       f
     );
@@ -10534,15 +10534,15 @@ proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityCont
 
 /**
  * optional uint64 identity_contract_nonce = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0.prototype.getIdentityContractNonce = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0} returns this
  */
 proto.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0.prototype.setIdentityContractNonce = function(value) {
@@ -10876,7 +10876,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceRes
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    balance: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    balance: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -10916,7 +10916,7 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceRes
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     case 2:
@@ -10958,9 +10958,9 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceRes
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = /** @type {number} */ (jspb.Message.getField(message, 1));
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       1,
       f
     );
@@ -10986,15 +10986,15 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceRes
 
 /**
  * optional uint64 balance = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0.prototype.getBalance = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0} returns this
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0.prototype.setBalance = function(value) {
@@ -11470,8 +11470,8 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentit
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision.toObject = function(includeInstance, msg) {
   var f, obj = {
-    balance: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    revision: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    balance: jspb.Message.getFieldWithDefault(msg, 1, "0"),
+    revision: jspb.Message.getFieldWithDefault(msg, 2, "0")
   };
 
   if (includeInstance) {
@@ -11509,11 +11509,11 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentit
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setRevision(value);
       break;
     default:
@@ -11546,15 +11546,15 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentit
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getBalance();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
   }
   f = message.getRevision();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       2,
       f
     );
@@ -11564,37 +11564,37 @@ proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentit
 
 /**
  * optional uint64 balance = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision.prototype.getBalance = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision} returns this
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision.prototype.setBalance = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
 /**
  * optional uint64 revision = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision.prototype.getRevision = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision} returns this
  */
 proto.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevision.prototype.setRevision = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+  return jspb.Message.setProto3StringIntField(this, 2, value);
 };
 
 
@@ -16059,7 +16059,7 @@ proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonod
 proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.toObject = function(includeInstance, msg) {
   var f, obj = {
     proTxHash: msg.getProTxHash_asB64(),
-    count: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    count: jspb.Message.getFieldWithDefault(msg, 2, "0")
   };
 
   if (includeInstance) {
@@ -16101,7 +16101,7 @@ proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonod
       msg.setProTxHash(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setCount(value);
       break;
     default:
@@ -16141,8 +16141,8 @@ proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonod
     );
   }
   f = message.getCount();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       2,
       f
     );
@@ -16194,19 +16194,19 @@ proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonod
 
 /**
  * optional uint64 count = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.prototype.getCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} returns this
  */
 proto.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.prototype.setCount = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+  return jspb.Message.setProto3StringIntField(this, 2, value);
 };
 
 
@@ -17816,7 +17816,7 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalan
 proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.toObject = function(includeInstance, msg) {
   var f, obj = {
     identityId: msg.getIdentityId_asB64(),
-    balance: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    balance: jspb.Message.getFieldWithDefault(msg, 2, "0")
   };
 
   if (includeInstance) {
@@ -17858,7 +17858,7 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalan
       msg.setIdentityId(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     default:
@@ -17897,9 +17897,9 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalan
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 2));
+  f = /** @type {string} */ (jspb.Message.getField(message, 2));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       2,
       f
     );
@@ -17951,15 +17951,15 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalan
 
 /**
  * optional uint64 balance = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.prototype.getBalance = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} returns this
  */
 proto.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.prototype.setBalance = function(value) {
@@ -23315,7 +23315,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHis
     id: msg.getId_asB64(),
     limit: (f = msg.getLimit()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
     offset: (f = msg.getOffset()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
-    startAtMs: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    startAtMs: jspb.Message.getFieldWithDefault(msg, 4, "0"),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
 
@@ -23368,7 +23368,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHis
       msg.setOffset(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setStartAtMs(value);
       break;
     case 5:
@@ -23428,8 +23428,8 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHis
     );
   }
   f = message.getStartAtMs();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       4,
       f
     );
@@ -23562,19 +23562,19 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHis
 
 /**
  * optional uint64 start_at_ms = 4;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHistoryRequestV0.prototype.getStartAtMs = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHistoryRequestV0} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHistoryRequestV0.prototype.setStartAtMs = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
+  return jspb.Message.setProto3StringIntField(this, 4, value);
 };
 
 
@@ -23972,7 +23972,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHi
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntry.toObject = function(includeInstance, msg) {
   var f, obj = {
-    date: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    date: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     value: msg.getValue_asB64()
   };
 
@@ -24011,7 +24011,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHi
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setDate(value);
       break;
     case 2:
@@ -24048,8 +24048,8 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHi
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntry.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getDate();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
@@ -24066,19 +24066,19 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHi
 
 /**
  * optional uint64 date = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntry.prototype.getDate = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntry} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntry.prototype.setDate = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
@@ -31697,9 +31697,9 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
 proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.toObject = function(includeInstance, msg) {
   var f, obj = {
     number: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    firstBlockHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    firstBlockHeight: jspb.Message.getFieldWithDefault(msg, 2, "0"),
     firstCoreBlockHeight: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    startTime: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    startTime: jspb.Message.getFieldWithDefault(msg, 4, "0"),
     feeMultiplier: jspb.Message.getFloatingPointFieldWithDefault(msg, 5, 0.0),
     protocolVersion: jspb.Message.getFieldWithDefault(msg, 6, 0)
   };
@@ -31743,7 +31743,7 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
       msg.setNumber(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setFirstBlockHeight(value);
       break;
     case 3:
@@ -31751,7 +31751,7 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
       msg.setFirstCoreBlockHeight(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setStartTime(value);
       break;
     case 5:
@@ -31799,8 +31799,8 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
     );
   }
   f = message.getFirstBlockHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       2,
       f
     );
@@ -31813,8 +31813,8 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
     );
   }
   f = message.getStartTime();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       4,
       f
     );
@@ -31856,19 +31856,19 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
 
 /**
  * optional uint64 first_block_height = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getFirstBlockHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
  */
 proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setFirstBlockHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+  return jspb.Message.setProto3StringIntField(this, 2, value);
 };
 
 
@@ -31892,19 +31892,19 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
 
 /**
  * optional uint64 start_time = 4;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getStartTime = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
  */
 proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setStartTime = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
+  return jspb.Message.setProto3StringIntField(this, 4, value);
 };
 
 
@@ -33960,7 +33960,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfo.toObject = function(includeInstance, msg) {
   var f, obj = {
-    startTimeMs: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    startTimeMs: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     startTimeIncluded: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
@@ -33999,7 +33999,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setStartTimeMs(value);
       break;
     case 2:
@@ -34036,8 +34036,8 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfo.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getStartTimeMs();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
@@ -34054,19 +34054,19 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
 
 /**
  * optional uint64 start_time_ms = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfo.prototype.getStartTimeMs = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfo} returns this
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfo.prototype.setStartTimeMs = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
@@ -34120,7 +34120,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfo.toObject = function(includeInstance, msg) {
   var f, obj = {
-    endTimeMs: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    endTimeMs: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     endTimeIncluded: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
@@ -34159,7 +34159,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setEndTimeMs(value);
       break;
     case 2:
@@ -34196,8 +34196,8 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfo.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getEndTimeMs();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
@@ -34214,19 +34214,19 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDa
 
 /**
  * optional uint64 end_time_ms = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfo.prototype.getEndTimeMs = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfo} returns this
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfo.prototype.setEndTimeMs = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
@@ -34813,7 +34813,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndD
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp.toObject = function(includeInstance, msg) {
   var f, obj = {
-    timestamp: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    timestamp: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     serializedVotePollsList: msg.getSerializedVotePollsList_asB64()
   };
 
@@ -34852,7 +34852,7 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndD
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setTimestamp(value);
       break;
     case 2:
@@ -34889,8 +34889,8 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndD
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getTimestamp();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
@@ -34907,19 +34907,19 @@ proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndD
 
 /**
  * optional uint64 timestamp = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp.prototype.getTimestamp = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp} returns this
  */
 proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp.prototype.setTimestamp = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
@@ -36515,9 +36515,9 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
   var f, obj = {
     finishedVoteOutcome: jspb.Message.getFieldWithDefault(msg, 1, 0),
     wonByIdentityId: msg.getWonByIdentityId_asB64(),
-    finishedAtBlockHeight: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    finishedAtBlockHeight: jspb.Message.getFieldWithDefault(msg, 3, "0"),
     finishedAtCoreBlockHeight: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    finishedAtBlockTimeMs: jspb.Message.getFieldWithDefault(msg, 5, 0),
+    finishedAtBlockTimeMs: jspb.Message.getFieldWithDefault(msg, 5, "0"),
     finishedAtEpoch: jspb.Message.getFieldWithDefault(msg, 6, 0)
   };
 
@@ -36564,7 +36564,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
       msg.setWonByIdentityId(value);
       break;
     case 3:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setFinishedAtBlockHeight(value);
       break;
     case 4:
@@ -36572,7 +36572,7 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
       msg.setFinishedAtCoreBlockHeight(value);
       break;
     case 5:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setFinishedAtBlockTimeMs(value);
       break;
     case 6:
@@ -36623,8 +36623,8 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
     );
   }
   f = message.getFinishedAtBlockHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       3,
       f
     );
@@ -36637,8 +36637,8 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
     );
   }
   f = message.getFinishedAtBlockTimeMs();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       5,
       f
     );
@@ -36742,19 +36742,19 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
 
 /**
  * optional uint64 finished_at_block_height = 3;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.prototype.getFinishedAtBlockHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo} returns this
  */
 proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.prototype.setFinishedAtBlockHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 3, value);
+  return jspb.Message.setProto3StringIntField(this, 3, value);
 };
 
 
@@ -36778,19 +36778,19 @@ proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContest
 
 /**
  * optional uint64 finished_at_block_time_ms = 5;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.prototype.getFinishedAtBlockTimeMs = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo} returns this
  */
 proto.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.prototype.setFinishedAtBlockTimeMs = function(value) {
-  return jspb.Message.setProto3IntField(this, 5, value);
+  return jspb.Message.setProto3StringIntField(this, 5, value);
 };
 
 
@@ -41528,7 +41528,7 @@ proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefun
  */
 proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    balance: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    balance: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -41568,7 +41568,7 @@ proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefun
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBalance(value);
       break;
     case 2:
@@ -41610,9 +41610,9 @@ proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefun
  */
 proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = /** @type {number} */ (jspb.Message.getField(message, 1));
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       1,
       f
     );
@@ -41638,15 +41638,15 @@ proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefun
 
 /**
  * optional uint64 balance = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0.prototype.getBalance = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0} returns this
  */
 proto.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0.prototype.setBalance = function(value) {
@@ -42286,7 +42286,7 @@ proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCredit
  */
 proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    credits: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    credits: jspb.Message.getFieldWithDefault(msg, 1, "0"),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -42326,7 +42326,7 @@ proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCredit
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setCredits(value);
       break;
     case 2:
@@ -42368,9 +42368,9 @@ proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCredit
  */
 proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = /** @type {number} */ (jspb.Message.getField(message, 1));
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       1,
       f
     );
@@ -42396,15 +42396,15 @@ proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCredit
 
 /**
  * optional uint64 credits = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.prototype.getCredits = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} returns this
  */
 proto.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.prototype.setCredits = function(value) {
@@ -45217,9 +45217,9 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.proto
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.toObject = function(includeInstance, msg) {
   var f, obj = {
-    local: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    block: jspb.Message.getFieldWithDefault(msg, 2, 0),
-    genesis: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    local: jspb.Message.getFieldWithDefault(msg, 1, "0"),
+    block: jspb.Message.getFieldWithDefault(msg, 2, "0"),
+    genesis: jspb.Message.getFieldWithDefault(msg, 3, "0"),
     epoch: jspb.Message.getFieldWithDefault(msg, 4, 0)
   };
 
@@ -45258,15 +45258,15 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.deser
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setLocal(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBlock(value);
       break;
     case 3:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setGenesis(value);
       break;
     case 4:
@@ -45303,22 +45303,22 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.proto
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getLocal();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 2));
+  f = /** @type {string} */ (jspb.Message.getField(message, 2));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       2,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 3));
+  f = /** @type {string} */ (jspb.Message.getField(message, 3));
   if (f != null) {
-    writer.writeUint64(
+    writer.writeUint64String(
       3,
       f
     );
@@ -45335,33 +45335,33 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.seria
 
 /**
  * optional uint64 local = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.getLocal = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.setLocal = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
 /**
  * optional uint64 block = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.getBlock = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.setBlock = function(value) {
@@ -45389,15 +45389,15 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.proto
 
 /**
  * optional uint64 genesis = 3;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.getGenesis = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.setGenesis = function(value) {
@@ -45720,11 +45720,11 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.toOb
     catchingUp: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
     latestBlockHash: msg.getLatestBlockHash_asB64(),
     latestAppHash: msg.getLatestAppHash_asB64(),
-    latestBlockHeight: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    latestBlockHeight: jspb.Message.getFieldWithDefault(msg, 4, "0"),
     earliestBlockHash: msg.getEarliestBlockHash_asB64(),
     earliestAppHash: msg.getEarliestAppHash_asB64(),
-    earliestBlockHeight: jspb.Message.getFieldWithDefault(msg, 7, 0),
-    maxPeerBlockHeight: jspb.Message.getFieldWithDefault(msg, 9, 0),
+    earliestBlockHeight: jspb.Message.getFieldWithDefault(msg, 7, "0"),
+    maxPeerBlockHeight: jspb.Message.getFieldWithDefault(msg, 9, "0"),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 10, 0)
   };
 
@@ -45775,7 +45775,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.dese
       msg.setLatestAppHash(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setLatestBlockHeight(value);
       break;
     case 5:
@@ -45787,11 +45787,11 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.dese
       msg.setEarliestAppHash(value);
       break;
     case 7:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setEarliestBlockHeight(value);
       break;
     case 9:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setMaxPeerBlockHeight(value);
       break;
     case 10:
@@ -45849,8 +45849,8 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.seri
     );
   }
   f = message.getLatestBlockHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       4,
       f
     );
@@ -45870,15 +45870,15 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.seri
     );
   }
   f = message.getEarliestBlockHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       7,
       f
     );
   }
   f = message.getMaxPeerBlockHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       9,
       f
     );
@@ -45997,19 +45997,19 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prot
 
 /**
  * optional uint64 latest_block_height = 4;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.getLatestBlockHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.setLatestBlockHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
+  return jspb.Message.setProto3StringIntField(this, 4, value);
 };
 
 
@@ -46099,37 +46099,37 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prot
 
 /**
  * optional uint64 earliest_block_height = 7;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.getEarliestBlockHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 7, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 7, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.setEarliestBlockHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 7, value);
+  return jspb.Message.setProto3StringIntField(this, 7, value);
 };
 
 
 /**
  * optional uint64 max_peer_block_height = 9;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.getMaxPeerBlockHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 9, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 9, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.setMaxPeerBlockHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 9, value);
+  return jspb.Message.setProto3StringIntField(this, 9, value);
 };
 
 
@@ -46391,14 +46391,14 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.toObject = function(includeInstance, msg) {
   var f, obj = {
-    totalSyncedTime: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    remainingTime: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    totalSyncedTime: jspb.Message.getFieldWithDefault(msg, 1, "0"),
+    remainingTime: jspb.Message.getFieldWithDefault(msg, 2, "0"),
     totalSnapshots: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    chunkProcessAvgTime: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    snapshotHeight: jspb.Message.getFieldWithDefault(msg, 5, 0),
-    snapshotChunksCount: jspb.Message.getFieldWithDefault(msg, 6, 0),
-    backfilledBlocks: jspb.Message.getFieldWithDefault(msg, 7, 0),
-    backfillBlocksTotal: jspb.Message.getFieldWithDefault(msg, 8, 0)
+    chunkProcessAvgTime: jspb.Message.getFieldWithDefault(msg, 4, "0"),
+    snapshotHeight: jspb.Message.getFieldWithDefault(msg, 5, "0"),
+    snapshotChunksCount: jspb.Message.getFieldWithDefault(msg, 6, "0"),
+    backfilledBlocks: jspb.Message.getFieldWithDefault(msg, 7, "0"),
+    backfillBlocksTotal: jspb.Message.getFieldWithDefault(msg, 8, "0")
   };
 
   if (includeInstance) {
@@ -46436,11 +46436,11 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setTotalSyncedTime(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setRemainingTime(value);
       break;
     case 3:
@@ -46448,23 +46448,23 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
       msg.setTotalSnapshots(value);
       break;
     case 4:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setChunkProcessAvgTime(value);
       break;
     case 5:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setSnapshotHeight(value);
       break;
     case 6:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setSnapshotChunksCount(value);
       break;
     case 7:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBackfilledBlocks(value);
       break;
     case 8:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setBackfillBlocksTotal(value);
       break;
     default:
@@ -46497,15 +46497,15 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getTotalSyncedTime();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       1,
       f
     );
   }
   f = message.getRemainingTime();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       2,
       f
     );
@@ -46518,36 +46518,36 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
     );
   }
   f = message.getChunkProcessAvgTime();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       4,
       f
     );
   }
   f = message.getSnapshotHeight();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       5,
       f
     );
   }
   f = message.getSnapshotChunksCount();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       6,
       f
     );
   }
   f = message.getBackfilledBlocks();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       7,
       f
     );
   }
   f = message.getBackfillBlocksTotal();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       8,
       f
     );
@@ -46557,37 +46557,37 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
 
 /**
  * optional uint64 total_synced_time = 1;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getTotalSyncedTime = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setTotalSyncedTime = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
+  return jspb.Message.setProto3StringIntField(this, 1, value);
 };
 
 
 /**
  * optional uint64 remaining_time = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getRemainingTime = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setRemainingTime = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+  return jspb.Message.setProto3StringIntField(this, 2, value);
 };
 
 
@@ -46611,91 +46611,91 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.
 
 /**
  * optional uint64 chunk_process_avg_time = 4;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getChunkProcessAvgTime = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setChunkProcessAvgTime = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
+  return jspb.Message.setProto3StringIntField(this, 4, value);
 };
 
 
 /**
  * optional uint64 snapshot_height = 5;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getSnapshotHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setSnapshotHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 5, value);
+  return jspb.Message.setProto3StringIntField(this, 5, value);
 };
 
 
 /**
  * optional uint64 snapshot_chunks_count = 6;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getSnapshotChunksCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 6, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 6, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setSnapshotChunksCount = function(value) {
-  return jspb.Message.setProto3IntField(this, 6, value);
+  return jspb.Message.setProto3StringIntField(this, 6, value);
 };
 
 
 /**
  * optional uint64 backfilled_blocks = 7;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getBackfilledBlocks = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 7, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 7, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setBackfilledBlocks = function(value) {
-  return jspb.Message.setProto3IntField(this, 7, value);
+  return jspb.Message.setProto3StringIntField(this, 7, value);
 };
 
 
 /**
  * optional uint64 backfill_blocks_total = 8;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.getBackfillBlocksTotal = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 8, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 8, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.prototype.setBackfillBlocksTotal = function(value) {
-  return jspb.Message.setProto3IntField(this, 8, value);
+  return jspb.Message.setProto3StringIntField(this, 8, value);
 };
 
 

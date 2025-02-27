@@ -103,7 +103,7 @@ describe('DocumentFacade', () => {
         create: documents,
       }, {
         [identityId.toString()]: {
-          [contractId.toString()]: 1,
+          [contractId.toString()]: '1',
         },
       });
 
