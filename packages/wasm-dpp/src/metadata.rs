@@ -3,10 +3,8 @@
 pub use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use crate::utils::ToSerdeJSONExt;
 use dpp::metadata::Metadata;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::util::json_value::JsonValueExt;
 
 #[wasm_bindgen(js_name=Metadata)]
 #[derive(Clone, Debug)]
@@ -79,11 +77,11 @@ impl MetadataWasm {
 
     #[wasm_bindgen(js_name=getTimeMs)]
     pub fn time_ms(&self) -> u64 {
-        self.0.time_ms as u64
+        self.0.time_ms
     }
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn protocol_version(&self) -> u32 {
-        self.0.protocol_version as u32
+        self.0.protocol_version
     }
 }
