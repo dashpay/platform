@@ -14164,6 +14164,7 @@ mod tests {
                                 self_changing_admin_action_takers_allowed: false,
                             },
                         ));
+                        token_configuration.allow_transfer_to_frozen_balance(true);
                     }),
                     None,
                     platform_version,

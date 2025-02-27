@@ -2,6 +2,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, TokenIsPausedError};
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::prelude::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
@@ -9,6 +11,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -77,6 +80,7 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         }
 
         // We need to verify that our token account is not frozen
+
         let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
             self.token_id().to_buffer(),
             owner_id.to_buffer(),
@@ -103,30 +107,37 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         };
 
         // We need to verify that account we are transferring to not frozen
-        let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
-            self.token_id().to_buffer(),
-            self.recipient_id().to_buffer(),
-            block_info,
-            true,
-            transaction,
-            platform_version,
-        )?;
+        if !self
+            .base()
+            .token_configuration()?
+            .is_allowed_transfer_to_frozen_balance()
+        {
+            let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
+                self.token_id().to_buffer(),
+                self.recipient_id().to_buffer(),
+                block_info,
+                true,
+                transaction,
+                platform_version,
+            )?;
 
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-        if let Some(info) = info {
-            if info.frozen() {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
-                        IdentityTokenAccountFrozenError::new(
-                            self.token_id(),
-                            self.recipient_id(),
-                            "transfer".to_string(),
-                        ),
-                    )),
-                ));
-            }
-        };
+            if let Some(info) = info {
+                if info.frozen() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                            IdentityTokenAccountFrozenError::new(
+                                self.token_id(),
+                                self.recipient_id(),
+                                "transfer".to_string(),
+                            ),
+                        )),
+                    ));
+                }
+            };
+        }
 
         // We need to verify that the token is not paused
         let (token_status, fee_result) = platform.drive.fetch_token_status_with_costs(
