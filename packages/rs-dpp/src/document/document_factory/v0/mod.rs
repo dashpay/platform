@@ -36,7 +36,8 @@ use crate::state_transition::batch_transition::{
 };
 use itertools::Itertools;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{DocumentTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
+use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{DocumentTransferTransition, DocumentUpdatePriceTransition};
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
