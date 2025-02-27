@@ -65,7 +65,7 @@ export default async function broadcast(
 
   if (documents.transfer?.length && documents.transfer
     .some(({ params }) => !params?.receiver)) {
-    throw new Error('Receiver identity is not found for transfer transition');
+    throw new Error('Receiver Identity is not found for Transfer transition');
   }
 
   if (documents.updatePrice?.length && documents.updatePrice
@@ -76,7 +76,7 @@ export default async function broadcast(
   if (documents.purchase?.length) {
     if (documents.purchase
       .some(({ params }) => !params?.price || !params?.receiver)) {
-      throw new Error('Receiver and Price must be provided for UpdatePrice operation');
+      throw new Error('Receiver and Price must be provided for Purchase operation');
     } else {
       documents.purchase.forEach(({ document, params }) => document.setOwnerId(params!.receiver));
     }
