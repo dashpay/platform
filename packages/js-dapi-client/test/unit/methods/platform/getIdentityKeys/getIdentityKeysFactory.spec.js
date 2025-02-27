@@ -103,7 +103,14 @@ describe('getIdentityKeysFactory', () => {
       options,
     );
     expect(result.getIdentityKeys()).to.deep.equal([keys[0]]);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
     expect(result.getProof()).to.equal(undefined);
   });
 

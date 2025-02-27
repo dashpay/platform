@@ -73,7 +73,7 @@ class NonceManager {
 
   public async bumpIdentityNonce(identityId: Identifier): Promise<bigint> {
     const identityNonce = await this.getIdentityNonce(identityId);
-    const nextIdentityNonce = identityNonce + 1n;
+    const nextIdentityNonce = identityNonce + BigInt(1);
 
     this.setIdentityNonce(identityId, nextIdentityNonce);
 
@@ -157,7 +157,7 @@ class NonceManager {
   ): Promise<bigint> {
     const identityContractNonce = await this.getIdentityContractNonce(identityId, contractId);
     // @ts-ignore
-    const nextIdentityContractNonce = identityContractNonce + 1n;
+    const nextIdentityContractNonce = identityContractNonce + BigInt(1);
     this.setIdentityContractNonce(identityId, contractId, nextIdentityContractNonce);
     return nextIdentityContractNonce;
   }
