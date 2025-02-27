@@ -26,7 +26,7 @@ indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 # used for int maps and needed in the verifier
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = [
+dpp = { package = "dpp", path = "../rs-dpp", features = [
   "state-transitions",
 ], default-features = false, optional = true }
 thiserror = { version = "1.0.63" }
@@ -36,7 +36,7 @@ hex = { version = "0.4.3" }
 
 # optional dependencies
 parking_lot = { version = "0.12.1", optional = true }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
+ciborium = { version = "0.2.2", optional = true }
 arc-swap = { version = "1.7.0", optional = true }
 serde = { version = "1.0.197", features = ["derive"], optional = true }
 rand = { version = "0.8.4", features = ["small_rng"], optional = true }
@@ -52,12 +52,12 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { version = "2.2.1", optional = true, default-features = false }
-grovedb-costs = { version = "2.2.1", optional = true }
-grovedb-path = { version = "2.2.1" }
-grovedb-storage = { version = "2.2.1", optional = true }
-grovedb-version = { version = "2.2.1" }
-grovedb-epoch-based-storage-flags = { version = "2.2.1" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev= "44c2244bbccd3e6e684729e8cf620644f7ebbf70", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev= "44c2244bbccd3e6e684729e8cf620644f7ebbf70", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev= "44c2244bbccd3e6e684729e8cf620644f7ebbf70" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev= "44c2244bbccd3e6e684729e8cf620644f7ebbf70", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev= "44c2244bbccd3e6e684729e8cf620644f7ebbf70" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev= "44c2244bbccd3e6e684729e8cf620644f7ebbf70" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -100,6 +100,7 @@ server = [
   "parking_lot",
   "arc-swap",
   "moka",
+  "dpp/validation",
   "dpp/platform-value-json",
   "dpp/system_contracts",
   "dpp/state-transitions",

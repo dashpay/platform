@@ -4,13 +4,11 @@ use platform_value::{Bytes32, Identifier};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use crate::document::{Document, DocumentTransitionParams};
-use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-
-use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-
-pub fn get_document_transitions_fixture<'a>(
+use crate::document::Document;
+use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+pub fn get_batched_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
@@ -23,7 +21,7 @@ pub fn get_document_transitions_fixture<'a>(
         ),
     >,
     nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-) -> Vec<DocumentTransition> {
+) -> Vec<BatchedTransition> {
     let protocol_version = PlatformVersion::latest().protocol_version;
     let document_factory =
         DocumentFactory::new(protocol_version).expect("expected to get document factory");
@@ -31,6 +29,7 @@ pub fn get_document_transitions_fixture<'a>(
     document_factory
         .create_state_transition(documents, nonce_counter)
         .expect("the transitions should be created")
-        .transitions()
-        .to_owned()
+        .transitions_iter()
+        .map(|batched_transition_ref| batched_transition_ref.to_owned_transition())
+        .collect()
 }

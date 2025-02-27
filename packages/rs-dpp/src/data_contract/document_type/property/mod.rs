@@ -12,6 +12,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -159,69 +160,93 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn min_byte_size(&self) -> Option<u16> {
+    pub fn min_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
         match self {
-            DocumentPropertyType::U128 => Some(16),
-            DocumentPropertyType::I128 => Some(16),
-            DocumentPropertyType::U64 => Some(8),
-            DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
-            DocumentPropertyType::I32 => Some(4),
-            DocumentPropertyType::U16 => Some(2),
-            DocumentPropertyType::I16 => Some(2),
-            DocumentPropertyType::U8 => Some(1),
-            DocumentPropertyType::I8 => Some(1),
-            DocumentPropertyType::F64 => Some(8),
+            DocumentPropertyType::U128 => Ok(Some(16)),
+            DocumentPropertyType::I128 => Ok(Some(16)),
+            DocumentPropertyType::U64 => Ok(Some(8)),
+            DocumentPropertyType::I64 => Ok(Some(8)),
+            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::I32 => Ok(Some(4)),
+            DocumentPropertyType::U16 => Ok(Some(2)),
+            DocumentPropertyType::I16 => Ok(Some(2)),
+            DocumentPropertyType::U8 => Ok(Some(1)),
+            DocumentPropertyType::I8 => Ok(Some(1)),
+            DocumentPropertyType::F64 => Ok(Some(8)),
             DocumentPropertyType::String(sizes) => match sizes.min_length {
-                None => Some(0),
-                Some(size) => Some(size * 4),
+                None => Ok(Some(0)),
+                Some(size) => {
+                    if platform_version.protocol_version > 8 {
+                        match size.checked_mul(4) {
+                            Some(mul) => Ok(Some(mul)),
+                            None => Err(ProtocolError::Overflow("min_byte_size overflow")),
+                        }
+                    } else {
+                        Ok(Some(size.wrapping_mul(4)))
+                    }
+                }
             },
             DocumentPropertyType::ByteArray(sizes) => match sizes.min_size {
-                None => Some(0),
-                Some(size) => Some(size),
+                None => Ok(Some(0)),
+                Some(size) => Ok(Some(size)),
             },
-            DocumentPropertyType::Boolean => Some(1),
-            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Boolean => Ok(Some(1)),
+            DocumentPropertyType::Date => Ok(Some(8)),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.property_type.min_byte_size())
+                .map(|(_, sub_field)| sub_field.property_type.min_byte_size(platform_version))
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
-            DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => Ok(None),
+            DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::Identifier => Ok(Some(32)),
         }
     }
 
-    pub fn max_byte_size(&self) -> Option<u16> {
+    pub fn max_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
         match self {
-            DocumentPropertyType::U128 => Some(16),
-            DocumentPropertyType::I128 => Some(16),
-            DocumentPropertyType::U64 => Some(8),
-            DocumentPropertyType::I64 => Some(8),
-            DocumentPropertyType::U32 => Some(4),
-            DocumentPropertyType::I32 => Some(4),
-            DocumentPropertyType::U16 => Some(2),
-            DocumentPropertyType::I16 => Some(2),
-            DocumentPropertyType::U8 => Some(1),
-            DocumentPropertyType::I8 => Some(1),
-            DocumentPropertyType::F64 => Some(8),
+            DocumentPropertyType::U128 => Ok(Some(16)),
+            DocumentPropertyType::I128 => Ok(Some(16)),
+            DocumentPropertyType::U64 => Ok(Some(8)),
+            DocumentPropertyType::I64 => Ok(Some(8)),
+            DocumentPropertyType::U32 => Ok(Some(4)),
+            DocumentPropertyType::I32 => Ok(Some(4)),
+            DocumentPropertyType::U16 => Ok(Some(2)),
+            DocumentPropertyType::I16 => Ok(Some(2)),
+            DocumentPropertyType::U8 => Ok(Some(1)),
+            DocumentPropertyType::I8 => Ok(Some(1)),
+            DocumentPropertyType::F64 => Ok(Some(8)),
             DocumentPropertyType::String(sizes) => match sizes.max_length {
-                None => Some(u16::MAX),
-                Some(size) => Some(size * 4),
+                None => Ok(Some(u16::MAX)),
+                Some(size) => {
+                    if platform_version.protocol_version > 8 {
+                        match size.checked_mul(4) {
+                            Some(mul) => Ok(Some(mul)),
+                            None => Err(ProtocolError::Overflow("max_byte_size overflow")),
+                        }
+                    } else {
+                        Ok(Some(size.wrapping_mul(4)))
+                    }
+                }
             },
             DocumentPropertyType::ByteArray(sizes) => match sizes.max_size {
-                None => Some(u16::MAX),
-                Some(size) => Some(size),
+                None => Ok(Some(u16::MAX)),
+                Some(size) => Ok(Some(size)),
             },
-            DocumentPropertyType::Boolean => Some(1),
-            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Boolean => Ok(Some(1)),
+            DocumentPropertyType::Date => Ok(Some(8)),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.property_type.max_byte_size())
+                .map(|(_, sub_field)| sub_field.property_type.max_byte_size(platform_version))
                 .sum(),
-            DocumentPropertyType::Array(_) => None,
-            DocumentPropertyType::VariableTypeArray(_) => None,
-            DocumentPropertyType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => Ok(None),
+            DocumentPropertyType::VariableTypeArray(_) => Ok(None),
+            DocumentPropertyType::Identifier => Ok(Some(32)),
         }
     }
 
@@ -259,60 +284,66 @@ impl DocumentPropertyType {
     }
 
     /// The middle size rounded down halfway between min and max size
-    pub fn middle_size(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_size(&self, platform_version: &PlatformVersion) -> Option<u16> {
+        let min_size = self.min_size()?;
+        let max_size = self.max_size()?;
+        if platform_version.protocol_version > 8 {
+            Some(((min_size as u32 + max_size as u32) / 2) as u16)
+        } else {
+            Some(min_size.wrapping_add(max_size) / 2)
         }
-        let min_size = self.min_size().unwrap();
-        let max_size = self.max_size().unwrap();
-        Some((min_size + max_size) / 2)
     }
 
     /// The middle size rounded up halfway between min and max size
-    pub fn middle_size_ceil(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_size_ceil(&self, platform_version: &PlatformVersion) -> Option<u16> {
+        let min_size = self.min_size()?;
+        let max_size = self.max_size()?;
+        if platform_version.protocol_version > 8 {
+            Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16)
+        } else {
+            Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2)
         }
-        let min_size = self.min_size().unwrap();
-        let max_size = self.max_size().unwrap();
-        Some((min_size + max_size + 1) / 2)
     }
 
     /// The middle size rounded down halfway between min and max byte size
-    pub fn middle_byte_size(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        if platform_version.protocol_version > 8 {
+            Ok(Some(((min_size as u32 + max_size as u32) / 2) as u16))
+        } else {
+            Ok(Some(min_size.wrapping_add(max_size) / 2))
         }
-        let min_size = self.min_byte_size().unwrap();
-        let max_size = self.max_byte_size().unwrap();
-        Some((min_size + max_size) / 2)
     }
 
     /// The middle size rounded up halfway between min and max byte size
-    pub fn middle_byte_size_ceil(&self) -> Option<u16> {
-        match self {
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                return None
-            }
-            _ => {}
+    pub fn middle_byte_size_ceil(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        if platform_version.protocol_version > 8 {
+            Ok(Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16))
+        } else {
+            Ok(Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2))
         }
-        let min_size = self.min_byte_size().unwrap() as u32;
-        let max_size = self.max_byte_size().unwrap() as u32;
-        Some(((min_size + max_size + 1) / 2) as u16)
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
-        let min_size = self.min_size().unwrap();
-        let max_size = self.max_size().unwrap();
+        let min_size = self.min_size().unwrap_or_default();
+        let max_size = self.max_size().unwrap_or_default();
         rng.gen_range(min_size..=max_size)
     }
 
@@ -1730,6 +1761,7 @@ impl DocumentPropertyType {
     }
 
     pub fn encode_u16(val: u16) -> Vec<u8> {
+        //todo this should just be to_be_bytes (and for all unsigned integers)
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -1754,7 +1786,7 @@ impl DocumentPropertyType {
         wtr
     }
 
-    /// Decodes an unsigned integer on 32 bits.
+    /// Decodes an unsigned integer on 16 bits.
     pub fn decode_u16(val: &[u8]) -> Option<u16> {
         // Flip the sign bit
         // to deal with interaction between the domains

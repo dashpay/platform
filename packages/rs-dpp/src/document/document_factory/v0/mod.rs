@@ -22,19 +22,23 @@ use crate::document::document_methods::DocumentMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::{
     extended_document::v0::ExtendedDocumentV0,
-    serialization_traits::DocumentPlatformConversionMethodsV0, ExtendedDocument,
+    ExtendedDocument, serialization_traits::DocumentPlatformConversionMethodsV0,
 };
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::{
-    document_transition::{
-        action_type::DocumentTransitionActionType, DocumentCreateTransition,
-        DocumentDeleteTransition, DocumentPurchaseTransition, DocumentReplaceTransition,
+use crate::state_transition::batch_transition::{
+    batched_transition::{
+        document_transition_action_type::DocumentTransitionActionType,
+        DocumentCreateTransition, DocumentDeleteTransition,
+        DocumentReplaceTransition, DocumentTransferTransition,
+        DocumentUpdatePriceTransition, DocumentPurchaseTransition,
         DocumentTransferTransition, DocumentTransition, DocumentUpdatePriceTransition,
     },
-    DocumentsBatchTransition, DocumentsBatchTransitionV0,
+    BatchTransition, BatchTransitionV0,
 };
 use itertools::Itertools;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -218,7 +222,7 @@ impl DocumentFactoryV0 {
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransition, ProtocolError> {
+    ) -> Result<BatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
             DocumentTransitionActionType,
@@ -329,7 +333,7 @@ impl DocumentFactoryV0 {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        Ok(DocumentsBatchTransitionV0 {
+        Ok(BatchTransitionV0 {
             owner_id,
             transitions,
             user_fee_increase: 0,

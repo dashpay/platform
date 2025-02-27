@@ -13,7 +13,7 @@ use dpp::document::{Document, DocumentTransitionParams};
 
 use dpp::prelude::ExtendedDocument;
 
-use crate::document_batch_transition::DocumentsBatchTransitionWasm;
+use crate::batch_transition::BatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
     identifier::identifier_from_js_value,
@@ -21,7 +21,7 @@ use crate::{
     DataContractWasm, ExtendedDocumentWasm,
 };
 use dpp::identifier::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use js_sys::Uint8Array;
 use std::convert::TryFrom;
@@ -109,7 +109,7 @@ impl DocumentFactoryWASM {
         &self,
         documents: &JsValue,
         nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
+    ) -> Result<BatchTransitionWasm, JsValue> {
         let mut nonce_counter = BTreeMap::new();
         let mut contract_ids_to_check = HashSet::<&Identifier>::new();
 
@@ -262,6 +262,7 @@ impl DocumentFactoryWASM {
     //
     //     Ok(document.into())
     // }
+    //
 
     #[wasm_bindgen(js_name=createExtendedDocumentFromDocumentBuffer)]
     pub fn create_extended_from_document_buffer(

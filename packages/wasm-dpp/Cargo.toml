@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serde = { version = "1.0.197", features = ["derive"] }
@@ -40,6 +40,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "extended-document",
     "document-value-conversion",
     "document-json-conversion",
+    "system_contracts"
 ] }
 itertools = { version = "0.13" }
 log = { version = "0.4.6" }

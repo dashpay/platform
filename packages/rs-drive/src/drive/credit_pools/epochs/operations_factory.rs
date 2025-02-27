@@ -20,7 +20,7 @@ use dpp::fee::Credits;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 
 /// Operations on Epochs
 pub trait EpochOperations {
@@ -288,7 +288,11 @@ impl EpochOperations for Epoch {
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
     fn delete_proposers_tree_operation(&self) -> QualifiedGroveDbOp {
-        QualifiedGroveDbOp::delete_tree_op(self.get_path_vec(), KEY_PROPOSERS.to_vec(), false)
+        QualifiedGroveDbOp::delete_tree_op(
+            self.get_path_vec(),
+            KEY_PROPOSERS.to_vec(),
+            TreeType::NormalTree,
+        )
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
@@ -421,7 +425,7 @@ mod tests {
 
         #[test]
         fn test_error_if_fee_pools_not_initialized() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -445,10 +449,9 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure(None);
-            let transaction = drive.grove.start_transaction();
-
             let platform_version = PlatformVersion::first();
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(1042).unwrap();
 
@@ -480,10 +483,9 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure(None);
-            let transaction = drive.grove.start_transaction();
-
             let platform_version = PlatformVersion::first();
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(1042).unwrap();
 

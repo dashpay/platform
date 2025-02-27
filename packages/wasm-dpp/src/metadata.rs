@@ -77,11 +77,11 @@ impl MetadataWasm {
 
     #[wasm_bindgen(js_name=getTimeMs)]
     pub fn time_ms(&self) -> u64 {
-        self.0.time_ms as u64
+        self.0.time_ms
     }
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn protocol_version(&self) -> u32 {
-        self.0.protocol_version as u32
+        self.0.protocol_version
     }
 }

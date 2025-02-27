@@ -18,7 +18,7 @@ use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersion
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -99,7 +99,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 // we can ignore flags as this is just an approximation
                 // and it's doubtful that contracts will always be inserted at max size
                 query_target: QueryTargetValue(
@@ -208,6 +208,7 @@ impl Drive {
                 block_info,
                 estimated_costs_only_with_layer_info,
                 &mut drive_operations,
+                transaction,
                 platform_version,
             )?;
         }

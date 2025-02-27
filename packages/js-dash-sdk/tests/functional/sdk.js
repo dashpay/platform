@@ -33,7 +33,6 @@ describe('SDK', function suite() {
         },
       },
     };
-
     clientInstance = new Dash.Client(clientOpts);
   });
 

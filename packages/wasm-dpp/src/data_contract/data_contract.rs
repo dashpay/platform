@@ -7,10 +7,11 @@ pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::platform_value::{platform_value, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -22,6 +23,7 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
+use crate::data_contract::tokens::TokenConfigurationWasm;
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
 use crate::utils::get_bool_from_options;
@@ -447,6 +449,18 @@ impl DataContractWasm {
         )
         .with_js_error()
         .map(Into::into)
+    }
+
+    #[wasm_bindgen(js_name=getTokenConfiguration)]
+    pub fn token_configuration(
+        &self,
+        token_contract_position: TokenContractPosition,
+    ) -> Result<TokenConfigurationWasm, JsValue> {
+        self.inner
+            .expected_token_configuration(token_contract_position)
+            .map_err(ProtocolError::from)
+            .with_js_error()
+            .map(|token_configuration| token_configuration.clone().into())
     }
 }
 

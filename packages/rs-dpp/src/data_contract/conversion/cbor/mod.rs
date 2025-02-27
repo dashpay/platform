@@ -1,6 +1,7 @@
 mod v0;
 
 use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::v1::DataContractV1;
 use crate::prelude::DataContract;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::version::PlatformVersion;
@@ -27,9 +28,16 @@ impl DataContractCborConversionMethodsV0 for DataContract {
                 platform_version,
             )?
             .into()),
+            1 => Ok(DataContractV1::from_cbor_with_id(
+                cbor_bytes,
+                contract_id,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_cbor_with_id".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -48,9 +56,12 @@ impl DataContractCborConversionMethodsV0 for DataContract {
             0 => Ok(
                 DataContractV0::from_cbor(cbor_bytes, full_validation, platform_version)?.into(),
             ),
+            1 => Ok(
+                DataContractV1::from_cbor(cbor_bytes, full_validation, platform_version)?.into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_cbor".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -59,6 +70,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
     fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_cbor(platform_version),
+            DataContract::V1(v1) => v1.to_cbor(platform_version),
         }
     }
 

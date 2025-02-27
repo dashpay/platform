@@ -13,7 +13,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 
 use grovedb::TransactionArg;
 
-use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use dpp::version::PlatformVersion;
 
 impl Drive {

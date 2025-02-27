@@ -8,8 +8,7 @@ use crate::version::FeatureVersion;
 use crate::state_transition::StateTransitionType;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 
-pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
-    [StateTransitionType::DocumentsBatch];
+pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] = [StateTransitionType::Batch];
 
 pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
     StateTransitionType::IdentityCreate,

@@ -30,7 +30,7 @@ impl Drive {
     /// Returns a `Result` containing a `GroveDbOpBatch` with transformed grove database operations,
     /// or an error if any step in the conversion process fails.
     #[inline(always)]
-    pub(crate) fn convert_drive_operations_to_grove_operations_v0(
+    pub(super) fn convert_drive_operations_to_grove_operations_v0(
         &self,
         drive_batch_operations: Vec<DriveOperation>,
         block_info: &BlockInfo,

@@ -162,7 +162,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
-        self.0.user_fee_increase() as u16
+        self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(js_name=setUserFeeIncrease)]
@@ -441,7 +441,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: u64) {
-        self.0.set_revision(revision as u64)
+        self.0.set_revision(revision)
     }
 
     #[wasm_bindgen]

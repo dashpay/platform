@@ -12,7 +12,7 @@ use dpp::prelude::IdentityNonce;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// Fetches the Identity's contract revision from the backing store
@@ -51,7 +51,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(1),
             }
         };
