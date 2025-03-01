@@ -42,7 +42,8 @@ use crate::version::drive_versions::{
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
     DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
-    DriveProveMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveProveMethodVersions, DriveReducedPlatformStateMethodVersions,
+    DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
@@ -135,6 +136,10 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 empty_prefunded_specialized_balance: 0,
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+            reduced_platform_state: DriveReducedPlatformStateMethodVersions {
+                fetch_reduced_platform_state_bytes: 0,
+                store_reduced_platform_state_bytes: 0,
+            },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
