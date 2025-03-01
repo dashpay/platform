@@ -28,6 +28,7 @@ pub const CREDIT_POOL_METHOD_VERSIONS_V1: DriveCreditPoolMethodVersions =
             add_epoch_processing_credits_for_distribution_operation: 0,
             add_epoch_final_info_operation: 0,
             get_epoch_protocol_version: 0,
+            get_finalized_epoch_infos: 0,
         },
         pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions {
             add_delete_pending_epoch_refunds_except_specified: 0,

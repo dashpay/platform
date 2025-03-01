@@ -72,7 +72,6 @@ impl TokenClaimTransitionActionV0 {
     > {
         let TokenClaimTransitionV0 {
             base,
-            recipient,
             distribution_type,
             public_note,
         } = value;

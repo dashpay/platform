@@ -145,7 +145,7 @@ impl Drive {
                         "the path must have a last element".to_string(),
                     )))?;
             
-            let epoch_index_bytes: [u8; 16] =
+            let epoch_index_bytes: [u8; 2] =
                 epoch_index_vec.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
                         "extended epoch info: item has an invalid length".to_string(),
@@ -163,7 +163,7 @@ impl Drive {
 
             let epoch_info = FinalizedEpochInfo::deserialize_from_bytes(item_bytes)?;
             
-            (epoch_index, epoch_info)
+            Ok((epoch_index, epoch_info))
         }).collect::<Result<T, Error>>()
     }
 }

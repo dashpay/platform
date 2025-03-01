@@ -4,7 +4,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use grovedb::TransactionArg;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
