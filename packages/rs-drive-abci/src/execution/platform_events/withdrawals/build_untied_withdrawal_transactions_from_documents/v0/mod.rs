@@ -1,5 +1,5 @@
-use dashcore_rpc::dashcore::consensus::Encodable;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::consensus::Encodable;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::document_methods::DocumentMethodsV0;
