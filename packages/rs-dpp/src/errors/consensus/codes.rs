@@ -46,7 +46,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentifierError { .. } => 10102,
             Self::ValueError(_) => 10103,
 
-            // DataContract Errors: 10200-10399
+            // DataContract Errors: 10200-10349
             Self::DataContractMaxDepthExceedError { .. } => 10200,
             Self::DuplicateIndexError { .. } => 10201,
             Self::IncompatibleRe2PatternError { .. } => 10202,
