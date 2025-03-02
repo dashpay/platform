@@ -54,6 +54,7 @@ mod property_names {
     pub const UPDATED_AT: &str = "$updatedAt";
     pub const TRANSFERRED_AT: &str = "$transferredAt";
     pub const MINIMUM: &str = "minimum";
+    pub const ENUM: &str = "enum";
     pub const MAXIMUM: &str = "maximum";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
