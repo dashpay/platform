@@ -1,0 +1,25 @@
+pub mod v0;
+
+use crate::data_contract::associated_token::token_configuration::accessors::v0::{
+    TokenConfigurationV0Getters, TokenConfigurationV0Setters,
+};
+use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+
+impl TokenConfigurationConventionV0Getters for TokenConfigurationConvention {
+    fn singular_form_by_language_code_or_default(&self, language_code: &str) -> &str {
+        match self {
+            TokenConfigurationConvention::V0(v0) => {
+                v0.singular_form_by_language_code_or_default(language_code)
+            }
+        }
+    }
+
+    fn plural_form_by_language_code_or_default(&self, language_code: &str) -> &str {
+        match self {
+            TokenConfigurationConvention::V0(v0) => {
+                v0.plural_form_by_language_code_or_default(language_code)
+            }
+        }
+    }
+}
