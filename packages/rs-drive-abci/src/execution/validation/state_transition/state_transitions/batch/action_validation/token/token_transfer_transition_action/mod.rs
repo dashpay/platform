@@ -68,7 +68,7 @@ impl TokenTransferTransitionActionValidation for TokenTransferTransitionAction {
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .token_issuance_transition_state_validation
+            .token_transfer_transition_state_validation
         {
             0 => self.validate_state_v0(
                 platform,

@@ -31,6 +31,9 @@ pub struct TokenConfigurationV0 {
     /// Do we start off as paused, meaning that we can not transfer till we unpause.
     #[serde(default = "default_starts_as_paused")]
     pub start_as_paused: bool,
+    /// Allow to transfer and mint tokens to frozen identity token balances
+    #[serde(default)]
+    pub allow_transfer_to_frozen_balance: bool,
     /// Who can change the max supply
     /// Even if set no one can ever change this under the base supply
     #[serde(default = "default_change_control_rules")]
@@ -160,6 +163,7 @@ impl TokenConfigurationV0 {
             max_supply: None,
             keeps_history: true,
             start_as_paused: false,
+            allow_transfer_to_frozen_balance: false,
             max_supply_change_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,
                 admin_action_takers: AuthorizedActionTakers::NoOne,

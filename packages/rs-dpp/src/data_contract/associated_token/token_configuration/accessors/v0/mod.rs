@@ -22,6 +22,9 @@ pub trait TokenConfigurationV0Getters {
     fn keeps_history(&self) -> bool;
     fn start_as_paused(&self) -> bool;
 
+    /// Allow to transfer and mint tokens to frozen identity token balances
+    fn is_allowed_transfer_to_frozen_balance(&self) -> bool;
+
     /// Returns the maximum supply.
     fn max_supply(&self) -> Option<TokenAmount>;
 
@@ -67,6 +70,9 @@ pub trait TokenConfigurationV0Setters {
 
     /// Sets the conventions change rules.
     fn set_conventions_change_rules(&mut self, rules: ChangeControlRules);
+
+    /// Allow or not a transfer and mint tokens to frozen identity token balances
+    fn allow_transfer_to_frozen_balance(&mut self, allow: bool);
 
     /// Sets the base supply.
     fn set_base_supply(&mut self, base_supply: TokenAmount);
