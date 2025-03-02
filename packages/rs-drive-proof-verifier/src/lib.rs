@@ -15,6 +15,10 @@ pub use provider::MockContextProvider;
 pub use provider::{ContextProvider, DataContractProvider};
 /// From Request
 pub mod from_request;
+/// Group action proofs
+pub mod group_actions;
+/// Token proofs
+pub mod tokens;
 /// Implementation of unproved verification
 pub mod unproved;
 
