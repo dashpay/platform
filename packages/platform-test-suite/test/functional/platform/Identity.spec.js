@@ -358,7 +358,7 @@ describe('Platform', () => {
 
         try {
           await client.platform.documents.broadcast({
-            create: [document],
+            create: [{ document }],
           }, lowBalanceIdentity);
         } catch (e) {
           broadcastError = e;
@@ -445,7 +445,7 @@ describe('Platform', () => {
         );
 
         await client.platform.documents.broadcast({
-          create: [document],
+          create: [{ document }],
         }, identity);
 
         // Additional wait time to mitigate testnet latency

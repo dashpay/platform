@@ -145,7 +145,7 @@ describe('e2e', () => {
         });
 
         await bobClient.platform.documents.broadcast({
-          create: [profile],
+          create: [{ document: profile }],
         }, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
@@ -244,7 +244,7 @@ describe('e2e', () => {
         });
 
         await aliceClient.platform.documents.broadcast({
-          create: [aliceProfile],
+          create: [{ document: aliceProfile }],
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
@@ -265,7 +265,7 @@ describe('e2e', () => {
 
         // 2. Broadcast change
         await aliceClient.platform.documents.broadcast({
-          replace: [aliceProfile],
+          replace: [{ document: aliceProfile }],
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
@@ -299,7 +299,7 @@ describe('e2e', () => {
         });
 
         await bobClient.platform.documents.broadcast({
-          create: [bobContactRequest],
+          create: [{ document: bobContactRequest }],
         }, bobIdentity);
 
         // Additional wait time to mitigate testnet latency
@@ -324,7 +324,7 @@ describe('e2e', () => {
         });
 
         await aliceClient.platform.documents.broadcast({
-          create: [aliceContactAcceptance],
+          create: [{ document: aliceContactAcceptance }],
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency
@@ -344,7 +344,7 @@ describe('e2e', () => {
       it('should be able to remove contact approval', async () => {
         // 1. Broadcast document deletion
         await aliceClient.platform.documents.broadcast({
-          delete: [aliceContactAcceptance],
+          delete: [{ document: aliceContactAcceptance }],
         }, aliceIdentity);
 
         // Additional wait time to mitigate testnet latency

@@ -206,7 +206,7 @@ describe('Platform', () => {
       );
 
       await client.platform.documents.broadcast({
-        create: [document],
+        create: [{ document }],
       }, identity);
 
       // Additional wait time to mitigate testnet latency

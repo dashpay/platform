@@ -425,7 +425,7 @@ mod test {
         let transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
-                vec![(document, document_type, Bytes32::default())],
+                vec![(document, None, document_type, Bytes32::default())],
             )],
             &mut nonce_counter,
         );

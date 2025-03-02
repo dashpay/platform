@@ -331,6 +331,7 @@ mod tests {
                 let data_contract = extended_document.data_contract();
                 (
                     document,
+                    None,
                     data_contract
                         .document_type_for_name(extended_document.document_type_name())
                         .unwrap(),

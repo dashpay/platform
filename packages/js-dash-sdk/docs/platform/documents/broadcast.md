@@ -3,13 +3,17 @@
 
 Parameters: 
 
-| parameters                 | type       | required | Description                                                                  |  
-|----------------------------|------------|----------|------------------------------------------------------------------------------|
-| **documents**              | Object     | yes      |                                                                              |
-| **documents.create**       | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to create |
-| **documents.replace**      | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to replace         |
-| **documents.delete**       | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to delete          |
-| **identity**               | Identity   | yes      | A valid [registered identity](../identities/register.md)                     |
+| parameters                | type               | required | Description                                                                            |  
+|---------------------------|--------------------|----------|----------------------------------------------------------------------------------------|
+| **documents**             | Object             | yes      |                                                                                        |
+| **documents.create**      | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to create                    |
+| **documents.replace**     | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to replace                   |
+| **documents.delete**      | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to delete                    |
+| **documents.transfer**    | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to transfer                  |
+| **documents.updatePrice** | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to set price                 |
+| **documents.purchase**    | ExtendedDocument[] | no       | array of valid [created document](../documents/create.md) to purchase                  |
+| **identity**              | Identity           | yes      | A valid [registered identity](../identities/register.md)                               |
+| **options**               | DocumentTransitionParams           | no       | An object with two optional fields `price` and `receiver` that is used for NFT actions |
 
 
 **Example**:

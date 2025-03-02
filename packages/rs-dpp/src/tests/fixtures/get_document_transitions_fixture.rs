@@ -4,7 +4,7 @@ use platform_value::{Bytes32, Identifier};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use crate::document::Document;
+use crate::document::{Document, DocumentTransitionParams};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
@@ -12,7 +12,12 @@ pub fn get_batched_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
+            Vec<(
+                Document,
+                Option<DocumentTransitionParams>,
+                DocumentTypeRef<'a>,
+                Bytes32,
+            )>,
         ),
     >,
     nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce

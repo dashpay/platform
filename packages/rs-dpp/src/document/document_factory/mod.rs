@@ -9,9 +9,9 @@ use derive_more::From;
 use platform_value::{Bytes32, Identifier, Value};
 
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::document::{Document, DocumentTransitionParams};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::{
     batched_transition::document_transition_action_type::DocumentTransitionActionType,
@@ -117,7 +117,12 @@ impl DocumentFactory {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
+                Vec<(
+                    Document,
+                    Option<DocumentTransitionParams>,
+                    DocumentTypeRef<'a>,
+                    Bytes32,
+                )>,
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce

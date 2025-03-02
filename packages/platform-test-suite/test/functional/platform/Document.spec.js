@@ -101,7 +101,7 @@ describe('Platform', () => {
 
       try {
         await client.platform.documents.broadcast({
-          create: [newDocument],
+          create: [{ document: newDocument }],
         }, identity);
       } catch (e) {
         broadcastError = e;
@@ -134,7 +134,7 @@ describe('Platform', () => {
 
       try {
         await client.platform.documents.broadcast({
-          create: [document],
+          create: [{ document }],
         }, unknownIdentity);
       } catch (e) {
         broadcastError = e;
@@ -165,7 +165,7 @@ describe('Platform', () => {
       );
 
       await client.platform.documents.broadcast({
-        create: [firstDocument],
+        create: [{ document: firstDocument }],
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -184,7 +184,7 @@ describe('Platform', () => {
 
       try {
         await client.platform.documents.broadcast({
-          create: [secondDocument],
+          create: [{ document: secondDocument }],
         }, identity);
       } catch (e) {
         broadcastError = e;
@@ -213,7 +213,7 @@ describe('Platform', () => {
       );
 
       await client.platform.documents.broadcast({
-        create: [document],
+        create: [{ document }],
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -262,7 +262,7 @@ describe('Platform', () => {
       storedDocument.set('firstName', 'updatedName');
 
       await client.platform.documents.broadcast({
-        replace: [storedDocument],
+        replace: [{ document: storedDocument }],
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -292,7 +292,7 @@ describe('Platform', () => {
       storedDocument.set('firstName', 'updatedName');
 
       const documentsBatchTransition = await client.platform.documents.broadcast({
-        replace: [storedDocument],
+        replace: [{ document: storedDocument }],
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -368,7 +368,7 @@ describe('Platform', () => {
 
     it('should be able to delete a document', async () => {
       await client.platform.documents.broadcast({
-        delete: [document],
+        delete: [{ document }],
       }, identity);
 
       await waitForSTPropagated();

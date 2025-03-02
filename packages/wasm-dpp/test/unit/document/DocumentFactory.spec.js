@@ -232,7 +232,7 @@ describe('DocumentFactory', () => {
     it('should throw and error if documents have unknown action', async () => {
       try {
         factory.createStateTransition({
-          unknown: documents,
+          unknown: documents.map((d) => ({ document: d, params: null })),
         }, {});
 
         expect.fail('Error was not thrown');
@@ -274,7 +274,7 @@ describe('DocumentFactory', () => {
       const expectedDocument = documents[0].toObject();
       try {
         factory.createStateTransition({
-          create: documents,
+          create: documents.map((d) => ({ document: d, params: null })),
         });
         expect.fail('Error was not thrown');
       } catch (e) {
@@ -290,8 +290,8 @@ describe('DocumentFactory', () => {
       const identityId = newDocument.getOwnerId();
 
       const stateTransition = factory.createStateTransition({
-        create: documents,
-        replace: [newDocument],
+        create: documents.map((d) => ({ document: d, params: null })),
+        replace: [newDocument].map((d) => ({ document: d, params: null })),
       }, {
         [identityId.toString()]: {
           [dataContract.getId().toString()]: '1',

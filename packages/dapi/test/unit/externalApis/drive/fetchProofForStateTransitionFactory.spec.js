@@ -109,7 +109,7 @@ describe('fetchProofForStateTransition', () => {
     const contractId = documents[0].getDataContractId();
 
     const transition = dpp.document.createStateTransition({
-      create: documents,
+      create: documents.map((d) => ({ document: d })),
     }, {
       [identityId.toString()]: {
         [contractId.toString()]: '1',

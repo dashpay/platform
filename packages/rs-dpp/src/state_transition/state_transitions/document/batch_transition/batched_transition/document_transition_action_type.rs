@@ -47,3 +47,19 @@ impl TryFrom<&str> for DocumentTransitionActionType {
         }
     }
 }
+
+impl From<DocumentTransitionActionType> for &str {
+    fn from(value: DocumentTransitionActionType) -> Self {
+        match value {
+            DocumentTransitionActionType::Create => "Create",
+            DocumentTransitionActionType::Replace => "Replace",
+            DocumentTransitionActionType::Delete => "Delete",
+            DocumentTransitionActionType::Transfer => "Transfer",
+            DocumentTransitionActionType::UpdatePrice => "UpdatePrice",
+            DocumentTransitionActionType::Purchase => "Purchase",
+            DocumentTransitionActionType::IgnoreWhileBumpingRevision => {
+                "IgnoreWhileBumpingRevision"
+            }
+        }
+    }
+}

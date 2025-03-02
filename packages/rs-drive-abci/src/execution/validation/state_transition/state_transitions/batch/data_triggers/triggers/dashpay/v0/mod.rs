@@ -154,7 +154,12 @@ mod test {
         let document_transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
-                vec![(contact_request_document, document_type, Bytes32::default())],
+                vec![(
+                    contact_request_document,
+                    None,
+                    document_type,
+                    Bytes32::default(),
+                )],
             )],
             &mut nonce_counter,
         );
@@ -257,7 +262,12 @@ mod test {
         let document_transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
-                vec![(contact_request_document, document_type, Bytes32::default())],
+                vec![(
+                    contact_request_document,
+                    None,
+                    document_type,
+                    Bytes32::default(),
+                )],
             )],
             &mut nonce_counter,
         );
@@ -385,7 +395,12 @@ mod test {
         let document_transitions = get_batched_transitions_fixture(
             [(
                 DocumentTransitionActionType::Create,
-                vec![(contact_request_document, document_type, Bytes32::default())],
+                vec![(
+                    contact_request_document,
+                    None,
+                    document_type,
+                    Bytes32::default(),
+                )],
             )],
             &mut nonce_counter,
         );
