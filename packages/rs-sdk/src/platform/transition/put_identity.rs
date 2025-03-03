@@ -1,3 +1,4 @@
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::{Error, Sdk};
 
