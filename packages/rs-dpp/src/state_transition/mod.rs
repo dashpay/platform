@@ -69,7 +69,6 @@ use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
     feature = "state-transition-validation"
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
-use crate::identity::{KeyID, SecurityLevel};
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::UserFeeIncrease;
 use crate::serialization::Signable;
@@ -105,7 +104,7 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 use crate::state_transition::state_transitions::identity::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransitionSignable;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
 

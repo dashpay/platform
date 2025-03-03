@@ -27,8 +27,8 @@ pub mod token_transition_action_type;
 pub mod token_unfreeze_transition;
 
 use crate::prelude::IdentityNonce;
-use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use derive_more::Display;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;

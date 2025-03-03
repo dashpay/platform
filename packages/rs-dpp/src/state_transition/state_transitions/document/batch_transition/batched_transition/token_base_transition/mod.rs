@@ -8,8 +8,8 @@ mod v0_methods;
     feature = "state-transition-json-conversion"
 ))]
 use crate::data_contract::DataContract;
-use crate::state_transition::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
-use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 #[cfg(any(
     feature = "state-transition-value-conversion",
     feature = "state-transition-json-conversion"

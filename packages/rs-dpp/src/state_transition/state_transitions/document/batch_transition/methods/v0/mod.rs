@@ -19,6 +19,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
 use versioned_feature_core::FeatureVersion;
 use std::convert::TryFrom;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};

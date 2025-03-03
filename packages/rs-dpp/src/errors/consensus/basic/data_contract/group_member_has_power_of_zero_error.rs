@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use bincode::{Decode, Encode};

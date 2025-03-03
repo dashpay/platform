@@ -9,7 +9,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
-use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes};
+use crate::{identity::identity_public_key::security_level::SecurityLevel, state_transition::StateTransitionFieldTypes};
 
 pub use self::batched_transition::{
     document_base_transition, document_create_transition,
@@ -48,11 +48,11 @@ mod validation;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
 
-use crate::state_transition::batch_transition::fields::property_names;
+use crate::state_transition::state_transitions::document::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;

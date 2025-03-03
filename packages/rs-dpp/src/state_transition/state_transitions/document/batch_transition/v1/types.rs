@@ -1,6 +1,6 @@
-use crate::state_transition::batch_transition::fields::property_names::*;
-use crate::state_transition::batch_transition::fields::*;
-use crate::state_transition::batch_transition::BatchTransitionV1;
+use crate::state_transition::state_transitions::document::batch_transition::fields::property_names::*;
+use crate::state_transition::state_transitions::document::batch_transition::fields::*;
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransitionV1;
 use crate::state_transition::StateTransitionFieldTypes;
 
 impl StateTransitionFieldTypes for BatchTransitionV1 {

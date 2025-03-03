@@ -1,8 +1,8 @@
-use crate::state_transition::batch_transition::batched_transition::{
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{
     BatchedTransition, BatchedTransitionRef, DocumentPurchaseTransition, DocumentTransferTransition,
 };
-use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
-use crate::state_transition::batch_transition::{
+use crate::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use crate::state_transition::state_transitions::document::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
     TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition,
     TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition,

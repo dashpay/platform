@@ -1,4 +1,4 @@
-use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
 
 pub trait TokenBaseTransitionAccessors {
     /// Returns a reference to the `base` field of the `DocumentCreateTransitionV0`.

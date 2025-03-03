@@ -10,7 +10,7 @@ use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
@@ -18,7 +18,7 @@ use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]

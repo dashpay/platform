@@ -34,12 +34,7 @@ use crate::state_transition::errors::{
     InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
     StateTransitionIsNotSignedError,
 };
-use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
-    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
-};
 
-use dashcore::consensus::encode::Error as DashCoreError;
 
 use crate::tokens::errors::TokenError;
 use platform_value::{Error, Value};

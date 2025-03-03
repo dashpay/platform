@@ -1219,10 +1219,12 @@ dependencies = [
  "drive",
  "drive-proof-verifier",
  "envy",
+ "ferment-macro",
  "futures",
  "hex",
  "http",
  "lru",
+ "platform-value",
  "rs-dapi-client",
  "rustls-pemfile",
  "sanitize-filename",
@@ -1314,6 +1316,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1329,6 +1332,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.64",
  "token-history-contract",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wallet-utils-contract",
  "withdrawals-contract",
 ]
@@ -1470,6 +1474,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1490,6 +1495,8 @@ dependencies = [
  "derive_more 1.0.0",
  "dpp",
  "env_logger",
+ "ferment",
+ "ferment-macro",
  "getrandom",
  "hex",
  "indexmap 2.7.0",
@@ -1521,6 +1528,7 @@ dependencies = [
  "test-case",
  "thiserror 1.0.64",
  "tokio",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1554,6 +1562,7 @@ dependencies = [
  "nohash-hasher",
  "once_cell",
  "parking_lot",
+ "platform-value",
  "platform-version",
  "rand",
  "serde",
@@ -1562,6 +1571,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.64",
  "tracing",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1617,6 +1627,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1628,10 +1639,13 @@ dependencies = [
  "derive_more 1.0.0",
  "dpp",
  "drive",
+ "ferment-macro",
  "hex",
  "indexmap 2.7.0",
  "platform-serialization",
  "platform-serialization-derive",
+ "platform-value",
+ "platform-version",
  "serde",
  "serde_json",
  "tenderdash-abci",
@@ -1849,6 +1863,25 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "ferment"
+version = "0.1.4"
+source = "git+https://github.com/dashpay/ferment?branch=feat%2Flifetime-support#eec010c0fc955ef9c1fbf9bcb55e211d7248c262"
+dependencies = [
+ "indexmap 2.7.0",
+ "serde_json",
+]
+
+[[package]]
+name = "ferment-macro"
+version = "0.1.4"
+source = "git+https://github.com/dashpay/ferment?branch=feat%2Flifetime-support#eec010c0fc955ef9c1fbf9bcb55e211d7248c262"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2957,6 +2990,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -3591,6 +3625,7 @@ dependencies = [
  "bincode",
  "bs58",
  "ciborium",
+ "ferment-macro",
  "hex",
  "indexmap 2.7.0",
  "platform-serialization",
@@ -3615,6 +3650,7 @@ name = "platform-version"
 version = "1.8.0"
 dependencies = [
  "bincode",
+ "ferment-macro",
  "grovedb-version",
  "once_cell",
  "thiserror 1.0.64",
@@ -5301,11 +5337,12 @@ dependencies = [
 [[package]]
 name = "tower"
 version = "0.4.13"
-source = "git+https://github.com/QuantumExplorer/tower?branch=fix%2FindexMap2OnV0413#5286f8c605d10f48d51254f2434c5ab3fc5d7779"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 2.7.0",
+ "indexmap 1.9.3",
  "pin-project",
  "pin-project-lite",
  "rand",
@@ -5344,13 +5381,15 @@ dependencies = [
 
 [[package]]
 name = "tower-layer"
-version = "0.3.2"
-source = "git+https://github.com/QuantumExplorer/tower?branch=fix%2FindexMap2OnV0413#5286f8c605d10f48d51254f2434c5ab3fc5d7779"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "121c2a6cda46980bb0fcd1647ffaf6cd3fc79a013de288782836f6df9c48780e"
 
 [[package]]
 name = "tower-service"
-version = "0.3.2"
-source = "git+https://github.com/QuantumExplorer/tower?branch=fix%2FindexMap2OnV0413#5286f8c605d10f48d51254f2434c5ab3fc5d7779"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "tracing"
@@ -5644,6 +5683,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5742,6 +5782,7 @@ dependencies = [
  "log",
  "num_enum 0.7.3",
  "paste",
+ "platform-version",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -5988,6 +6029,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

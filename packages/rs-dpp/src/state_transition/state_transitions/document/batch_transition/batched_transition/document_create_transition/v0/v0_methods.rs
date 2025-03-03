@@ -5,7 +5,7 @@ use platform_value::Value;
 
 use crate::balances::credits::Credits;
 use std::collections::BTreeMap;
-use crate::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 
 pub trait DocumentCreateTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `entropy` field of the `DocumentCreateTransitionV0`.
