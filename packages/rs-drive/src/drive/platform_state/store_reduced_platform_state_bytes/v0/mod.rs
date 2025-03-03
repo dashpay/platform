@@ -11,7 +11,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         self.grove
-            .insert_if_not_exists(
+            .insert_if_changed_value(
                 &misc_path(),
                 REDUCED_PLATFORM_STATE_KEY,
                 Element::Item(reduced_state_bytes.to_vec(), None),
