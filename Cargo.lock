@@ -1326,6 +1326,7 @@ dependencies = [
  "dashpay-contract",
  "dpns-contract",
  "feature-flags-contract",
+ "ferment-macro",
  "masternode-reward-shares-contract",
  "platform-value",
  "platform-version",
@@ -1869,7 +1870,7 @@ dependencies = [
 [[package]]
 name = "ferment"
 version = "0.1.4"
-source = "git+https://github.com/dashpay/ferment?branch=feat%2Flifetime-support#eec010c0fc955ef9c1fbf9bcb55e211d7248c262"
+source = "git+https://github.com/dashpay/ferment#ccc728e0adbfdf82717bfacc3deb6ddbfe34ece3"
 dependencies = [
  "indexmap 2.7.0",
  "serde_json",
@@ -1878,7 +1879,7 @@ dependencies = [
 [[package]]
 name = "ferment-macro"
 version = "0.1.4"
-source = "git+https://github.com/dashpay/ferment?branch=feat%2Flifetime-support#eec010c0fc955ef9c1fbf9bcb55e211d7248c262"
+source = "git+https://github.com/dashpay/ferment#ccc728e0adbfdf82717bfacc3deb6ddbfe34ece3"
 dependencies = [
  "quote",
  "syn 1.0.109",
@@ -5115,6 +5116,7 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
+ "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

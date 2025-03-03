@@ -1,6 +1,6 @@
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 

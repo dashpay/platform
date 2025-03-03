@@ -67,6 +67,7 @@ use crate::withdrawal::Pooling;
     all(feature = "identity-serialization", feature = "client"),
     feature = "identity-value-conversion"
 ))]
+#[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
 use platform_value::Value;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;

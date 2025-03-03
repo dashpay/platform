@@ -1,9 +1,9 @@
 use dpp::balances::credits::Credits;
-use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 

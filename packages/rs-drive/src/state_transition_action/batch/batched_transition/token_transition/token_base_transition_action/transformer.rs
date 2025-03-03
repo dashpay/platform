@@ -3,7 +3,7 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;

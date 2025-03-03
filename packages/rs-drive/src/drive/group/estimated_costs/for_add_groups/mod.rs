@@ -5,9 +5,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::{BTreeMap, HashMap};
 
 impl Drive {

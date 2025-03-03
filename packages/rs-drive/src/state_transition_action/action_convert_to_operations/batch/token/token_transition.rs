@@ -3,7 +3,7 @@ use crate::state_transition_action::action_convert_to_operations::batch::DriveHi
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::version::PlatformVersion;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::TokenBurnTransitionActionAccessorsV0;

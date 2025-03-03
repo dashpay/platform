@@ -8,9 +8,9 @@ use dpp::version::PlatformVersion;
 
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
-use dpp::prelude::Identifier;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use platform_value::Identifier;
 use std::collections::{BTreeMap, HashMap};
 
 mod v0;

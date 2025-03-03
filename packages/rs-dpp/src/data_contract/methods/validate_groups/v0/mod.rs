@@ -1,4 +1,4 @@
-use crate::consensus::basic::data_contract::NonContiguousContractGroupPositionsError;
+use crate::errors::consensus::basic::data_contract::NonContiguousContractGroupPositionsError;
 use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::Group;
 use crate::data_contract::{DataContract, GroupContractPosition};
