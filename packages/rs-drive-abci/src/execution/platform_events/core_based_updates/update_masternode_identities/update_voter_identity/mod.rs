@@ -7,7 +7,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore::ProTxHash;
 
 use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
