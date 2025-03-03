@@ -325,7 +325,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
         };
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_public_key_hash(
+        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_unique_public_key_hash(
             &proof.grovedb_proof,
             public_key_hash,
             platform_version,

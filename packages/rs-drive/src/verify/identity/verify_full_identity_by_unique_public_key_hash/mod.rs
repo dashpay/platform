@@ -36,7 +36,7 @@ impl Drive {
     /// - The identity ID does not correspond to a valid full identity.
     /// - An unknown or unsupported platform version is provided.
     ///
-    pub fn verify_full_identity_by_public_key_hash(
+    pub fn verify_full_identity_by_unique_public_key_hash(
         proof: &[u8],
         public_key_hash: [u8; 20],
         platform_version: &PlatformVersion,
@@ -48,13 +48,13 @@ impl Drive {
             .identity
             .verify_full_identity_by_public_key_hash
         {
-            0 => Self::verify_full_identity_by_public_key_hash_v0(
+            0 => Self::verify_full_identity_by_unique_public_key_hash_v0(
                 proof,
                 public_key_hash,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_full_identity_by_public_key_hash".to_string(),
+                method: "verify_full_identity_by_unique_public_key_hash".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

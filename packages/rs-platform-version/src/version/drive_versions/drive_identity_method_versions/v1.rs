@@ -27,6 +27,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
                 has_non_unique_public_key_hash: 0,
                 has_non_unique_public_key_hash_already_for_identity: 0,
                 has_unique_public_key_hash: 0,
+                fetch_full_identity_by_non_unique_public_key_hash: 0,
             },
             attributes: DriveIdentityFetchAttributesMethodVersions {
                 revision: 0,
@@ -58,6 +59,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             prove_full_identity_by_unique_public_key_hash: 0,
             prove_identity_id_by_unique_public_key_hash: 0,
             prove_identity_ids_by_unique_public_key_hashes: 0,
+            prove_full_identity_by_non_unique_public_key_hash: 0,
         },
         keys: DriveIdentityKeysMethodVersions {
             fetch: DriveIdentityKeysFetchMethodVersions {
