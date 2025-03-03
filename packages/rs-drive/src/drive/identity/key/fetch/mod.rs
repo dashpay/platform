@@ -1025,7 +1025,7 @@ mod tests {
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
         let platform_version = PlatformVersion::latest();
 
         let transaction = drive.grove.start_transaction();
@@ -1061,7 +1061,7 @@ mod tests {
 
     #[test]
     fn test_fetch_single_identity_key() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
 
         let transaction = drive.grove.start_transaction();
 
@@ -1101,7 +1101,7 @@ mod tests {
 
     #[test]
     fn test_fetch_multiple_identity_key() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
 
         let transaction = drive.grove.start_transaction();
 
@@ -1141,7 +1141,7 @@ mod tests {
 
     #[test]
     fn test_fetch_unknown_identity_key_returns_not_found() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
 
         let transaction = drive.grove.start_transaction();
 

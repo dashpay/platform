@@ -2,9 +2,11 @@ mod contract;
 mod document;
 mod drive_methods;
 mod finalize_task;
+mod group;
 mod identity;
 mod prefunded_specialized_balance;
 mod system;
+mod token;
 mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
@@ -19,9 +21,11 @@ pub use document::DocumentOperation;
 pub use document::DocumentOperationType;
 pub use document::DocumentOperationsForContractDocumentType;
 pub use document::UpdateOperationInfo;
+pub use group::GroupOperationType;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use system::SystemOperationType;
+pub use token::TokenOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -69,6 +73,8 @@ pub enum DriveOperation<'a> {
     DataContractOperation(DataContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
+    /// A token operation
+    TokenOperation(TokenOperationType),
     /// Withdrawal operation
     WithdrawalOperation(WithdrawalOperationType),
     /// An identity operation
@@ -77,6 +83,8 @@ pub enum DriveOperation<'a> {
     PrefundedSpecializedBalanceOperation(PrefundedSpecializedBalanceOperationType),
     /// A system operation
     SystemOperation(SystemOperationType),
+    /// A group operation
+    GroupOperation(GroupOperationType),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
@@ -152,6 +160,22 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 .into_iter()
                 .map(GroveOperation)
                 .collect()),
+            DriveOperation::TokenOperation(token_operation_type) => token_operation_type
+                .into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
+            DriveOperation::GroupOperation(group_operation_type) => group_operation_type
+                .into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
         }
     }
 }
@@ -199,15 +223,15 @@ mod tests {
 
     use super::*;
 
+    use crate::util::test_helpers::setup_contract;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
     use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
-
-    use crate::util::test_helpers::setup_contract;
 
     use crate::util::batch::drive_op_batch::document::DocumentOperation::{
         AddOperation, UpdateOperation,
@@ -579,7 +603,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -690,7 +717,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract
@@ -907,7 +937,10 @@ mod tests {
             &drive,
             "tests/supporting_files/contract/family/family-contract-only-age-index.json",
             None,
+            None,
+            None::<fn(&mut DataContract)>,
             Some(&db_transaction),
+            None,
         );
 
         let document_type = contract

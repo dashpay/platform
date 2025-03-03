@@ -6,18 +6,18 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const GetStatusResponse = require('./GetStatusResponse');
 
 /**
  * @param {GrpcTransport} grpcTransport
- * @returns {getIdentity}
+ * @returns {getStatus}
  */
 function getStatusFactory(grpcTransport) {
   /**
-   * Fetch the identity by id
-   * @typedef {getIdentity}
-   * @param {Buffer} id
+   * Fetch node status
+   * @typedef {getStatus}
    * @param {DAPIClientOptions & {prove: boolean}} [options]
-   * @returns {Promise<GetIdentityResponse>}
+   * @returns {Promise<GetStatusResponse>}
    */
   async function getStatus(options = {}) {
     const { GetStatusRequestV0 } = GetStatusRequest;
@@ -45,7 +45,7 @@ function getStatusFactory(grpcTransport) {
           throw new InvalidResponseError('GetStatusResponseV0 is not defined');
         }
 
-        return getStatusResponse.getV0().toObject();
+        return GetStatusResponse.createFromProto(getStatusResponse);
       } catch (e) {
         if (e instanceof InvalidResponseError) {
           lastError = e;

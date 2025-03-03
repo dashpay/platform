@@ -15,7 +15,7 @@ use dpp::dashcore::Network;
 use dpp::prelude::BlockHeight;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_value::Identifier;
 
 impl Drive {
@@ -71,7 +71,7 @@ impl Drive {
                     vote_path_ref.as_slice().into(),
                     vote_id.as_slice(),
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     &mut deletion_batch,
@@ -107,7 +107,7 @@ impl Drive {
                     absolute_path_ref.as_slice().into(),
                     identifier_bytes.as_slice(),
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     &mut deletion_batch,

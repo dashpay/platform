@@ -13,7 +13,7 @@ use platform_value::Identifier;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveDbOpConsistencyResults, GroveOp, KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::proof::util::hex_to_ascii;
-use grovedb::Element;
+use grovedb::{Element, TreeType};
 use std::borrow::Cow;
 use std::fmt;
 
@@ -52,6 +52,7 @@ enum KnownPath {
     TokenBalancesRoot,                                                //Level 1
     VersionsRoot,                                                     //Level 1
     VotesRoot,                                                        //Level 1
+    GroupActionsRoot,                                                 //Level 1
 }
 
 impl From<RootTree> for KnownPath {
@@ -71,9 +72,10 @@ impl From<RootTree> for KnownPath {
             RootTree::Misc => KnownPath::MiscRoot,
             RootTree::WithdrawalTransactions => KnownPath::WithdrawalTransactionsRoot,
             RootTree::Balances => KnownPath::BalancesRoot,
-            RootTree::TokenBalances => KnownPath::TokenBalancesRoot,
+            RootTree::Tokens => KnownPath::TokenBalancesRoot,
             RootTree::Versions => KnownPath::VersionsRoot,
             RootTree::Votes => KnownPath::VotesRoot,
+            RootTree::GroupActions => KnownPath::GroupActionsRoot,
         }
     }
 }
@@ -358,7 +360,7 @@ pub trait GroveDbOpBatchV0Methods {
     fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
-    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool);
+    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType);
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
     fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element);
@@ -510,9 +512,9 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
-    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool) {
+    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType) {
         self.operations
-            .push(QualifiedGroveDbOp::delete_tree_op(path, key, is_sum_tree))
+            .push(QualifiedGroveDbOp::delete_tree_op(path, key, tree_type))
     }
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.

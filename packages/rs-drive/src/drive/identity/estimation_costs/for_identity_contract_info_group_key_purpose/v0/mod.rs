@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllReference;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
 use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
@@ -25,7 +25,7 @@ impl Drive {
                 key_purpose,
             )),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(5),
                 estimated_layer_sizes: AllReference(1, KEY_REFERENCE_SIZE, None),
             },

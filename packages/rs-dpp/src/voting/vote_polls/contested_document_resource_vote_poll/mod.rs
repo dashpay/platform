@@ -1,7 +1,7 @@
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::serialization::PlatformSerializable;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
 #[cfg(feature = "vote-serde-conversion")]

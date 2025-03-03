@@ -1,4 +1,5 @@
 //! Definitions of errors
+use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
 use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
@@ -78,6 +79,47 @@ pub enum Error {
     /// Remote node is stale; try another server
     #[error(transparent)]
     StaleNode(#[from] StaleNodeError),
+
+    /// Error returned when trying to broadcast a state transition
+    #[error(transparent)]
+    StateTransitionBroadcastError(#[from] StateTransitionBroadcastError),
+}
+
+/// State transition broadcast error
+#[derive(Debug, thiserror::Error)]
+#[error("state transition broadcast error: {message}")]
+pub struct StateTransitionBroadcastError {
+    /// Error code
+    pub code: u32,
+    /// Error message
+    pub message: String,
+    /// Consensus error caused the state transition broadcast error
+    pub cause: Option<ConsensusError>,
+}
+
+impl TryFrom<StateTransitionBroadcastErrorProto> for StateTransitionBroadcastError {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionBroadcastErrorProto) -> Result<Self, Self::Error> {
+        let cause = if value.data.len() > 0 {
+            let consensus_error =
+                ConsensusError::deserialize_from_bytes(&value.data).map_err(|e| {
+                    tracing::debug!("Failed to deserialize consensus error: {}", e);
+
+                    Error::Protocol(e)
+                })?;
+
+            Some(consensus_error)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            code: value.code,
+            message: value.message,
+            cause,
+        })
+    }
 }
 
 // TODO: Decompose DapiClientError to more specific errors like connection, node error instead of DAPI client error

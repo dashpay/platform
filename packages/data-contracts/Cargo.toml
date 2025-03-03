@@ -18,4 +18,4 @@ feature-flags-contract = { path = "../feature-flags-contract" }
 platform-value = { path = "../rs-platform-value" }
 versioned-feature-core = "1.0.0"
 wallet-utils-contract = { path = "../wallet-utils-contract" }
-ferment-macro = { git = "https://github.com/dashpay/ferment", branch = "feat/lifetime-support", package = "ferment-macro" }
+token-history-contract = { path = "../token-history-contract" }

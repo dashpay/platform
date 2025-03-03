@@ -25,7 +25,6 @@ pub mod version;
 
 pub mod errors;
 
-pub mod schema;
 pub mod validation;
 
 #[cfg(feature = "client")]
@@ -52,10 +51,15 @@ pub mod serialization;
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+
+pub mod tokens;
+
 pub mod voting;
 
 #[cfg(feature = "core-types")]
 pub mod core_types;
+
+pub mod group;
 pub mod withdrawal;
 
 pub use async_trait;
@@ -74,19 +78,37 @@ pub mod prelude {
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
 
+    pub type EpochInterval = u16;
+
     #[ferment_macro::export]
     pub type BlockHeight = u64;
+
+    pub type BlockHeightInterval = u64;
 
     #[ferment_macro::export]
     pub type CoreBlockHeight = u32;
     #[ferment_macro::export]
     pub type TimestampMillis = u64;
+
+    pub type TimestampMillisInterval = u64;
+
+    pub type StartAtIncluded = bool;
+
     #[ferment_macro::export]
     pub type TimestampIncluded = bool;
     #[ferment_macro::export]
     pub type Revision = u64;
     #[ferment_macro::export]
     pub type IdentityNonce = u64;
+
+    pub type SenderKeyIndex = u32;
+    pub type RecipientKeyIndex = u32;
+
+    /// The index of the user's key that is used to derive keys that will be used to encrypt the contact's user id in encToUserId and the private data.
+    pub type RootEncryptionKeyIndex = u32;
+
+    /// The index at which to derive the root encryption key.
+    pub type DerivationEncryptionKeyIndex = u32;
 
     /// UserFeeIncrease is the additional percentage of the processing fee.
     /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.

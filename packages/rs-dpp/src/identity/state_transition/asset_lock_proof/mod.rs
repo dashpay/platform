@@ -4,7 +4,7 @@ use dashcore::{OutPoint, Transaction};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-pub use bincode::{Decode, Encode};
+use bincode::{Decode, Encode};
 
 pub use instant::{InstantAssetLockProof, RawInstantLockProof};
 use platform_value::Identifier;

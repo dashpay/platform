@@ -3,7 +3,7 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
@@ -64,7 +64,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
-                        is_sum_tree: false,
+                        tree_type: TreeType::NormalTree,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             DEFAULT_HASH_SIZE_U8,
@@ -83,7 +83,7 @@ impl Drive {
                 ),
                 &key_info_path,
                 // we know we are not deleting a tree
-                Some((false, false)),
+                Some(MaybeTree::NotTree),
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?;
@@ -112,7 +112,7 @@ impl Drive {
                 ),
                 &key_info_path,
                 // we know we are not deleting a tree
-                Some((false, false)),
+                Some(MaybeTree::NotTree),
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?;

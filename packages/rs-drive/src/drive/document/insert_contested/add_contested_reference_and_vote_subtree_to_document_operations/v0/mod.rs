@@ -20,7 +20,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, Mix};
 use grovedb::EstimatedSumTrees::AllSumTrees;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
@@ -53,7 +53,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(2),
                     estimated_layer_sizes: Mix {
                         // The votes don't have storage flags
@@ -144,7 +144,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 votes_path_key_info.clone().convert_to_key_info_path()?,
                 EstimatedLayerInformation {
-                    is_sum_tree: true,
+                    tree_type: TreeType::SumTree,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, None),
                 },
@@ -155,8 +155,8 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_using_sums: false,
-                is_sum_tree: true,
+                in_tree_type: TreeType::NormalTree,
+                tree_type: TreeType::SumTree,
                 flags_len: storage_flags
                     .map(|s| s.serialized_size())
                     .unwrap_or_default(),
@@ -166,7 +166,7 @@ impl Drive {
         // here we are the tree that will contain the voting tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
             votes_path_key_info,
-            true,
+            TreeType::SumTree,
             storage_flags,
             apply_type,
             transaction,

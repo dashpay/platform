@@ -105,38 +105,38 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn balance(&self) -> f64 {
-        self.inner.balance() as f64
+    pub fn balance(&self) -> u64 {
+        self.inner.balance()
     }
 
     #[wasm_bindgen(js_name=getBalance)]
-    pub fn get_balance(&self) -> f64 {
-        self.inner.balance() as f64
+    pub fn get_balance(&self) -> u64 {
+        self.inner.balance()
     }
 
     #[wasm_bindgen(js_name=setBalance)]
-    pub fn set_balance(&mut self, balance: f64) {
-        self.inner.set_balance(balance as u64);
+    pub fn set_balance(&mut self, balance: u64) {
+        self.inner.set_balance(balance);
     }
 
     #[wasm_bindgen(js_name=increaseBalance)]
-    pub fn increase_balance(&mut self, amount: f64) -> f64 {
-        self.inner.increase_balance(amount as u64) as f64
+    pub fn increase_balance(&mut self, amount: u64) -> u64 {
+        self.inner.increase_balance(amount)
     }
 
     #[wasm_bindgen(js_name=reduceBalance)]
-    pub fn reduce_balance(&mut self, amount: f64) -> f64 {
-        self.inner.reduce_balance(amount as u64) as f64
+    pub fn reduce_balance(&mut self, amount: u64) -> u64 {
+        self.inner.reduce_balance(amount)
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: f64) {
-        self.inner.set_revision(revision as u64);
+    pub fn set_revision(&mut self, revision: u64) {
+        self.inner.set_revision(revision);
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> f64 {
-        self.inner.revision() as f64
+    pub fn get_revision(&self) -> u64 {
+        self.inner.revision() as u64
     }
 
     #[wasm_bindgen(js_name=setMetadata)]

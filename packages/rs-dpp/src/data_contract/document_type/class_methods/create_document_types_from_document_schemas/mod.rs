@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
@@ -41,6 +42,7 @@ impl DocumentType {
         documents_mutable_contract_default: bool,
         documents_can_be_deleted_contract_default: bool,
         full_validation: bool,
+        has_tokens: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
@@ -62,9 +64,22 @@ impl DocumentType {
                 validation_operations,
                 platform_version,
             ),
+            // in v1 we add the ability to have contracts without documents and just tokens
+            1 => DocumentTypeV0::create_document_types_from_document_schemas_v1(
+                data_contract_id,
+                document_schemas,
+                schema_defs,
+                documents_keep_history_contract_default,
+                documents_mutable_contract_default,
+                documents_can_be_deleted_contract_default,
+                full_validation,
+                has_tokens,
+                validation_operations,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "create_document_types_from_document_schemas".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

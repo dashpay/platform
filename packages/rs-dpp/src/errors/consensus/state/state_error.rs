@@ -23,10 +23,9 @@ use crate::errors::consensus::state::identity::invalid_identity_public_key_id_er
 use crate::errors::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
-use crate::errors::consensus::state::identity::{
-    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
-};
+use crate::errors::consensus::state::identity::{IdentityAlreadyExistsError, IdentityInsufficientBalanceError, RecipientIdentityDoesNotExistError};
 use crate::errors::consensus::ConsensusError;
+use crate::errors::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::errors::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -36,12 +35,16 @@ use crate::errors::consensus::state::document::document_contest_not_joinable_err
 use crate::errors::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::errors::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use crate::errors::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityNotMemberOfGroupError};
 use crate::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::errors::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 use crate::errors::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
 use crate::errors::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use crate::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError,
+    TokenNotPausedError,
+};
 use crate::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::errors::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -201,6 +204,73 @@ pub enum StateError {
 
     #[error(transparent)]
     MasternodeVoteAlreadyPresentError(MasternodeVoteAlreadyPresentError),
+
+    #[error(transparent)]
+    RecipientIdentityDoesNotExistError(RecipientIdentityDoesNotExistError),
+
+    #[error(transparent)]
+    IdentityDoesNotHaveEnoughTokenBalanceError(IdentityDoesNotHaveEnoughTokenBalanceError),
+
+    #[error(transparent)]
+    UnauthorizedTokenActionError(UnauthorizedTokenActionError),
+
+    #[error(transparent)]
+    IdentityTokenAccountFrozenError(IdentityTokenAccountFrozenError),
+
+    #[error(transparent)]
+    IdentityTokenAccountNotFrozenError(IdentityTokenAccountNotFrozenError),
+
+    #[error(transparent)]
+    IdentityNotMemberOfGroupError(IdentityNotMemberOfGroupError),
+
+    #[error(transparent)]
+    GroupActionDoesNotExistError(GroupActionDoesNotExistError),
+
+    #[error(transparent)]
+    GroupActionAlreadyCompletedError(GroupActionAlreadyCompletedError),
+
+    #[error(transparent)]
+    GroupActionAlreadySignedByIdentityError(GroupActionAlreadySignedByIdentityError),
+
+    #[error(transparent)]
+    DataContractUpdateActionNotAllowedError(DataContractUpdateActionNotAllowedError),
+
+    #[error(transparent)]
+    TokenSettingMaxSupplyToLessThanCurrentSupplyError(
+        TokenSettingMaxSupplyToLessThanCurrentSupplyError,
+    ),
+
+    #[error(transparent)]
+    TokenMintPastMaxSupplyError(TokenMintPastMaxSupplyError),
+
+    #[error(transparent)]
+    NewTokensDestinationIdentityDoesNotExistError(NewTokensDestinationIdentityDoesNotExistError),
+
+    #[error(transparent)]
+    NewAuthorizedActionTakerIdentityDoesNotExistError(
+        NewAuthorizedActionTakerIdentityDoesNotExistError,
+    ),
+
+    #[error(transparent)]
+    NewAuthorizedActionTakerGroupDoesNotExistError(NewAuthorizedActionTakerGroupDoesNotExistError),
+
+    #[error(transparent)]
+    NewAuthorizedActionTakerMainGroupNotSetError(NewAuthorizedActionTakerMainGroupNotSetError),
+
+    #[error(transparent)]
+    InvalidGroupPositionError(InvalidGroupPositionError),
+
+    #[error(transparent)]
+    TokenIsPausedError(TokenIsPausedError),
+
+    #[error(transparent)]
+    IdentityTokenAccountAlreadyFrozenError(IdentityTokenAccountAlreadyFrozenError),
+
+    #[error(transparent)]
+    TokenAlreadyPausedError(TokenAlreadyPausedError),
+
+    #[error(transparent)]
+    TokenNotPausedError(TokenNotPausedError),
 }
 
 impl From<StateError> for ConsensusError {

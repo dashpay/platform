@@ -6,23 +6,8 @@ use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
 use integer_encoding::VarInt;
 use versioned_feature_core::FeatureVersion;
-use serde_json::{Map, Number, Value};
-// use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::errors::ProtocolError;
-
-pub fn parse_protocol_version(
-    protocol_bytes: &[u8],
-    json_map: &mut Map<String, Value>,
-) -> Result<(), ProtocolError> {
-    let protocol_version = get_protocol_version(protocol_bytes)?;
-
-    json_map.insert(
-        String::from("$protocolVersion"),
-        Value::Number(Number::from(protocol_version)),
-    );
-    Ok(())
-}
 
 /// A protocol version
 #[ferment_macro::export]

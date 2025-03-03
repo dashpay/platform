@@ -13,8 +13,9 @@ use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::state_transitions::document::documents_batch_transition::{
-    document_transition::action_type::DocumentTransitionActionType, DocumentsBatchTransition,
+use crate::state_transition::state_transitions::document::batch_transition::{
+    batched_transition::document_transition_action_type::DocumentTransitionActionType,
+    BatchTransition,
 };
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::SpecializedDocumentFactoryV0;
@@ -123,7 +124,7 @@ impl SpecializedDocumentFactory {
             ),
         >,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
-    ) -> Result<DocumentsBatchTransition, ProtocolError> {
+    ) -> Result<BatchTransition, ProtocolError> {
         match self {
             SpecializedDocumentFactory::V0(v0) => {
                 v0.create_state_transition(documents_iter, nonce_counter)

@@ -5,10 +5,12 @@ use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{BlockHash, ChainLock};
 use dpp::platform_value::Bytes32;
 use std::fmt;
-use tenderdash_abci::proto::abci::{RequestPrepareProposal, RequestProcessProposal};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
-use tenderdash_abci::proto::types::CoreChainLock;
-use tenderdash_abci::proto::version::Consensus;
+use tenderdash_abci::proto::{
+    abci::{RequestPrepareProposal, RequestProcessProposal},
+    types::CoreChainLock,
+    version::Consensus,
+    ToMillis,
+};
 
 /// The block proposal is the combination of information that a proposer will propose,
 /// Or that a validator or full node will process
@@ -37,7 +39,7 @@ pub struct BlockProposal<'a> {
     pub raw_state_transitions: &'a Vec<Vec<u8>>,
 }
 
-impl<'a> fmt::Debug for BlockProposal<'a> {
+impl fmt::Debug for BlockProposal<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "BlockProposal {{")?;
         writeln!(f, "  consensus_versions: {:?},", self.consensus_versions)?;
@@ -96,18 +98,16 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
             version,
             quorum_hash,
         } = value;
-        let consensus_versions = version
-            .as_ref()
-            .ok_or(AbciError::BadRequest(
-                "request is missing version".to_string(),
-            ))?
-            .clone();
+        let consensus_versions = version.as_ref().ok_or(AbciError::BadRequest(
+            "request is missing version".to_string(),
+        ))?;
         let block_time_ms = time
             .as_ref()
             .ok_or(AbciError::BadRequest(
                 "request is missing block time".to_string(),
             ))?
-            .to_milis();
+            .to_millis()
+            .map_err(|e| AbciError::BadRequest(format!("invalid block time: {}", e)))?;
         let proposer_pro_tx_hash: [u8; 32] =
             proposer_pro_tx_hash.clone().try_into().map_err(|e| {
                 AbciError::BadRequestDataSize(format!(
@@ -135,7 +135,7 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
             .into());
         }
         Ok(Self {
-            consensus_versions,
+            consensus_versions: *consensus_versions,
             block_hash: None,
             height: *height as u64,
             round: *round as u32,
@@ -171,18 +171,18 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             version,
             quorum_hash,
         } = value;
-        let consensus_versions = version
-            .as_ref()
-            .ok_or(AbciError::BadRequest(
-                "process proposal request is missing version".to_string(),
-            ))?
-            .clone();
+        let consensus_versions = version.as_ref().ok_or(AbciError::BadRequest(
+            "process proposal request is missing version".to_string(),
+        ))?;
         let block_time_ms = time
             .as_ref()
             .ok_or(Error::Abci(AbciError::BadRequest(
                 "missing proposal time".to_string(),
             )))?
-            .to_milis();
+            .to_millis()
+            .map_err(|e| {
+                Error::Abci(AbciError::BadRequest(format!("invalid block time: {}", e)))
+            })?;
         let proposer_pro_tx_hash: [u8; 32] =
             proposer_pro_tx_hash.clone().try_into().map_err(|e| {
                 Error::Abci(AbciError::BadRequestDataSize(format!(
@@ -239,7 +239,7 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             })
             .transpose()?;
         Ok(Self {
-            consensus_versions,
+            consensus_versions: *consensus_versions,
             block_hash: Some(block_hash),
             height: *height as u64,
             round: *round as u32,

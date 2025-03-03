@@ -4,7 +4,6 @@ use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[ferment_macro::export]
 pub enum TradeMode {

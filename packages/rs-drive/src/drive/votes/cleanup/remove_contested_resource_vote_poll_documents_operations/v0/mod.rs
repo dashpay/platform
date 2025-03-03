@@ -9,7 +9,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, TransactionArg};
+use grovedb::{MaybeTree, PathQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
@@ -54,7 +54,7 @@ impl Drive {
                     documents_storage_path.as_slice().into(),
                     document_key.as_slice(),
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     batch_operations,
@@ -72,7 +72,7 @@ impl Drive {
                         contender_path.as_slice().into(),
                         vec![0].as_slice(),
                         BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         batch_operations,

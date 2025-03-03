@@ -9,15 +9,20 @@ use crate::errors::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::errors::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
     IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
-    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
+    NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::errors::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -65,7 +70,13 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::consensus::ConsensusError;
 
+use crate::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::errors::consensus::basic::overflow_error::OverflowError;
+use crate::errors::consensus::basic::token::{
+    ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
+    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenIdError,
+    InvalidTokenPositionError, TokenTransferToOurselfError,
+};
 use crate::errors::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::errors::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
@@ -404,6 +415,62 @@ pub enum BasicError {
 
     #[error(transparent)]
     ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
+
+    #[error(transparent)]
+    DataContractTokenConfigurationUpdateError(DataContractTokenConfigurationUpdateError),
+
+    #[error(transparent)]
+    NonContiguousContractTokenPositionsError(NonContiguousContractTokenPositionsError),
+
+    #[error(transparent)]
+    NonContiguousContractGroupPositionsError(NonContiguousContractGroupPositionsError),
+
+    #[error(transparent)]
+    InvalidTokenBaseSupplyError(InvalidTokenBaseSupplyError),
+
+    #[error(transparent)]
+    InvalidTokenIdError(InvalidTokenIdError),
+
+    #[error(transparent)]
+    InvalidTokenPositionError(InvalidTokenPositionError),
+
+    #[error(transparent)]
+    TokenTransferToOurselfError(TokenTransferToOurselfError),
+
+    #[error(transparent)]
+    ContractHasNoTokensError(ContractHasNoTokensError),
+
+    #[error(transparent)]
+    GroupPositionDoesNotExistError(GroupPositionDoesNotExistError),
+
+    #[error(transparent)]
+    InvalidActionIdError(InvalidActionIdError),
+
+    #[error(transparent)]
+    DestinationIdentityForTokenMintingNotSetError(DestinationIdentityForTokenMintingNotSetError),
+
+    #[error(transparent)]
+    ChoosingTokenMintRecipientNotAllowedError(ChoosingTokenMintRecipientNotAllowedError),
+
+    #[error(transparent)]
+    GroupActionNotAllowedOnTransitionError(GroupActionNotAllowedOnTransitionError),
+
+    #[error(transparent)]
+    GroupExceedsMaxMembersError(GroupExceedsMaxMembersError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOfZeroError(GroupMemberHasPowerOfZeroError),
+
+    #[error(transparent)]
+    GroupMemberHasPowerOverLimitError(GroupMemberHasPowerOverLimitError),
+
+    #[error(transparent)]
+    GroupTotalPowerLessThanRequiredError(GroupTotalPowerLessThanRequiredError),
+
+    #[error(transparent)]
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(
+        GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

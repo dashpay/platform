@@ -8,8 +8,8 @@ use dpp::document::Document;
 use dpp::balances::credits::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::state_transitions::document::batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransition;
 use platform_value::Identifier;
 
@@ -65,7 +65,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
 
         let settings = settings.unwrap_or_default();
 
-        let transition = DocumentsBatchTransition::new_document_purchase_transition_from_document(
+        let transition = BatchTransition::new_document_purchase_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             purchaser_id,

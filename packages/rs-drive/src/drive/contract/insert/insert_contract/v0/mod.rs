@@ -145,7 +145,7 @@ impl Drive {
     /// The operations for adding a contract.
     /// These operations add a contract to storage using `add_contract_to_storage`
     /// and insert the empty trees which will be necessary to later insert documents.
-    fn insert_contract_operations_v0(
+    pub(in crate::drive::contract::insert::insert_contract) fn insert_contract_operations_v0(
         &self,
         contract_element: Element,
         contract: &DataContract,

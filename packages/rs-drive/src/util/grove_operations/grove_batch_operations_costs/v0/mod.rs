@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Gets the costs for the given groveDB op batch and passes them to `push_drive_operation_result`.
-    pub(crate) fn grove_batch_operations_costs_v0(
+    pub(super) fn grove_batch_operations_costs_v0(
         &self,
         ops: GroveDbOpBatch,
         estimated_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation>,

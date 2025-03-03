@@ -294,7 +294,7 @@ describe('DocumentFactory', () => {
         replace: [newDocument],
       }, {
         [identityId.toString()]: {
-          [dataContract.getId().toString()]: 1,
+          [dataContract.getId().toString()]: '1',
         },
       });
 
@@ -304,7 +304,7 @@ describe('DocumentFactory', () => {
         .filter((t) => t.getAction() === 0);
 
       expect(replaceDocuments[0].getId()).to.deep.equal(newDocument.getId());
-      expect(replaceDocuments[0].getRevision()).to.deep.equal(2);
+      expect(replaceDocuments[0].getRevision()).to.deep.equal(BigInt(2));
       expect(createDocuments).to.have.lengthOf(documents.length);
     });
   });

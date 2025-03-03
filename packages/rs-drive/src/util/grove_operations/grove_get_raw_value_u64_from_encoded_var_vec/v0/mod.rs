@@ -10,7 +10,7 @@ use integer_encoding::VarInt;
 
 impl Drive {
     /// grove_get_direct_u64 is a helper function to get a
-    pub(crate) fn grove_get_raw_value_u64_from_encoded_var_vec_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_get_raw_value_u64_from_encoded_var_vec_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

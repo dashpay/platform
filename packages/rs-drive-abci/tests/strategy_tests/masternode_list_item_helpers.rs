@@ -74,9 +74,9 @@ impl UpdateMasternodeListItem for MasternodeListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore_rpc::dashcore::hashes::Hash;
-    use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, Txid};
 
     use rand::SeedableRng;
     use std::net::SocketAddr;

@@ -12,7 +12,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -41,7 +41,7 @@ impl Drive {
             StatefulDirectQuery
         } else {
             StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(
                     document_and_contract_info
                         .document_type

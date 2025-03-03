@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
+use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
@@ -11,26 +15,30 @@ use dpp::identity::PartialIdentity;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::contract::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::DocumentFromCreateTransition;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_replace_transition::DocumentFromReplaceTransition;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::DocumentFromCreateTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_replace_transition::DocumentFromReplaceTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenBalanceAbsence, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
+use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
+use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
@@ -91,11 +99,11 @@ impl Drive {
                 }
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
-            StateTransition::DocumentsBatch(documents_batch_transition) => {
-                if documents_batch_transition.transitions().len() > 1 {
+            StateTransition::Batch(documents_batch_transition) => {
+                if documents_batch_transition.transitions_len() > 1 {
                     return Err(Error::Proof(ProofError::InvalidTransition(format!("version {} does not support more than one document in a document batch transition", platform_version.protocol_version))));
                 }
-                let Some(transition) = documents_batch_transition.transitions().first() else {
+                let Some(transition) = documents_batch_transition.first_transition() else {
                     return Err(Error::Proof(ProofError::InvalidTransition(
                         "no transition in a document batch transition".to_string(),
                     )));
@@ -103,168 +111,425 @@ impl Drive {
 
                 let owner_id = documents_batch_transition.owner_id();
 
-                let data_contract_id = transition.data_contract_id();
+                match transition {
+                    BatchedTransitionRef::Document(document_transition) => {
+                        let data_contract_id = document_transition.data_contract_id();
 
-                let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
-                    Error::Proof(ProofError::UnknownContract(format!(
-                        "unknown contract with id {}",
-                        data_contract_id
-                    ))),
-                )?;
+                        let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
+                            Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {}",
+                                data_contract_id
+                            ))),
+                        )?;
 
-                let document_type = contract
-                    .document_type_for_name(transition.document_type_name())
-                    .map_err(|e| {
-                        Error::Proof(ProofError::UnknownContract(format!(
-                            "cannot fetch contract for document {} with id {}: {}",
-                            transition.document_type_name(),
-                            transition.data_contract_id(),
-                            e
-                        )))
-                    })?;
+                        let document_type = contract
+                            .document_type_for_name(document_transition.document_type_name())
+                            .map_err(|e| {
+                                Error::Proof(ProofError::UnknownContract(format!(
+                                    "cannot fetch contract for document {} with id {}: {}",
+                                    document_transition.document_type_name(),
+                                    document_transition.data_contract_id(),
+                                    e
+                                )))
+                            })?;
 
-                let contested_status =
-                    if let DocumentTransition::Create(create_transition) = transition {
-                        if create_transition.prefunded_voting_balance().is_some() {
-                            SingleDocumentDriveQueryContestedStatus::Contested
+                        let contested_status =
+                            if let DocumentTransition::Create(create_transition) =
+                                document_transition
+                            {
+                                if create_transition.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested
+                                }
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested
+                            };
+
+                        let query = SingleDocumentDriveQuery {
+                            contract_id: document_transition.data_contract_id().into_buffer(),
+                            document_type_name: document_transition.document_type_name().clone(),
+                            document_type_keeps_history: document_type.documents_keep_history(),
+                            document_id: document_transition.base().id().into_buffer(),
+                            block_time_ms: None, //None because we want latest
+                            contested_status,
+                        };
+                        let (root_hash, document) =
+                            query.verify_proof(false, proof, document_type, platform_version)?;
+
+                        match document_transition {
+                            DocumentTransition::Create(create_transition) => {
+                                let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
+                                let expected_document = Document::try_from_create_transition(
+                                    create_transition,
+                                    documents_batch_transition.owner_id(),
+                                    block_info,
+                                    &document_type,
+                                    platform_version,
+                                )?;
+
+                                let transient_fields = document_type
+                                    .transient_fields()
+                                    .iter()
+                                    .map(|a| a.as_str())
+                                    .collect();
+
+                                if !document.is_equal_ignoring_time_based_fields(
+                                    &expected_document,
+                                    Some(transient_fields),
+                                    platform_version,
+                                )? {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        document.id(),
+                                        Some(document),
+                                    )])),
+                                ))
+                            }
+                            DocumentTransition::Replace(replace_transition) => {
+                                let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
+                                let expected_document = Document::try_from_replace_transition(
+                                    replace_transition,
+                                    documents_batch_transition.owner_id(),
+                                    document.created_at(), //we can trust the created at (as we don't care)
+                                    document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                                    document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                                    document.created_at(), //we can trust the created at (as we don't care)
+                                    document.created_at_block_height(), //we can trust the created at block height (as we don't care)
+                                    document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                                    block_info,
+                                    &document_type,
+                                    platform_version,
+                                )?;
+
+                                let transient_fields = document_type
+                                    .transient_fields()
+                                    .iter()
+                                    .map(|a| a.as_str())
+                                    .collect();
+
+                                if !document.is_equal_ignoring_time_based_fields(
+                                    &expected_document,
+                                    Some(transient_fields),
+                                    platform_version,
+                                )? {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
+                                }
+
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        document.id(),
+                                        Some(document),
+                                    )])),
+                                ))
+                            }
+                            DocumentTransition::Transfer(transfer_transition) => {
+                                let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (transfer)", transfer_transition.base().id()))))?;
+                                let recipient_owner_id = transfer_transition.recipient_owner_id();
+
+                                if document.owner_id() != recipient_owner_id {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", transfer_transition.base().id()))));
+                                }
+
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        document.id(),
+                                        Some(document),
+                                    )])),
+                                ))
+                            }
+                            DocumentTransition::Delete(delete_transition) => {
+                                if document.is_some() {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution contained document after delete with id {}", delete_transition.base().id()))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        delete_transition.base().id(),
+                                        None,
+                                    )])),
+                                ))
+                            }
+                            DocumentTransition::UpdatePrice(update_price_transition) => {
+                                let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (update price)", update_price_transition.base().id()))))?;
+                                let new_document_price : Credits = document.properties().get_integer(PRICE).map_err(|e| Error::Proof(ProofError::IncorrectProof(format!("proof did not contain a document that contained a price field with id {} expected to exist because of state transition (update price): {}", update_price_transition.base().id(), e))))?;
+                                if new_document_price != update_price_transition.price() {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document update of price after price update with id {}", update_price_transition.base().id()))));
+                                }
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        document.id(),
+                                        Some(document),
+                                    )])),
+                                ))
+                            }
+                            DocumentTransition::Purchase(purchase_transition) => {
+                                let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (purchase)", purchase_transition.base().id()))))?;
+
+                                if document.owner_id() != owner_id {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", purchase_transition.base().id()))));
+                                }
+
+                                Ok((
+                                    root_hash,
+                                    VerifiedDocuments(BTreeMap::from([(
+                                        document.id(),
+                                        Some(document),
+                                    )])),
+                                ))
+                            }
+                        }
+                    }
+                    BatchedTransitionRef::Token(token_transition) => {
+                        //todo group actions
+                        let data_contract_id = token_transition.data_contract_id();
+                        let token_id = token_transition.token_id();
+
+                        let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
+                            Error::Proof(ProofError::UnknownContract(format!(
+                                "unknown contract with id {}",
+                                data_contract_id
+                            ))),
+                        )?;
+
+                        let identity_contract_nonce =
+                            token_transition.base().identity_contract_nonce();
+
+                        let document_type_name =
+                            token_transition.historical_document_type_name().to_string();
+                        let document_type = token_transition.historical_document_type(&contract)?;
+
+                        let token_config = contract.expected_token_configuration(
+                            token_transition.base().token_contract_position(),
+                        )?;
+                        let keeps_historical_document = token_config.keeps_history();
+                        if keeps_historical_document {
+                            let query = SingleDocumentDriveQuery {
+                                contract_id: TOKEN_HISTORY_ID_BYTES,
+                                document_type_name,
+                                document_type_keeps_history: false,
+                                document_id: token_transition
+                                    .historical_document_id(owner_id, identity_contract_nonce)
+                                    .to_buffer(),
+                                block_time_ms: None, //None because we want latest
+                                contested_status:
+                                    SingleDocumentDriveQueryContestedStatus::NotContested,
+                            };
+
+                            let expected_document = token_transition.build_historical_document(
+                                &contract,
+                                token_id,
+                                owner_id,
+                                identity_contract_nonce,
+                                &BlockInfo::default(),
+                                token_config,
+                                platform_version,
+                            )?;
+                            let (root_hash, document) = query.verify_proof(
+                                false,
+                                proof,
+                                document_type,
+                                platform_version,
+                            )?;
+                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
+                            if !document.is_equal_ignoring_time_based_fields(
+                                &expected_document,
+                                Some(vec!["destroyedAmount"]),
+                                platform_version,
+                            )? {
+                                return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
+                            }
+                            Ok((root_hash, VerifiedTokenActionWithDocument(document)))
                         } else {
-                            SingleDocumentDriveQueryContestedStatus::NotContested
+                            match token_transition {
+                                TokenTransition::Burn(_) => {
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_balance_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            owner_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
+                                    };
+                                    Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                                }
+                                TokenTransition::Mint(token_mint_transition) => {
+                                    let recipient_id =
+                                        token_mint_transition.recipient_id(token_config)?;
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_balance_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            recipient_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token mint)", recipient_id))));
+                                    };
+                                    Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+                                }
+                                TokenTransition::Transfer(token_transfer_transition) => {
+                                    let recipient_id = token_transfer_transition.recipient_id();
+                                    let identity_ids =
+                                        [owner_id.to_buffer(), recipient_id.to_buffer()];
+                                    let (root_hash, balances): (
+                                        RootHash,
+                                        BTreeMap<Identifier, Option<TokenAmount>>,
+                                    ) = Drive::verify_token_balances_for_identity_ids(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        &identity_ids,
+                                        false,
+                                        platform_version,
+                                    )?;
+
+                                    let balances = balances.into_iter().map(|(id, maybe_balance)| {
+                                        let balance = maybe_balance.ok_or(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token transfer)", id))))?;
+                                        Ok((id, balance))
+                                    }).collect::<Result<_, Error>>()?;
+
+                                    Ok((root_hash, VerifiedTokenIdentitiesBalances(balances)))
+                                }
+                                TokenTransition::Freeze(token_freeze_transition) => {
+                                    let (root_hash, Some(identity_token_info)) =
+                                        Drive::verify_token_info_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            token_freeze_transition
+                                                .frozen_identity_id()
+                                                .into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token info for identity {} expected to exist because of state transition (token freeze)", token_freeze_transition.frozen_identity_id()))));
+                                    };
+                                    if !identity_token_info.frozen() {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof contained token info saying this token was not frozen for identity {}", token_freeze_transition.frozen_identity_id()))));
+                                    }
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenIdentityInfo(owner_id, identity_token_info),
+                                    ))
+                                }
+                                TokenTransition::Unfreeze(token_unfreeze_transition) => {
+                                    let (root_hash, Some(identity_token_info)) =
+                                        Drive::verify_token_info_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            token_unfreeze_transition
+                                                .frozen_identity_id()
+                                                .into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token info for identity {} expected to exist because of state transition (token freeze)", token_unfreeze_transition.frozen_identity_id()))));
+                                    };
+                                    if identity_token_info.frozen() {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof contained token info saying this token was frozen for identity {} when we just unfroze it", token_unfreeze_transition.frozen_identity_id()))));
+                                    }
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenIdentityInfo(owner_id, identity_token_info),
+                                    ))
+                                }
+                                TokenTransition::DestroyFrozenFunds(
+                                    destroy_frozen_funds_transition,
+                                ) => {
+                                    let (root_hash, maybe_token_amount) =
+                                        Drive::verify_token_balance_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            destroy_frozen_funds_transition
+                                                .frozen_identity_id()
+                                                .into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?;
+                                    if maybe_token_amount != Some(0) {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof contained non-zero token balance for identity {} expected to be zero because of state transition (token destroy frozen funds)", destroy_frozen_funds_transition.frozen_identity_id()))));
+                                    };
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenBalanceAbsence(
+                                            destroy_frozen_funds_transition.frozen_identity_id(),
+                                        ),
+                                    ))
+                                }
+                                TokenTransition::EmergencyAction(emergency_action_transition) => {
+                                    let (root_hash, Some(token_status)) =
+                                        Drive::verify_token_status(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
+                                    };
+                                    if token_status.paused()
+                                        != emergency_action_transition.emergency_action().paused()
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof contained token status saying this token is {}paused, but we expected {}paused", if token_status.paused() {""} else {"not "}, if emergency_action_transition.emergency_action().paused() {""} else {"not "}))));
+                                    }
+                                    Ok((root_hash, VerifiedTokenStatus(token_status)))
+                                }
+                                TokenTransition::ConfigUpdate(update) => {
+                                    let (root_hash, Some(updated_contract)) =
+                                        Drive::verify_contract(
+                                            proof,
+                                            Some(contract.config().keeps_history()),
+                                            false,
+                                            false,
+                                            contract.id().into_buffer(),
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
+                                    };
+                                    let mut expected_config = token_config.clone();
+                                    expected_config.apply_token_configuration_item(
+                                        update.update_token_configuration_item().clone(),
+                                    );
+                                    let new_token_config = updated_contract.expected_token_configuration(
+                                        token_transition.base().token_contract_position(),
+                                    ).map_err(|_| {
+                                        Error::Proof(ProofError::CorruptedProof("returned proof does not have a token configuration, which should not be possible".to_string()))
+                                    })?;
+
+                                    if new_token_config != &expected_config {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!(
+                                                "expected token configuration does not match the token configuration from the proof: expected {}, found {}",
+                                                expected_config, new_token_config
+                                            ))));
+                                    }
+                                    Ok((root_hash, VerifiedDataContract(updated_contract)))
+                                }
+                            }
                         }
-                    } else {
-                        SingleDocumentDriveQueryContestedStatus::NotContested
-                    };
-
-                match transition {
-                    DocumentTransition::Create(_) => {}
-                    DocumentTransition::Replace(_) => {}
-                    DocumentTransition::Delete(_) => {}
-                    DocumentTransition::Transfer(_) => {}
-                    DocumentTransition::UpdatePrice(_) => {}
-                    DocumentTransition::Purchase(_) => {}
-                }
-
-                let query = SingleDocumentDriveQuery {
-                    contract_id: transition.data_contract_id().into_buffer(),
-                    document_type_name: transition.document_type_name().clone(),
-                    document_type_keeps_history: document_type.documents_keep_history(),
-                    document_id: transition.base().id().into_buffer(),
-                    block_time_ms: None, //None because we want latest
-                    contested_status,
-                };
-                let (root_hash, document) =
-                    query.verify_proof(false, proof, document_type, platform_version)?;
-
-                match transition {
-                    DocumentTransition::Create(create_transition) => {
-                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
-                        let expected_document = Document::try_from_create_transition(
-                            create_transition,
-                            documents_batch_transition.owner_id(),
-                            block_info,
-                            &document_type,
-                            platform_version,
-                        )?;
-
-                        let transient_fields = document_type
-                            .transient_fields()
-                            .iter()
-                            .map(|a| a.as_str())
-                            .collect();
-
-                        if !document.is_equal_ignoring_time_based_fields(
-                            &expected_document,
-                            Some(transient_fields),
-                            platform_version,
-                        )? {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
-                        }
-                        Ok((
-                            root_hash,
-                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
-                        ))
-                    }
-                    DocumentTransition::Replace(replace_transition) => {
-                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
-                        let expected_document = Document::try_from_replace_transition(
-                            replace_transition,
-                            documents_batch_transition.owner_id(),
-                            document.created_at(), //we can trust the created at (as we don't care)
-                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
-                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
-                            document.created_at(), //we can trust the created at (as we don't care)
-                            document.created_at_block_height(), //we can trust the created at block height (as we don't care)
-                            document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
-                            block_info,
-                            &document_type,
-                            platform_version,
-                        )?;
-
-                        let transient_fields = document_type
-                            .transient_fields()
-                            .iter()
-                            .map(|a| a.as_str())
-                            .collect();
-
-                        if !document.is_equal_ignoring_time_based_fields(
-                            &expected_document,
-                            Some(transient_fields),
-                            platform_version,
-                        )? {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
-                        }
-
-                        Ok((
-                            root_hash,
-                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
-                        ))
-                    }
-                    DocumentTransition::Transfer(transfer_transition) => {
-                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (transfer)", transfer_transition.base().id()))))?;
-                        let recipient_owner_id = transfer_transition.recipient_owner_id();
-
-                        if document.owner_id() != recipient_owner_id {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", transfer_transition.base().id()))));
-                        }
-
-                        Ok((
-                            root_hash,
-                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
-                        ))
-                    }
-                    DocumentTransition::Delete(delete_transition) => {
-                        if document.is_some() {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution contained document after delete with id {}", delete_transition.base().id()))));
-                        }
-                        Ok((
-                            root_hash,
-                            VerifiedDocuments(BTreeMap::from([(
-                                delete_transition.base().id(),
-                                None,
-                            )])),
-                        ))
-                    }
-                    DocumentTransition::UpdatePrice(update_price_transition) => {
-                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (update price)", update_price_transition.base().id()))))?;
-                        let new_document_price : Credits = document.properties().get_integer(PRICE).map_err(|e| Error::Proof(ProofError::IncorrectProof(format!("proof did not contain a document that contained a price field with id {} expected to exist because of state transition (update price): {}", update_price_transition.base().id(), e))))?;
-                        if new_document_price != update_price_transition.price() {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document update of price after price update with id {}", update_price_transition.base().id()))));
-                        }
-                        Ok((
-                            root_hash,
-                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
-                        ))
-                    }
-                    DocumentTransition::Purchase(purchase_transition) => {
-                        let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (purchase)", purchase_transition.base().id()))))?;
-
-                        if document.owner_id() != owner_id {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not have the transfer executed after expected transfer with id {}", purchase_transition.base().id()))));
-                        }
-
-                        Ok((
-                            root_hash,
-                            VerifiedDocuments(BTreeMap::from([(document.id(), Some(document))])),
-                        ))
                     }
                 }
             }

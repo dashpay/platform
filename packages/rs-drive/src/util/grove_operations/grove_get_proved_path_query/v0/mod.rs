@@ -11,7 +11,7 @@ impl Drive {
     /// Pushes the cost to `drive_operations` and returns the return value.
     /// Verbose should be generally set to false unless one needs to prove
     /// subsets of a proof.
-    pub(crate) fn grove_get_proved_path_query_v0(
+    pub(super) fn grove_get_proved_path_query_v0(
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,

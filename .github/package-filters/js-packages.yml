@@ -2,6 +2,10 @@
   - .github/workflows/tests*
   - packages/wallet-utils-contract/**
 
+'@dashevo/token-history-contract': &token-history-contract
+  - .github/workflows/tests*
+  - packages/token-history-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -30,6 +34,7 @@
   - *dpns-contract
   - *withdrawals-contract
   - *wallet-utils-contract
+  - *token-history-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**
@@ -80,6 +85,7 @@ dashmate:
   - *masternode-reward-shares-contract
   - *dpns-contract
   - *withdrawals-contract
+  - *token-history-contract
   - *wallet-lib
   - *dapi-client
 

@@ -18,7 +18,7 @@ use dpp::fee::{Credits, SignedCredits};
 use dpp::prelude::TimestampMillis;
 use platform_version::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
-use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
+use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, MaybeTree, TransactionArg};
 use grovedb::{Element, PathQuery, SizedQuery};
 
 /// Operations for Withdrawals
@@ -164,7 +164,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                     true,
                     // we know that we are not deleting a subtree
                     BatchMoveApplyType::StatefulBatchMove {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     &mut drive_operations,
@@ -205,7 +205,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                     true,
                     // we know that we are not deleting a subtree
                     BatchMoveApplyType::StatefulBatchMove {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     &mut drive_operations,
@@ -244,7 +244,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                     true,
                     // we know that we are not deleting a subtree
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     &mut drive_operations,

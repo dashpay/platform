@@ -23,8 +23,8 @@ impl IdentityInsufficientBalanceErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getBalance)]
-    pub fn balance(&self) -> u32 {
-        self.inner.balance() as u32
+    pub fn balance(&self) -> u64 {
+        self.inner.balance()
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -10,4 +10,5 @@ pub struct SystemLimits {
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
     pub max_withdrawal_amount: u64,
+    pub max_contract_group_size: u32,
 }

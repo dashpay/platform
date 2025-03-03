@@ -16,7 +16,7 @@ use dpp::identity::{IdentityPublicKey, identity_public_key::{Purpose, SecurityLe
 use platform_version::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -79,8 +79,8 @@ impl Drive {
                         BatchInsertTreeApplyType::StatefulBatchInsertTree
                     } else {
                         BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                            in_tree_using_sums: false,
-                            is_sum_tree: false,
+                            in_tree_type: TreeType::NormalTree,
+                            tree_type: TreeType::NormalTree,
                             flags_len: SINGLE_EPOCH_FLAGS_SIZE,
                         }
                     };

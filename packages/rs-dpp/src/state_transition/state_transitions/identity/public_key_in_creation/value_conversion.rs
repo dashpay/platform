@@ -1,5 +1,5 @@
 use crate::serialization::ValueConvertible;
-use crate::state_transition::state_transitions::document::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
+use crate::state_transition::state_transitions::document::batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;

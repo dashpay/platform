@@ -1,8 +1,8 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
-use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 

@@ -300,12 +300,7 @@ describe('DataContract', () => {
 
   describe('#setMetadata', () => {
     it('should set metadata', () => {
-      const otherMetadata = new Metadata({
-        blockHeight: 43,
-        coreChainLockedHeight: 1,
-        timeMs: 100,
-        protocolVersion: 2,
-      });
+      const otherMetadata = new Metadata(BigInt(43), 1, BigInt(100), 2);
       const otherMetadataToObject = otherMetadata.toObject();
 
       dataContract.setMetadata(otherMetadata);

@@ -98,8 +98,21 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::RegexError(_)) => 10247,
             Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10248,
             Self::ContestedUniqueIndexWithUniqueIndexError(_) => 10249,
+            Self::DataContractTokenConfigurationUpdateError { .. } => 10250,
+            Self::InvalidTokenBaseSupplyError(_) => 10251,
+            Self::NonContiguousContractGroupPositionsError(_) => 10252,
+            Self::NonContiguousContractTokenPositionsError(_) => 10253,
 
-            // Document Errors: 10400-10499
+            // Group Errors: 10350-10399
+            Self::GroupPositionDoesNotExistError(_) => 10350,
+            Self::GroupActionNotAllowedOnTransitionError(_) => 10351,
+            Self::GroupTotalPowerLessThanRequiredError(_) => 10352,
+            Self::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_) => 10353,
+            Self::GroupExceedsMaxMembersError(_) => 10354,
+            Self::GroupMemberHasPowerOfZeroError(_) => 10355,
+            Self::GroupMemberHasPowerOverLimitError(_) => 10356,
+
+            // Document Errors: 10400-10449
             Self::DataContractNotPresentError { .. } => 10400,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 10401,
             Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 10402,
@@ -119,6 +132,15 @@ impl ErrorWithCode for BasicError {
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
+
+            // Token Errors: 10450-10499
+            Self::InvalidTokenIdError(_) => 10450,
+            Self::InvalidTokenPositionError(_) => 10451,
+            Self::InvalidActionIdError(_) => 10452,
+            Self::ContractHasNoTokensError(_) => 10453,
+            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10454,
+            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10455,
+            Self::TokenTransferToOurselfError(_) => 10456,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -200,8 +222,10 @@ impl ErrorWithCode for StateError {
             Self::DataContractAlreadyPresentError { .. } => 40000,
             Self::DataContractIsReadonlyError { .. } => 40001,
             Self::DataContractConfigUpdateError { .. } => 40002,
+            Self::DataContractUpdatePermissionError(_) => 40003,
+            Self::DataContractUpdateActionNotAllowedError(_) => 40004,
 
-            // Document Errors: 40100-40199
+            // Document Errors: 40100-40149
             Self::DocumentAlreadyPresentError { .. } => 40100,
             Self::DocumentNotFoundError { .. } => 40101,
             Self::DocumentOwnerIdMismatchError { .. } => 40102,
@@ -218,6 +242,23 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
             Self::DocumentContestNotPaidForError(_) => 40114,
 
+            // Token errors: 40150-40199
+            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40150,
+            Self::UnauthorizedTokenActionError(_) => 40151,
+            Self::IdentityTokenAccountFrozenError(_) => 40152,
+            Self::IdentityTokenAccountNotFrozenError(_) => 40153,
+            Self::TokenSettingMaxSupplyToLessThanCurrentSupplyError(_) => 40154,
+            Self::TokenMintPastMaxSupplyError(_) => 40155,
+            Self::NewTokensDestinationIdentityDoesNotExistError(_) => 40156,
+            Self::NewAuthorizedActionTakerIdentityDoesNotExistError(_) => 40157,
+            Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40158,
+            Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
+            Self::InvalidGroupPositionError(_) => 40160,
+            Self::TokenIsPausedError(_) => 40161,
+            Self::IdentityTokenAccountAlreadyFrozenError(_) => 40162,
+            Self::TokenAlreadyPausedError(_) => 40163,
+            Self::TokenNotPausedError(_) => 40164,
+
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 40201,
@@ -232,9 +273,9 @@ impl ErrorWithCode for StateError {
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
-            Self::DataContractUpdatePermissionError(_) => 40213,
             Self::MissingTransferKeyError(_) => 40214,
             Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
+            Self::RecipientIdentityDoesNotExistError(_) => 40216,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,
@@ -252,6 +293,12 @@ impl ErrorWithCode for StateError {
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
+
+            // Group errors: 40800-40899
+            Self::IdentityNotMemberOfGroupError(_) => 40800,
+            Self::GroupActionDoesNotExistError(_) => 40801,
+            Self::GroupActionAlreadyCompletedError(_) => 40802,
+            Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
         }
     }
 }

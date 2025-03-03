@@ -29,13 +29,13 @@ impl BalanceIsNotEnoughErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getBalance)]
-    pub fn get_balance(&self) -> f64 {
-        self.inner.balance() as f64
+    pub fn get_balance(&self) -> u64 {
+        self.inner.balance()
     }
 
     #[wasm_bindgen(js_name=getFee)]
-    pub fn get_fee(&self) -> f64 {
-        self.inner.fee() as f64
+    pub fn get_fee(&self) -> u64 {
+        self.inner.fee() as u64
     }
 
     #[wasm_bindgen(js_name=getCode)]

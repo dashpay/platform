@@ -27,9 +27,9 @@ mod tests {
     use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
-    use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-    use crate::state_transition::state_transitions::document::documents_batch_transition::{
-        DocumentsBatchTransition, DocumentsBatchTransitionV0,
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use crate::state_transition::state_transitions::document::batch_transition::{
+        BatchTransition, BatchTransitionV1,
     };
     use crate::state_transition::state_transition::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::state_transition::identity::identity_create_transition::IdentityCreateTransition;
@@ -39,7 +39,7 @@ mod tests {
     use crate::state_transition::state_transition::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
-        get_data_contract_fixture, get_document_transitions_fixture,
+        get_data_contract_fixture, get_batched_transitions_fixture,
         get_extended_documents_fixture_with_owner_id_from_contract,
         raw_instant_asset_lock_proof_fixture,
     };
@@ -338,11 +338,11 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let transitions = get_document_transitions_fixture(
+        let transitions = get_batched_transitions_fixture(
             [(DocumentTransitionActionType::Create, documents)],
             &mut nonces,
         );
-        let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
+        let documents_batch_transition: BatchTransition = BatchTransitionV1 {
             owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()

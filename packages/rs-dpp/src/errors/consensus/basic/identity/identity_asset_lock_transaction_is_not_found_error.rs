@@ -45,15 +45,3 @@ impl From<IdentityAssetLockTransactionIsNotFoundError> for ConsensusError {
         Self::BasicError(BasicError::IdentityAssetLockTransactionIsNotFoundError(err))
     }
 }
-
-#[cfg(test)]
-mod test {
-    use crate::errors::consensus::basic::identity::IdentityAssetLockTransactionIsNotFoundError;
-
-    #[test]
-    pub fn test_message() {
-        let error = IdentityAssetLockTransactionIsNotFoundError::new([1; 32]);
-
-        println!("{}", error);
-    }
-}

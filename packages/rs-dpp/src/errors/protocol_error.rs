@@ -20,19 +20,28 @@ use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
     feature = "state-transition-validation"
 ))]
 use crate::state_transition::errors::StateTransitionError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::invalid_signature_public_key_error::InvalidSignaturePublicKeyError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::public_key_mismatch_error::PublicKeyMismatchError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::public_key_security_level_not_met_error::PublicKeySecurityLevelNotMetError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::state_transition_is_not_signed_error::StateTransitionIsNotSignedError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
 
-//use dashcore::consensus::encode::Error as DashCoreError;
+#[cfg(any(
+    all(feature = "state-transitions", feature = "validation"),
+    feature = "state-transition-validation",
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::state_transition::errors::WrongPublicKeyPurposeError;
 
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::{
+    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
+    StateTransitionIsNotSignedError,
+};
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
+    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
+};
+
+use dashcore::consensus::encode::Error as DashCoreError;
+
+use crate::tokens::errors::TokenError;
 use platform_value::{Error, Value};
 use platform_version::error::PlatformVersionError;
 use versioned_feature_core::FeatureVersion;
@@ -126,6 +135,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     Document(Box<DocumentError>),
+
+    #[error(transparent)]
+    Token(Box<TokenError>),
 
     #[error("Generic Error: {0}")]
     Generic(String),
@@ -225,6 +237,12 @@ pub enum ProtocolError {
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
 
+    #[error("group member not found in contract: {0}")]
+    GroupMemberNotFound(String),
+
+    #[error("group not found in contract: {0}")]
+    GroupNotFound(String),
+
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
 
@@ -277,6 +295,12 @@ impl From<ConsensusError> for ProtocolError {
 impl From<DocumentError> for ProtocolError {
     fn from(e: DocumentError) -> Self {
         ProtocolError::Document(Box::new(e))
+    }
+}
+
+impl From<TokenError> for ProtocolError {
+    fn from(e: TokenError) -> Self {
+        ProtocolError::Token(Box::new(e))
     }
 }
 

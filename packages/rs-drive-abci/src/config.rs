@@ -105,6 +105,10 @@ pub struct ExecutionConfig {
     #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
+    /// Should we verify sum trees? Useful to set as `false` for tests
+    #[serde(default = "ExecutionConfig::default_verify_token_sum_trees")]
+    pub verify_token_sum_trees: bool,
+
     /// How long in seconds should an epoch last
     /// It might last a lot longer if the chain is halted
     #[serde(
@@ -614,6 +618,10 @@ impl ExecutionConfig {
         true
     }
 
+    fn default_verify_token_sum_trees() -> bool {
+        true
+    }
+
     fn default_use_document_triggers() -> bool {
         true
     }
@@ -669,6 +677,7 @@ impl Default for ExecutionConfig {
         Self {
             use_document_triggers: ExecutionConfig::default_use_document_triggers(),
             verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
+            verify_token_sum_trees: ExecutionConfig::default_verify_token_sum_trees(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
         }
     }

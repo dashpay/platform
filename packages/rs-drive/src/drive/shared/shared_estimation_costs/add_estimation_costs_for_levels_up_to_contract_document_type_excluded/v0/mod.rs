@@ -6,8 +6,8 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::contract::paths::contract_root_path;
 use crate::error::Error;
@@ -62,7 +62,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_root_path(contract.id_ref().as_bytes())),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, storage_flags),
             },
@@ -71,7 +71,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_documents_path(contract.id_ref().as_bytes())),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count: ApproximateElements(document_type_count),
                 estimated_layer_sizes: AllSubtrees(
                     ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,

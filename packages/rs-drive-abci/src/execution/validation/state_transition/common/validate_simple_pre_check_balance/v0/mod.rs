@@ -33,7 +33,7 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
                     .state_transition_min_fees
                     .contract_update
             }
-            StateTransition::DocumentsBatch(_) => {
+            StateTransition::Batch(_) => {
                 platform_version
                     .fee_version
                     .state_transition_min_fees

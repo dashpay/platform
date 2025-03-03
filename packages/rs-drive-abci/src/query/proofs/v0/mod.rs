@@ -4,6 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
+    IdentityTokenBalanceRequest, IdentityTokenInfoRequest, TokenStatusRequest,
+};
 use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
 use dapi_grpc::platform::v0::get_proofs_response::{get_proofs_response_v0, GetProofsResponseV0};
 use dpp::check_validation_result_with_data;
@@ -13,6 +16,9 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
+use drive::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
+use drive::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
+use drive::query::token_status_drive_query::TokenStatusDriveQuery;
 use drive::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
 impl<C> Platform<C> {
@@ -23,6 +29,9 @@ impl<C> Platform<C> {
             contracts,
             documents,
             votes,
+            identity_token_balances,
+            identity_token_infos,
+            token_statuses,
         }: GetProofsRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
@@ -145,11 +154,72 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<IdentityBasedVoteDriveQuery>, QueryError>>());
 
+        let token_balance_queries = check_validation_result_with_data!(identity_token_balances
+            .into_iter()
+            .map(|identity_token_balance_request| {
+                let IdentityTokenBalanceRequest {
+                    token_id,
+                    identity_id,
+                } = identity_token_balance_request;
+                Ok(IdentityTokenBalanceDriveQuery {
+                    identity_id: Identifier::try_from(identity_id).map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "identity_id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?,
+                    token_id: Identifier::try_from(token_id).map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "token_id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?,
+                })
+            })
+            .collect::<Result<Vec<IdentityTokenBalanceDriveQuery>, QueryError>>());
+
+        let token_info_queries = check_validation_result_with_data!(identity_token_infos
+            .into_iter()
+            .map(|identity_token_info_request| {
+                let IdentityTokenInfoRequest {
+                    token_id,
+                    identity_id,
+                } = identity_token_info_request;
+                Ok(IdentityTokenInfoDriveQuery {
+                    identity_id: Identifier::try_from(identity_id).map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "identity_id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?,
+                    token_id: Identifier::try_from(token_id).map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "token_id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?,
+                })
+            })
+            .collect::<Result<Vec<IdentityTokenInfoDriveQuery>, QueryError>>());
+
+        let token_status_queries = check_validation_result_with_data!(token_statuses
+            .into_iter()
+            .map(|token_status_request| {
+                let TokenStatusRequest { token_id } = token_status_request;
+                Ok(TokenStatusDriveQuery {
+                    token_id: Identifier::try_from(token_id).map_err(|_| {
+                        QueryError::InvalidArgument(
+                            "token_id must be a valid identifier (32 bytes long)".to_string(),
+                        )
+                    })?,
+                })
+            })
+            .collect::<Result<Vec<TokenStatusDriveQuery>, QueryError>>());
+
         let proof = self.drive.prove_multiple_state_transition_results(
             &identity_requests,
             &contract_ids,
             &document_queries,
             &vote_queries,
+            &token_balance_queries,
+            &token_info_queries,
+            &token_status_queries,
             None,
             platform_version,
         )?;
@@ -190,6 +260,9 @@ mod tests {
             contracts: vec![],
             documents: vec![],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let result = platform
@@ -213,6 +286,9 @@ mod tests {
             contracts: vec![],
             documents: vec![],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let result = platform
@@ -239,6 +315,9 @@ mod tests {
             }],
             documents: vec![],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let result = platform
@@ -263,6 +342,9 @@ mod tests {
                 document_contested_status: 0,
             }],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let result = platform
@@ -287,6 +369,9 @@ mod tests {
                 document_contested_status: 0,
             }],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let result = platform
@@ -311,6 +396,9 @@ mod tests {
                 document_contested_status: 0,
             }],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let validation_result = platform
@@ -363,6 +451,9 @@ mod tests {
                     },
                 )),
             }],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let validation_result = platform
@@ -395,6 +486,9 @@ mod tests {
                 document_contested_status: 0,
             }],
             votes: vec![],
+            identity_token_balances: vec![],
+            identity_token_infos: vec![],
+            token_statuses: vec![],
         };
 
         let validation_result = platform

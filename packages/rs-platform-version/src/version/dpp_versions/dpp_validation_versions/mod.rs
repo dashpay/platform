@@ -15,10 +15,12 @@ pub struct DPPValidationVersions {
 pub struct DataContractValidationVersions {
     pub validate: FeatureVersion,
     pub validate_config_update: FeatureVersion,
+    pub validate_token_config_update: FeatureVersion,
     pub validate_index_definitions: FeatureVersion,
     pub validate_index_naming_duplicates: FeatureVersion,
     pub validate_not_defined_properties: FeatureVersion,
     pub validate_property_definition: FeatureVersion,
+    pub validate_token_config_groups_exist: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

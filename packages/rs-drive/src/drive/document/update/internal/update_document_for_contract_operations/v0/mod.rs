@@ -34,7 +34,7 @@ use platform_version::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -227,7 +227,7 @@ impl Drive {
                             index_path.clone(),
                             document_top_field.as_slice(),
                         )),
-                        false,
+                        TreeType::NormalTree,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,
@@ -300,7 +300,7 @@ impl Drive {
                                 index_path.clone(),
                                 index_property.name.as_bytes(),
                             )),
-                            false,
+                            TreeType::NormalTree,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -332,7 +332,7 @@ impl Drive {
                                 index_path.clone(),
                                 document_index_field.as_slice(),
                             )),
-                            false,
+                            TreeType::NormalTree,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -380,7 +380,7 @@ impl Drive {
                         document.id().as_slice(),
                         Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         previous_batch_operations,
@@ -394,7 +394,7 @@ impl Drive {
                         &[0],
                         Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         previous_batch_operations,
@@ -409,7 +409,7 @@ impl Drive {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
-                        false,
+                        TreeType::NormalTree,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,
