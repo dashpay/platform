@@ -28,6 +28,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "rand",
   "signer",
   "serde",
+  "apple"
 ], default-features = false, branch = "feat/ferment" }
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
