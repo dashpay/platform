@@ -1050,7 +1050,7 @@ impl SdkBuilder {
                         "Network type must be set, use SdkBuilder::with_network_type()".to_string(),
                     ));
                 }
-                
+
                 #[allow(unused_mut)] // needs to be mutable for features other than wasm
                 let mut dapi = DapiClient::new(addresses, dapi_client_settings);
                 #[cfg(not(target_arch = "wasm32"))]
