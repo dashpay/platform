@@ -6,7 +6,6 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
-use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 /// action v0
 #[derive(Default, Debug, Clone)]

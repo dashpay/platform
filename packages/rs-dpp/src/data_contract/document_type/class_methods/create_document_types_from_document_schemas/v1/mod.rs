@@ -6,7 +6,6 @@ use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::errors::ProtocolError;
-use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 

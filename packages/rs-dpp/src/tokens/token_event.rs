@@ -4,7 +4,6 @@ use crate::data_contract::DataContract;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::{DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex};
 use bincode::{Decode, Encode};

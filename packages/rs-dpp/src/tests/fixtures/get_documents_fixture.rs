@@ -9,7 +9,9 @@ use crate::data_contract::DataContract;
 use crate::document::document_factory::DocumentFactory;
 use crate::document::Document;
 use crate::errors::ProtocolError;
-use crate::{prelude::*, tests::utils::generate_random_identifier_struct as gen_owner_id};
+use crate::{tests::utils::generate_random_identifier_struct as gen_owner_id};
+#[cfg(feature = "extended-document")]
+use crate::document::ExtendedDocument;
 use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "extended-document")]
