@@ -89,7 +89,7 @@ where
                 Self::maybe_from_unproved_with_metadata(
                     request.clone(),
                     response,
-                    sdk.network,
+                    sdk.core_network(),
                     sdk.version(),
                 )
                 .map_err(|e| ExecutionError {
