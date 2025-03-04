@@ -31,12 +31,14 @@ use crate::state_transition::errors::{
     StateTransitionIsNotSignedError,
 };
 
+use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::consensus::ConsensusError;
+use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
+use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
+use crate::errors::non_consensus_error::NonConsensusError;
+use crate::errors::serde_parsing_error::SerdeParsingError;
 use crate::tokens::errors::TokenError;
-use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
-    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
-};
+
 use platform_value::{Error, Value};
 use platform_version::error::PlatformVersionError;
 use versioned_feature_core::FeatureVersion;
