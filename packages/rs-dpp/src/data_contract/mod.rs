@@ -62,7 +62,6 @@ use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
-// pub use serde_json::Value as JsonValue;
 
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type JsonSchema = serde_json::Value;

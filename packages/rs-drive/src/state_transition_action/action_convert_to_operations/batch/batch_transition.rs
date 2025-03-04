@@ -4,8 +4,8 @@ use crate::state_transition_action::action_convert_to_operations::DriveHighLevel
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
-use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
+use platform_value::Identifier;
 
 impl DriveHighLevelBatchOperationConverter for BatchedTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(

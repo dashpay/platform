@@ -9,7 +9,7 @@ use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::state_transitions::document::batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use platform_value::Identifier;
 

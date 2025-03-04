@@ -12,8 +12,7 @@ use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentTransition;
-use dpp::state_transition::state_transitions::document::batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
@@ -26,13 +25,14 @@ use crate::{
 };
 
 use dpp::ed25519_dalek::ed25519::signature::SignerMut;
+use dpp::identifier::Identifier;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 use crate::batch_transition::batched_transition::BatchedTransitionWasm;
-use crate::batch_transition::batched_transition::DocumentTransitionWasm;
 use crate::batch_transition::token_transition::TokenTransitionWasm;
 use dpp::state_transition::StateTransitionIdentitySigned;
+use crate::batch_transition::document_transition::DocumentTransitionWasm;
 
 mod batched_transition;
 pub mod document_transition;

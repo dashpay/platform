@@ -1,6 +1,6 @@
 use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use crate::state_transition::FeatureVersioned;
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl FeatureVersioned for BatchTransition {
     fn feature_version(&self) -> FeatureVersion {

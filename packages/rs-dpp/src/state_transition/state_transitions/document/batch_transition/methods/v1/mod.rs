@@ -18,7 +18,7 @@ use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]

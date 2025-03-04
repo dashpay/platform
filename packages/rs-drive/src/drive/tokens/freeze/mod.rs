@@ -6,9 +6,9 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
+use platform_value::Identifier;
 use std::collections::HashMap;
 
 impl Drive {

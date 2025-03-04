@@ -3,7 +3,7 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::state_transition::state_transitions::document::batch_transition::{BatchTransition, BatchTransitionV1};
 use crate::state_transition::StateTransitionType::Batch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use platform_value::{BinaryData, Identifier};

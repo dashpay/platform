@@ -9,7 +9,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
-use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes};
+use crate::{identity::identity_public_key::security_level::SecurityLevel, state_transition::StateTransitionFieldTypes};
 
 pub use self::batched_transition::{
     document_base_transition, document_create_transition,

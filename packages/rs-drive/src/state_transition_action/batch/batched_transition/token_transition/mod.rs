@@ -22,6 +22,7 @@ pub mod token_emergency_action_transition_action;
 
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::DocumentTypeRef;
