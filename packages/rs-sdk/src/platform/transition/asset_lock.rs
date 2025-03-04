@@ -1,5 +1,6 @@
 //! [AssetLockProof] utilities
 
+use crate::networks::NetworkSettings;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_epochs_info_request::{self, GetEpochsInfoRequestV0};
 use dapi_grpc::platform::v0::GetEpochsInfoRequest;
@@ -71,7 +72,7 @@ impl AssetLockProofVerifier for AssetLockProof {
                     .cyclehash
                     .to_raw_hash()
                     .to_byte_array();
-                let quorum_type = sdk.quorum_params().instant_lock_quorum_type;
+                let quorum_type: QuorumType = sdk.network_settings().chain_locks_quorum_type();
                 // Try to fetch the quorum public key; if it fails, we assume platform does not have this quorum yet
                 let quorum_pubkey = match context_provider.get_quorum_public_key(
                     quorum_type as u32,
@@ -183,7 +184,7 @@ fn verify_instant_lock_signature(
 mod tests {
 
     use dashcore_rpc::json::QuorumType;
-    use dpp::dashcore::{consensus::deserialize, InstantLock};
+    use dpp::dashcore::{consensus::deserialize, hashes::Hash, InstantLock};
 
     use crate::platform::transition::asset_lock::verify_instant_lock_signature;
 

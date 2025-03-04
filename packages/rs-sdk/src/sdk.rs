@@ -97,7 +97,7 @@ pub type LastQueryTimestamp = u64;
 pub struct Sdk {
     inner: SdkInstance,
     /// Type of network we use. Determines some parameters, like quorum types.
-    network_settings: NetworkSettings,
+    network: Network,
     /// Use proofs when retrieving data from the platform.
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
@@ -149,7 +149,7 @@ impl Clone for Sdk {
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
             dapi_client_settings: self.dapi_client_settings,
-            network_settings: self.network_settings,
+            network: self.network,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -278,7 +278,7 @@ impl Sdk {
 
     /// Get configured Dash Core network type.
     pub fn core_network(&self) -> Network {
-        self.network_settings.core_network()
+        self.network.core_network()
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
@@ -305,7 +305,7 @@ impl Sdk {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
-                self.network_settings.core_network(),
+                self.network.core_network(),
                 self.version(),
                 &provider,
             ),
@@ -533,8 +533,8 @@ impl Sdk {
     }
 
     /// Return configuration of quorum, like type of quorum used for instant lock.
-    pub(crate) fn network_settings(&self) -> NetworkSettings {
-        self.network_settings
+    pub(crate) fn network_settings(&self) -> Network {
+        self.network
     }
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
@@ -731,8 +731,10 @@ pub struct SdkBuilder {
     core_user: String,
     core_password: Zeroizing<String>,
 
-    /// Customized network settings of a Dash network used by the SDK.
-    network_settings: NetworkSettings,
+    /// Dash Core network type used by the SDK.
+    ///
+    /// Defaults to [NETWORK_MAINNET](crate::networks::NETWORK_MAINNET).
+    network: Network,
 
     /// If true, request and verify proofs of the responses.
     proofs: bool,
@@ -784,7 +786,7 @@ impl Default for SdkBuilder {
             core_port: 0,
             core_password: "".to_string().into(),
             core_user: "".to_string(),
-            network_settings: NETWORK_MAINNET.into(),
+            network: NETWORK_MAINNET,
             proofs: true,
             metadata_height_tolerance: Some(1),
             metadata_time_tolerance_ms: None,
@@ -825,7 +827,7 @@ impl SdkBuilder {
 
     /// Create a new SdkBuilder that will generate mock client.
     pub fn new_mock() -> Self {
-        Self::default().with_network_settings(NetworkSettings::Mock)
+        Self::default()
     }
 
     /// Create a new SdkBuilder instance preconfigured for testnet. NOT IMPLEMENTED YET.
@@ -867,8 +869,9 @@ impl SdkBuilder {
     /// Defaults to [NETWORK_MAINNET](crate::networks::NETWORK_MAINNET).
     ///
     /// For more control over the configuration, use [SdkBuilder::with_network_settings()].
-    pub fn with_network(self, network: Network) -> Self {
-        self.with_network_settings(network)
+    pub fn with_network(mut self, network: Network) -> Self {
+        self.network = network;
+        self
     }
 
     /// Configure CA certificate to use when verifying TLS connections.
@@ -950,15 +953,6 @@ impl SdkBuilder {
     /// Once that cancellation token is cancelled, all pending requests shall teriminate.
     pub fn with_cancellation_token(mut self, cancel_token: CancellationToken) -> Self {
         self.cancel_token = cancel_token;
-        self
-    }
-
-    /// Customize custom Dash Platform network settings.
-    ///
-    /// This method is aimed for advanced use cases, where [SdkBuilder::with_network()] is not good enough.
-    /// It allows to configure network settings like quorum type, network type, etc. by creating [NetworkSettings] directly.
-    pub fn with_network_settings<T: Into<NetworkSettings>>(mut self, network_type: T) -> Self {
-        self.network_settings = network_type.into();
         self
     }
 
@@ -1063,7 +1057,7 @@ impl SdkBuilder {
                 let mut sdk= Sdk{
                     dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
-                    network_settings: self.network_settings,
+                    network: self.network,
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
@@ -1131,7 +1125,7 @@ impl SdkBuilder {
                         address_list: AddressList::new(),
                         version: self.version,
                     },
-                    network_settings: self.network_settings,
+                    network: self.network,
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
