@@ -31,12 +31,12 @@ mod tests {
     use crate::state_transition::state_transitions::document::batch_transition::{
         BatchTransition, BatchTransitionV1,
     };
-    use crate::state_transition::state_transition::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
-    use crate::state_transition::state_transition::identity::identity_create_transition::IdentityCreateTransition;
-    use crate::state_transition::state_transition::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-    use crate::state_transition::state_transition::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-    use crate::state_transition::state_transition::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use crate::state_transition::state_transition::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+    use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+    use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_batched_transitions_fixture,

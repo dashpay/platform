@@ -48,7 +48,7 @@ mod test {
     use crate::identity::KeyID;
     use crate::prelude::Revision;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use crate::state_transition::state_transition::identity::identity_credit_withdrawal_transition::v0::Pooling;
+    use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::state_transition::StateTransitionType;
     use crate::ProtocolError;
     use bincode::{Decode, Encode};

@@ -265,7 +265,7 @@ mod tests {
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-    use dpp::state_transition::state_transition::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;
