@@ -43,8 +43,8 @@ mod json_conversion;
 pub mod methods;
 pub mod resolvers;
 mod state_transition_like;
-mod v0;
-mod v1;
+pub mod v0;
+pub mod v1;
 #[cfg(feature = "validation")]
 mod validation;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -82,6 +82,7 @@ pub use v1::*;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.batch_state_transition"
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum BatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(BatchTransitionV0),

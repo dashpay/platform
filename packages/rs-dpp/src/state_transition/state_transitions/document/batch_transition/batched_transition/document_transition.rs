@@ -22,6 +22,7 @@ use crate::state_transition::state_transitions::document::batch_transition::reso
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentTransition {
     #[display("CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),
