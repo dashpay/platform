@@ -34,8 +34,10 @@ mod test {
     };
 
     use crate::prelude::IdentityNonce;
+    use dpp::state_transition::state_transitions::identity::identity_update_transition::fields::{
+        IDENTITY_NONCE, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION,
+    };
     use dpp::util::json_value::JsonValueExt;
-    use dpp::state_transition::state_transitions::identity::identity_update_transition::fields::{IDENTITY_NONCE, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION};
 
     #[test]
     fn should_return_state_transition_in_json_format() {

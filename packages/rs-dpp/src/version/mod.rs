@@ -1,12 +1,15 @@
 use crate::errors::ProtocolError;
 use lazy_static::lazy_static;
 pub use platform_version::error::PlatformVersionError;
-pub use platform_version::version::protocol_version::{FeatureVersionBounds, PlatformVersion, LATEST_PLATFORM_VERSION};
+pub use platform_version::version::protocol_version::{
+    FeatureVersionBounds, PlatformVersion, LATEST_PLATFORM_VERSION,
+};
 pub use platform_version::version::{
     dpp_versions, drive_abci_versions, drive_versions, fee, patches, system_data_contract_versions,
     system_limits,
 };
 pub use platform_version::DefaultForPlatformVersion;
+pub use platform_version::TryFromPlatformVersioned;
 use std::sync::RwLock;
 pub use versioned_feature_core::FeatureVersion;
 

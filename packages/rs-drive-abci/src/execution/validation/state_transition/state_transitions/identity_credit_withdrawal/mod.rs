@@ -146,10 +146,10 @@ mod tests {
     use dpp::identity::core_script::CoreScript;
     use dpp::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
+    use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::methods::{
         IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
     };
-    use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
     use dpp::withdrawal::Pooling;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;

@@ -223,9 +223,10 @@ mod tests {
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 
+    use dpp::identity::IdentityPublicKey;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::{Identifier, IdentityPublicKey};
+    use dpp::prelude::Identifier;
     use dpp::serialization::{PlatformSerializable, Signable};
 
     use dpp::native_bls::NativeBlsModule;
@@ -259,13 +260,13 @@ mod tests {
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::errors::consensus::state::state_error::StateError;
-    use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
-    use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;

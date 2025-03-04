@@ -135,9 +135,10 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::ContractBounds;
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::{Identifier, IdentityPublicKey};
+    use dpp::prelude::Identifier;
+    use dpp::identity::IdentityPublicKey;
     use dpp::serialization::PlatformDeserializable;
     use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;

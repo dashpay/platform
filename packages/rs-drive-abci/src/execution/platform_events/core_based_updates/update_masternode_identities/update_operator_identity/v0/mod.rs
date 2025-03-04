@@ -408,9 +408,11 @@ mod tests {
     use dpp::dashcore::Txid;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::Identity;
+    use dpp::identity::IdentityPublicKey;
     use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
-    use dpp::prelude::{Identifier, Identity, IdentityPublicKey};
+    use dpp::prelude::Identifier;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::Rng;

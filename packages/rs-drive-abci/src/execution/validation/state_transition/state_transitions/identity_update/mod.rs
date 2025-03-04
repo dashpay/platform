@@ -125,14 +125,14 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::errors::consensus::ConsensusError;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
+    use dpp::identity::ContractBounds;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::state_transitions::identity::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::StateTransition;
     use platform_version::version::PlatformVersion;
     use rand::rngs::StdRng;

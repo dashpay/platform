@@ -53,7 +53,7 @@ mod tests {
     use dpp::errors::consensus::state::state_error::StateError;
     use dpp::errors::consensus::ConsensusError;
     use dpp::prelude::Identifier;
-    use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
     use platform_version::version::v1::PLATFORM_V1;
 
     mod validate_advanced_minimum_balance_pre_check_v0 {

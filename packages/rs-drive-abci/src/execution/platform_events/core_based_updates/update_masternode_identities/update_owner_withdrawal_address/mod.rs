@@ -85,9 +85,10 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::IdentityPublicKey;
     use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
-    use dpp::prelude::{Identifier, IdentityPublicKey};
+    use dpp::prelude::Identifier;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::Rng;

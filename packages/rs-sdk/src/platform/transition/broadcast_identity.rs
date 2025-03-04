@@ -33,7 +33,7 @@ use crate::error::Error;
 /// ## Example
 ///
 /// To broadcast a new [Identity](dpp::prelude::Identity) state transition, you would typically
-/// create an [IdentityCreateTransition](dpp::state_transition::identity_create_transition::IdentityCreateTransition),
+/// create an [IdentityCreateTransition](dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition),
 /// sign it, and use the `broadcast_new_identity` method provided by this trait:
 ///
 /// ```rust, ignore

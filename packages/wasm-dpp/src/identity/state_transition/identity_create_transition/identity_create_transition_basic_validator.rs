@@ -2,7 +2,7 @@ use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockProofValidator, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,
     InstantAssetLockProofStructureValidator,
 };
-use dpp::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
+use dpp::identity::state_transition::state_transitions::identity::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
 use dpp::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
 use dpp::identity::validation::{
     PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator, PUBLIC_KEY_SCHEMA_FOR_TRANSITION,
