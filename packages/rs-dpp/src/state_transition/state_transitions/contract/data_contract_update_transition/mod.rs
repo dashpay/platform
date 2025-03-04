@@ -108,7 +108,7 @@ impl OptionallyAssetLockProved for DataContractUpdateTransition {}
 #[cfg(test)]
 mod test {
     use crate::data_contract::DataContract;
-    use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+    use crate::state_transition::state_transitions::contract::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
     use crate::tests::fixtures::get_data_contract_fixture;
 
     use crate::version::LATEST_PLATFORM_VERSION;

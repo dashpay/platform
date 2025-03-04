@@ -221,7 +221,7 @@ mod tests {
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::ValidationMode;

@@ -21,7 +21,7 @@ treediff = "5.0.0"
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-version = { path = "../rs-platform-version" }
 indexmap = "2.0.2"
-ferment-macro = { git = "https://github.com/dashpay/ferment", package = "ferment-macro" }
+ferment-macro = { git = "https://github.com/dashpay/ferment", package = "ferment-macro", optional = true }
 
 ### FEATURES #################################################################
 
@@ -31,6 +31,7 @@ cbor = ["ciborium"]
 json = ["serde_json"]
 
 std = ["serde/std"]
+apple = ["ferment-macro"]
 
 #[lib]
 #name = "platform_value"

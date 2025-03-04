@@ -28,13 +28,14 @@ impl<'a> StateTransitionJsonConvert<'a> for DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
-    use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
+    use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::*;
     use crate::state_transition::{
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
 
     use crate::prelude::IdentityNonce;
     use dpp::util::json_value::JsonValueExt;
+    use dpp::state_transition::state_transitions::identity::identity_update_transition::fields::{IDENTITY_NONCE, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION};
 
     #[test]
     fn should_return_state_transition_in_json_format() {
@@ -53,7 +54,6 @@ mod test {
                 .get_u64(STATE_TRANSITION_PROTOCOL_VERSION)
                 .expect("the protocol version should be present") as u32
         );
-
         assert_eq!(
             0,
             json_object

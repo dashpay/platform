@@ -6,6 +6,7 @@
 //!
 //!
 extern crate core;
+#[cfg(feature = "apple")]
 extern crate ferment_macro;
 
 pub mod btreemap_extensions;

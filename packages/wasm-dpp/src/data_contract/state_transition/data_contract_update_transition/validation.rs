@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::data_contract::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
 use dpp::errors::consensus::basic::value_error::ValueError;
 use dpp::validation::{AsyncDataValidatorWithContext, SimpleConsensusValidationResult};
 use dpp::{
-    data_contract::state_transition::data_contract_update_transition::validation::{
+    data_contract::state_transition::state_transitions::contract::data_contract_update_transition::validation::{
         basic::{
             validate_indices_are_backward_compatible as dpp_validate_indices_are_backward_compatible,
             DataContractUpdateTransitionBasicValidator,
@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
 use crate::{
-    data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionParameters,
+    data_contract::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransitionParameters,
     errors::protocol_error::from_protocol_error,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation::ValidationResultWasm,

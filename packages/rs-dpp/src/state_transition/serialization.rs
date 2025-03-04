@@ -13,13 +13,13 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::state_transition::AssetLockProof;
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::Identity;
-    use crate::prelude::AssetLockProof;
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
@@ -53,7 +53,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_create_transition_ser_de() {
         let platform_version = LATEST_PLATFORM_VERSION;
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -79,7 +78,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_topup_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -102,7 +100,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_update_transition_add_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
@@ -169,7 +166,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "state-transition-signing")]
     fn identity_update_transition_disable_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
@@ -236,7 +232,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_credit_withdrawal_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -262,7 +257,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn data_contract_create_ser_de() {
         let platform_version = LATEST_PLATFORM_VERSION;
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -285,7 +279,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn data_contract_update_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)

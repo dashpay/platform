@@ -16,7 +16,7 @@ use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTyp
 use crate::errors::protocol_error::from_protocol_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
 
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::data_contract::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
 use num_enum::TryFromPrimitiveError;
 use std::sync::Arc;

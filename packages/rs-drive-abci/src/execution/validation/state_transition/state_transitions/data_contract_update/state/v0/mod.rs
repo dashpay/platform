@@ -199,7 +199,7 @@ mod tests {
     use dpp::errors::consensus::ConsensusError;
     use dpp::platform_value::Value;
     use dpp::prelude::IdentityNonce;
-    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+    use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceActionAccessorsV0;
     use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};

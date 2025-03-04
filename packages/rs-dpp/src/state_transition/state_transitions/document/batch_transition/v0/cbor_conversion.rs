@@ -1,4 +1,4 @@
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
 use crate::state_transition::state_transitions::document::documents_batch_transition::batched_transition::DocumentTransitionV0Methods;

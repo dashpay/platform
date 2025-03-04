@@ -23,8 +23,6 @@ use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
-// #[cfg(feature = "document-json-conversion")]
-// use serde_json::Value as JsonValue;
 #[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
 
@@ -343,6 +341,7 @@ mod test {
     use crate::tests::fixtures::get_dashpay_contract_fixture;
     use base64::prelude::BASE64_STANDARD;
     use base64::Engine;
+    use serde_json::Value as JsonValue;
 
     fn init() {
         let _ = env_logger::builder()

@@ -28,7 +28,7 @@ impl<'a> StateTransitionJsonConvert<'a> for DataContractUpdateTransition {
 //
 // #[cfg(test)]
 // mod test {
-//     use crate::state_transition::data_contract_update_transition::STATE_TRANSITION_PROTOCOL_VERSION;
+//     use crate::state_transition::state_transitions::contract::data_contract_update_transition::STATE_TRANSITION_PROTOCOL_VERSION;
 //     use crate::state_transition::JsonStateTransitionSerializationOptions;
 //
 //     #[test]

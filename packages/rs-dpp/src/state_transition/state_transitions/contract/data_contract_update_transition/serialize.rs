@@ -20,7 +20,7 @@
 // use std::convert::TryInto;
 // use std::fmt;
 // use platform_versioning::PlatformVersioned;
-// use crate::state_transition::data_contract_update_transition::{DataContractUpdateTransition, DataContractUpdateTransitionV0};
+// use crate::state_transition::state_transitions::contract::data_contract_update_transition::{DataContractUpdateTransition, DataContractUpdateTransitionV0};
 //
 //
 // impl Serialize for DataContractUpdateTransition {
