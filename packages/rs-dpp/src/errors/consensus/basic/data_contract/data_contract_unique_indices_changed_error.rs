@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Document with type {document_type} has updated unique index named '{index_name}'. Change of unique indices is not allowed")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractUniqueIndicesChangedError {
     /*
 

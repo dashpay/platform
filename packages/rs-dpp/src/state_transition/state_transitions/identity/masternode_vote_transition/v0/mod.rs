@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[platform_serialize(unversioned)]
 #[derive(Default)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasternodeVoteTransitionV0 {
     // Own ST fields
     pub pro_tx_hash: Identifier,

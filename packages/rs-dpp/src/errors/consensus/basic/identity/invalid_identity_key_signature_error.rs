@@ -13,7 +13,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity key {public_key_id} has invalid signature")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityKeySignatureError {
     /*
 

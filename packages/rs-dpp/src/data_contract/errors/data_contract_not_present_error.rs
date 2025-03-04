@@ -6,7 +6,7 @@ use crate::errors::ProtocolError;
 // @append_only
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Data Contract is not present")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractNotPresentError {
     pub data_contract_id: Identifier,
 }

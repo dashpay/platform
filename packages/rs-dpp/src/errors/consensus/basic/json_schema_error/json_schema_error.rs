@@ -14,7 +14,7 @@ use thiserror::Error;
 )]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct JsonSchemaError {
     /*
 

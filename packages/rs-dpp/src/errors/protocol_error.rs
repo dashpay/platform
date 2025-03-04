@@ -1,14 +1,8 @@
 use thiserror::Error as ThisError;
 use crate::data_contract::errors::{contract::DataContractError, DataContractNotPresentError, IdentityNotPresentError, InvalidDocumentTypeError};
 use crate::document::errors::DocumentError;
-use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::errors::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError};
-use crate::errors::consensus::consensus_error::ConsensusError;
-use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
-use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
-use crate::errors::non_consensus_error::NonConsensusError;
-use crate::errors::serde_parsing_error::SerdeParsingError;
 #[cfg(any(
     feature = "state-transition-validation",
     feature = "state-transition-signing"
@@ -39,14 +33,14 @@ use crate::{
     InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
 };
 
-use dashcore::consensus::encode::Error as DashCoreError;
-
 use crate::tokens::errors::TokenError;
 use platform_value::{Error, Value};
 use platform_version::error::PlatformVersionError;
 use versioned_feature_core::FeatureVersion;
+use crate::errors::consensus::ConsensusError;
+
 #[derive(ThisError, Debug)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]
     IdentifierError(String),

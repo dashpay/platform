@@ -14,7 +14,7 @@ use platform_value::Identifier;
 )]
 #[error("Invalid document type security level error security level: got {security_level:?} for {contract_id}::{document_type_name}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentTypeRequiredSecurityLevelError {
     /*
 

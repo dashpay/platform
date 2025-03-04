@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("feature {feature_name} is not supported in version {current_protocol_version}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnsupportedFeatureError {
     /*
 

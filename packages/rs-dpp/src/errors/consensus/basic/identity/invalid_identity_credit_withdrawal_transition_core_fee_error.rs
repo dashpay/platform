@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence and not less than {min_core_fee_per_byte:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
     /*
 

@@ -26,7 +26,7 @@ use crate::errors::ProtocolError;
 /// pull and the transitions can mint credits and populate identity's balance.
 /// To prove that the output is locked, an Instant Lock is provided.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InstantAssetLockProof {
     /// The transaction's Instant Lock
     pub instant_lock: InstantLock,

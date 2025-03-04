@@ -63,18 +63,17 @@ use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 // pub use serde_json::Value as JsonValue;
-use crate::data_contract::v0::data_contract::DataContractV0;
 
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type JsonSchema = serde_json::Value;
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type DefinitionName = String;
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type DocumentName = String;
 pub type TokenName = String;
 pub type GroupContractPosition = u16;
 pub type TokenContractPosition = u16;
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
@@ -110,7 +109,7 @@ static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
 
 /// Here we use PlatformSerialize, because
 #[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContract {
     V0(DataContractV0),
     V1(DataContractV1),

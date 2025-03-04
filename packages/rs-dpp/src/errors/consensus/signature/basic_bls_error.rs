@@ -20,7 +20,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("bls signing error {message}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct BasicBLSError {
     pub message: String,
 }

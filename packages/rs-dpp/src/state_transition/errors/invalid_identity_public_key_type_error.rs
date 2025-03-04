@@ -5,7 +5,7 @@ use crate::errors::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid signature type")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityPublicKeyTypeError {
     pub public_key_type: KeyType,
 }

@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("document type name '{name}' is not supported. It must be from 1 to 64 alphanumeric chars, and '_' or '-'.")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentTypeNameError {
     /*
 

@@ -380,7 +380,7 @@ mod test {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
-    use dpp::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+    use dpp::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 
     #[test]
     fn should_return_execution_result_on_dry_run() {

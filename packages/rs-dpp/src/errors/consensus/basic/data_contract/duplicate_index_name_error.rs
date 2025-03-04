@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Duplicate index name '{duplicate_index_name}' defined in '{document_type}' document")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DuplicateIndexNameError {
     /*
 

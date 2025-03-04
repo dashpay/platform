@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::errors::consensus::ConsensusError;
 
 #[derive(Error, Debug)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StateTransitionError {
     #[error("Invalid State Transition: {errors:?}")]
     InvalidStateTransitionError {

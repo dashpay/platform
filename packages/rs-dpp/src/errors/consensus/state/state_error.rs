@@ -59,7 +59,7 @@ use crate::errors::consensus::state::document::document_timestamps_are_equal_err
 #[derive(
     Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StateError {
     /*
 

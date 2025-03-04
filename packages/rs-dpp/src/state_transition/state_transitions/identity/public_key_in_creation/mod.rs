@@ -29,7 +29,7 @@ mod version;
     derive(Serialize, Deserialize),
     serde(tag = "$version")
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),

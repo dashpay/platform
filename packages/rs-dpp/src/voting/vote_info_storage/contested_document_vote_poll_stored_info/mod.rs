@@ -18,7 +18,7 @@ pub use v0::ContestedDocumentVotePollStoredInfoV0Getters;
 pub type LockedVotePollCounter = u16;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedDocumentVotePollStatus {
     #[default]
     NotStarted,
@@ -58,7 +58,7 @@ impl ContestedDocumentVotePollStatus {
     Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedDocumentVotePollStoredInfo {
     /// V0.
     V0(ContestedDocumentVotePollStoredInfoV0),

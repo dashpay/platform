@@ -24,7 +24,7 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Price: {}", "base", "revision", "price")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentUpdatePriceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,

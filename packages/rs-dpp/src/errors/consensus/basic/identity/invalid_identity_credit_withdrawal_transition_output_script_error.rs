@@ -13,7 +13,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Output script must be either p2pkh or p2sh")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
     pub output_script: CoreScript,
 }

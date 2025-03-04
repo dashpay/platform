@@ -14,7 +14,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Data Contract {data_contract_id} must have at least one document type defined.")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentTypesAreMissingError {
     pub data_contract_id: Identifier,
 }

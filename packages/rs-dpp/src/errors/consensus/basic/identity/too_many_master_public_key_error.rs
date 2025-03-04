@@ -22,7 +22,7 @@ use bincode::{Decode, Encode};
     "Identity is trying to be created with more than one master key. Please only use one master key."
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TooManyMasterPublicKeyError;
 
 /*

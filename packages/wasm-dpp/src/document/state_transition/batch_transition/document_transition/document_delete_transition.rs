@@ -7,12 +7,12 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     data_contract::DataContractWasm,
-    document::document_batch_transition::document_transition::to_object,
+    document::document_batch_transition::batched_transition::to_object,
     identifier::IdentifierWrapper, utils::WithJsError,
 };
 use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::state_transitions::document::batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::action_type::DocumentTransitionActionType;
 
 #[wasm_bindgen(js_name=DocumentDeleteTransition)]
 #[derive(Debug, Clone)]

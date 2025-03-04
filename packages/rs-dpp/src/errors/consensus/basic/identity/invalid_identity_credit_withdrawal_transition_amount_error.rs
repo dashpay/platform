@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Credit withdrawal amount {amount} must be greater or equal to {min_amount} and less than {max_amount}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityCreditWithdrawalTransitionAmountError {
     /*
 

@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("VotePoll {vote_poll} not available for voting: {status}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct VotePollNotAvailableForVotingError {
     /*
 

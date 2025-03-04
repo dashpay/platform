@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("VotePoll {vote_poll} not found")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct VotePollNotFoundError {
     /*
 

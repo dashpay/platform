@@ -36,7 +36,7 @@ use crate::state_transition::state_transitions::identity::public_key_in_creation
     Hash,
 )]
 #[serde(rename_all = "camelCase")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityPublicKeyV0 {
     pub id: KeyID,
     pub purpose: Purpose,

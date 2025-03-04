@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error, Clone, Eq, PartialEq)]
 #[error("Failed to covert vector to array of size {expected_size:?}")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidVectorSizeError {
     pub expected_size: usize,
     pub actual_size: usize,

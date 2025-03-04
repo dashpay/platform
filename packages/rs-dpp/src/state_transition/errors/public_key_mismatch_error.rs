@@ -5,7 +5,7 @@ use crate::errors::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Public key mismatched")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct PublicKeyMismatchError {
     pub public_key: IdentityPublicKey,
 }

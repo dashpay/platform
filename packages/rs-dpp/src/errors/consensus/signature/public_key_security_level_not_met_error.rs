@@ -14,7 +14,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Invalid security level {public_key_security_level}. This state transition requires at least {required_security_level}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct PublicKeySecurityLevelNotMetError {
     /*
 

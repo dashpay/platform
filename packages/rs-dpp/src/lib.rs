@@ -10,7 +10,6 @@ pub use dashcore;
 
 #[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
-// pub use errors::*;
 pub use errors::{CompatibleProtocolVersionIsNotDefinedError, DPPError, DashPlatformProtocolInitError, InvalidVectorSizeError, NonConsensusError, ProtocolError, PublicKeyValidationError, SerdeParsingError};
 
 pub mod data_contract;
@@ -67,52 +66,52 @@ pub use async_trait;
 pub use bls::*;
 
 pub mod prelude {
-
-    // pub use crate::data_contract::DataContract;
-    #[cfg(feature = "extended-document")]
-    pub use crate::document::ExtendedDocument;
-    // pub use crate::errors::ProtocolError;
-    // pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-    // pub use crate::identity::Identity;
-    // pub use crate::identity::identity_public_key::IdentityPublicKey;
+    pub use crate::identifier::Identifier;
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
 
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type EpochInterval = u16;
 
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type BlockHeight = u64;
 
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type BlockHeightInterval = u64;
 
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type CoreBlockHeight = u32;
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type TimestampMillis = u64;
 
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type TimestampMillisInterval = u64;
 
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type StartAtIncluded = bool;
 
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type TimestampIncluded = bool;
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type Revision = u64;
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type IdentityNonce = u64;
-
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type SenderKeyIndex = u32;
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type RecipientKeyIndex = u32;
 
     /// The index of the user's key that is used to derive keys that will be used to encrypt the contact's user id in encToUserId and the private data.
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type RootEncryptionKeyIndex = u32;
 
     /// The index at which to derive the root encryption key.
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type DerivationEncryptionKeyIndex = u32;
 
     /// UserFeeIncrease is the additional percentage of the processing fee.
     /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
-    #[ferment_macro::export]
+    #[cfg_attr(feature = "apple", ferment_macro::export)]
     pub type UserFeeIncrease = u16;
 }
 

@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("'{property_name}' property is not defined in the '{document_type}' document")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UndefinedIndexPropertyError {
     /*
 

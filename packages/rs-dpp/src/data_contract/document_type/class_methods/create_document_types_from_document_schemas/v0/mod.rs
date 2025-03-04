@@ -68,9 +68,9 @@ impl DocumentTypeV0 {
 mod tests {
     use super::*;
 
-    use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
-    use crate::consensus::basic::BasicError;
-    use crate::consensus::ConsensusError;
+    use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError;
+    use crate::errors::consensus::basic::BasicError;
+    use crate::errors::consensus::ConsensusError;
     use crate::data_contract::errors::DataContractError;
     use assert_matches::assert_matches;
     use platform_value::Identifier;

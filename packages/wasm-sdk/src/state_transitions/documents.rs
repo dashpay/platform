@@ -4,7 +4,7 @@ use dash_sdk::dpp::serialization::PlatformSerializable;
 use dash_sdk::dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dash_sdk::dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use dash_sdk::dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
-use dash_sdk::dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use dash_sdk::dpp::state_transition::documents_batch_transition::batched_transition::DocumentTransition;
 use dash_sdk::dpp::state_transition::documents_batch_transition::{
     DocumentCreateTransition, DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };

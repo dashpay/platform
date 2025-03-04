@@ -12,7 +12,7 @@ use thiserror::Error;
     "Document field {field} size {actual_size_bytes} is more than system maximum {max_size_bytes}"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentFieldMaxSizeExceededError {
     /*
 

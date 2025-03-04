@@ -37,7 +37,7 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityTopUpTransitionV0 {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,

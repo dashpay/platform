@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Document with type {document_type} has a new unique index named '{index_name}'. Adding unique indices during Data Contract update is not allowed.")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractHaveNewUniqueIndexError {
     /*
 

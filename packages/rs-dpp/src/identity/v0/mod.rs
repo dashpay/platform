@@ -31,7 +31,7 @@ use bincode::{Decode, Encode};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(

@@ -14,7 +14,7 @@ use thiserror::Error;
     "Document {document_id} has invalid revision {previous_revision:?}. The desired revision is {desired_revision}"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentRevisionError {
     /*
 

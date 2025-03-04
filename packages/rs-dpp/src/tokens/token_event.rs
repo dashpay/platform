@@ -5,13 +5,14 @@ use crate::data_contract::associated_token::token_configuration_item::TokenConfi
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::{
-    DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
+    DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use crate::data_contract::DataContract;
 
 pub type TokenEventPublicNote = Option<String>;
 pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;

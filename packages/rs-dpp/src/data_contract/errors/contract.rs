@@ -14,7 +14,7 @@ use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 #[derive(
     Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContractError {
     #[error(transparent)]
     DecodingContractError(DecodingError),

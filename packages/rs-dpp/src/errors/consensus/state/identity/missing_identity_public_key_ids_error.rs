@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Identity Public Key with Ids {} do not exist", ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "))]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MissingIdentityPublicKeyIdsError {
     /*
 

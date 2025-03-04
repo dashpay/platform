@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("State transition size {actual_size_bytes} is more than maximum {max_size_bytes}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct StateTransitionMaxSizeExceededError {
     /*
 

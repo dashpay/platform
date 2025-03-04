@@ -32,7 +32,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight};
 /// Documents contain the data that goes into data contracts.
 #[derive(Clone, Debug, PartialEq, Default)]
 #[cfg_attr(feature = "document-serde-conversion", derive(Serialize, Deserialize))]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentV0 {
     /// The unique document ID.
     #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$id"))]

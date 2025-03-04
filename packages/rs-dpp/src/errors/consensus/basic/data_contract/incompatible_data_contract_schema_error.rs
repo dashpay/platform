@@ -14,7 +14,7 @@ use platform_value::Identifier;
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract with id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IncompatibleDataContractSchemaError {
     pub data_contract_id: Identifier,
     pub operation: String,

@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Identity cannot contain more than {max_items} public keys")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MaxIdentityPublicKeyLimitReachedError {
     /*
 

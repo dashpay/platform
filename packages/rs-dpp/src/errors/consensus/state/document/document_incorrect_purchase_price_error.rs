@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("{document_id} document can not be purchased for {trying_to_purchase_at_price}, it's sale price is {actual_price} (in credits)")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentIncorrectPurchasePriceError {
     /*
 

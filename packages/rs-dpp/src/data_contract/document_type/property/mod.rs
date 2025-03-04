@@ -24,7 +24,7 @@ pub mod array;
 // It will become versioned and it will be introduced by a new document type version
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
@@ -32,14 +32,14 @@ pub struct DocumentProperty {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct StringPropertySizes {
     pub min_length: Option<u16>,
     pub max_length: Option<u16>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ByteArrayPropertySizes {
     pub min_size: Option<u16>,
     pub max_size: Option<u16>,
@@ -47,7 +47,7 @@ pub struct ByteArrayPropertySizes {
 
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentPropertyType {
     U128,
     I128,

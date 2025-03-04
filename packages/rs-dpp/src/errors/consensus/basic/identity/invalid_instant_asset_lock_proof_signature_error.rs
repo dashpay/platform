@@ -20,7 +20,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Instant lock proof signature is invalid or wasn't created recently. Please try chain asset lock proof instead.")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidInstantAssetLockProofSignatureError;
 
 /*

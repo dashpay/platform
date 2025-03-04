@@ -12,7 +12,7 @@ use thiserror::Error;
     "Asset Lock output {output_index} has invalid public key hash. Must be 20 length bytes hash"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidAssetLockTransactionOutputReturnSizeError {
     /*
 

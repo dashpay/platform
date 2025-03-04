@@ -1,4 +1,4 @@
-use dpp::state_transition::batch_transition::TokenEmergencyActionTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::TokenEmergencyActionTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenEmergencyActionTransition)]

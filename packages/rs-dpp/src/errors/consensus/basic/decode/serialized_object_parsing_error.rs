@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Parsing of serialized object failed due to: {parsing_error}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct SerializedObjectParsingError {
     /*
 

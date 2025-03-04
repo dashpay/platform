@@ -16,7 +16,7 @@ use std::convert::TryFrom;
 pub type Duffs = u64;
 
 /// Credits type
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type Credits = u64;
 
 /// Token Amount type
@@ -30,7 +30,7 @@ pub type SumTokenAmount = i128;
 
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type SignedCredits = i64;
 
 /// Maximum value of credits

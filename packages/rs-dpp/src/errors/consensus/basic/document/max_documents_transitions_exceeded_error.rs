@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Amount of document transitions must be less or equal to {max_transitions}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MaxDocumentsTransitionsExceededError {
     /*
 

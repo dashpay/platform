@@ -14,7 +14,7 @@ use bincode::{Decode, Encode};
     "pooling {pooling:?} should be equal to 0. Other pooling mechanism are not implemented yet"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
     /*
 

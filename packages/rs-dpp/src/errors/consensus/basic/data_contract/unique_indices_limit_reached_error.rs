@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("'{document_type}' document has more than '{index_limit}' unique indexes (contested is {is_contested_limit})")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UniqueIndicesLimitReachedError {
     /*
 

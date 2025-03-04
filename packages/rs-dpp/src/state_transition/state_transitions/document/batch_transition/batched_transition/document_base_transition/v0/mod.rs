@@ -40,7 +40,7 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
     "document_type_name",
     "data_contract_id"
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentBaseTransitionV0 {
     /// The document ID
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]

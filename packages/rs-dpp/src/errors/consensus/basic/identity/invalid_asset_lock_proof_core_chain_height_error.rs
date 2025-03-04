@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Asset Lock proof core chain height {proof_core_chain_locked_height:?} is higher than the current consensus core height {current_core_chain_locked_height:?}.")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidAssetLockProofCoreChainHeightError {
     /*
 

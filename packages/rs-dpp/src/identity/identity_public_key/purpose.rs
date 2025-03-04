@@ -25,7 +25,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     #[default]

@@ -11,6 +11,8 @@ mod tests {
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::identity::IdentityPublicKey;
 
     mod add_new_keys_to_identity {
         use super::*;

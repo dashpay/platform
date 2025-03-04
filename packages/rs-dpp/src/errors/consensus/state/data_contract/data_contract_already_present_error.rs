@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Data Contract {data_contract_id} is already present")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractAlreadyPresentError {
     /*
 

@@ -48,7 +48,7 @@ use serde::{Deserialize, Serialize};
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityUpdateTransitionV0),

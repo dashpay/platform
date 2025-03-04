@@ -12,7 +12,7 @@ use thiserror::Error;
     "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}' and a unique index '{unique_index_name}' as well which is not allowed"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ContestedUniqueIndexWithUniqueIndexError {
     /*
 

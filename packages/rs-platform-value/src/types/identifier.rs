@@ -18,7 +18,7 @@ use crate::{string_encoding, Error, Value};
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Encode, Decode)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
 #[derive(
@@ -36,7 +36,7 @@ pub struct IdentifierBytes32(pub [u8; 32]);
     Encode,
     Decode,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct Identifier(pub IdentifierBytes32);
 
 impl platform_serialization::PlatformVersionEncode for Identifier {

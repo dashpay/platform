@@ -22,7 +22,7 @@ use bincode::{Decode, Encode};
     "Identity doesn't contain any master key, thus can not be updated. Please add a master key"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MissingMasterPublicKeyError;
 
 /*

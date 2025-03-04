@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("There is no transfer key that can be used for a withdrawal")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct NoTransferKeyForCoreWithdrawalAvailableError {
     /*
 

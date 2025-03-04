@@ -19,7 +19,7 @@ use thiserror::Error;
 )]
 #[error("Invalid State Transition signature")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidStateTransitionSignatureError {
     pub message: String,
 }

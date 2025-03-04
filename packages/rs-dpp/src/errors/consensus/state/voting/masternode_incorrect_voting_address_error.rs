@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Masternode {pro_tx_hash} voting address is incorrect, current is {current_voting_address}, given is {given_voting_address}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasternodeIncorrectVotingAddressError {
     /*
 

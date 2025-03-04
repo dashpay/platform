@@ -18,7 +18,7 @@ pub mod contested_document_resource_vote_poll;
 )]
 #[platform_serialize(unversioned)]
 #[platform_serialize(limit = 100000)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
 }

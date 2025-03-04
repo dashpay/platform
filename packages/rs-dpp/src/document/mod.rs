@@ -53,7 +53,7 @@ use std::fmt::Formatter;
     derive(Serialize, Deserialize),
     serde(tag = "$version")
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Document {
     #[cfg_attr(feature = "document-serde-conversion", serde(rename = "0"))]
     V0(DocumentV0),

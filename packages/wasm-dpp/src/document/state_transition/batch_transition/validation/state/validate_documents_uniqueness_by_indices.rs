@@ -7,7 +7,7 @@ use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    document_batch_transition::document_transition::DocumentTransitionWasm,
+    document_batch_transition::batched_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{IntoWasm, WithJsError},

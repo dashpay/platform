@@ -13,7 +13,7 @@ pub use v0::DocumentUpdatePriceTransitionV0;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentUpdatePriceTransition {
     #[display("V0({})", "_0")]
     V0(DocumentUpdatePriceTransitionV0),

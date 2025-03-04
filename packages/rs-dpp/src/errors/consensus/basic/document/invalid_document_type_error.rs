@@ -11,7 +11,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentTypeError {
     /*
 

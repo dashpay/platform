@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Invalid identity public key {public_key_id:?} data: {validation_error:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityPublicKeyDataError {
     /*
 

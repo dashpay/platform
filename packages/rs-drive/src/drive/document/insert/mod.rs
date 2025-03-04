@@ -60,8 +60,8 @@ mod tests {
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::json_document::json_document_to_document;
-    use platform_version::fee::FeeVersion;
-    use platform_version::PlatformVersion;
+    use dpp::version::fee::FeeVersion;
+    use dpp::version::PlatformVersion;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));

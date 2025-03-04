@@ -29,7 +29,7 @@ pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 #[derive(Debug, PartialEq, Clone)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentTypeV0 {
     pub name: String,
     pub schema: Value,

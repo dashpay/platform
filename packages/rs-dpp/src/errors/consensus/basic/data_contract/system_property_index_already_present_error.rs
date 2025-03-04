@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("System property '{property_name}' is already indexed and can't be used in '{index_name}' index of '{document_type}' document")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct SystemPropertyIndexAlreadyPresentError {
     /*
 

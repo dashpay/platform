@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentBaseTransition {
     #[display("V0({})", "_0")]
     V0(DocumentBaseTransitionV0),

@@ -19,7 +19,7 @@ use crate::metadata::Metadata;
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
 #[derive(Debug, Clone, PartialEq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.

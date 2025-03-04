@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
     derive(Serialize, Deserialize)
 )]
 #[derive(Default)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct BatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,

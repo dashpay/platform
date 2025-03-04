@@ -45,19 +45,19 @@ use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
-use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
-use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
-use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
-use dpp::state_transition::batch_transition::batched_transition::{
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::{
     DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition,
 };
-use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::batch_transition::document_create_transition::{
+use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::{
     DocumentCreateTransition, DocumentCreateTransitionV0,
 };
-use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
-use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::state_transitions::document::batch_transition::{BatchTransition, BatchTransitionV0};
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::{dash_to_duffs, ProtocolError};
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
@@ -1602,7 +1602,7 @@ impl Strategy {
         if block_info.height == config.start_block_height
             && self.start_identities.number_of_identities > 0
         {
-            let mut new_transitions = crate::transitions::create_identities_state_transitions(
+            let mut new_transitions = transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(),
                 self.start_identities.keys_per_identity.into(),
                 &self.start_identities.extra_keys,
@@ -1616,7 +1616,7 @@ impl Strategy {
         }
 
         // Add identities_inserts
-        // Don't do this on first two blocks (per design but also we need to skip utxo refresh)
+        // Don't do this on first two blocks (per design, but also we need to skip utxo refresh)
         if block_info.height > config.start_block_height + 1 {
             let frequency = &self.identity_inserts.frequency;
             if frequency.check_hit(rng) {

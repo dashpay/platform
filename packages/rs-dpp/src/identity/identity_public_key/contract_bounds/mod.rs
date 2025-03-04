@@ -19,7 +19,7 @@ pub type ContractBoundsType = u8;
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
 #[serde(tag = "type")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract
     #[serde(rename = "singleContract")]

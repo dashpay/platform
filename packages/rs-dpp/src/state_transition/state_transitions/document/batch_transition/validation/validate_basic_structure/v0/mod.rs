@@ -1,27 +1,27 @@
-use crate::consensus::basic::document::{
+use crate::errors::consensus::basic::document::{
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     MaxDocumentsTransitionsExceededError, NonceOutOfBoundsError,
 };
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::batch_transition::validation::find_duplicates_by_id::find_duplicates_by_id;
-use crate::state_transition::batch_transition::BatchTransition;
+use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::validation::find_duplicates_by_id::find_duplicates_by_id;
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
-use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
-use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError, TokenTransferToOurselfError};
-use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
-use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
-use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
-use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
+use crate::errors::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError, TokenTransferToOurselfError};
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use crate::state_transition::StateTransitionLike;
 

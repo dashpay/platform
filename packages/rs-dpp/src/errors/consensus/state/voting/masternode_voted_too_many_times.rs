@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Masternode with id: {pro_tx_hash} already voted {times_already_voted} times and is trying to vote again, they can only vote {max_times_allowed} times")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasternodeVotedTooManyTimesError {
     /*
 

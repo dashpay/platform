@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid signature public key")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidSignaturePublicKeyError {
     pub public_key: Vec<u8>,
 }

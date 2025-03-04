@@ -1,4 +1,4 @@
-use crate::state_transition::batch_transition::BatchTransitionV1;
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransitionV1;
 use crate::state_transition::FeatureVersioned;
 use crate::version::FeatureVersion;
 

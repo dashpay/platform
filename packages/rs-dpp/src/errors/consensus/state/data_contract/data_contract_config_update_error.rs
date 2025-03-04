@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Can't update Data Contract {data_contract_id} config: {additional_message}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractConfigUpdateError {
     /*
 

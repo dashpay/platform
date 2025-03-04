@@ -67,7 +67,7 @@ pub use v0::{DocumentsBatchTransitionV0, DocumentsBatchTransitionV0Signable};
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentsBatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(DocumentsBatchTransitionV0),

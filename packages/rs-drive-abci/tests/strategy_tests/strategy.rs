@@ -4,13 +4,13 @@ use crate::BlockHeight;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::ProtocolError;
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::{DataContract, DataContractFactory};
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
@@ -39,10 +39,9 @@ use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use dpp::identity::KeyType::ECDSA_SECP256K1;
+use dpp::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use dpp::platform_value::{BinaryData, Value};
-use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
+use dpp::prelude::IdentityNonce;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
@@ -63,8 +62,8 @@ use dpp::state_transition::state_transitions::document::batch_transition::{
 };
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::state_transitions::contract::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -618,7 +617,7 @@ impl NetworkStrategy {
                             );
                         }
 
-                        let current_identities_as_refs: Vec<&dpp::identity::Identity> =
+                        let current_identities_as_refs: Vec<&Identity> =
                             current_identities.iter().collect();
 
                         let documents = document_type
@@ -748,7 +747,7 @@ impl NetworkStrategy {
                                 )
                                 .expect("expected random_documents_with_params")
                         } else {
-                            let current_identities_as_refs: Vec<&dpp::identity::Identity> =
+                            let current_identities_as_refs: Vec<&Identity> =
                                 current_identities.iter().collect();
 
                             document_type
@@ -1753,7 +1752,7 @@ impl NetworkStrategy {
         platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
     ) -> StateTransition {
-        let (_, pk) = ECDSA_SECP256K1
+        let (_, pk) = KeyType::ECDSA_SECP256K1
             .random_public_and_private_key_data(rng, platform_version)
             .unwrap();
         let sk: [u8; 32] = pk.try_into().unwrap();
@@ -1892,7 +1891,7 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
         .into_iter()
         .map(|identity| {
             // Create instant asset lock proof
-            let (_, pk) = ECDSA_SECP256K1
+            let (_, pk) = KeyType::ECDSA_SECP256K1
                 .random_public_and_private_key_data(rng, platform_version)
                 .unwrap();
 

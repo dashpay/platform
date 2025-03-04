@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Document Creation on {data_contract_id}:{document_type_name} is not allowed because of the document type's creation restriction mode {creation_restriction_mode}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentCreationNotAllowedError {
     /*
 

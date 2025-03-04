@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 pub mod v1;
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct FeeProcessingVersion {
     pub fetch_identity_balance_processing_cost: u64,
     pub fetch_identity_revision_processing_cost: u64,

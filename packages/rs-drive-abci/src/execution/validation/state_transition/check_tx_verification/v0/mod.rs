@@ -7,7 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::ProtocolError;
 use dpp::state_transition::StateTransition;
 use platform_version::{DefaultForPlatformVersion, version::PlatformVersion};

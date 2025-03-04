@@ -15,7 +15,7 @@ pub mod data_trigger_invalid_result_error;
 #[derive(
     Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataTriggerError {
     /*
 

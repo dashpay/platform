@@ -7,7 +7,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Encode, Decode)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum CreationRestrictionMode {
     NoRestrictions,
     OwnerOnly,

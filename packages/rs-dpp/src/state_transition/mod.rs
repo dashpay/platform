@@ -69,7 +69,6 @@ use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
     feature = "state-transition-validation"
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
-use crate::identity::{KeyID, SecurityLevel};
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::UserFeeIncrease;
 use crate::serialization::Signable;
@@ -105,11 +104,10 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 use crate::state_transition::state_transitions::identity::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::{
+    MasternodeVoteTransition, MasternodeVoteTransitionSignable
+};
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
-pub use state_transitions::*;
-
-use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -260,7 +258,7 @@ macro_rules! call_errorable_method_identity_signed {
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),

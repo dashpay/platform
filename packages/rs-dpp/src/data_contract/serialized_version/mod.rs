@@ -39,7 +39,7 @@ pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
     derive(Serialize, Deserialize),
     serde(tag = "$format_version")
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContractInSerializationFormat {
     #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "0"))]
     V0(DataContractInSerializationFormatV0),

@@ -28,7 +28,7 @@ use crate::{
     serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityCreditWithdrawalTransitionV1 {
     pub identity_id: Identifier,
     pub amount: u64,

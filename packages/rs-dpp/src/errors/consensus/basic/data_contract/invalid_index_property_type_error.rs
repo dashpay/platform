@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("'{property_name}' property of '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIndexPropertyTypeError {
     /*
 

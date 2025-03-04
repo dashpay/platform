@@ -17,3 +17,4 @@ ferment-macro = { git = "https://github.com/dashpay/ferment", branch = "feat/lif
 
 [features]
 mock-versions = []
+apple = []

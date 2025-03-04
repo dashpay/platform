@@ -8,7 +8,7 @@ use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleP
 use crate::errors::serde_parsing_error::SerdeParsingError;
 
 #[derive(Debug, ThisError)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum NonConsensusError {
     /// Value error
     #[error("value error: {0}")]

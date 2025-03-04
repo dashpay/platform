@@ -12,7 +12,7 @@ use thiserror::Error;
     "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}' but is set as mutable which is not allowed"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ContestedUniqueIndexOnMutableDocumentTypeError {
     /*
 

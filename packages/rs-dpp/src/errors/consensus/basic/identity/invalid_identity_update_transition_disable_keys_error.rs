@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity Update Transition must specify timestamp when disabling keys")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityUpdateTransitionDisableKeysError;
 
 impl Default for InvalidIdentityUpdateTransitionDisableKeysError {

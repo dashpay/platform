@@ -10,7 +10,7 @@ use crate::identity::identity_public_key::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::batched_transition::DocumentTransition;
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 #[cfg(feature = "state-transition-signing")]

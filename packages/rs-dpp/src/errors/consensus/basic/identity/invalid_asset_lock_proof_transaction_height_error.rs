@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Core chain locked height {proof_core_chain_locked_height:?} must be higher than block {transaction_height:?} with Asset Lock transaction")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidAssetLockProofTransactionHeightError {
     /*
 

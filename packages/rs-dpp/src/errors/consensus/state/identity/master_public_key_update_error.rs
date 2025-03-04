@@ -20,7 +20,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Failed to update the master public key: {description}. Ensure the operation is valid and permissible under current system rules.")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasterPublicKeyUpdateError {
     pub adding: usize,
     pub removing: usize,

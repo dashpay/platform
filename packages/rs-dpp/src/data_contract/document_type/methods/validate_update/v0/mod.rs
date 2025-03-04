@@ -245,8 +245,8 @@ impl<'a> DocumentTypeRef<'a> {
 mod tests {
     use super::*;
 
-    use crate::consensus::state::state_error::StateError;
-    use crate::consensus::ConsensusError;
+    use crate::errors::consensus::state::state_error::StateError;
+    use crate::errors::consensus::ConsensusError;
     use crate::data_contract::document_type::DocumentType;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
@@ -888,7 +888,7 @@ mod tests {
 
     mod validate_schema {
         use super::*;
-        use crate::consensus::basic::BasicError;
+        use crate::errors::consensus::basic::BasicError;
 
         #[test]
         fn should_pass_when_schema_is_not_changed() {

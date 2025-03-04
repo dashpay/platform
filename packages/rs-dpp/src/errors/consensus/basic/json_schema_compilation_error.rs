@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("JsonSchema compilation error: {compilation_error}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct JsonSchemaCompilationError {
     /*
 

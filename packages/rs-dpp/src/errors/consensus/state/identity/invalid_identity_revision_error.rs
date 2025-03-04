@@ -14,7 +14,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityRevisionError {
     /*
 

@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Protocol version {parsed_protocol_version:?} is not supported. Latest supported version is {latest_version:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnsupportedProtocolVersionError {
     /*
 

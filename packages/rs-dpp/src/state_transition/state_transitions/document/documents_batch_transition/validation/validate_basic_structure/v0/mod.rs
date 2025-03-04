@@ -6,8 +6,8 @@ use crate::errors::consensus::basic::BasicError;
 
 use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::batched_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::batched_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::state_transitions::document::documents_batch_transition::validation::find_duplicates_by_id::find_duplicates_by_id;

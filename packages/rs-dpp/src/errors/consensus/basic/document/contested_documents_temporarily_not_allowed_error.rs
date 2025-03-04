@@ -14,7 +14,7 @@ use bincode::{Decode, Encode};
     "Contested documents are not allowed until epoch {target_epoch}. Current epoch is {current_epoch}"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ContestedDocumentsTemporarilyNotAllowedError {
     /*
 

@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Identity Public Key #{public_key_index} is disabled")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityPublicKeyIsDisabledError {
     /*
 

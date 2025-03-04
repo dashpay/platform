@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Masternode {pro_tx_hash} voter identity id is incorrect, expected is {expected_voter_identity_id}, provided is {provided_voter_identity_id}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasternodeIncorrectVoterIdentityIdError {
     /*
 

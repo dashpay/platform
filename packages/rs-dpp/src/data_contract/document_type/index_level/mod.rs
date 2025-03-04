@@ -15,7 +15,7 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IndexType {
     /// A normal non unique index
     NonUniqueIndex,
@@ -31,7 +31,7 @@ pub enum IndexType {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IndexLevelTypeInfo {
     /// should we insert if all fields up to here are null
     pub should_insert_with_all_null: bool,
@@ -52,7 +52,7 @@ impl IndexType {
 pub type ShouldInsertWithAllNull = bool;
 
 #[derive(Debug, PartialEq, Clone)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IndexLevel {
     /// the lower index levels from this level
     pub sub_index_levels: BTreeMap<String, IndexLevel>,

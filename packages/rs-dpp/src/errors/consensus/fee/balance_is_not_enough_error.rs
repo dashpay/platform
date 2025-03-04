@@ -13,7 +13,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct BalanceIsNotEnoughError {
     /*
 

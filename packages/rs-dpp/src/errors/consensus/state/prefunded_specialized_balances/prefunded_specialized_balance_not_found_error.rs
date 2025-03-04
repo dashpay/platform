@@ -13,7 +13,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Did not find a specialized balance with id: {balance_id}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct PrefundedSpecializedBalanceNotFoundError {
     /*
 

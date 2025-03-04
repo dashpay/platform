@@ -30,7 +30,7 @@ use crate::identity::identity_public_key::KeyID;
     serde(rename_all = "camelCase")
 )]
 
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractUpdateTransitionV0 {
     #[cfg_attr(
         feature = "state-transition-serde-conversion",

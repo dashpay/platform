@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Can't update document schemas in the Data Contract {data_contract_id}: Data Contract is readonly")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractIsReadonlyError {
     /*
 

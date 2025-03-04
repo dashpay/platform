@@ -56,7 +56,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::prelude::DataContract;
+    use dpp::data_contract::DataContract;
     use dpp::version::PlatformVersion;
 
     #[test]

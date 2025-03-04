@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Masternode vote is already present for masternode {pro_tx_hash} voting for {vote_poll}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasternodeVoteAlreadyPresentError {
     /*
 

@@ -10,7 +10,7 @@ use versioned_feature_core::FeatureVersion;
 use crate::errors::ProtocolError;
 
 /// A protocol version
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type ProtocolVersion = u32;
 
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<ProtocolVersion, ProtocolError> {

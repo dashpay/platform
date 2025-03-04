@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Asset lock value {value:?} must be higher than minimal value of {min_value:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidAssetLockProofValueError {
     /*
 

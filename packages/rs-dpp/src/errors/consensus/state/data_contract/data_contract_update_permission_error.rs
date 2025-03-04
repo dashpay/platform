@@ -13,7 +13,7 @@ use thiserror::Error;
     "Identity {identity_id} doesn't have permissions to update Data Contract {data_contract_id}"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractUpdatePermissionError {
     /*
 

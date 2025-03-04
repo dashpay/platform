@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("{document_id} document not found")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentNotFoundError {
     /*
 

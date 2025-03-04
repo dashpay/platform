@@ -15,7 +15,7 @@ use itertools::Itertools;
 )]
 #[error("Invalid public key purpose {public_key_purpose}. The state transition requires {}", allowed_key_purposes.iter().map(|s| s.to_string()).join(" | "))]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidSignaturePublicKeyPurposeError {
     /*
 

@@ -219,8 +219,8 @@ mod tests {
         use assert_matches::assert_matches;
         use base64::Engine;
         use dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
-        use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
-        use dpp::consensus::basic::BasicError;
+        use dpp::errors::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
+        use dpp::errors::consensus::basic::BasicError;
         use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::Txid;
         use dpp::serialization::PlatformSerializableWithPlatformVersion;

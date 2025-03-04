@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Document Contest for vote_poll {vote_poll} is currently already locked {stored_info}, unlocking is possible by paying {unlock_cost} credits")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentContestCurrentlyLockedError {
     /*
 

@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Asset lock output {output_index} is not a valid standard OP_RETURN output")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityAssetLockTransactionOutputError {
     /*
 

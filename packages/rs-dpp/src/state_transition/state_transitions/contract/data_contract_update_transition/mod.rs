@@ -55,7 +55,7 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(DataContractUpdateTransitionV0),

@@ -7,7 +7,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, PartialEq, Eq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum JsonSchemaError {
     #[error("can't create json schema: {0}")]
     CreateSchemaError(String),

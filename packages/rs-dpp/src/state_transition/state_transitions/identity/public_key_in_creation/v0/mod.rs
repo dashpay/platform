@@ -34,7 +34,7 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
     Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
 )]
 #[serde(rename_all = "camelCase")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityPublicKeyInCreationV0 {
     pub id: KeyID,
     #[serde(rename = "type")]

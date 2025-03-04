@@ -3,7 +3,7 @@ use std::fmt::Display;
 use thiserror::Error;
 
 #[derive(Error, Clone, Eq, PartialEq, Debug)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Error {
     #[error("unsupported: {0}")]
     Unsupported(String),

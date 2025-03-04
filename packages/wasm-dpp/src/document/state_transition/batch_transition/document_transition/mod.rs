@@ -8,10 +8,10 @@ mod document_create_transition;
 
 use dpp::platform_value::Value;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
-use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
-use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::batched_transition::action_type::TransitionActionTypeGetter;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::batched_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
+use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::{util::json_value::JsonValueExt, ProtocolError};
 use serde::Serialize;
 // use serde_json::Value as JsonValue;
@@ -19,11 +19,11 @@ use wasm_bindgen::prelude::*;
 use dpp::fee::Credits;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::prelude::Revision;
-use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},

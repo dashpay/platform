@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Insufficient identity {identity_id} balance {balance} required {required_balance}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityInsufficientBalanceError {
     /*
 

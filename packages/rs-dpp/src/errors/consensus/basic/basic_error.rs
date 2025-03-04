@@ -89,7 +89,7 @@ use crate::data_contract::errors::contract::DataContractError;
 #[derive(
     Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum BasicError {
     /*
 

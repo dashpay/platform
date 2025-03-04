@@ -84,6 +84,8 @@ mocks = [
   "zeroize/serde",
 ]
 
+apple = ["dpp/apple"]
+
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #
 # This feature is enabled by default to allow testing without connecting to the Dash Platform as

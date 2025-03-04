@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Identity Update Transition neither contains new public keys or key ids to disable")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityUpdateTransitionEmptyError;
 
 impl Default for InvalidIdentityUpdateTransitionEmptyError {

@@ -13,7 +13,7 @@ use bincode::{Decode, Encode};
 #[error("Updated document type '{document_type_name}' schema is not backward compatible with previous version. Incompatible change '{operation}' of property '{property_path}'"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IncompatibleDocumentTypeSchemaError {
     pub document_type_name: String,
     pub operation: String,

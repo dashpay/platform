@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractConfigV0 {
     /// Can the contract ever be deleted. If the contract is deleted, so should be all
     /// documents associated with it. TODO: There should also be a way to "stop" the contract -

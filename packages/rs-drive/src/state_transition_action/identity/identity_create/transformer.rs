@@ -3,7 +3,7 @@ use crate::state_transition_action::identity::identity_create::IdentityCreateTra
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::errors::consensus::ConsensusError;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 
 impl IdentityCreateTransitionAction {
     /// try from

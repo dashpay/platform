@@ -48,14 +48,14 @@ pub(super) fn find_duplicates_by_id<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-    use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-    use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
-    use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
-    use crate::state_transition::batch_transition::batched_transition::DocumentCreateTransition;
-    use crate::state_transition::batch_transition::batched_transition::DocumentReplaceTransition;
-    use crate::state_transition::batch_transition::batched_transition::DocumentDeleteTransition;
-    use crate::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
+    use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+    use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentCreateTransition;
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentReplaceTransition;
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentDeleteTransition;
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 
     #[test]
     fn test_duplicates() {

@@ -7,7 +7,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Data Contract {data_contract_id} expected bounds are not present")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractBoundsNotPresentError {
     /*
 

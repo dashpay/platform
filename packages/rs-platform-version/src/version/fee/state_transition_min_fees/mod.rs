@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 
 pub mod v1;
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct StateTransitionMinFees {
     pub credit_transfer: u64,
     pub credit_withdrawal: u64,

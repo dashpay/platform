@@ -67,7 +67,7 @@ mod property_names {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }
@@ -78,7 +78,7 @@ pub enum DocumentTypeMutRef<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, From)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
 }

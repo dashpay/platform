@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Disabling a key with id {key_id:?} that is being added in same state transition")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DisablingKeyIdAlsoBeingAddedInSameTransitionError {
     /*
 

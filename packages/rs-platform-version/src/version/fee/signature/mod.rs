@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 pub mod v1;
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct FeeSignatureVersion {
     pub verify_signature_ecdsa_secp256k1: u64,
     pub verify_signature_bls12_381: u64,

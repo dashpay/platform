@@ -9,7 +9,7 @@ use crate::document::Document;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 
 #[derive(Error, Debug)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentError {
     #[cfg(feature = "state-transitions")]
     #[error("Document already exists")]

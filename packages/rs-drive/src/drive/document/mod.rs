@@ -147,7 +147,7 @@ pub(crate) mod tests {
     use crate::drive::Drive;
     use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
-    use dpp::prelude::DataContract;
+    use dpp::data_contract::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;

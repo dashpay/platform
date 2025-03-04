@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Asset lock transaction {transaction_id} is trying to be replayed and will be discarded")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityAssetLockStateTransitionReplayError {
     /*
 

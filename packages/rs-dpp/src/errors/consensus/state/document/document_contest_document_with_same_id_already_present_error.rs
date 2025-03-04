@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Document {document_id} is already present in a contest, entropy might be being reused")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentContestDocumentWithSameIdAlreadyPresentError {
     /*
 

@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Identity {identity_id} does not have a key for transferring funds")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MissingTransferKeyError {
     /*
 

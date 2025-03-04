@@ -5,7 +5,7 @@ use crate::ProtocolError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 #[derive(Debug, PartialEq, Clone, Copy)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TradeMode {
     None = 0,
     DirectPurchase = 1,

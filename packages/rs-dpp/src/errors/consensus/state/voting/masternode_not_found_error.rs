@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Masternode {pro_tx_hash} not found")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MasternodeNotFoundError {
     /*
 

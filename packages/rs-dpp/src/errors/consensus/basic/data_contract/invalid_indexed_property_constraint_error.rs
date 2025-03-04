@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Indexed property '{property_name}' for '{document_type}' document has an invalid constraint '{constraint_name}', reason: '{reason}'")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIndexedPropertyConstraintError {
     /*
 

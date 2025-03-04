@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Asset Lock Transaction Output with index {output_index} not found")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityAssetLockTransactionOutputNotFoundError {
     /*
 

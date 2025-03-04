@@ -82,7 +82,7 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
-    use dpp::consensus::basic::BasicError;
+    use dpp::errors::consensus::basic::BasicError;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;

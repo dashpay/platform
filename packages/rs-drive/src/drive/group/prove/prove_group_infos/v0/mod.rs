@@ -65,7 +65,7 @@ mod tests {
     use dpp::data_contract::GroupContractPosition;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::prelude::DataContract;
+    use dpp::data_contract::DataContract;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 

@@ -4,7 +4,7 @@ use dpp::errors::consensus::basic::identity::IdentityAssetLockTransactionOutputN
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
 impl IdentityTopUpTransitionActionV0 {

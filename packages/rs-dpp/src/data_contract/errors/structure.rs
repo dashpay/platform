@@ -1,7 +1,7 @@
 // @append_only
 /// structure errors
 #[derive(Debug, thiserror::Error)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StructureError {
     /// Invalid protocol version error
     #[error("invalid protocol version error: {0}")]

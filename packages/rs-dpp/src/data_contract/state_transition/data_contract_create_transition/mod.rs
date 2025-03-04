@@ -77,7 +77,7 @@ pub const U32_FIELDS: [&str; 2] = [
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]

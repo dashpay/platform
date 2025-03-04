@@ -32,7 +32,7 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentReplaceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,

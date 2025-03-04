@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("JSON Schema depth is greater than {max_depth:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractMaxDepthExceedError {
     /*
 

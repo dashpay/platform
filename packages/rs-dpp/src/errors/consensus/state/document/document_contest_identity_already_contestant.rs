@@ -14,7 +14,7 @@ use thiserror::Error;
     "An Identity with the id {identity_id} is already a contestant for the vote_poll {vote_poll}"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentContestIdentityAlreadyContestantError {
     /*
 

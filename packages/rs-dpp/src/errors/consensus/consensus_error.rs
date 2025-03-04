@@ -27,7 +27,7 @@ use crate::errors::consensus::basic::BasicError;
 )]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ConsensusError {
     /*
 

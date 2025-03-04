@@ -20,7 +20,7 @@ pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
     Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 /// The result of the merge of the identity contract nonce
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum MergeIdentityNonceResult {
     /// The nonce is an invalid value
     /// This could be 0
@@ -166,8 +166,8 @@ pub fn validate_identity_nonce_update(
 
 #[cfg(test)]
 mod tests {
-    use crate::consensus::state::state_error::StateError;
-    use crate::consensus::ConsensusError;
+    use crate::errors::consensus::state::state_error::StateError;
+    use crate::errors::consensus::ConsensusError;
     use crate::identity::identity_nonce::{
         validate_identity_nonce_update, MergeIdentityNonceResult,
     };

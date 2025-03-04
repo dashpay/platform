@@ -27,7 +27,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum SecurityLevel {
     MASTER = 0,
     CRITICAL = 1,

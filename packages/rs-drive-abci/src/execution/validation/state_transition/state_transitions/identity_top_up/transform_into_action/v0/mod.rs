@@ -14,7 +14,7 @@ use dpp::identity::KeyType;
 use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;

@@ -21,7 +21,7 @@ use crate::{
     DataContractWasm, ExtendedDocumentWasm,
 };
 use dpp::identifier::Identifier;
-use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
 use std::str::FromStr;

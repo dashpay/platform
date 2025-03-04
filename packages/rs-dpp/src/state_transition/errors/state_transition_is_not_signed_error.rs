@@ -5,7 +5,7 @@ use crate::errors::ProtocolError;
 
 #[derive(Error, Debug, Clone)]
 #[error("State Transition is not signed")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct StateTransitionIsNotSignedError {
     pub state_transition: StateTransition,
 }

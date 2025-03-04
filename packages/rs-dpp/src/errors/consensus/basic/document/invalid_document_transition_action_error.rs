@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Document transition action {} is not supported", action)]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentTransitionActionError {
     /*
 

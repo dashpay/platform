@@ -18,7 +18,7 @@ use crate::errors::ProtocolError;
 use bincode::de::read::Reader;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct CoreScript(pub ScriptBuf);
 
 impl CoreScript {

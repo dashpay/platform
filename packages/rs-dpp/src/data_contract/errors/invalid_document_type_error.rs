@@ -6,7 +6,7 @@ use crate::errors::ProtocolError;
 // @append_only
 #[derive(Error, Debug, Clone, PartialEq)]
 #[error("Data Contract doesn't define document with type {doc_type}")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentTypeError {
     pub doc_type: String,
     pub data_contract: DataContract,

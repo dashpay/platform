@@ -9,7 +9,7 @@ pub const EPOCH_KEY_OFFSET: u16 = 256;
 pub const MAX_EPOCH: u16 = u16::MAX - EPOCH_KEY_OFFSET;
 
 /// Epoch index type
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type EpochIndex = u16;
 
 pub const EPOCH_0: Epoch = Epoch {
@@ -22,7 +22,7 @@ pub const EPOCH_0: Epoch = Epoch {
 /// Epoch struct
 #[derive(Serialize, Clone, Eq, PartialEq, Copy, Debug)]
 #[serde(rename_all = "camelCase")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct Epoch {
     /// Epoch index
     pub index: EpochIndex,

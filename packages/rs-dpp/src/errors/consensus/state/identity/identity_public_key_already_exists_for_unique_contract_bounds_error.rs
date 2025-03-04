@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Identity Public Key with id {new_key_id} for identity {identity_id:?} conflicts for purpose {purpose} with key {old_key_id} in the contract bounds of {contract_id:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError {
     /*
 

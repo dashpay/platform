@@ -1,6 +1,6 @@
 use crate::identifier::IdentifierWrapper;
-use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
-use dpp::state_transition::batch_transition::TokenTransferTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::TokenTransferTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenTransferTransition)]

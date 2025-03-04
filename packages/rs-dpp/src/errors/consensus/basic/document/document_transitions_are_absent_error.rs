@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Documents Batch Transition has no document transitions")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentTransitionsAreAbsentError {}
 
 impl Default for DocumentTransitionsAreAbsentError {

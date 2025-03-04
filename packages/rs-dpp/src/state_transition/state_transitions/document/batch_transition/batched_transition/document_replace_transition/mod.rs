@@ -20,7 +20,7 @@ pub use v0::{DocumentFromReplaceTransitionV0, DocumentReplaceTransitionV0};
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentReplaceTransition {
     #[display("V0({})", "_0")]
     V0(DocumentReplaceTransitionV0),

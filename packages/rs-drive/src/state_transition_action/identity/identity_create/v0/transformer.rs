@@ -3,7 +3,7 @@ use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::errors::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 
 use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
 

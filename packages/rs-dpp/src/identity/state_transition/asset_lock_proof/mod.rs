@@ -25,7 +25,7 @@ pub mod validate_asset_lock_transaction_structure;
 // TODO: Serialization with bincode
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(#[bincode(with_serde)] ChainAssetLockProof),

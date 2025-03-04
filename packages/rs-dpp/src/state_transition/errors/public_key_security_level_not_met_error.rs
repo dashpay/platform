@@ -5,7 +5,7 @@ use crate::errors::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct PublicKeySecurityLevelNotMetError {
     pub public_key_security_level: SecurityLevel,
     pub required_security_level: SecurityLevel,

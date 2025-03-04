@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("All or none of unique compound properties must be set for '{index_name}' index of '{document_type}' document")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidCompoundIndexError {
     /*
 

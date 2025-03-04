@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ResourceVoteV0 {
     pub vote_poll: VotePoll,
     pub resource_vote_choice: ResourceVoteChoice,

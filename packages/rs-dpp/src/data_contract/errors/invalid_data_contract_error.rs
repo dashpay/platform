@@ -6,7 +6,7 @@ use thiserror::Error;
 // @append_only
 #[derive(Error, Debug)]
 #[error("Invalid Data Contract: {errors:?}")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDataContractError {
     pub errors: Vec<ConsensusError>,
     pub raw_data_contract: Value,

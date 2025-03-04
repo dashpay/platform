@@ -12,7 +12,7 @@ use crate::errors::ProtocolError;
     "Can't update Document Type {data_contract_id}::{document_type_name}: {additional_message}"
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentTypeUpdateError {
     /*
 

@@ -48,7 +48,7 @@ mod tests {
     use dpp::data_contract::config::v0::DataContractConfigV0;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::v1::DataContractV1;
-    use dpp::prelude::DataContract;
+    use dpp::data_contract::DataContract;
     use dpp::tokens::status::v0::TokenStatusV0;
     use dpp::tokens::status::TokenStatus;
     use dpp::version::PlatformVersion;

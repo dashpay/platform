@@ -16,10 +16,10 @@ use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
 use crate::identifier::IdentifierWrapper;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
-use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use js_sys::Number;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;

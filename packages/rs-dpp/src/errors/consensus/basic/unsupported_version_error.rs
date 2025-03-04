@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("version {received_version:?} is not supported. Supported versions are {min_version:?} to {max_version:?}")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnsupportedVersionError {
     /*
 

@@ -1,5 +1,5 @@
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::batch_transition::BatchTransition;
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};

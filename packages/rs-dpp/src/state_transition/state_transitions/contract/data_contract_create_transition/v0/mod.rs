@@ -35,7 +35,7 @@ use platform_version::version::PlatformVersion;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,

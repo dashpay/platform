@@ -17,7 +17,7 @@ use dpp::state_transition::state_transitions::identity::identity_create_transiti
 use dpp::ProtocolError;
 
 use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;

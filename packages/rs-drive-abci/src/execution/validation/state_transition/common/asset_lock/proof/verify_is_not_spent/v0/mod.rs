@@ -11,7 +11,7 @@ use dpp::dashcore::OutPoint;
 use dpp::balances::credits::Credits;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 

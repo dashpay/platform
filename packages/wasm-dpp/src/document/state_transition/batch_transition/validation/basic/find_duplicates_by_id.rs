@@ -8,7 +8,7 @@ use js_sys::Array;
 use dpp::ProtocolError;
 use wasm_bindgen::prelude::*;
 
-use crate::document_batch_transition::document_transition::to_object;
+use crate::document_batch_transition::batched_transition::to_object;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 #[wasm_bindgen(js_name=findDuplicatesById)]

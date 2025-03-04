@@ -27,11 +27,11 @@ pub mod contract_bounds;
 #[cfg(feature = "random-public-keys")]
 mod random;
 
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type KeyID = u32;
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type KeyCount = KeyID;
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type TimestampMillis = u64;
 
 #[derive(
@@ -52,7 +52,7 @@ pub type TimestampMillis = u64;
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[serde(tag = "$version")]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),

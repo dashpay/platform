@@ -1,4 +1,4 @@
-// use dpp::consensus::ConsensusError;
+// use dpp::errors::consensus::ConsensusError;
 // // use dpp::errors::consensus::test_consensus_error::TestConsensusError;
 // use wasm_bindgen::prelude::*;
 //

@@ -19,7 +19,7 @@ use thiserror::Error;
 )]
 #[error("Credits transfer recipient must be another identity")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityCreditTransferToSelfError {}
 
 impl IdentityCreditTransferToSelfError {}

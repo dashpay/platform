@@ -8,7 +8,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
+use dpp::state_transition::state_transitions::document::documents_batch_transition::batched_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 

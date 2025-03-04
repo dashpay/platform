@@ -1,5 +1,5 @@
-// use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
-use dpp::state_transition::state_transitions::document::batch_transition::document_transition::DocumentTransition;
+// use crate::document::state_transition::document_batch_transition::batched_transition::from_document_transition_to_js_value;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentTransition;
 use thiserror::Error;
 
 use super::*;

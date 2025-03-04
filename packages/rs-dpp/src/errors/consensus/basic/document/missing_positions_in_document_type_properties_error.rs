@@ -24,7 +24,7 @@ use platform_value::Identifier;
     document_type_name
 )]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MissingPositionsInDocumentTypePropertiesError {
     /*
 

@@ -245,9 +245,9 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::state::state_error::StateError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -314,9 +314,9 @@ mod tests {
         use dpp::dashcore::Network::Testnet;
         use dpp::data_contract::DataContract;
         use dpp::identity::SecurityLevel;
-        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
-        use dpp::state_transition::batch_transition::{DocumentCreateTransition, BatchTransitionV0};
+        use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::state_transitions::document::batch_transition::{DocumentCreateTransition, BatchTransitionV0};
         use dpp::state_transition::StateTransition;
         use crate::config::PlatformConfig;
 
@@ -10207,8 +10207,8 @@ mod tests {
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
         use dpp::data_contract::change_control_rules::ChangeControlRules;
         use dpp::group::GroupStateTransitionInfoStatus;
-        use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
-        use dpp::state_transition::batch_transition::TokenConfigUpdateTransition;
+        use dpp::state_transition::state_transitions::document::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+        use dpp::state_transition::state_transitions::document::batch_transition::TokenConfigUpdateTransition;
         mod token_mint_tests {
             use super::*;
 
@@ -11262,7 +11262,7 @@ mod tests {
                 use dpp::data_contract::group::v0::GroupV0;
                 use dpp::data_contract::group::Group;
                 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
-                use dpp::state_transition::batch_transition::TokenMintTransition;
+                use dpp::state_transition::state_transitions::document::batch_transition::TokenMintTransition;
 
                 #[test]
                 fn test_token_mint_by_owner_sending_to_self_minting_not_allowed() {
@@ -13328,16 +13328,16 @@ mod tests {
             use dpp::data_contract::change_control_rules::ChangeControlRules;
             use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
             use dpp::data_contract::group::Group;
-            use dpp::state_transition::batch_transition::TokenMintTransition;
+            use dpp::state_transition::state_transitions::document::batch_transition::TokenMintTransition;
             use dpp::data_contract::group::v0::GroupV0;
             use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
             use dpp::identity::SecurityLevel;
-            use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-            use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+            use dpp::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+            use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
             use dpp::state_transition::StateTransition;
-            use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
-            use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-            use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+            use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionMutRef;
+            use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+            use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
             use super::*;
 
             #[test]

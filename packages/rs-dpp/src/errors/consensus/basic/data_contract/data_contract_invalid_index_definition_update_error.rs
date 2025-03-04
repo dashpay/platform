@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[error("Document with type {document_type} could not add or remove '{index_path}' during data contract update as we do not allow modifications of data contract index paths")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractInvalidIndexDefinitionUpdateError {
     /*
 

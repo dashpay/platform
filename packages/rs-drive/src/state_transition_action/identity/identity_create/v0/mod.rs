@@ -9,7 +9,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 

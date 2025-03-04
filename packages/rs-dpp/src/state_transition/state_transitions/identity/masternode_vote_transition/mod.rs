@@ -49,7 +49,7 @@ pub type MasternodeVoteTransitionLatest = MasternodeVoteTransitionV0;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.masternode_vote_state_transition"
 )]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum MasternodeVoteTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(MasternodeVoteTransitionV0),

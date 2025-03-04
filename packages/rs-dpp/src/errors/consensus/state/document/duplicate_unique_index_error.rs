@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Document {document_id} has duplicate unique properties {duplicating_properties:?} with other documents")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DuplicateUniqueIndexError {
     /*
 

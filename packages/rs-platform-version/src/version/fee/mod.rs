@@ -25,7 +25,7 @@ pub type FeeVersionNumber = u32;
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct FeeVersion {
     pub fee_version_number: FeeVersionNumber,
     // Permille means devise by 1000

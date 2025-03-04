@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl fmt::Debug for BinaryData {

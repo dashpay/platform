@@ -70,7 +70,7 @@ use dpp::identity::TimestampMillis;
 use dpp::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
 #[cfg(feature = "server")]
-use dpp::prelude::DataContract;
+use dpp::data_contract::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;

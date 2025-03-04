@@ -1,4 +1,4 @@
-use crate::consensus::basic::data_contract::GroupPositionDoesNotExistError;
+use crate::errors::consensus::basic::data_contract::GroupPositionDoesNotExistError;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;

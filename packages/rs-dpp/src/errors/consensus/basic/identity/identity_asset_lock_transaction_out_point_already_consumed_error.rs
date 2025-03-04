@@ -11,7 +11,7 @@ use thiserror::Error;
 )]
 #[error("Asset lock transaction {transaction_id} output {output_index} already completely used")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityAssetLockTransactionOutPointAlreadyConsumedError {
     /*
 

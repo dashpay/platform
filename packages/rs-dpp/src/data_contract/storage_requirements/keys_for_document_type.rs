@@ -10,7 +10,7 @@ use std::convert::TryFrom;
 // @append_only
 #[repr(u8)]
 #[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq, Copy, Clone, Encode, Decode)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StorageKeyRequirements {
     Unique = 0,
     Multiple = 1,

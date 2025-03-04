@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractImmutablePropertiesUpdateError {
     /*
 

@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Contest for document {document_id} was not paid for, needs payment of {expected_amount} Credits")]
 #[platform_serialize(unversioned)]
-#[ferment_macro::export]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentContestNotPaidForError {
     /*
 
