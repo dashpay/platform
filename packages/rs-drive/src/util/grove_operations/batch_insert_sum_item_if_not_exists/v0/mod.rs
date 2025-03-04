@@ -10,8 +10,8 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
 use crate::util::object_size_info::PathKeyElementInfo;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::{Element, GroveDb, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Inserts a sum item at the specified path and key if it doesn't already exist.

@@ -7,8 +7,8 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::IdentityPublicKey;
 use dpp::identity::signer::Signer;
-use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 
 #[async_trait::async_trait]

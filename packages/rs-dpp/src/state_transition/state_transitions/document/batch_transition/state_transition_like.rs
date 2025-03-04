@@ -1,8 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use versioned_feature_core::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use versioned_feature_core::FeatureVersion;
 
 impl StateTransitionLike for BatchTransition {
     /// Returns ID of the created contract

@@ -106,7 +106,9 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 use crate::state_transition::state_transitions::identity::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
-use crate::state_transition::state_transitions::identity::masternode_vote_transition::{MasternodeVoteTransition, MasternodeVoteTransitionSignable};
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::{
+    MasternodeVoteTransition, MasternodeVoteTransitionSignable,
+};
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 
 #[cfg(feature = "state-transition-signing")]

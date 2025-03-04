@@ -3,9 +3,9 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
 use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::errors::ProtocolError;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
-use crate::errors::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 

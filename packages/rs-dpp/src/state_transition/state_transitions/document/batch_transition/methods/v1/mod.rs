@@ -18,13 +18,13 @@ use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
-use versioned_feature_core::FeatureVersion;
-#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]

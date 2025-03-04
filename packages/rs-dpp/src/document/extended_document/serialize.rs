@@ -1,13 +1,13 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 
+use crate::document::ExtendedDocument;
 use crate::errors::ProtocolError;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode};
 use platform_version::version::protocol_version::PlatformVersion;
 use versioned_feature_core::FeatureVersion;
-use crate::document::ExtendedDocument;
 
 impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     /// Serializes the document.

@@ -34,12 +34,15 @@ use crate::state_transition::errors::{
     StateTransitionIsNotSignedError,
 };
 
+use crate::errors::consensus::ConsensusError;
 use crate::tokens::errors::TokenError;
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
+    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
+};
 use platform_value::{Error, Value};
 use platform_version::error::PlatformVersionError;
 use versioned_feature_core::FeatureVersion;
-use crate::errors::consensus::ConsensusError;
-use crate::{CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, InvalidVectorSizeError, NonConsensusError, SerdeParsingError};
 
 #[derive(ThisError, Debug)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]

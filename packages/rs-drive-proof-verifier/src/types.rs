@@ -19,7 +19,15 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::Co
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::ResourceVote;
-use dpp::{block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo}, dashcore::ProTxHash, document::Document, identity::KeyID, prelude::Revision, util::deserializer::ProtocolVersion, ProtocolError};
+use dpp::{
+    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    dashcore::ProTxHash,
+    document::Document,
+    identity::KeyID,
+    prelude::Revision,
+    util::deserializer::ProtocolVersion,
+    ProtocolError,
+};
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
 // IndexMap is exposed to the public API

@@ -30,9 +30,9 @@ use dpp::state_transition::state_transitions::document::batch_transition::batche
 use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 use crate::batch_transition::batched_transition::BatchedTransitionWasm;
+use crate::batch_transition::document_transition::DocumentTransitionWasm;
 use crate::batch_transition::token_transition::TokenTransitionWasm;
 use dpp::state_transition::StateTransitionIdentitySigned;
-use crate::batch_transition::document_transition::DocumentTransitionWasm;
 
 mod batched_transition;
 pub mod document_transition;
