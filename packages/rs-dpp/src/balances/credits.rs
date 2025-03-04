@@ -20,6 +20,7 @@ pub type Duffs = u64;
 pub type Credits = u64;
 
 /// Token Amount type
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type TokenAmount = u64;
 
 /// Signed Token Amount type
