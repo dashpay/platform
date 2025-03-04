@@ -28,7 +28,7 @@ rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.37.0" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/ferment" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 platform-version = { path = "../rs-platform-version" }
 simple-signer = { path = "../simple-signer" }
