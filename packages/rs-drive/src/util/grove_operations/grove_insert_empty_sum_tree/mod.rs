@@ -4,10 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::operations::insert::InsertOptions;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Inserts an empty sum tree into groveDB at the specified path and key.

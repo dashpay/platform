@@ -3,8 +3,8 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::errors::consensus::ConsensusError;
 use crate::data_contract::errors::contract::DataContractError;
+use crate::errors::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
 #[derive(

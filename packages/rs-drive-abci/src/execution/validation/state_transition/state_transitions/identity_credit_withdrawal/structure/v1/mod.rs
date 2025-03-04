@@ -84,8 +84,8 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use dpp::errors::consensus::basic::BasicError;
     use dpp::dashcore::ScriptBuf;
+    use dpp::errors::consensus::basic::BasicError;
     use dpp::identity::core_script::CoreScript;
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
     use platform_version::version::v1::PLATFORM_V1;

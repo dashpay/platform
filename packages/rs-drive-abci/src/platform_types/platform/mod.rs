@@ -17,8 +17,8 @@ use dpp::dashcore::BlockHash;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use platform_version::version::{INITIAL_PROTOCOL_VERSION, PlatformVersion, ProtocolVersion};
 use dpp::version::PlatformVersionCurrentVersion;
+use platform_version::version::{PlatformVersion, ProtocolVersion, INITIAL_PROTOCOL_VERSION};
 use serde_json::json;
 
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure

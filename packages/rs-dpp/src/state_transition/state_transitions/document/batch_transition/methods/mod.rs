@@ -23,7 +23,9 @@ use crate::state_transition::state_transitions::document::batch_transition::meth
 use crate::state_transition::state_transitions::document::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::state_transitions::document::batch_transition::{BatchTransitionV0, BatchTransitionV1};
+use crate::state_transition::state_transitions::document::batch_transition::{
+    BatchTransitionV0, BatchTransitionV1,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]

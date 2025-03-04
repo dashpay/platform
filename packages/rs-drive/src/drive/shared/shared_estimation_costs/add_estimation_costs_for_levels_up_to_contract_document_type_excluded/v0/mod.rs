@@ -13,8 +13,8 @@ use crate::drive::contract::paths::contract_root_path;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

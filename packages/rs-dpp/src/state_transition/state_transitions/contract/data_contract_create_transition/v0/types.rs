@@ -1,7 +1,7 @@
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::state_transitions::common_fields::property_names::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::StateTransitionFieldTypes;
 
 impl StateTransitionFieldTypes for DataContractCreateTransitionV0 {

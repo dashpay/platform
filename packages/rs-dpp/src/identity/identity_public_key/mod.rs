@@ -16,10 +16,10 @@ pub mod accessors;
 pub(crate) mod conversion;
 pub mod fields;
 pub mod v0;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 pub use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_version::version::PlatformVersion;
 
 pub mod methods;
 pub use methods::*;

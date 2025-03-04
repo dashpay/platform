@@ -11,7 +11,10 @@ pub trait DocumentJsonMethodsV0<'a>: DocumentPlatformValueMethodsV0<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<serde_json::Value, ProtocolError>;
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError>;
+    fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError>;
     fn from_json_value<S>(
         document_value: serde_json::Value,
         platform_version: &PlatformVersion,

@@ -424,7 +424,9 @@ where
     }
 
     #[cfg(feature = "json")]
-    fn get_optional_inner_str_json_value_map_at_path<I: FromIterator<(String, serde_json::Value)>>(
+    fn get_optional_inner_str_json_value_map_at_path<
+        I: FromIterator<(String, serde_json::Value)>,
+    >(
         &self,
         path: &str,
     ) -> Result<Option<I>, Error> {

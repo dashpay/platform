@@ -2,8 +2,8 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::Transaction;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Handles the rollback of a transaction.

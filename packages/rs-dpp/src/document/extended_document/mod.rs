@@ -191,7 +191,10 @@ impl ExtendedDocument {
     ///
     /// This function is a passthrough to the `to_json` method.
     #[cfg(feature = "document-json-conversion")]
-    pub fn to_json(&self, platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
+    pub fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_json(platform_version),
         }

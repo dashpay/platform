@@ -13,12 +13,12 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path;
 use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
+use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {

@@ -1,4 +1,3 @@
-use crate::data_contract::DataContract;
 use crate::data_contract::accessors::v0::DataContractV0Setters;
 #[cfg(feature = "data-contract-json-conversion")]
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -8,16 +7,17 @@ use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "data-contract-cbor-conversion")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
+use crate::ProtocolError;
 use platform_value::{Identifier, ReplacementType};
 use platform_version::version::PlatformVersion;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use crate::ProtocolError;
 
 /// Reads a JSON file and converts it to serde_value.
 #[cfg(feature = "data-contract-json-conversion")]

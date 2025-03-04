@@ -3,8 +3,8 @@
 //! Fee costs for Known Platform operations
 //!
 
-use crate::block::epoch::{Epoch, EpochIndex};
 use crate::balances::credits::Credits;
+use crate::block::epoch::{Epoch, EpochIndex};
 use platform_version::version::fee::{
     FeeVersion, FeeVersionFieldsBeforeVersion4, FeeVersionNumber,
 };

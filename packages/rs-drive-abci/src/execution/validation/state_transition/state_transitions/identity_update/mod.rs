@@ -120,10 +120,10 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::key::{Keypair, Secp256k1};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

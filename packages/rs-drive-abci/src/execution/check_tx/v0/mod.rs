@@ -211,9 +211,9 @@ mod tests {
     use dpp::errors::consensus::signature::SignatureError;
     use simple_signer::signer::SimpleSigner;
 
-    use dpp::errors::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
+    use dpp::errors::consensus::ConsensusError;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -252,20 +252,20 @@ mod tests {
     };
     use crate::platform_types::platform::PlatformRef;
     use assert_matches::assert_matches;
-    use dpp::errors::consensus::state::state_error::StateError;
     use dpp::dash_to_credits;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
+    use dpp::errors::consensus::state::state_error::StateError;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-    use dpp::state_transition::state_transition::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+    use dpp::state_transition::state_transition::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;

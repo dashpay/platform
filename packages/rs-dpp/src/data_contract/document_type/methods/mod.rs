@@ -18,9 +18,9 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
+use crate::errors::ProtocolError;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 
 use crate::balances::credits::Credits;
 use crate::voting::vote_polls::VotePoll;

@@ -1,9 +1,15 @@
+use super::{common::setup_logs, config::Config};
 use dash_sdk::platform::types::identity::PublicKeyHash;
 use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::{Identity, identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, IdentityPublicKey, methods::hash::IdentityPublicKeyHashMethodsV0}};
+use dpp::identity::{
+    identity_public_key::{
+        accessors::v0::IdentityPublicKeyGettersV0, methods::hash::IdentityPublicKeyHashMethodsV0,
+        IdentityPublicKey,
+    },
+    Identity,
+};
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
-use super::{common::setup_logs, config::Config};
 
 /// Given some existing identity ID, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

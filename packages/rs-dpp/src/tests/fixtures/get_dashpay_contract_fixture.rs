@@ -1,7 +1,4 @@
-use crate::{
-    data_contract::DataContractFactory,
-    tests::utils::generate_random_identifier_struct,
-};
+use crate::{data_contract::DataContractFactory, tests::utils::generate_random_identifier_struct};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::prelude::IdentityNonce;

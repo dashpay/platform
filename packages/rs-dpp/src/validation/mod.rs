@@ -8,9 +8,9 @@ pub use validation_result::{
 };
 
 #[cfg(feature = "validation")]
-use platform_version::version::PlatformVersion;
-#[cfg(feature = "validation")]
 use crate::errors::ProtocolError;
+#[cfg(feature = "validation")]
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "validation")]
 pub(crate) mod byte_array_keyword;
 #[cfg(feature = "validation")]

@@ -43,6 +43,9 @@ mod test {
             .expect("conversion to json shouldn't fail");
         assert_matches!(result[IDENTITY_ID], serde_json::Value::String(_));
         assert_matches!(result[SIGNATURE], serde_json::Value::String(_));
-        assert_matches!(result[ADD_PUBLIC_KEYS][0]["data"], serde_json::Value::String(_));
+        assert_matches!(
+            result[ADD_PUBLIC_KEYS][0]["data"],
+            serde_json::Value::String(_)
+        );
     }
 }

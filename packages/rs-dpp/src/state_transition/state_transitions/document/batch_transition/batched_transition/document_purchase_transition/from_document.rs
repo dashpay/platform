@@ -1,6 +1,6 @@
+use crate::balances::credits::Credits;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
-use crate::balances::credits::Credits;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;

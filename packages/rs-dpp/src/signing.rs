@@ -8,7 +8,7 @@ use crate::{
     validation::SimpleConsensusValidationResult,
 };
 #[cfg(feature = "message-signing")]
-use crate::{BlsModule, errors::ProtocolError};
+use crate::{errors::ProtocolError, BlsModule};
 use dashcore::signer;
 #[cfg(feature = "bls-signatures")]
 use {

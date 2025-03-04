@@ -1,8 +1,8 @@
+use crate::errors::ProtocolError;
 use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use std::convert::{TryFrom, TryInto};
 
 impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {

@@ -1,4 +1,3 @@
-use versioned_feature_core::FeatureVersion;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;
@@ -11,6 +10,7 @@ use drive_token_method_versions::DriveTokenMethodVersions;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
+use versioned_feature_core::FeatureVersion;
 
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;

@@ -33,7 +33,7 @@ use dpp::identity::TimestampMillis;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
-use dpp::{platform_value, errors::ProtocolError};
+use dpp::{errors::ProtocolError, platform_value};
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

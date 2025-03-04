@@ -6,7 +6,7 @@ use crate::execution::types::state_transition_execution_context::v0::StateTransi
 use derive_more::From;
 use dpp::fee::fee_result::FeeResult;
 use dpp::validation::operations::ProtocolValidationOperation;
-use platform_version::{DefaultForPlatformVersion, version::PlatformVersion};
+use platform_version::{version::PlatformVersion, DefaultForPlatformVersion};
 
 /// V0 module
 pub mod v0;

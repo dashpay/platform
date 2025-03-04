@@ -3,8 +3,8 @@ use platform_version::version::PlatformVersion;
 
 use crate::errors::consensus::basic::value_error::ValueError;
 use crate::errors::consensus::basic::BasicError;
-use crate::validation::SimpleConsensusValidationResult;
 use crate::errors::ProtocolError;
+use crate::validation::SimpleConsensusValidationResult;
 
 pub type SubValidator = fn(
     path: &str,

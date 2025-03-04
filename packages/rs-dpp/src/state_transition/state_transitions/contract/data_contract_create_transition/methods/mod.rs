@@ -10,9 +10,9 @@ use crate::state_transition::state_transitions::contract::data_contract_create_t
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
 use crate::state_transition::StateTransition;
-use versioned_feature_core::FeatureVersion;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
     fn new_from_data_contract<S: Signer>(

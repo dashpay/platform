@@ -301,31 +301,32 @@ pub mod fermented {
             match ffi_ref {
                 TestStateError::Empty => super::TestStateError::Empty,
                 #[cfg(feature = "state-transition-validation")]
-                TestStateError::Conditional => super::TestStateError::Conditional
+                TestStateError::Conditional => super::TestStateError::Conditional,
             }
         }
     }
     impl FFIConversionTo<super::TestStateError> for TestStateError {
         unsafe fn ffi_to_const(obj: super::TestStateError) -> *const Self {
-            boxed (match obj {
+            boxed(match obj {
                 super::TestStateError::Empty => TestStateError::Empty,
                 #[cfg(feature = "state-transition-validation")]
-                super::TestStateError::Conditional => TestStateError::Conditional
+                super::TestStateError::Conditional => TestStateError::Conditional,
             })
         }
     }
 
     impl Drop for TestStateError {
-        fn drop(&mut self) {
-        }
+        fn drop(&mut self) {}
     }
     #[no_mangle]
-    pub unsafe extern "C" fn dpp_errors_consensus_state_state_error_TestStateError_Empty_ctor() -> *mut TestStateError {
+    pub unsafe extern "C" fn dpp_errors_consensus_state_state_error_TestStateError_Empty_ctor(
+    ) -> *mut TestStateError {
         boxed(TestStateError::Empty)
     }
     #[cfg(feature = "state-transition-validation")]
     #[no_mangle]
-    pub unsafe extern "C" fn dpp_errors_consensus_state_state_error_TestStateError_Conditional_ctor() -> *mut TestStateError {
+    pub unsafe extern "C" fn dpp_errors_consensus_state_state_error_TestStateError_Conditional_ctor(
+    ) -> *mut TestStateError {
         boxed(TestStateError::Conditional)
     }
 }

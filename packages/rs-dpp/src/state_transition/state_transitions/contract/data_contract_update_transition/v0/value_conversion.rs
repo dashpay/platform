@@ -1,15 +1,15 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::DataContract;
+use crate::errors::ProtocolError;
+use crate::state_transition::state_transitions::common_fields::property_names::{
+    IDENTITY_CONTRACT_NONCE, USER_FEE_INCREASE,
+};
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     DataContractUpdateTransitionV0, BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS,
 };
-use crate::state_transition::state_transitions::common_fields::property_names::{
-    IDENTITY_CONTRACT_NONCE, USER_FEE_INCREASE,
-};
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::state_transition::StateTransitionValueConvert;
-use crate::errors::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 use platform_version::version::PlatformVersion;

@@ -1,11 +1,11 @@
 // use platform_value::Error as ValueError;
-use thiserror::Error as ThisError;
-use platform_value::Error;
-use versioned_feature_core::FeatureVersion;
+use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::dpp_error::DPPError;
 use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
-use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
 use crate::errors::serde_parsing_error::SerdeParsingError;
+use platform_value::Error;
+use thiserror::Error as ThisError;
+use versioned_feature_core::FeatureVersion;
 
 #[derive(Debug, ThisError)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]

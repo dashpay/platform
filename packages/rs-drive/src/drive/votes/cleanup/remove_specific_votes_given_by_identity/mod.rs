@@ -6,9 +6,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::fees::op::LowLevelDriveOperation;
-use platform_value::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_value::Identifier;
 
 impl Drive {
     /// We remove the references of specific votes given by an identity when the vote poll ends

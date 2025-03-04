@@ -1,8 +1,8 @@
+use crate::errors::ProtocolError;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::identity_public_key::KeyType;
 use crate::util::hash::ripemd160_sha256;
-use crate::errors::ProtocolError;
 use anyhow::anyhow;
 #[cfg(feature = "ed25519-dalek")]
 use dashcore::ed25519_dalek;

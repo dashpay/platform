@@ -1,6 +1,9 @@
-use crate::identity::identity_public_key::{contract_bounds::ContractBounds, IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, SecurityLevel, v0::IdentityPublicKeyV0};
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::{
+    contract_bounds::ContractBounds, v0::IdentityPublicKeyV0, IdentityPublicKey, KeyCount, KeyID,
+    KeyType, Purpose, SecurityLevel,
+};
+use platform_version::version::PlatformVersion;
 
 use rand::rngs::StdRng;
 use rand::SeedableRng;

@@ -9,11 +9,11 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-use platform_version::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use grovedb_costs::{
     cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost,
 };
+use platform_version::version::PlatformVersion;
 use std::ops::AddAssign;
 use std::sync::Arc;
 

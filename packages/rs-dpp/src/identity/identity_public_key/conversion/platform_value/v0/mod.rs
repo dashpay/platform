@@ -1,7 +1,7 @@
-use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 
 pub trait IdentityPublicKeyPlatformValueConversionMethodsV0 {
     fn to_object(&self) -> Result<Value, ProtocolError>;

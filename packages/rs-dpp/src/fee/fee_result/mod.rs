@@ -38,11 +38,11 @@
 use crate::errors::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::errors::consensus::fee::fee_error::FeeError;
 
+use crate::balances::credits::Credits;
+use crate::errors::ProtocolError;
 use crate::fee::fee_result::refunds::FeeRefunds;
 use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
-use crate::balances::credits::Credits;
 use crate::prelude::UserFeeIncrease;
-use crate::errors::ProtocolError;
 use platform_value::Identifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;

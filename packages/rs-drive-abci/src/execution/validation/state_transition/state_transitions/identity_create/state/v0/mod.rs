@@ -6,9 +6,9 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::errors::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
 use dpp::errors::consensus::signature::{BasicECDSAError, SignatureError};
 
-use dpp::errors::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
+use dpp::errors::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::identity::KeyType;
 
 use dpp::identity::state_transition::AssetLockProved;

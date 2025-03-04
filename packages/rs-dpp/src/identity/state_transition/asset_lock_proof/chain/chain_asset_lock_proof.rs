@@ -2,8 +2,8 @@ use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
 
-use crate::util::hash::hash_double;
 use crate::errors::ProtocolError;
+use crate::util::hash::hash_double;
 use dashcore::OutPoint;
 use platform_value::Identifier;
 

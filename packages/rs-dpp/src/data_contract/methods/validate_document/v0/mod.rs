@@ -2,19 +2,19 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
 
+use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
+use crate::data_contract::DataContract;
+use crate::document::{property_names, Document, DocumentV0Getters};
 use crate::errors::consensus::basic::document::{
     DocumentFieldMaxSizeExceededError, InvalidDocumentTypeError, MissingDocumentTypeError,
 };
 use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::schema::DataContractSchemaMethodsV0;
-use crate::data_contract::DataContract;
-use crate::document::{property_names, Document, DocumentV0Getters};
-use crate::validation::SimpleConsensusValidationResult;
 use crate::errors::ProtocolError;
+use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 
 pub trait DataContractDocumentValidationMethodsV0 {
     fn validate_document(

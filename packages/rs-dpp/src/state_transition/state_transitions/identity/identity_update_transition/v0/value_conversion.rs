@@ -1,6 +1,6 @@
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{state_transition::StateTransitionFieldTypes, errors::ProtocolError};
+use crate::{errors::ProtocolError, state_transition::StateTransitionFieldTypes};
 
 use crate::state_transition::state_transitions::identity::identity_update_transition::fields::*;
 use crate::state_transition::state_transitions::identity::identity_update_transition::v0::{

@@ -1,16 +1,16 @@
-#[cfg(feature = "validation")]
-use crate::errors::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
-use crate::errors::consensus::basic::data_contract::DuplicateIndexError;
-use crate::errors::consensus::basic::BasicError;
-use crate::errors::consensus::ConsensusError;
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
 use crate::data_contract::document_type::Index;
 #[cfg(feature = "validation")]
+use crate::errors::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
+use crate::errors::consensus::basic::data_contract::DuplicateIndexError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
-use platform_version::version::PlatformVersion;
 use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 

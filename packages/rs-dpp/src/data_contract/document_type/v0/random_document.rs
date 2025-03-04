@@ -20,11 +20,11 @@ use crate::document::property_names::{
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0, INITIAL_REVISION};
+use crate::errors::ProtocolError;
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates a random Document using a seed if given, otherwise entropy.

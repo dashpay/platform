@@ -7,11 +7,11 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::DirectQueryType;
 
-use platform_version::version::PlatformVersion;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
+use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {

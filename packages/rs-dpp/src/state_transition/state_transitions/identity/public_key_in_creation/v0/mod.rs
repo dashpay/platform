@@ -5,7 +5,9 @@ mod types;
 mod value_conversion;
 mod version;
 
-use crate::identity::identity_public_key::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::{
+    IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel,
+};
 
 use std::convert::TryFrom;
 

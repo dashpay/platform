@@ -41,7 +41,9 @@ impl Value {
             Value::I16(i) => serde_json::Value::Number(i.into()),
             Value::U8(i) => serde_json::Value::Number(i.into()),
             Value::I8(i) => serde_json::Value::Number(i.into()),
-            Value::Float(float) => serde_json::Value::Number(Number::from_f64(float).unwrap_or(0.into())),
+            Value::Float(float) => {
+                serde_json::Value::Number(Number::from_f64(float).unwrap_or(0.into()))
+            }
             Value::Text(string) => serde_json::Value::String(string),
             Value::Bool(value) => serde_json::Value::Bool(value),
             Value::Null => serde_json::Value::Null,
@@ -105,7 +107,9 @@ impl Value {
         })
     }
 
-    pub fn try_into_validating_btree_map_json(self) -> Result<BTreeMap<String, serde_json::Value>, Error> {
+    pub fn try_into_validating_btree_map_json(
+        self,
+    ) -> Result<BTreeMap<String, serde_json::Value>, Error> {
         self.into_btree_string_map()?
             .into_iter()
             .map(|(key, value)| Ok((key, value.try_into_validating_json()?)))
@@ -137,7 +141,9 @@ impl Value {
             Value::I16(i) => serde_json::Value::Number((*i).into()),
             Value::U8(i) => serde_json::Value::Number((*i).into()),
             Value::I8(i) => serde_json::Value::Number((*i).into()),
-            Value::Float(float) => serde_json::Value::Number(Number::from_f64(*float).unwrap_or(0.into())),
+            Value::Float(float) => {
+                serde_json::Value::Number(Number::from_f64(*float).unwrap_or(0.into()))
+            }
             Value::Text(string) => serde_json::Value::String(string.clone()),
             Value::Bool(value) => serde_json::Value::Bool(*value),
             Value::Null => serde_json::Value::Null,
@@ -312,11 +318,21 @@ impl TryInto<serde_json::Value> for Value {
             Value::I16(i) => serde_json::Value::Number(i.into()),
             Value::U8(i) => serde_json::Value::Number(i.into()),
             Value::I8(i) => serde_json::Value::Number(i.into()),
-            Value::Bytes(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
-            Value::Bytes20(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
-            Value::Bytes32(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
-            Value::Bytes36(bytes) => serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice())),
-            Value::Float(float) => serde_json::Value::Number(Number::from_f64(float).unwrap_or(0.into())),
+            Value::Bytes(bytes) => {
+                serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice()))
+            }
+            Value::Bytes20(bytes) => {
+                serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice()))
+            }
+            Value::Bytes32(bytes) => {
+                serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice()))
+            }
+            Value::Bytes36(bytes) => {
+                serde_json::Value::String(BASE64_STANDARD.encode(bytes.as_slice()))
+            }
+            Value::Float(float) => {
+                serde_json::Value::Number(Number::from_f64(float).unwrap_or(0.into()))
+            }
             Value::Text(string) => serde_json::Value::String(string),
             Value::Bool(value) => serde_json::Value::Bool(value),
             Value::Null => serde_json::Value::Null,

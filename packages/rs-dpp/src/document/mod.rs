@@ -19,13 +19,13 @@ pub mod transfer;
 pub mod v0;
 
 pub use accessors::*;
-pub use v0::{DocumentV0, serialize};
 #[cfg(feature = "extended-document")]
 pub use extended_document::property_names as extended_document_property_names;
 #[cfg(feature = "extended-document")]
 pub use extended_document::ExtendedDocument;
 #[cfg(feature = "extended-document")]
 pub use extended_document::IDENTIFIER_FIELDS as EXTENDED_DOCUMENT_IDENTIFIER_FIELDS;
+pub use v0::{serialize, DocumentV0};
 
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u64 = 1;
@@ -37,9 +37,9 @@ use crate::document::document_methods::{
     DocumentIsEqualIgnoringTimestampsV0, DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use derive_more::From;
+use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "document-serde-conversion")]
 use serde::{Deserialize, Serialize};

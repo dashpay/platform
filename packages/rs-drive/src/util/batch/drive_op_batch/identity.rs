@@ -9,10 +9,10 @@ use dpp::prelude::{IdentityNonce, Revision};
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
-use platform_version::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// Operations on Identities

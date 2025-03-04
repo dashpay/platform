@@ -9,9 +9,9 @@ use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
 use dpp::dashcore::PrivateKey;
-use dpp::identity::Identity;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::identity::Identity;
 use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;

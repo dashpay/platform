@@ -21,7 +21,9 @@ use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializable;
 #[cfg(feature = "server")]
 use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
-use dpp::voting::contender_structs::{ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument};
+use dpp::voting::contender_structs::{
+    ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument,
+};
 #[cfg(feature = "server")]
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,

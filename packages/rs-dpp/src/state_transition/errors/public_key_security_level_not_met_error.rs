@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::identity::identity_public_key::SecurityLevel;
 use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::SecurityLevel;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}")]

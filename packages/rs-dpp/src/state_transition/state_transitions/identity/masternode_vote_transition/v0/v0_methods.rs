@@ -5,7 +5,7 @@ use crate::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{IdentityPublicKey, identity_public_key::SecurityLevel};
+use crate::identity::{identity_public_key::SecurityLevel, IdentityPublicKey};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]

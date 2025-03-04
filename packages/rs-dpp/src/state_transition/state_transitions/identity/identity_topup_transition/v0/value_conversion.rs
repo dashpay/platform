@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 
 use platform_value::{Identifier, IntegerReplacementType, ReplacementType, Value};
 
-use crate::{state_transition::StateTransitionFieldTypes, errors::ProtocolError};
+use crate::{errors::ProtocolError, state_transition::StateTransitionFieldTypes};
 
 use crate::state_transition::AssetLockProof;
 

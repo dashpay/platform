@@ -1,8 +1,8 @@
 //! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::errors::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::errors::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;

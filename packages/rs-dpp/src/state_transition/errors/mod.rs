@@ -36,7 +36,7 @@ pub use invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeErro
     feature = "state-transition-validation",
     feature = "state-transition-signing"
 ))]
-pub use invalid_signature_public_key_error:: InvalidSignaturePublicKeyError;
+pub use invalid_signature_public_key_error::InvalidSignaturePublicKeyError;
 #[cfg(feature = "state-transition-validation")]
 pub use public_key_mismatch_error::PublicKeyMismatchError;
 #[cfg(feature = "state-transition-validation")]

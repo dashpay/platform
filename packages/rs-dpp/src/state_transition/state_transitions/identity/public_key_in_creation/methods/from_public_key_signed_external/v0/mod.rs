@@ -1,6 +1,6 @@
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::identity::signer::Signer;
 use crate::identity::identity_public_key::{IdentityPublicKey, KeyType};
+use crate::identity::signer::Signer;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::ProtocolError;

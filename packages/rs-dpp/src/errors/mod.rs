@@ -2,8 +2,8 @@ pub use compatible_protocol_version_is_not_defined_error::CompatibleProtocolVers
 pub use dpp_error::DPPError;
 pub use dpp_init_error::DashPlatformProtocolInitError;
 pub use invalid_vector_size_error::InvalidVectorSizeError;
-pub use non_consensus_error::NonConsensusError;
 pub use non_consensus_error::object_names::STATE_TRANSITION;
+pub use non_consensus_error::NonConsensusError;
 pub use protocol_error::ProtocolError;
 pub use public_key_validation_error::PublicKeyValidationError;
 pub use serde_parsing_error::SerdeParsingError;

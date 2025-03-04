@@ -15,11 +15,11 @@ use epochs::paths::encode_epoch_index_key;
 use epochs::paths::EpochProposers;
 
 #[cfg(feature = "server")]
+use dpp::balances::credits::SignedCredits;
+#[cfg(feature = "server")]
 use dpp::block::epoch::{Epoch, EpochIndex};
 #[cfg(feature = "server")]
 use dpp::fee::epoch::SignedCreditsPerEpoch;
-#[cfg(feature = "server")]
-use dpp::balances::credits::SignedCredits;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "server")]
@@ -186,9 +186,9 @@ mod tests {
         use super::*;
         use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use dpp::balances::credits::Credits;
         use dpp::block::epoch::EpochIndex;
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
-        use dpp::balances::credits::Credits;
         use dpp::version::PlatformVersion;
         use grovedb::batch::GroveOp;
 

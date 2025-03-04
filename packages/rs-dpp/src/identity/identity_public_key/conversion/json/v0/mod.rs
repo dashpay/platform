@@ -1,5 +1,5 @@
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use platform_version::version::PlatformVersion;
 // use serde_json::Value as JsonValue;
 
 pub trait IdentityPublicKeyJsonConversionMethodsV0 {

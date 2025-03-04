@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::identity::Identity;
 use crate::errors::ProtocolError;
+use crate::identity::Identity;
 use platform_value::Identifier;
 
 use platform_version::version::PlatformVersion;

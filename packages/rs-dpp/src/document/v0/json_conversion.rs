@@ -3,8 +3,8 @@ use crate::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use crate::document::DocumentV0;
-use crate::util::json_value::JsonValueExt;
 use crate::errors::ProtocolError;
+use crate::util::json_value::JsonValueExt;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::Deserialize;
@@ -78,7 +78,10 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         Ok(value)
     }
 
-    fn to_json(&self, _platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
+    fn to_json(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }

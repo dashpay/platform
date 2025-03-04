@@ -1,6 +1,6 @@
 use crate::data_contract::{DefinitionName, DocumentName};
-use crate::validation::operations::ProtocolValidationOperation;
 use crate::errors::ProtocolError;
+use crate::validation::operations::ProtocolValidationOperation;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

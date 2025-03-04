@@ -3,15 +3,15 @@ mod v0;
 pub use v0::*;
 
 use crate::data_contract::DataContract;
+use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::KeyID;
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::identity::identity_public_key::KeyID;
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
 use crate::state_transition::StateTransition;
 use versioned_feature_core::FeatureVersion;
-use crate::errors::ProtocolError;
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use platform_version::version::PlatformVersion;

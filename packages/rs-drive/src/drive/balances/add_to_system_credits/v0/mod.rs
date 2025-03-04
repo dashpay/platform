@@ -2,8 +2,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
-use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Adds to the total platform system credits when:

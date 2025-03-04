@@ -3,10 +3,10 @@ mod v0;
 use crate::data_contract::DataContract;
 use std::collections::BTreeMap;
 
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use derive_more::From;
 use platform_value::{Bytes32, Identifier, Value};
+use platform_version::version::PlatformVersion;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;

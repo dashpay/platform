@@ -51,9 +51,9 @@ mod tests {
     use dpp::data_contract::config::v0::DataContractConfigV0;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::DataContract;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::data_contract::DataContract;
     use dpp::tokens::info::v0::IdentityTokenInfoV0;
     use dpp::tokens::info::IdentityTokenInfo;
     use dpp::version::PlatformVersion;

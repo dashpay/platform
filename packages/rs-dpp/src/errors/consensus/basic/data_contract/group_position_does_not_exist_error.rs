@@ -1,6 +1,6 @@
+use crate::data_contract::GroupContractPosition;
 use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::GroupContractPosition;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

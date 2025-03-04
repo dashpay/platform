@@ -5,8 +5,8 @@ use crate::fees::op::{BaseOp, LowLevelDriveOperation};
 use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
-use platform_version::version::PlatformVersion;
 use enum_map::EnumMap;
+use platform_version::version::PlatformVersion;
 
 mod v0;
 

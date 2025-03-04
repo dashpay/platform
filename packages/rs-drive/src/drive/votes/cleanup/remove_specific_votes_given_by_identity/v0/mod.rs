@@ -4,9 +4,9 @@ use crate::error::Error;
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchDeleteApplyType;
-use platform_value::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{MaybeTree, TransactionArg};
+use platform_value::Identifier;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is

@@ -4,10 +4,10 @@ use platform_value::Value;
 
 use crate::errors::ProtocolError;
 
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;

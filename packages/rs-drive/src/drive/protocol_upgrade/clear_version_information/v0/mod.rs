@@ -3,8 +3,8 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Clear all version information from the backing store, this is done on epoch change in

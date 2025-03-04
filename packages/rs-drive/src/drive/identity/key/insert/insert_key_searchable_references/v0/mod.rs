@@ -12,11 +12,14 @@ use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElemen
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::util::storage_flags::SINGLE_EPOCH_FLAGS_SIZE;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, identity_public_key::{Purpose, SecurityLevel}};
-use platform_version::version::drive_versions::DriveVersion;
+use dpp::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    IdentityPublicKey,
+};
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

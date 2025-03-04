@@ -7,13 +7,13 @@ use crate::document::property_names::{
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0, INITIAL_REVISION};
+use crate::errors::ProtocolError;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight};
-use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Identifier, ReplacementType, Value};
+use platform_version::version::PlatformVersion;
 
 impl DocumentTypeV0 {
     pub(in crate::data_contract::document_type) fn create_document_from_data_v0(

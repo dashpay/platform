@@ -1,6 +1,6 @@
+use crate::balances::credits::Credits;
 use crate::errors::consensus::fee::fee_error::FeeError;
 use crate::errors::consensus::ConsensusError;
-use crate::balances::credits::Credits;
 use thiserror::Error;
 
 use crate::errors::ProtocolError;

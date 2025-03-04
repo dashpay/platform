@@ -21,9 +21,9 @@ use crate::state_transition::state_transitions::contract::data_contract_create_t
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
 use crate::data_contract::v1::DataContractV1;
+use crate::errors::ProtocolError;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
-use crate::errors::ProtocolError;
 
 /// The version 0 implementation of the data contract factory.
 ///

@@ -4,10 +4,10 @@ use platform_value::Value;
 
 use crate::errors::ProtocolError;
 
+use crate::state_transition::state_transitions::document::batch_transition::fields::*;
 use crate::state_transition::state_transitions::document::batch_transition::{
     BatchTransition, BatchTransitionV0, BatchTransitionV1,
 };
-use crate::state_transition::state_transitions::document::batch_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;

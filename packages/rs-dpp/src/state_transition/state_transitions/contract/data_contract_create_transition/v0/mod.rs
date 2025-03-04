@@ -14,8 +14,8 @@ use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::{data_contract::DataContract, errors::protocol_error::ProtocolError};
 use crate::identity::identity_public_key::KeyID;
+use crate::{data_contract::DataContract, errors::protocol_error::ProtocolError};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;

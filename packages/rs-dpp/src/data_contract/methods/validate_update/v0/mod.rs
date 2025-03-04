@@ -1,15 +1,15 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
+use crate::data_contract::accessors::v1::DataContractV1Getters;
+use crate::data_contract::document_type::schema::validate_schema_compatibility;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
+use crate::data_contract::DataContract;
 use crate::errors::consensus::basic::data_contract::{
     IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
 };
 use crate::errors::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
-use crate::data_contract::accessors::v1::DataContractV1Getters;
-use crate::data_contract::document_type::schema::validate_schema_compatibility;
-use crate::data_contract::schema::DataContractSchemaMethodsV0;
-use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
@@ -255,10 +255,10 @@ impl DataContract {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::config::v0::DataContractConfigSettersV0;
     use crate::errors::consensus::basic::basic_error::BasicError;
     use crate::errors::consensus::state::state_error::StateError;
     use crate::errors::consensus::ConsensusError;
-    use crate::data_contract::config::v0::DataContractConfigSettersV0;
     use crate::prelude::IdentityNonce;
     use crate::tests::fixtures::get_data_contract_fixture;
     use assert_matches::assert_matches;

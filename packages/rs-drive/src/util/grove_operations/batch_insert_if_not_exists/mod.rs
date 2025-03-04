@@ -8,8 +8,8 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathKeyElementInfo;
 
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes an "insert element if the path key does not yet exist" operation to `drive_operations`.

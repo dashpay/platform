@@ -145,11 +145,11 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::errors::consensus::basic::BasicError;
-    use dpp::errors::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::errors::contract::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::platform_value::Value;
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;

@@ -1,6 +1,6 @@
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use ciborium::Value as CborValue;
+use platform_version::version::PlatformVersion;
 
 pub trait DocumentCborMethodsV0 {
     /// Reads a CBOR-serialized document and creates a Document from it.

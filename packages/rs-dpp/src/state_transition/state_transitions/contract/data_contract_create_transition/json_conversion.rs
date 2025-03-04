@@ -1,5 +1,5 @@
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::*;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::{
     JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
 };

@@ -1,9 +1,9 @@
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::identity::{Identity, identity_public_key::SecurityLevel};
 use crate::identity::identity_public_key::{IdentityPublicKey, KeyID, KeyType, Purpose};
+use crate::identity::{identity_public_key::SecurityLevel, Identity};
 
-use crate::prelude::Revision;
 use crate::errors::ProtocolError;
+use crate::prelude::Revision;
 use platform_value::Identifier;
 use std::collections::{BTreeMap, HashSet};
 pub use v0::{IdentityGettersV0, IdentitySettersV0};

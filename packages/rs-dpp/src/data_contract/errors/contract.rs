@@ -6,9 +6,9 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
+use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 
 // @append_only
 #[derive(

@@ -14,9 +14,9 @@ use lazy_static::lazy_static;
 
 #[cfg(feature = "bls-signatures")]
 use crate::bls_signatures::{self as bls_signatures, Bls12381G2Impl, BlsError};
+use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
-use crate::errors::ProtocolError;
 #[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
 #[cfg(feature = "random-public-keys")]

@@ -1,6 +1,6 @@
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 
 pub trait DataContractValueConversionMethodsV0 {
     fn from_value(

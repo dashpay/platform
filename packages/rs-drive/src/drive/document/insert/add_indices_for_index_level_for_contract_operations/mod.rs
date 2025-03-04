@@ -10,8 +10,8 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::IndexLevel;
 
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
+use platform_version::version::PlatformVersion;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;

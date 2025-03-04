@@ -4,9 +4,9 @@ use platform_value::Value;
 
 use crate::errors::ProtocolError;
 
+use crate::state_transition::state_transitions::identity::identity_topup_transition::fields::*;
 use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
-use crate::state_transition::state_transitions::identity::identity_topup_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;

@@ -10,12 +10,12 @@ use crate::error::Error;
 
 use crate::fees::op::LowLevelDriveOperation;
 
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
+use platform_version::version::drive_versions::DriveVersion;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
 use platform_value::Identifier;
+use std::collections::HashMap;
 
 impl Drive {
     /// Insert a non-unique public key hash reference that contains an identity id

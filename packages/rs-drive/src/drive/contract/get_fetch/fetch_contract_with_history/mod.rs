@@ -3,8 +3,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
 
-use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod v0;

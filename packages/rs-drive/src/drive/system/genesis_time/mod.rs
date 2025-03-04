@@ -7,8 +7,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
-use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the genesis time. Checks cache first, then storage.

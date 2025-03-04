@@ -1,8 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use versioned_feature_core::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use versioned_feature_core::FeatureVersion;
 
 impl StateTransitionLike for IdentityCreditTransferTransition {
     /// Returns ID of the credit_transferred contract

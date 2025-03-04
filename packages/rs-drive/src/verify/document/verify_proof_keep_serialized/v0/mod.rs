@@ -4,8 +4,8 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
 
-use platform_version::version::PlatformVersion;
 use grovedb::GroveDb;
+use platform_version::version::PlatformVersion;
 
 impl<'a> DriveDocumentQuery<'a> {
     /// Verifies the given proof and returns the root hash of the GroveDB tree and a vector

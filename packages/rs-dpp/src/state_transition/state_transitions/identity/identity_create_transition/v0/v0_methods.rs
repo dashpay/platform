@@ -7,15 +7,15 @@ use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::identity::identity_public_key::KeyType::ECDSA_HASH160;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::AssetLockProved;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::identity_public_key::KeyType::ECDSA_HASH160;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]

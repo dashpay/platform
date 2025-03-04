@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{state_transition::StateTransitionFieldTypes, errors::ProtocolError};
+use crate::{errors::ProtocolError, state_transition::StateTransitionFieldTypes};
 
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::fields::*;
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;

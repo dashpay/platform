@@ -5,8 +5,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::identity::identity_public_key::Purpose;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Proves identities contract keys given identity ids, contract id, optional document type name and purposes

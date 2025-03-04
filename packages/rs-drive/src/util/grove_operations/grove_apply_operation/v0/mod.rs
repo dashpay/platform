@@ -1,9 +1,9 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::GroveDbOpBatch;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Applies the given groveDB operation

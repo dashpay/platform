@@ -2,9 +2,9 @@ use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::DocumentV0Getters;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_version::version::PlatformVersion;
 
 pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
     /// Return a value given the path to its key for a document type.

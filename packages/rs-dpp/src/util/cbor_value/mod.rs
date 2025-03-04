@@ -129,7 +129,10 @@ pub fn cbor_value_to_json_value(cbor: &CborValue) -> Result<serde_json::Value, a
     match cbor {
         CborValue::Integer(num) => Ok(serde_json::Value::from(i128::from(*num) as i64)),
         CborValue::Bytes(bytes) => Ok(serde_json::Value::Array(
-            bytes.iter().map(|byte| serde_json::Value::from(*byte)).collect(),
+            bytes
+                .iter()
+                .map(|byte| serde_json::Value::from(*byte))
+                .collect(),
         )),
         CborValue::Float(float) => Ok(serde_json::Value::from(*float)),
         CborValue::Text(text) => Ok(serde_json::Value::from(text.clone())),

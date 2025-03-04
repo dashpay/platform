@@ -1,7 +1,7 @@
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]

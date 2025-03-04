@@ -9,9 +9,9 @@ use crate::util::object_size_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
 };
 use crate::util::storage_flags::StorageFlags;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::batch::GroveOp;
 use grovedb::{TransactionArg, TreeType};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.

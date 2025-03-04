@@ -1,8 +1,8 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 
-use crate::prelude::ExtendedDocument;
 use crate::errors::ProtocolError;
+use crate::prelude::ExtendedDocument;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode};

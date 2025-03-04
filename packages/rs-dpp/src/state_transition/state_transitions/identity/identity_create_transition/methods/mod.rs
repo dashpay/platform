@@ -5,9 +5,9 @@ pub use v0::*;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
@@ -17,9 +17,9 @@ use crate::state_transition::state_transitions::identity::identity_create_transi
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::PlatformVersion;
+use crate::{errors::ProtocolError, BlsModule};
 #[cfg(feature = "state-transition-signing")]
-use crate::{BlsModule, errors::ProtocolError};
+use platform_version::version::PlatformVersion;
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
     #[cfg(feature = "state-transition-signing")]

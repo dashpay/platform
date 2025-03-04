@@ -7,10 +7,10 @@
 
 mod evonode_status;
 
+use dpp::balances::credits::Credits;
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::data_contract::{DataContract, document_type::DocumentType};
-use dpp::balances::credits::Credits;
+use dpp::data_contract::{document_type::DocumentType, DataContract};
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
@@ -30,11 +30,13 @@ use dpp::{
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
 // IndexMap is exposed to the public API
-use platform_value::{Identifier, Value};
 pub use indexmap::IndexMap;
+use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::dashcore::hashes::Hash;
+use dpp::identity::IdentityPublicKey;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -42,8 +44,6 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-use dpp::identity::IdentityPublicKey;
-use platform_version::version::PlatformVersion;
 
 pub use evonode_status::*;
 

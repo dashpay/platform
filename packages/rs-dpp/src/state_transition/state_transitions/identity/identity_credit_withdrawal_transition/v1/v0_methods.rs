@@ -1,8 +1,11 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
-        accessors::IdentityGettersV0, core_script::CoreScript, signer::Signer, Identity,
+        accessors::IdentityGettersV0,
+        core_script::CoreScript,
         identity_public_key::{IdentityPublicKey, KeyType, Purpose, SecurityLevel},
+        signer::Signer,
+        Identity,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{

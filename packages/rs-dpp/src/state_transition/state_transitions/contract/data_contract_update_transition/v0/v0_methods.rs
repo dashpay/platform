@@ -1,7 +1,7 @@
 use crate::data_contract::DataContract;
+use crate::identity::identity_public_key::KeyID;
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::identity::identity_public_key::KeyID;
 use crate::serialization::Signable;
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};

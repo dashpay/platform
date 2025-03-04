@@ -16,9 +16,9 @@ use dpp::data_contract::DataContract;
 use grovedb::TransactionArg;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::ops::BitXor;
-use platform_value::Identifier;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct

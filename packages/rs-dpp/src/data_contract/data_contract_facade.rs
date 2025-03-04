@@ -8,8 +8,8 @@ use crate::state_transition::state_transitions::contract::data_contract_create_t
 use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
 use crate::errors::ProtocolError;
-use platform_value::Value;
 use platform_value::Identifier;
+use platform_value::Value;
 /// # Data Contract Facade
 ///
 /// This module acts as a simplified, high-level interface to a more complex

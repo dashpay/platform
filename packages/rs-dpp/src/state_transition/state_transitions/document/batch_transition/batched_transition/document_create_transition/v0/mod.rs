@@ -503,7 +503,10 @@ mod test {
             DocumentCreateTransition::from_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
-        assert_eq!(json_transition["V0"]["$id"], serde_json::Value::String(id.into()));
+        assert_eq!(
+            json_transition["V0"]["$id"],
+            serde_json::Value::String(id.into())
+        );
         assert_eq!(
             json_transition["V0"]["$dataContractId"],
             serde_json::Value::String(data_contract_id.into())

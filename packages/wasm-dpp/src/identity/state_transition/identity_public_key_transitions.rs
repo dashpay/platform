@@ -9,15 +9,15 @@ use dpp::state_transition::state_transitions::identity::public_key_in_creation::
 use js_sys::Reflect::delete_property;
 pub use serde::{Deserialize, Serialize};
 
-use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
-use dpp::ProtocolError;
-use std::convert::TryInto;
-use wasm_bindgen::prelude::*;
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::utils::WithJsError;
 use crate::{buffer::Buffer, with_js_error};
+use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
+use std::convert::TryInto;
+use wasm_bindgen::prelude::*;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

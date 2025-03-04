@@ -16,10 +16,10 @@ use super::DriveLowLevelOperationConverter;
 use crate::query::Query;
 use dpp::fee::{Credits, SignedCredits};
 use dpp::prelude::TimestampMillis;
-use platform_version::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, MaybeTree, TransactionArg};
 use grovedb::{Element, PathQuery, SizedQuery};
+use platform_version::version::PlatformVersion;
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]

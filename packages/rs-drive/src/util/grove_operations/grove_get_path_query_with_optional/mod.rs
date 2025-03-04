@@ -4,10 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::PathQuery;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Retrieves the results of a path query from GroveDB with optional elements.

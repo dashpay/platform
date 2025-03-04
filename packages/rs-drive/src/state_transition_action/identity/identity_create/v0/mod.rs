@@ -2,7 +2,7 @@
 pub mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, v0::IdentityV0, PartialIdentity};
+use dpp::identity::{v0::IdentityV0, IdentityPublicKey, PartialIdentity};
 
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

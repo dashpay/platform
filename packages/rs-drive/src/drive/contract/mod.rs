@@ -51,7 +51,9 @@ mod tests {
     use dpp::document::DocumentV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{ContractBounds, Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{
+        ContractBounds, Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel,
+    };
     use dpp::platform_value::{platform_value, BinaryData};
     use dpp::tests::fixtures::{
         get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,

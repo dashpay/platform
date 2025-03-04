@@ -1,11 +1,11 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::DataContract;
 use crate::data_contract::{
     DocumentName, GroupContractPosition, TokenContractPosition, EMPTY_GROUPS, EMPTY_TOKENS,
 };
 use crate::metadata::Metadata;
-use crate::data_contract::DataContract;
 
 use platform_value::Identifier;
 

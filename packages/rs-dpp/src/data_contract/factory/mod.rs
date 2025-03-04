@@ -3,10 +3,10 @@ mod v0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 
 use crate::data_contract::config::DataContractConfig;
 use crate::prelude::IdentityNonce;

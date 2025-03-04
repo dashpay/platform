@@ -14,7 +14,8 @@ use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::{
-        accessors::v0::DataContractV0Getters, DataContract, document_type::accessors::DocumentTypeV0Getters,
+        accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
+        DataContract,
     },
     document::Document,
     identifier::Identifier,

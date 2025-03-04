@@ -20,11 +20,7 @@ use crate::state_transition::state_transitions::identity::public_key_in_creation
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
-use crate::{
-    identity::identity_public_key::KeyID,
-    prelude::Revision,
-    ProtocolError,
-};
+use crate::{identity::identity_public_key::KeyID, prelude::Revision, ProtocolError};
 
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(

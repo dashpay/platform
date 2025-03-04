@@ -6,9 +6,9 @@ use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 use crate::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
 use crate::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
 use crate::query::token_status_drive_query::TokenStatusDriveQuery;
-use platform_version::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
 use itertools::{Either, Itertools};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// This function query requested identities, documents and contracts and provide cryptographic proofs

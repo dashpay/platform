@@ -1,6 +1,6 @@
 use crate::document::{Document, DocumentV0};
-use crate::prelude::{BlockHeight, CoreBlockHeight};
 use crate::errors::ProtocolError;
+use crate::prelude::{BlockHeight, CoreBlockHeight};
 use chrono::Utc;
 use platform_value::Value;
 
@@ -13,9 +13,9 @@ use crate::document::property_names::{
     UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::INITIAL_REVISION;
-use platform_version::version::PlatformVersion;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl DocumentTypeV0 {

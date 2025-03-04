@@ -40,10 +40,10 @@ use crate::verify::RootHash;
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::DataContract;
-#[cfg(feature = "fixtures-and-mocks")]
-use platform_version::version::PlatformVersion;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::version::PlatformVersionCurrentVersion;
+#[cfg(feature = "fixtures-and-mocks")]
+use platform_version::version::PlatformVersion;
 
 // TODO: Not using
 /// The outcome of a query

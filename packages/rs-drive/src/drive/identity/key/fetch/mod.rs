@@ -1,4 +1,6 @@
 // Conditional imports for the features "server" or "verify"
+#[cfg(feature = "server")]
+use crate::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
     crate::{
@@ -17,8 +19,6 @@ use {
     integer_encoding::VarInt,
     std::{collections::BTreeMap, ops::RangeFull},
 };
-#[cfg(feature = "server")]
-use crate::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 // Conditional imports for the feature "server"
 use crate::drive::identity::identity_transfer_keys_path_vec;
 #[cfg(feature = "server")]
@@ -26,7 +26,7 @@ use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
         fee::Credits,
-        identity::{IdentityPublicKey, identity_public_key::SecurityLevel},
+        identity::{identity_public_key::SecurityLevel, IdentityPublicKey},
         serialization::PlatformDeserializable,
     },
     grovedb::{

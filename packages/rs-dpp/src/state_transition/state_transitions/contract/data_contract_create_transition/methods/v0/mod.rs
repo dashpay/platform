@@ -1,13 +1,13 @@
 use crate::data_contract::DataContract;
+use crate::identity::identity_public_key::KeyID;
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::identity::identity_public_key::KeyID;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::StateTransition;
-use versioned_feature_core::FeatureVersion;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 pub trait DataContractCreateTransitionMethodsV0 {
     /// Creates a new instance of the DataContractCreateTransition from the provided data contract.

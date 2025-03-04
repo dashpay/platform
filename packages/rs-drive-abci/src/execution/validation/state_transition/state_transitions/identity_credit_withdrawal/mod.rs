@@ -140,9 +140,9 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::dash_to_credits;
     use dpp::errors::consensus::basic::BasicError;
     use dpp::errors::consensus::ConsensusError;
-    use dpp::dash_to_credits;
     use dpp::identity::core_script::CoreScript;
     use dpp::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
     use dpp::serialization::PlatformSerializable;

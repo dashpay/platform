@@ -5,8 +5,8 @@ use crate::error::Error;
 use crate::query::DriveDocumentQuery;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
-use platform_version::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
+use platform_version::version::PlatformVersion;
 
 impl<'a> DriveDocumentQuery<'a> {
     /// Verifies if a document exists at the beginning of a proof,

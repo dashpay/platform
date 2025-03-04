@@ -1,11 +1,14 @@
 use crate::errors::ProtocolError;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::{v0::IdentityV0, Identity, KeyType, identity_public_key::{Purpose, SecurityLevel}};
+use crate::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    v0::IdentityV0,
+    Identity, KeyType,
+};
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
 use platform_value::{BinaryData, Identifier};
 use serde_json::json;
-
 
 use platform_version::version::PlatformVersion;
 

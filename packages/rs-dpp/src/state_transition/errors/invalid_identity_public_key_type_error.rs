@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::identity::identity_public_key::KeyType;
 use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::KeyType;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid signature type")]

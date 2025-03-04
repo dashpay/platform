@@ -14,7 +14,10 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::identity_public_key::Purpose::TRANSFER;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, identity_public_key::{Purpose, SecurityLevel}};
+use dpp::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    Identity, IdentityPublicKey, KeyID, KeyType,
+};
 use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{

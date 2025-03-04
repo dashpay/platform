@@ -1,8 +1,8 @@
 mod v0;
 
+use crate::data_contract::document_type::DocumentType;
 use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;

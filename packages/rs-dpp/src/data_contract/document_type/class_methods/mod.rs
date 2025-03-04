@@ -1,8 +1,8 @@
+use crate::data_contract::errors::DataContractError;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::basic::BasicError;
 #[cfg(feature = "validation")]
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 
 mod create_document_types_from_document_schemas;

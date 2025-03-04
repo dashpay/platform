@@ -1,13 +1,18 @@
-use thiserror::Error as ThisError;
-use crate::data_contract::errors::{contract::DataContractError, DataContractNotPresentError, IdentityNotPresentError, InvalidDocumentTypeError};
+use crate::data_contract::errors::{
+    contract::DataContractError, DataContractNotPresentError, IdentityNotPresentError,
+    InvalidDocumentTypeError,
+};
 use crate::document::errors::DocumentError;
 use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::errors::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError};
+use crate::errors::consensus::signature::{
+    InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
+};
 #[cfg(any(
     feature = "state-transition-validation",
     feature = "state-transition-signing"
 ))]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+use thiserror::Error as ThisError;
 
 #[cfg(any(
     all(feature = "state-transitions", feature = "validation"),
@@ -33,11 +38,11 @@ use crate::{
     InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
 };
 
+use crate::errors::consensus::ConsensusError;
 use crate::tokens::errors::TokenError;
 use platform_value::{Error, Value};
 use platform_version::error::PlatformVersionError;
 use versioned_feature_core::FeatureVersion;
-use crate::errors::consensus::ConsensusError;
 
 #[derive(ThisError, Debug)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
@@ -315,4 +320,3 @@ impl From<InvalidVectorSizeError> for ProtocolError {
         Self::InvalidVectorSizeError(err)
     }
 }
-

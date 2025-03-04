@@ -4,9 +4,7 @@ use platform_value::{BinaryData, Identifier};
 
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
-use crate::{
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
 use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::StateTransition;

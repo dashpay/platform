@@ -2,8 +2,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use dpp::errors::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::errors::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;

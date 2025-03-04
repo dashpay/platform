@@ -1,8 +1,8 @@
+use dash_sdk::platform::Identifier;
 use dash_sdk::{mock::Mockable, platform::Query, Sdk};
 use dpp::data_contract::DataContractFactory;
-use hex::ToHex;
-use dash_sdk::platform::Identifier;
 use dpp::version::PlatformVersion;
+use hex::ToHex;
 use rs_dapi_client::transport::TransportRequest;
 
 use super::config::Config;

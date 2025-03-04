@@ -1,5 +1,5 @@
-use crate::state_transition::StateTransitionFieldTypes;
 use crate::errors::ProtocolError;
+use crate::state_transition::StateTransitionFieldTypes;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};

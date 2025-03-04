@@ -16,9 +16,9 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::collections::HashMap;
 

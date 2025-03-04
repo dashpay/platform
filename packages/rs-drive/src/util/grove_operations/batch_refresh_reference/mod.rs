@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::Element;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes an "refresh reference" operation to `drive_operations`.

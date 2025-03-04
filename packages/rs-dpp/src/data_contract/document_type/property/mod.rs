@@ -5,8 +5,8 @@ use std::io::{BufReader, Cursor, Read};
 use crate::data_contract::errors::contract::DataContractError;
 
 use crate::errors::consensus::basic::decode::DecodingError;
-use crate::prelude::TimestampMillis;
 use crate::errors::ProtocolError;
+use crate::prelude::TimestampMillis;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;

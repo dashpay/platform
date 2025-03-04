@@ -1,12 +1,12 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::prelude::BlockHeight;
-use platform_version::version::{INITIAL_PROTOCOL_VERSION, patches::PATCHES, PlatformVersion};
-use std::sync::atomic::{AtomicU32, Ordering};
 use crate::platform_types::platform_state::v0::{
     PlatformStateV0Methods, PlatformStateV0PrivateMethods,
 };
 use crate::platform_types::platform_state::PlatformState;
+use dpp::prelude::BlockHeight;
+use platform_version::version::{patches::PATCHES, PlatformVersion, INITIAL_PROTOCOL_VERSION};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 static PATCHED_PROTOCOL_VERSION: AtomicU32 = AtomicU32::new(INITIAL_PROTOCOL_VERSION);
 

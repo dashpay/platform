@@ -1,9 +1,9 @@
 mod v0;
 
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+pub use v0::*;
 #[cfg(feature = "state-transition-signing")]
 use versioned_feature_core::FeatureVersion;
-pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;

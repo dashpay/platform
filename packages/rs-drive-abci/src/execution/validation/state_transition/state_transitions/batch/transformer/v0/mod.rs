@@ -4,15 +4,17 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::errors::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::errors::consensus::basic::document::{
+    DataContractNotPresentError, InvalidDocumentTypeError,
+};
 use dpp::errors::consensus::basic::BasicError;
 
 use dpp::errors::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::errors::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::errors::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::errors::consensus::state::state_error::StateError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;

@@ -12,7 +12,7 @@ use std::fmt;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::identity_public_key::Purpose;
 #[cfg(feature = "server")]
-use dpp::identity::{KeyID, identity_public_key::SecurityLevel};
+use dpp::identity::{identity_public_key::SecurityLevel, KeyID};
 
 #[cfg(feature = "server")]
 /// Everything related to withdrawals

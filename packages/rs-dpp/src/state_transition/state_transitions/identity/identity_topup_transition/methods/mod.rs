@@ -3,9 +3,9 @@ mod v0;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
@@ -14,9 +14,9 @@ use crate::state_transition::state_transitions::identity::identity_topup_transit
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
-use versioned_feature_core::FeatureVersion;
-#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;

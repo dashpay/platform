@@ -37,9 +37,9 @@ use nohash_hasher::IntMap;
 #[cfg(feature = "fee-distribution")]
 pub mod distribution;
 
+use crate::balances::credits::{Credits, SignedCredits};
 /// Epoch index type
 use crate::block::epoch::EpochIndex;
-use crate::balances::credits::{Credits, SignedCredits};
 
 /// Genesis epoch index
 pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;

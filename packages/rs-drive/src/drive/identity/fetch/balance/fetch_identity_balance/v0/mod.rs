@@ -6,9 +6,9 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use dpp::balances::credits::Credits;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::balances::credits::Credits;
 
 use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;

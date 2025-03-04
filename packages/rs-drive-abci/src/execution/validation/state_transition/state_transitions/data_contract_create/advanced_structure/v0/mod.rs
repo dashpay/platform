@@ -145,8 +145,8 @@ mod tests {
 
     mod validate_advanced_structure {
         use super::*;
-        use dpp::errors::consensus::ConsensusError;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::errors::consensus::ConsensusError;
         use dpp::prelude::{Identifier, IdentityNonce};
         use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
         use dpp::tests::fixtures::get_data_contract_fixture;

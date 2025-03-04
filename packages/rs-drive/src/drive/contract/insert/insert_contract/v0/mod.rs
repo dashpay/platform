@@ -19,9 +19,9 @@ use crate::drive::votes::paths::{
     CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
 };
 use crate::error::contract::DataContractError;
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use platform_version::version::PlatformVersion;
 use std::collections::{HashMap, HashSet};
 
 impl Drive {

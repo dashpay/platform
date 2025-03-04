@@ -11,11 +11,14 @@ use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
-use dpp::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::identity_public_key::Purpose::{AUTHENTICATION, TRANSFER};
 use dpp::identity::identity_public_key::SecurityLevel::{CRITICAL, MASTER};
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, identity_public_key::{Purpose, SecurityLevel}};
+use dpp::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
+use dpp::identity::KeyType::ECDSA_SECP256K1;
+use dpp::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    Identity, IdentityPublicKey, KeyID, KeyType,
+};
 use dpp::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;

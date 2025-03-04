@@ -8,9 +8,9 @@ use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
-use platform_version::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, TransactionArg};
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {

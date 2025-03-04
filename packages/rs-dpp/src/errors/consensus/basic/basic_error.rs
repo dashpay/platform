@@ -70,6 +70,7 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::consensus::ConsensusError;
 
+use crate::data_contract::errors::contract::DataContractError;
 use crate::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::errors::consensus::basic::overflow_error::OverflowError;
 use crate::errors::consensus::basic::token::{
@@ -84,7 +85,6 @@ use crate::errors::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
 use crate::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
-use crate::data_contract::errors::contract::DataContractError;
 
 #[derive(
     Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,

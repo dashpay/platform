@@ -16,8 +16,8 @@ use dpp::document::transfer::Transferable;
 use dpp::nft::TradeMode;
 use dpp::prelude::{CoreBlockHeight, TimestampMillis};
 use dpp::tests::json_document::json_document_to_contract;
-use platform_version::version::{PlatformVersion, ProtocolVersion};
 use drive::util::storage_flags::StorageFlags;
+use platform_version::version::{PlatformVersion, ProtocolVersion};
 use tempfile::TempDir;
 
 /// A test platform builder.

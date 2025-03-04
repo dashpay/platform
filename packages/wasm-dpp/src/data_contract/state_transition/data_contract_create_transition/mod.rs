@@ -14,7 +14,7 @@ use dpp::state_transition::StateTransitionIdentitySigned;
 
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::PlatformVersion;
-use dpp::{state_transition::StateTransitionLike, errors::ProtocolError};
+use dpp::{errors::ProtocolError, state_transition::StateTransitionLike};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 

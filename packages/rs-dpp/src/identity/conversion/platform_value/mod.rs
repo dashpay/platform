@@ -1,10 +1,10 @@
 mod v0;
 
-use crate::identity::{Identity, v0::IdentityV0};
-use crate::serialization::ValueConvertible;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use crate::identity::{v0::IdentityV0, Identity};
+use crate::serialization::ValueConvertible;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use platform_version::TryFromPlatformVersioned;
 pub use v0::IdentityPlatformValueConversionMethodsV0;
 

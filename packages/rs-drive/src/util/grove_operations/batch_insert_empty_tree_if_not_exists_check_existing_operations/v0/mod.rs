@@ -9,8 +9,8 @@ use crate::util::object_size_info::PathKeyInfo::{
 };
 use crate::util::storage_flags::StorageFlags;
 
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.

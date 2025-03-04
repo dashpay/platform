@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::identity::signer::Signer;
 use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::identity::signer::Signer;
 
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::ProtocolError;

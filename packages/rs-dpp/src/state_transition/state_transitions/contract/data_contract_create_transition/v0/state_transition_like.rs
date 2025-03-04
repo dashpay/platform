@@ -1,7 +1,5 @@
 use crate::prelude::UserFeeIncrease;
-use crate::{
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 

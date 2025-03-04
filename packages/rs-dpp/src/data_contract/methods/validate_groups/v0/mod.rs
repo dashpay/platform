@@ -1,7 +1,7 @@
-use crate::errors::consensus::basic::data_contract::NonContiguousContractGroupPositionsError;
 use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::Group;
 use crate::data_contract::{DataContract, GroupContractPosition};
+use crate::errors::consensus::basic::data_contract::NonContiguousContractGroupPositionsError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;

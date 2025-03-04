@@ -10,7 +10,11 @@ pub use dashcore;
 
 #[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
-pub use errors::{CompatibleProtocolVersionIsNotDefinedError, DPPError, DashPlatformProtocolInitError, InvalidVectorSizeError, NonConsensusError, ProtocolError, PublicKeyValidationError, SerdeParsingError};
+pub use errors::{
+    CompatibleProtocolVersionIsNotDefinedError, DPPError, DashPlatformProtocolInitError,
+    InvalidVectorSizeError, NonConsensusError, ProtocolError, PublicKeyValidationError,
+    SerdeParsingError,
+};
 
 pub mod data_contract;
 pub mod document;

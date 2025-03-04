@@ -1,5 +1,5 @@
-use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use crate::state_transition::state_transitions::document::batch_transition::fields::*;
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use crate::state_transition::{
     JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
 };

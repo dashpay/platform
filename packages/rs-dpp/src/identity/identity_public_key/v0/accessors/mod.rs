@@ -1,7 +1,7 @@
-use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::identity_public_key::KeyType;
 use crate::identity::identity_public_key::Purpose;

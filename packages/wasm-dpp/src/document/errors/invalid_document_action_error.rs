@@ -1,7 +1,9 @@
 // use crate::document::state_transition::document_batch_transition::batched_transition::from_document_transition_to_js_value;
-use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::{DocumentTransition, action_type::TransitionActionTypeGetter};
-use thiserror::Error;
 use super::*;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::{
+    action_type::TransitionActionTypeGetter, DocumentTransition,
+};
+use thiserror::Error;
 
 #[wasm_bindgen]
 #[derive(Error, Debug)]

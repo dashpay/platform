@@ -38,6 +38,8 @@ impl ferment::FFIConversionFrom<JsonSchemaValidator> for dpp_validation_JsonSche
 }
 impl ferment::FFIConversionTo<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
     unsafe fn ffi_to_const(obj: JsonSchemaValidator) -> *const Self {
-        ferment::boxed(dpp_validation_JsonSchemaValidator { validator: obj.validator })
+        ferment::boxed(dpp_validation_JsonSchemaValidator {
+            validator: obj.validator,
+        })
     }
 }

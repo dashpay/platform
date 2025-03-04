@@ -1,10 +1,8 @@
-use platform_value::{Identifier, platform_value};
+use platform_value::{platform_value, Identifier};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::{
-    data_contract::DataContractFactory, tests::utils::generate_random_identifier_struct,
-};
 use crate::prelude::IdentityNonce;
+use crate::{data_contract::DataContractFactory, tests::utils::generate_random_identifier_struct};
 
 pub fn get_data_contract_fixture(
     owner_id: Option<Identifier>,

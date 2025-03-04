@@ -205,7 +205,6 @@ enum SdkInstance {
 }
 
 impl Sdk {
-
     pub fn maybe_dapi_client(&self) -> Option<&DapiClient> {
         match &self.inner {
             SdkInstance::Dapi { dapi, .. } => Some(dapi),

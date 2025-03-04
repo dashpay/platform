@@ -7,7 +7,10 @@ use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
-use dpp::identity::{KeyID, identity_public_key::{Purpose, contract_bounds::ContractBounds}};
+use dpp::identity::{
+    identity_public_key::{contract_bounds::ContractBounds, Purpose},
+    KeyID,
+};
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

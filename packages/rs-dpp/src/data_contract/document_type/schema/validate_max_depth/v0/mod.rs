@@ -2,10 +2,10 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeSet;
 
+use crate::data_contract::document_type::schema::MaxDepthValidationResult;
 use crate::errors::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::errors::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::errors::consensus::basic::BasicError;
-use crate::data_contract::document_type::schema::MaxDepthValidationResult;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::ConsensusValidationResult;
 

@@ -25,4 +25,3 @@ impl From<AssetLockTransactionIsNotFoundError> for DPPError {
         Self::AssetLockTransactionIsNotFoundError(error)
     }
 }
-

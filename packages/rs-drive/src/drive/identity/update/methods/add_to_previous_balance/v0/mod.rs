@@ -6,8 +6,8 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::balances::credits::MAX_CREDITS;
 use dpp::balances::credits::Credits;
+use dpp::balances::credits::MAX_CREDITS;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

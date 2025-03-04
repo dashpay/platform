@@ -10,8 +10,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 
-use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document using bincode serialization

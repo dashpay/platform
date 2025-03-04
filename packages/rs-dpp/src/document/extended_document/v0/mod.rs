@@ -16,8 +16,8 @@ use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
-use crate::util::hash::hash_double_to_vec;
 use crate::errors::ProtocolError;
+use crate::util::hash::hash_double_to_vec;
 
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
@@ -394,7 +394,9 @@ impl ExtendedDocumentV0 {
         );
         value_mut.insert(
             property_names::DATA_CONTRACT_ID.to_string(),
-            serde_json::Value::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
+            serde_json::Value::String(
+                bs58::encode(self.data_contract_id.to_buffer()).into_string(),
+            ),
         );
         Ok(value)
     }

@@ -1,6 +1,6 @@
+use crate::errors::ProtocolError;
 use crate::serialization::PlatformDeserializable;
 use crate::state_transition::StateTransition;
-use crate::errors::ProtocolError;
 
 impl StateTransition {
     pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {

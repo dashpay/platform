@@ -98,24 +98,24 @@ impl RandomDocumentTypeParameters {
     }
 }
 
-use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 // #[cfg(feature = "validation")]
 // use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use crate::data_contract::document_type::property::{ByteArrayPropertySizes, StringPropertySizes};
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
-use crate::data_contract::document_type::property::{ByteArrayPropertySizes, StringPropertySizes};
 use crate::document::transfer::Transferable;
+use crate::errors::ProtocolError;
 use crate::identity::identity_public_key::SecurityLevel;
 use crate::nft::TradeMode;
-use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use platform_value::{platform_value, Identifier};
+use platform_version::version::PlatformVersion;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;

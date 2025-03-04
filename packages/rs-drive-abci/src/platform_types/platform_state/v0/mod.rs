@@ -30,8 +30,8 @@ use dpp::fee::default_costs::{
     CachedEpochIndexFeeVersions, CachedEpochIndexFeeVersionsFieldsBeforeVersion4,
     EpochIndexFeeVersionsForStorage,
 };
-use platform_version::version::fee::FeeVersion;
 use itertools::Itertools;
+use platform_version::version::fee::FeeVersion;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 

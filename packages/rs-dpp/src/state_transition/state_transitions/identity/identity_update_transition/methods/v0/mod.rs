@@ -1,18 +1,18 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, identity_public_key::IdentityPublicKey};
+use crate::identity::{identity_public_key::IdentityPublicKey, Identity};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
-use versioned_feature_core::FeatureVersion;
-#[cfg(feature = "state-transition-signing")]
 use crate::{identity::identity_public_key::KeyID, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 pub trait IdentityUpdateTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

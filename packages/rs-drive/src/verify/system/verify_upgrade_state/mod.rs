@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::verify::RootHash;
 
 use dpp::util::deserializer::ProtocolVersion;
-use platform_version::version::PlatformVersion;
 use nohash_hasher::IntMap;
+use platform_version::version::PlatformVersion;
 
 mod v0;
 

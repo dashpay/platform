@@ -30,11 +30,11 @@ use crate::drive::document::paths::{
     contract_documents_primary_key_path,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use platform_version::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 

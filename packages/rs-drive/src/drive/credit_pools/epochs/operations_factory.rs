@@ -15,8 +15,8 @@ use crate::drive::credit_pools::epochs::epoch_key_constants::{
 use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::balances::credits::Creditable;
-use dpp::block::epoch::Epoch;
 use dpp::balances::credits::Credits;
+use dpp::block::epoch::Epoch;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;

@@ -20,9 +20,9 @@ use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDese
 use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
-use platform_version::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
+use platform_version::version::PlatformVersion;
 
 use platform_value::{Identifier, Value};
 use versioned_feature_core::FeatureVersion;

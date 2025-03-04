@@ -10,7 +10,7 @@ use crate::errors::consensus::ConsensusError;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, identity_public_key::IdentityPublicKey};
+use crate::identity::{identity_public_key::IdentityPublicKey, Identity};
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
@@ -27,17 +27,14 @@ use crate::state_transition::state_transitions::identity::public_key_in_creation
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
+use crate::{identity::identity_public_key::KeyID, prelude::Revision};
+#[cfg(feature = "state-transition-signing")]
+use crate::{identity::identity_public_key::SecurityLevel, ProtocolError};
+use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-signing")]
 use versioned_feature_core::FeatureVersion;
-use platform_value::Identifier;
-use crate::{
-    identity::identity_public_key::KeyID,
-    prelude::Revision,
-};
-#[cfg(feature = "state-transition-signing")]
-use crate::{identity::identity_public_key::SecurityLevel, ProtocolError};
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<'a, S: Signer>(

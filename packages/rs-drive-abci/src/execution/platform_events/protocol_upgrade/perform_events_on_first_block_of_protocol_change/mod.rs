@@ -6,8 +6,8 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use platform_version::version::ProtocolVersion;
 use drive::grovedb::Transaction;
+use platform_version::version::ProtocolVersion;
 
 impl<C> Platform<C> {
     /// Executes protocol-specific events on the first block after a protocol version change.

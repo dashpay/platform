@@ -12,15 +12,15 @@ use platform_value::Value;
 #[cfg(feature = "identity-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::identity::PartialIdentity;
 use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
+use crate::identity::PartialIdentity;
 use crate::prelude::Revision;
 
 #[cfg(feature = "identity-value-conversion")]
 use crate::errors::ProtocolError;
-use platform_value::Identifier;
 #[cfg(feature = "identity-serialization")]
 use bincode::{Decode, Encode};
+use platform_value::Identifier;
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform

@@ -6,10 +6,10 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use dpp::block::block_info::BlockInfo;
 
-use platform_version::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::TransactionArg;
 use itertools::Itertools;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Convert a batch of drive operations to a batch of grove database operations.

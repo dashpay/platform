@@ -26,8 +26,8 @@ use crate::identity::state_transition::AssetLockProved;
 use crate::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use platform_version::version::PlatformVersion;
 use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(

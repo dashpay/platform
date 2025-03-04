@@ -1,12 +1,12 @@
 use dpp::platform_value::Error as ValueError;
 use dpp::util::deserializer::ProtocolVersion;
-use versioned_feature_core::FeatureVersion;
 use dpp::ProtocolError;
 use drive::error::proof::ProofError;
 use drive::error::query::QuerySyntaxError as SyntaxError;
 use drive::error::Error as DriveError;
 use prost::DecodeError;
 use tenderdash_abci::proto::abci::ResponseException;
+use versioned_feature_core::FeatureVersion;
 
 // @append_only
 /// Errors

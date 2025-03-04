@@ -8,13 +8,15 @@ use dash_sdk::{
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
+        document_type::{
+            accessors::DocumentTypeV0Getters, random_document::CreateRandomDocument, DocumentType,
+        },
         DataContract,
-        document_type::{accessors::DocumentTypeV0Getters, random_document::CreateRandomDocument, DocumentType},
     },
     document::Document,
-    identity::{Identity, accessors::IdentityGettersV0, v0::IdentityV0},
+    identity::{accessors::IdentityGettersV0, v0::IdentityV0, Identity},
+    platform_value::Identifier,
     version::PlatformVersion,
-    platform_value::Identifier
 };
 
 #[tokio::test]

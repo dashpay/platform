@@ -22,7 +22,10 @@ impl<'a> DocumentJsonMethodsV0<'a> for Document {
     }
 
     /// Convert the document to a JSON value.
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
+    fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError> {
         match self {
             Document::V0(v0) => v0.to_json(platform_version),
         }

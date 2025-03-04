@@ -1,4 +1,3 @@
-use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
@@ -6,12 +5,13 @@ use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
 use chrono::Utc;
 use std::collections::BTreeMap;
 
+use crate::errors::ProtocolError;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 
 use platform_value::{Bytes32, Identifier, Value};
 

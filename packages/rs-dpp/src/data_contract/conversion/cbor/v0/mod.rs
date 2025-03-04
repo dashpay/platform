@@ -1,7 +1,7 @@
-use crate::util::cbor_value::CborCanonicalMap;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use crate::util::cbor_value::CborCanonicalMap;
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 
 pub trait DataContractCborConversionMethodsV0 {
     fn from_cbor_with_id(

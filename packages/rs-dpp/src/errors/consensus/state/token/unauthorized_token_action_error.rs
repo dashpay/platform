@@ -1,6 +1,6 @@
+use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::errors::consensus::state::state_error::StateError;
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

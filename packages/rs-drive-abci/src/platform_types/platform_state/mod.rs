@@ -18,9 +18,11 @@ use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 
-use platform_version::{version::PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
 use indexmap::IndexMap;
+use platform_version::{
+    version::PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned,
+};
 
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;

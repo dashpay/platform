@@ -17,9 +17,9 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use platform_version::version::PlatformVersion;
 use std::collections::{HashMap, HashSet};
 
 impl Drive {

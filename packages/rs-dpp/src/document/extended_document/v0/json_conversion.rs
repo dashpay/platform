@@ -30,7 +30,10 @@ impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
         Ok(json)
     }
 
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
+    fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError> {
         let mut json = self.document.to_json(platform_version)?;
         let value_mut = json.as_object_mut().unwrap();
         let contract = self.data_contract.to_json(platform_version)?;

@@ -1,6 +1,10 @@
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use crate::{data_contract::DataContract, identity::identity_public_key::KeyID, errors::{NonConsensusError, ProtocolError}};
+use crate::{
+    data_contract::DataContract,
+    errors::{NonConsensusError, ProtocolError},
+    identity::identity_public_key::KeyID,
+};
 
 use crate::serialization::Signable;
 

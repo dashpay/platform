@@ -1,9 +1,9 @@
-use crate::errors::consensus::basic::data_contract::DataContractTokenConfigurationUpdateError;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
+use crate::errors::consensus::basic::data_contract::DataContractTokenConfigurationUpdateError;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Identifier;

@@ -1,7 +1,7 @@
-use crate::identity::v0::IdentityV0;
 use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
-use platform_value::Identifier;
+use crate::identity::v0::IdentityV0;
 use crate::ProtocolError;
+use platform_value::Identifier;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::KeyCount;

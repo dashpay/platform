@@ -4,11 +4,11 @@ use crate::block::extended_block_info::v0::{
 };
 use crate::errors::ProtocolError;
 
-use versioned_feature_core::FeatureVersion;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
+use versioned_feature_core::FeatureVersion;
 
 pub mod v0;
 

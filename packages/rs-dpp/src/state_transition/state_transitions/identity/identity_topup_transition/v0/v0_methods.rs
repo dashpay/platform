@@ -1,16 +1,16 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-use platform_value::Identifier;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use dashcore::signer;
+use platform_value::Identifier;
 
 use crate::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;

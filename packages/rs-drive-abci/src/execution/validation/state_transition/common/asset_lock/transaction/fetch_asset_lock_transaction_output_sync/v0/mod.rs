@@ -1,14 +1,14 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::TxOut;
 use dpp::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
     InvalidAssetLockProofTransactionHeightError,
 };
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::TxOut;
-use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;

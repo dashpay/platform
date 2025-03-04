@@ -5,10 +5,10 @@ use rand::prelude::StdRng;
 
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
+use crate::errors::ProtocolError;
 use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use platform_version::version::PlatformVersion;
-use crate::errors::ProtocolError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
 pub enum DocumentFieldFillType {

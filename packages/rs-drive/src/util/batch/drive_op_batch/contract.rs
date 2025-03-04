@@ -12,9 +12,9 @@ use crate::util::batch::drive_op_batch::finalize_task::{
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use platform_version::version::PlatformVersion;
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 

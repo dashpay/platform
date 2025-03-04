@@ -6,9 +6,9 @@ use crate::error::contract::DataContractError::{CorruptedDataContract, ProvidedC
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_USIZE;
-use dpp::data_contract::DataContract;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

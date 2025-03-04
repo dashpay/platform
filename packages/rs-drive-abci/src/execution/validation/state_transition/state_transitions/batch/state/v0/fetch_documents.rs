@@ -1,9 +1,11 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::epoch::Epoch;
-use dpp::errors::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
-use dpp::errors::consensus::basic::BasicError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::errors::consensus::basic::document::{
+    DataContractNotPresentError, InvalidDocumentTypeError,
+};
+use dpp::errors::consensus::basic::BasicError;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 

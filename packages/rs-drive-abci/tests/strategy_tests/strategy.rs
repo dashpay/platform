@@ -18,9 +18,12 @@ use strategy_tests::operations::{
     OperationType, TokenOp,
 };
 
-use dpp::document::DocumentV0Getters;
 use dpp::balances::credits::Credits;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, identity_public_key::{Purpose, SecurityLevel}};
+use dpp::document::DocumentV0Getters;
+use dpp::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    Identity, IdentityPublicKey, KeyID, KeyType,
+};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;

@@ -1,5 +1,5 @@
-use crate::identity::state_transition::AssetLockProved;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::state_transition::AssetLockProved;
 use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::ProtocolError;
 

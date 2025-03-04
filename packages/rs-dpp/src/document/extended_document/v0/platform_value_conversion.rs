@@ -1,8 +1,8 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::property_names;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 use platform_value::Value;
 use std::collections::BTreeMap;

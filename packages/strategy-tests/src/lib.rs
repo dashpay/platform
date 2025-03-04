@@ -25,7 +25,10 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, identity_public_key::{Purpose, SecurityLevel}};
+use dpp::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    Identity, KeyID, KeyType, PartialIdentity,
+};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,

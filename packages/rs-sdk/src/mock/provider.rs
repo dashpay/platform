@@ -6,13 +6,13 @@ use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dpp::data_contract::DataContract;
+use dpp::platform_value::Identifier;
 use dpp::prelude::CoreBlockHeight;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use dpp::platform_value::Identifier;
 
 /// Context provider that uses the Core gRPC API to fetch data from Platform.
 ///

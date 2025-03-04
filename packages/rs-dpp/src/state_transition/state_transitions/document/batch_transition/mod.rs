@@ -48,14 +48,15 @@ mod validation;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::state_transitions::contract::data_contract_update_transition::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
+    SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
+};
 
 use crate::state_transition::state_transitions::document::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
 pub use v1::*;
-
 
 #[derive(
     Debug,

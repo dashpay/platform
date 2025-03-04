@@ -7,8 +7,8 @@ use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 use crate::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
 use crate::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
 use crate::query::token_status_drive_query::TokenStatusDriveQuery;
-use platform_version::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 mod v0;
 

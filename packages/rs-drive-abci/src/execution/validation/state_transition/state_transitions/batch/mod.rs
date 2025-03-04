@@ -244,10 +244,8 @@ mod tests {
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
+    use dpp::balances::credits::Credits;
     use dpp::block::block_info::BlockInfo;
-    use dpp::errors::consensus::basic::BasicError;
-    use dpp::errors::consensus::state::state_error::StateError;
-    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -259,8 +257,10 @@ mod tests {
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::transfer::Transferable;
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::state::state_error::StateError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::fee::fee_result::BalanceChange;
-    use dpp::balances::credits::Credits;
     use dpp::group::GroupStateTransitionInfo;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;

@@ -51,10 +51,10 @@ use crate::data_contract::serialized_version::{
 };
 use crate::util::hash::hash_double_to_vec;
 
-use platform_version::version::protocol_version::PlatformVersion;
-use versioned_feature_core::FeatureVersion;
 use crate::errors::ProtocolError;
 use crate::errors::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 pub use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
@@ -337,8 +337,8 @@ mod tests {
     use crate::tests::fixtures::{
         get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
     };
-    use platform_version::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_contract_serialization() {

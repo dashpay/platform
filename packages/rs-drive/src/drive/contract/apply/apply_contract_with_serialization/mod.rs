@@ -7,9 +7,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::collections::HashMap;
 

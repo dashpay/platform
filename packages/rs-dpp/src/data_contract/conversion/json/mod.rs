@@ -33,7 +33,10 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
         }
     }
 
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<serde_json::Value, ProtocolError> {
+    fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.to_json(platform_version),
             DataContract::V1(v1) => v1.to_json(platform_version),

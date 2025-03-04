@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 mod get_raw_for_contract;
 mod get_raw_for_document_type;

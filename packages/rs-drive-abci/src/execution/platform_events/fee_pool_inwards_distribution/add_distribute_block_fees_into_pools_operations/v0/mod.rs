@@ -3,8 +3,8 @@ use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
-use dpp::block::epoch::Epoch;
 use dpp::balances::credits::Credits;
+use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use drive::util::batch::DriveOperation;
 

@@ -1,5 +1,5 @@
-use crate::identity::v0::IdentityV0;
 use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
+use crate::identity::v0::IdentityV0;
 use crate::prelude::Revision;
 
 #[cfg(feature = "identity-hashing")]

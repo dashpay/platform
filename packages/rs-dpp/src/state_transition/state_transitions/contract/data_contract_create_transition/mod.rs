@@ -13,12 +13,12 @@ mod version;
 use fields::*;
 
 use crate::data_contract::DataContract;
-use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
+use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_version::version::PlatformVersion;
 
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;

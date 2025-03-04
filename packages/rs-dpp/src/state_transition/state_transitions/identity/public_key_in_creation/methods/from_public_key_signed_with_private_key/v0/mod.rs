@@ -3,7 +3,7 @@ use crate::identity::identity_public_key::IdentityPublicKey;
 use crate::serialization::PlatformMessageSignable;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::{BlsModule, errors::ProtocolError};
+use crate::{errors::ProtocolError, BlsModule};
 
 impl IdentityPublicKeyInCreation {
     #[inline(always)]

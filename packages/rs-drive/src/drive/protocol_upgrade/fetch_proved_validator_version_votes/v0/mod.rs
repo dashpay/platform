@@ -5,8 +5,8 @@ use std::ops::RangeFull;
 
 use crate::error::query::QuerySyntaxError;
 use crate::query::QueryItem;
-use platform_version::version::drive_versions::DriveVersion;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetch versions by validators for the upgrade window and return them as a proved item

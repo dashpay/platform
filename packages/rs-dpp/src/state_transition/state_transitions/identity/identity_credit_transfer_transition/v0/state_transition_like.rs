@@ -3,9 +3,7 @@ use base64::Engine;
 use platform_value::{BinaryData, Identifier};
 
 use crate::prelude::UserFeeIncrease;
-use crate::{
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
 use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;

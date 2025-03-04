@@ -6,13 +6,13 @@ use crate::identity::identity_public_key::KeyType;
 
 use serde::{Deserialize, Serialize};
 
+use crate::errors::ProtocolError;
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
-use platform_version::version::PlatformVersion;
 #[cfg(feature = "message-signing")]
 use crate::BlsModule;
-use crate::errors::ProtocolError;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 
 pub trait Signable {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError>;

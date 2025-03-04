@@ -1,10 +1,10 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::{Document, ExtendedDocument};
+use crate::errors::ProtocolError;
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
-use crate::errors::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
 

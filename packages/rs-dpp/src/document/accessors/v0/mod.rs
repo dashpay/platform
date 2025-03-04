@@ -5,8 +5,8 @@ use platform_value::Value;
 use std::collections::BTreeMap;
 
 use crate::identity::TimestampMillis;
-use platform_value::Identifier;
 use crate::prelude::Revision;
+use platform_value::Identifier;
 
 pub trait DocumentV0Getters {
     /// Returns the unique document ID.

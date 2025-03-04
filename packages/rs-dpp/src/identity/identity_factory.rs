@@ -7,7 +7,10 @@ use crate::identity::state_transition::AssetLockProved;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::v0::IdentityV0;
 
-use crate::identity::{Identity, identity_public_key::{IdentityPublicKey, KeyID}};
+use crate::identity::{
+    identity_public_key::{IdentityPublicKey, KeyID},
+    Identity,
+};
 
 use crate::errors::ProtocolError;
 

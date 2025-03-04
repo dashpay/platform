@@ -4,9 +4,9 @@ use crate::data_contract::conversion::value::v0::DataContractValueConversionMeth
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::DataContract;
-use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 
 impl DataContractValueConversionMethodsV0 for DataContract {
     fn from_value(

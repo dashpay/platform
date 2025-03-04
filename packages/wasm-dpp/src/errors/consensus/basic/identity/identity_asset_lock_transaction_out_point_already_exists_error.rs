@@ -1,7 +1,7 @@
+use dpp::dashcore::hashes::Hash;
 use dpp::errors::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::errors::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
 
 use wasm_bindgen::prelude::*;
 

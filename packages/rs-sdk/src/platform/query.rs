@@ -29,6 +29,8 @@ use dapi_grpc::platform::v0::{
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::block::epoch::EpochIndex;
+use dpp::identifier::Identifier;
+use dpp::version::PlatformVersionError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
@@ -38,8 +40,6 @@ use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
-use dpp::identifier::Identifier;
-use dpp::version::PlatformVersionError;
 
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;

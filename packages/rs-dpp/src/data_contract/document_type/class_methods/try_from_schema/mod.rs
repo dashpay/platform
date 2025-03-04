@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::validation::operations::ProtocolValidationOperation;
 use crate::errors::ProtocolError;
+use crate::validation::operations::ProtocolValidationOperation;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

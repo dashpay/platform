@@ -3,8 +3,8 @@ use crate::drive::Drive;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::balances::credits::MAX_CREDITS;
 use dpp::balances::credits::Credits;
+use dpp::balances::credits::MAX_CREDITS;
 use grovedb::Element;
 
 impl Drive {

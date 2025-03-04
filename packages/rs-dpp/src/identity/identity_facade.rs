@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::{Identity, identity_public_key::{IdentityPublicKey, KeyID}};
+use crate::identity::{
+    identity_public_key::{IdentityPublicKey, KeyID},
+    Identity,
+};
 use crate::prelude::IdentityNonce;
 use platform_value::Identifier;
 
@@ -19,9 +22,9 @@ use crate::state_transition::state_transitions::identity::{
     public_key_in_creation::IdentityPublicKeyInCreation,
 };
 
+use crate::errors::ProtocolError;
 use crate::identity::core_script::CoreScript;
 use crate::withdrawal::Pooling;
-use crate::errors::ProtocolError;
 
 #[derive(Clone)]
 pub struct IdentityFacade {

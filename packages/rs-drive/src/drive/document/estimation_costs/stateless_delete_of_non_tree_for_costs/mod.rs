@@ -7,8 +7,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 
 use crate::error::drive::DriveError;
-use platform_version::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
+use platform_version::version::PlatformVersion;
 
 use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
 

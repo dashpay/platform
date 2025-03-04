@@ -4,8 +4,8 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 use crate::document::Document;
-use crate::validation::SimpleConsensusValidationResult;
 use crate::errors::ProtocolError;
+use crate::validation::SimpleConsensusValidationResult;
 pub use v0::*;
 
 impl DataContractDocumentValidationMethodsV0 for DataContract {

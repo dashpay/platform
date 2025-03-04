@@ -26,7 +26,11 @@ pub trait JsonValueExt {
     fn remove_into<K: DeserializeOwned>(&mut self, property_name: &str)
         -> Result<K, anyhow::Error>;
     /// assumes the Json Value is a map and tries to insert the given value under given property
-    fn insert(&mut self, property_name: String, value: serde_json::Value) -> Result<(), anyhow::Error>;
+    fn insert(
+        &mut self,
+        property_name: String,
+        value: serde_json::Value,
+    ) -> Result<(), anyhow::Error>;
     /// assumes the Json Value is an array and tries to add value to the array
     fn push(&mut self, value: serde_json::Value) -> Result<(), anyhow::Error>;
     fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error>;
@@ -37,11 +41,13 @@ pub trait JsonValueExt {
     fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
     /// returns the the mutable JsonValue from provided path. The path is dot-separated string. i.e `properties.id`
-    fn get_value_mut(&mut self, string_path: &str) -> Result<&mut serde_json::Value, anyhow::Error>;
+    fn get_value_mut(&mut self, string_path: &str)
+        -> Result<&mut serde_json::Value, anyhow::Error>;
     /// returns the the JsonValue from provided path. The path is dot-separated string. i.e `properties[0].id`
     fn get_value(&self, string_path: &str) -> Result<&serde_json::Value, anyhow::Error>;
     /// return  the JsonValue from from provided path. The path is a slice of [`JsonPathStep`]
-    fn get_value_by_path(&self, path: &[JsonPathStep]) -> Result<&serde_json::Value, anyhow::Error>;
+    fn get_value_by_path(&self, path: &[JsonPathStep])
+        -> Result<&serde_json::Value, anyhow::Error>;
     /// return  the mutable JsonValue from from provided path. The path is a slice of [`JsonPathStep`]
     fn get_value_by_path_mut(
         &mut self,
@@ -59,7 +65,11 @@ pub trait JsonValueExt {
 
     /// Insert value under the path. Path is dot-separated string. i.e `properties[0].id`. If parents don't
     /// exists they will be created
-    fn insert_with_path(&mut self, path: &str, value: serde_json::Value) -> Result<(), anyhow::Error>;
+    fn insert_with_path(
+        &mut self,
+        path: &str,
+        value: serde_json::Value,
+    ) -> Result<(), anyhow::Error>;
 
     /// Removes data from given path and tries deserialize it into provided type
     fn remove_value_at_path_into<K: DeserializeOwned>(
@@ -80,7 +90,11 @@ impl JsonValueExt for serde_json::Value {
         }
     }
 
-    fn insert(&mut self, property_name: String, value: serde_json::Value) -> Result<(), anyhow::Error> {
+    fn insert(
+        &mut self,
+        property_name: String,
+        value: serde_json::Value,
+    ) -> Result<(), anyhow::Error> {
         match self.as_object_mut() {
             Some(map) => {
                 map.insert(property_name, value);
@@ -271,7 +285,10 @@ impl JsonValueExt for serde_json::Value {
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
-    fn get_value_mut(&mut self, string_path: &str) -> Result<&mut serde_json::Value, anyhow::Error> {
+    fn get_value_mut(
+        &mut self,
+        string_path: &str,
+    ) -> Result<&mut serde_json::Value, anyhow::Error> {
         let path_literal: JsonPathLiteral = string_path.into();
         let path: JsonPath = path_literal.try_into().unwrap();
         get_value_from_json_path_mut(&path, self)
@@ -287,7 +304,10 @@ impl JsonValueExt for serde_json::Value {
     }
 
     /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
-    fn get_value_by_path(&self, path: &[JsonPathStep]) -> Result<&serde_json::Value, anyhow::Error> {
+    fn get_value_by_path(
+        &self,
+        path: &[JsonPathStep],
+    ) -> Result<&serde_json::Value, anyhow::Error> {
         get_value_from_json_path(path, self)
             .ok_or_else(|| anyhow!("the property '{:?}' not found", path))
     }
@@ -379,7 +399,8 @@ impl JsonValueExt for serde_json::Value {
 
 fn identifier_filter(value: &serde_json::Value) -> bool {
     if let serde_json::Value::Object(object) = value {
-        if let Some(serde_json::Value::String(media_type)) = object.get(PROPERTY_CONTENT_MEDIA_TYPE) {
+        if let Some(serde_json::Value::String(media_type)) = object.get(PROPERTY_CONTENT_MEDIA_TYPE)
+        {
             return media_type == platform_value::IDENTIFIER_MEDIA_TYPE;
         }
     }
@@ -387,7 +408,10 @@ fn identifier_filter(value: &serde_json::Value) -> bool {
 }
 
 /// returns the value from the JsonValue based on the path: i.e "root.data[0].id"
-pub fn get_value_mut<'a>(string_path: &str, value: &'a mut serde_json::Value) -> Option<&'a mut serde_json::Value> {
+pub fn get_value_mut<'a>(
+    string_path: &str,
+    value: &'a mut serde_json::Value,
+) -> Option<&'a mut serde_json::Value> {
     let path_literal: JsonPathLiteral = string_path.into();
     let path: JsonPath = path_literal.try_into().unwrap();
     get_value_from_json_path_mut(&path, value)
