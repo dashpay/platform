@@ -284,6 +284,8 @@ pub enum TestStateError {
     #[cfg(feature = "state-transition-validation")]
     Conditional,
 }
+
+#[cfg(feature = "ferment")]
 pub mod fermented {
     use ferment::{boxed, FFIConversionFrom, FFIConversionTo};
 

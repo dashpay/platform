@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersion;
+use platform_version::version::FeatureVersion;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

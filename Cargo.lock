@@ -1316,7 +1316,6 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1475,7 +1474,6 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1864,7 +1862,6 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2991,7 +2988,6 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5116,7 +5112,6 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5685,7 +5680,6 @@ dependencies = [
  "platform-version",
  "serde_json",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6031,7 +6025,6 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "thiserror 1.0.64",
- "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

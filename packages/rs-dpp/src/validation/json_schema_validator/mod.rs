@@ -27,15 +27,20 @@ impl DataValidator for JsonSchemaValidator {
 }
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[ferment_macro::register(dpp::validation::json_schema_validator::JsonSchemaValidator)]
+#[cfg_attr(
+    feature = "ferment",
+    ferment_macro::register(dpp::validation::json_schema_validator::JsonSchemaValidator)
+)]
 pub struct dpp_validation_JsonSchemaValidator {
     validator: RwLock<Option<jsonschema::JSONSchema>>,
 }
+#[cfg(feature = "ferment")]
 impl ferment::FFIConversionFrom<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
     unsafe fn ffi_from_const(_ffi: *const Self) -> JsonSchemaValidator {
         JsonSchemaValidator::new()
     }
 }
+#[cfg(feature = "ferment")]
 impl ferment::FFIConversionTo<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
     unsafe fn ffi_to_const(obj: JsonSchemaValidator) -> *const Self {
         ferment::boxed(dpp_validation_JsonSchemaValidator {

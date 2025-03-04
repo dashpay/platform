@@ -84,7 +84,7 @@ mocks = [
   "zeroize/serde",
 ]
 
-apple = ["dpp/apple"]
+apple = ["dpp/apple", "drive-proof-verifier/apple"]
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #
