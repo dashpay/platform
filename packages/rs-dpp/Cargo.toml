@@ -127,7 +127,7 @@ dash-sdk-features = [
   #  "json-object",
   #  "platform-value",
   #  "system_contracts",
-  # "validation", # TODO: This one is big
+  "validation",                    # TODO: This one is big
   "identity-hashing",
   "data-contract-json-conversion",
   #  "identity-serialization",

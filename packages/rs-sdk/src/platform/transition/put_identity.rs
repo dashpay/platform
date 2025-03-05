@@ -1,10 +1,8 @@
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
-use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
-use crate::{Error, Sdk};
-
 use super::broadcast::BroadcastStateTransition;
+use super::broadcast_identity::BroadcastRequestForNewIdentity;
 use super::put_settings::PutSettings;
 use super::waitable::Waitable;
+use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};

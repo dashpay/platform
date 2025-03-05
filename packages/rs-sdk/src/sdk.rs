@@ -727,7 +727,7 @@ pub struct SdkBuilder {
 
     /// Dash Core network type used by the SDK.
     ///
-    /// Defaults to [NETWORK_MAINNET](crate::networks::NETWORK_MAINNET).
+    /// Defaults to [Network::Dash].
     network: Network,
 
     /// If true, request and verify proofs of the responses.
@@ -856,11 +856,12 @@ impl SdkBuilder {
     /// Configure network type to connect to.
     ///
     /// Consider using one of these:
-    /// * [NETWORK_MAINNET](crate::networks::NETWORK_MAINNET).
-    /// * [NETWORK_TESTNET](crate::networks::NETWORK_TESTNET),
-    /// * [NETWORK_LOCAL](crate::networks::NETWORK_LOCAL),
+    /// * [Network::Dash] for mainnet,
+    /// * [Network::Testnet] for testnet,
+    /// * [Network::Devnet] for testing, QA, staging and similar environments,
+    /// * [Network::Regtest] for local development environments (eg. whole network started with dashmate on one host).
     ///
-    /// Defaults to [NETWORK_MAINNET](crate::networks::NETWORK_MAINNET).
+    /// Defaults to [Network::Dash].
     ///
     /// For more control over the configuration, use [SdkBuilder::with_network_settings()].
     pub fn with_network(mut self, network: Network) -> Self {

@@ -58,7 +58,7 @@ impl AssetLockProofVerifier for AssetLockProof {
                 // To verify instant asset lock, we need to:
                 //
                 // 1. Determine quorum hash used to sign it.
-                // 2. Detch quorum public key for this hash.
+                // 2. Fetch quorum public key for this hash.
                 // 3. Verify instant asset lock signature.
                 //
                 // Unfortunately, determining quorum used to sign the instant asset lock is not straightforward,

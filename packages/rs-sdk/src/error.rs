@@ -72,7 +72,7 @@ pub enum Error {
     ///
     /// - core locked height in asset lock
     /// - current core locked height on the platform
-    #[error("Asset lock for core locked height {core_locked_height_in_asset_lock} not available yet, max avaiable locked core height is {core_locked_height_on_platform}; try again later")]
+    #[error("Asset lock for core locked height {core_locked_height_in_asset_lock} not available yet, max available locked core height is {core_locked_height_on_platform}; try again later")]
     CoreLockedHeightNotYetAvailable {
         core_locked_height_in_asset_lock: u32,
         core_locked_height_on_platform: u32,
