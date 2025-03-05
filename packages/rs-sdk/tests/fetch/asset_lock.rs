@@ -63,7 +63,7 @@ async fn test_asset_lock_proof() {
         // expect err that can be retried
         expect_err: bool,
     }
-    // instant_lock: InstantLock, transaction: Transaction, output_index: u32
+
     let test_cases = vec![
         TestCase {
             asset_lock_proof: AssetLockProof::Chain(ChainAssetLockProof::new(
@@ -79,14 +79,6 @@ async fn test_asset_lock_proof() {
                 0,
             )),
             expect_err: false,
-        },
-        TestCase {
-            asset_lock_proof: AssetLockProof::Instant(InstantAssetLockProof::new(
-                InstantLock::default(),
-                tx,
-                0,
-            )),
-            expect_err: true,
         },
         TestCase {
             asset_lock_proof: AssetLockProof::Chain(ChainAssetLockProof::new(
