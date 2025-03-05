@@ -45,10 +45,10 @@ impl AssetLockProofVerifier for AssetLockProof {
             AssetLockProof::Chain(asset_lock) => {
                 let platform_core_chain_locked_height = fetch_platform_locked_height(sdk).await?;
                 if asset_lock.core_chain_locked_height > platform_core_chain_locked_height {
-                    Err(Error::CoreLockedHeightNotYetAvailable(
-                        asset_lock.core_chain_locked_height,
-                        platform_core_chain_locked_height,
-                    ))
+                    Err(Error::CoreLockedHeightNotYetAvailable {
+                        core_locked_height_in_asset_lock: asset_lock.core_chain_locked_height,
+                        core_locked_height_on_platform: platform_core_chain_locked_height,
+                    })
                 } else {
                     Ok(())
                 }

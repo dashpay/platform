@@ -70,10 +70,13 @@ pub enum Error {
     ///
     /// ## Parameters
     ///
-    /// - 0 - core locked height in asset lock
-    /// - 1 - current core locked height on the platform
-    #[error("Asset lock for core locked height {0} not available yet, max avaiable locked core height is {1}; try again later")]
-    CoreLockedHeightNotYetAvailable(u32, u32),
+    /// - core locked height in asset lock
+    /// - current core locked height on the platform
+    #[error("Asset lock for core locked height {core_locked_height_in_asset_lock} not available yet, max avaiable locked core height is {core_locked_height_on_platform}; try again later")]
+    CoreLockedHeightNotYetAvailable {
+        core_locked_height_in_asset_lock: u32,
+        core_locked_height_on_platform: u32,
+    },
 
     /// Provided asset lock is invalid
     ///
@@ -210,7 +213,7 @@ impl CanRetry for Error {
             self,
             Error::StaleNode(..)
                 | Error::TimeoutReached(_, _)
-                | Error::CoreLockedHeightNotYetAvailable(_, _)
+                | Error::CoreLockedHeightNotYetAvailable { .. }
                 | Error::QuorumNotFound { .. }
         )
     }
