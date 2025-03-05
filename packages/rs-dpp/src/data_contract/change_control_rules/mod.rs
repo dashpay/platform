@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ChangeControlRules {
     V0(ChangeControlRulesV0),
 }

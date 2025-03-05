@@ -16,8 +16,10 @@ pub mod v0;
 
 pub type RequiredSigners = u8;
 
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type GroupMemberPower = u32;
 pub type GroupSumPower = u32;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type GroupRequiredPower = u32;
 #[derive(
     Serialize,
@@ -32,6 +34,7 @@ pub type GroupRequiredPower = u32;
     Eq,
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Group {
     V0(GroupV0),
 }

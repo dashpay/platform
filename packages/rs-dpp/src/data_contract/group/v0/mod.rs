@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
     Eq,
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupV0 {
     pub members: BTreeMap<Identifier, GroupMemberPower>,
     pub required_power: GroupRequiredPower,

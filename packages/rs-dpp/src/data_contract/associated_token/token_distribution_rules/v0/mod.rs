@@ -13,6 +13,7 @@ use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenDistributionRulesV0 {
     #[serde(default)]
     pub perpetual_distribution: Option<TokenPerpetualDistribution>,

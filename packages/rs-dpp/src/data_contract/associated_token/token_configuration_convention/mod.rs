@@ -7,6 +7,7 @@ pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
 #[serde(tag = "$format_version")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenConfigurationConvention {
     #[serde(rename = "0")]
     V0(TokenConfigurationConventionV0),

@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ChangeControlRulesV0 {
     /// This is who is authorized to make such a change
     pub authorized_to_make_change: AuthorizedActionTakers,
