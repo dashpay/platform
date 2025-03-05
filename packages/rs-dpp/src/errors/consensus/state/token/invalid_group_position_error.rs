@@ -18,9 +18,10 @@ use thiserror::Error;
     }
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidGroupPositionError {
-    max_group_position: Option<GroupContractPosition>,
-    invalid_group_position: GroupContractPosition,
+    pub max_group_position: Option<GroupContractPosition>,
+    pub invalid_group_position: GroupContractPosition,
 }
 
 impl InvalidGroupPositionError {

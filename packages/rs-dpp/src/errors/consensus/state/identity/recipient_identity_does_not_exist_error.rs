@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Recipient identity {} does not exist", recipient_id)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct RecipientIdentityDoesNotExistError {
-    recipient_id: Identifier,
+    pub recipient_id: Identifier,
 }
 
 impl RecipientIdentityDoesNotExistError {

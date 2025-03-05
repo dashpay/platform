@@ -11,9 +11,10 @@ use thiserror::Error;
 )]
 #[error("Token {} is not paused. Action attempted: {}", token_id, action)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenNotPausedError {
-    token_id: Identifier,
-    action: String,
+    pub token_id: Identifier,
+    pub action: String,
 }
 
 impl TokenNotPausedError {

@@ -14,11 +14,12 @@ use thiserror::Error;
     "Identity {identity_id} is not authorized to perform action: {action} on token: {token_id}. Authorized action takers: {authorized_action_takers:?}",    
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnauthorizedTokenActionError {
-    token_id: Identifier,
-    identity_id: Identifier,
-    action: String,
-    authorized_action_takers: AuthorizedActionTakers,
+    pub token_id: Identifier,
+    pub identity_id: Identifier,
+    pub action: String,
+    pub authorized_action_takers: AuthorizedActionTakers,
 }
 
 impl UnauthorizedTokenActionError {

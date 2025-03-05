@@ -14,11 +14,12 @@ use thiserror::Error;
     "Token {token_id} attempted to mint {amount}, which exceeds the max supply {max_supply}, current supply is {current_supply}"
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenMintPastMaxSupplyError {
-    token_id: Identifier,
-    amount: TokenAmount,
-    current_supply: TokenAmount,
-    max_supply: TokenAmount,
+    pub token_id: Identifier,
+    pub amount: TokenAmount,
+    pub current_supply: TokenAmount,
+    pub max_supply: TokenAmount,
 }
 
 impl TokenMintPastMaxSupplyError {

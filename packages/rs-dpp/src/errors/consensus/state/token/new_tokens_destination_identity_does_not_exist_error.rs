@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("The specified new tokens destination identity {identity_id} does not exist")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct NewTokensDestinationIdentityDoesNotExistError {
-    identity_id: Identifier,
+    pub identity_id: Identifier,
 }
 
 impl NewTokensDestinationIdentityDoesNotExistError {

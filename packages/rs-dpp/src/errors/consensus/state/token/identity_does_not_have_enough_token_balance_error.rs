@@ -18,12 +18,13 @@ use thiserror::Error;
     action
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityDoesNotHaveEnoughTokenBalanceError {
-    token_id: Identifier,
-    identity_id: Identifier,
-    required_balance: u64,
-    actual_balance: u64,
-    action: String,
+    pub token_id: Identifier,
+    pub identity_id: Identifier,
+    pub required_balance: u64,
+    pub actual_balance: u64,
+    pub action: String,
 }
 
 impl IdentityDoesNotHaveEnoughTokenBalanceError {

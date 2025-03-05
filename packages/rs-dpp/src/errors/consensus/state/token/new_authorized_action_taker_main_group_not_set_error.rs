@@ -12,6 +12,7 @@ use thiserror::Error;
     "The specified new authorized action taker main group is not set in the token configuration"
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct NewAuthorizedActionTakerMainGroupNotSetError {}
 
 impl NewAuthorizedActionTakerMainGroupNotSetError {
