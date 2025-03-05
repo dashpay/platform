@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Destination identity for minting not set for token {}", token_id)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DestinationIdentityForTokenMintingNotSetError {
-    token_id: Identifier,
+    pub token_id: Identifier,
 }
 
 impl DestinationIdentityForTokenMintingNotSetError {

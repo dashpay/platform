@@ -15,14 +15,15 @@ use thiserror::Error;
     followed_position
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct NonContiguousContractGroupPositionsError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    missing_position: GroupContractPosition,
-    followed_position: GroupContractPosition,
+    pub missing_position: GroupContractPosition,
+    pub followed_position: GroupContractPosition,
 }
 
 impl NonContiguousContractGroupPositionsError {

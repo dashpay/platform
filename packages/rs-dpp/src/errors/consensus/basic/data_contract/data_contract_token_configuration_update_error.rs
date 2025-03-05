@@ -12,16 +12,17 @@ use bincode::{Decode, Encode};
 )]
 #[error("Forbidden operation '{operation}' on '{field_path}', old config is {old_config}, new config is {new_config}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractTokenConfigurationUpdateError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    operation: String,
-    field_path: String,
-    old_config: TokenConfiguration,
-    new_config: TokenConfiguration,
+    pub operation: String,
+    pub field_path: String,
+    pub old_config: TokenConfiguration,
+    pub new_config: TokenConfiguration,
 }
 
 impl DataContractTokenConfigurationUpdateError {

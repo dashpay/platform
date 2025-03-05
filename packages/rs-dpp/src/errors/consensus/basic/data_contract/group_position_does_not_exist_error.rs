@@ -12,8 +12,9 @@ use thiserror::Error;
 )]
 #[error("Group position {} does not exist", missing_group_position)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupPositionDoesNotExistError {
-    missing_group_position: GroupContractPosition,
+    pub missing_group_position: GroupContractPosition,
 }
 
 impl GroupPositionDoesNotExistError {

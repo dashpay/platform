@@ -14,10 +14,11 @@ use thiserror::Error;
     "Member {member_id} has a power of {power}, which exceeds the allowed limit of {max_power}"
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupMemberHasPowerOverLimitError {
-    member_id: Identifier,
-    power: GroupMemberPower,
-    max_power: GroupMemberPower,
+    pub member_id: Identifier,
+    pub power: GroupMemberPower,
+    pub max_power: GroupMemberPower,
 }
 
 impl GroupMemberHasPowerOverLimitError {

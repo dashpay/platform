@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Contract {} has no tokens", contract_id)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ContractHasNoTokensError {
-    contract_id: Identifier,
+    pub contract_id: Identifier,
 }
 
 impl ContractHasNoTokensError {

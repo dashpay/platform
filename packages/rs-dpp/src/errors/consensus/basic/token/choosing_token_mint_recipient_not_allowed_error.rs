@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Choosing token mint recipient not allowed for token {}", token_id)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ChoosingTokenMintRecipientNotAllowedError {
-    token_id: Identifier,
+    pub token_id: Identifier,
 }
 
 impl ChoosingTokenMintRecipientNotAllowedError {

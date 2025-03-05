@@ -15,9 +15,10 @@ use thiserror::Error;
     max_token_position
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenPositionError {
-    max_token_position: TokenContractPosition,
-    invalid_token_position: TokenContractPosition,
+    pub max_token_position: TokenContractPosition,
+    pub invalid_token_position: TokenContractPosition,
 }
 
 impl InvalidTokenPositionError {

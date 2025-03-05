@@ -11,9 +11,10 @@ use thiserror::Error;
 )]
 #[error("Group total power {total_power} is less than the required power {required_power}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupTotalPowerLessThanRequiredError {
-    total_power: GroupMemberPower,
-    required_power: GroupMemberPower,
+    pub total_power: GroupMemberPower,
+    pub required_power: GroupMemberPower,
 }
 
 impl GroupTotalPowerLessThanRequiredError {

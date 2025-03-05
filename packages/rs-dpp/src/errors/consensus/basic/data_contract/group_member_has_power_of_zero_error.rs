@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Member {member_id} has a power of 0, which is not allowed")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupMemberHasPowerOfZeroError {
-    member_id: Identifier,
+    pub member_id: Identifier,
 }
 
 impl GroupMemberHasPowerOfZeroError {

@@ -10,8 +10,9 @@ use thiserror::Error;
 )]
 #[error("Group action is not allowed during transition: {}", transition_type)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupActionNotAllowedOnTransitionError {
-    transition_type: String,
+    pub transition_type: String,
 }
 
 impl GroupActionNotAllowedOnTransitionError {

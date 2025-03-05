@@ -14,9 +14,10 @@ use thiserror::Error;
     expected_token_id
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenIdError {
-    expected_token_id: Identifier,
-    invalid_token_id: Identifier,
+    pub expected_token_id: Identifier,
+    pub invalid_token_id: Identifier,
 }
 
 impl InvalidTokenIdError {

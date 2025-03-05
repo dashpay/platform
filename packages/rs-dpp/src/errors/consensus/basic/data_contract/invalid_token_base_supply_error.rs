@@ -14,13 +14,14 @@ use bincode::{Decode, Encode};
     i64::MAX
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenBaseSupplyError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    base_supply: u64,
+    pub base_supply: u64,
 }
 
 impl InvalidTokenBaseSupplyError {

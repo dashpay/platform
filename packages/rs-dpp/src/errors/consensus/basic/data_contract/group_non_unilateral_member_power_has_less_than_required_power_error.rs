@@ -11,9 +11,10 @@ use thiserror::Error;
 )]
 #[error("The collective power of non-unilateral members {total_power} is less than the required power {required_power}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError {
-    total_power: GroupMemberPower,
-    required_power: GroupMemberPower,
+    pub total_power: GroupMemberPower,
+    pub required_power: GroupMemberPower,
 }
 
 impl GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError {

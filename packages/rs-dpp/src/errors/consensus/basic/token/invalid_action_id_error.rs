@@ -14,9 +14,10 @@ use thiserror::Error;
     expected_action_id
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidActionIdError {
-    expected_action_id: Identifier,
-    invalid_action_id: Identifier,
+    pub expected_action_id: Identifier,
+    pub invalid_action_id: Identifier,
 }
 
 impl InvalidActionIdError {
