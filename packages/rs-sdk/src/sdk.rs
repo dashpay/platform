@@ -5,7 +5,7 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
-use crate::networks::{NetworkSettings, NETWORK_MAINNET};
+use crate::networks::{NetworkConfiguration, NetworkSettings, NETWORK_MAINNET};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
@@ -97,7 +97,7 @@ pub type LastQueryTimestamp = u64;
 pub struct Sdk {
     inner: SdkInstance,
     /// Type of network we use. Determines some parameters, like quorum types.
-    network: Network,
+    network: NetworkSettings,
     /// Use proofs when retrieving data from the platform.
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
@@ -278,7 +278,7 @@ impl Sdk {
 
     /// Get configured Dash Core network type.
     pub fn core_network(&self) -> Network {
-        self.network.core_network()
+        self.network_settings().to_network()
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
@@ -305,7 +305,7 @@ impl Sdk {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
-                self.network.core_network(),
+                self.core_network(),
                 self.version(),
                 &provider,
             ),
@@ -533,7 +533,7 @@ impl Sdk {
     }
 
     /// Return configuration of quorum, like type of quorum used for instant lock.
-    pub(crate) fn network_settings(&self) -> Network {
+    pub(crate) fn network_settings(&self) -> impl NetworkConfiguration {
         self.network
     }
 

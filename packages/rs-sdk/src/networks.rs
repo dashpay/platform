@@ -33,16 +33,24 @@ pub const NETWORK_MAINNET: Network = Network::Dash;
 /// Official testnet network
 pub const NETWORK_TESTNET: Network = Network::Testnet;
 
+/// Devnets are small networks started for the needs of development, QA, staging, etc.
+pub const NETWORK_DEVNET: Network = Network::Devnet;
+
 /// Local development network, run in containers on a local machine for development purposess
 pub const NETWORK_LOCAL: Network = Network::Regtest;
-pub trait NetworkSettings {
-    fn core_network(&self) -> Network;
 
+pub trait NetworkConfiguration {
+    /// Returns the core network type of the current network.
+    fn to_network(&self) -> Network;
+    /// Type of quorum used by chain locks on this network.
     fn chain_locks_quorum_type(&self) -> QuorumType;
 }
 
-impl NetworkSettings for Network {
-    fn core_network(&self) -> Network {
+/// Configuration of the blockchain network.
+pub type NetworkSettings = Network;
+
+impl NetworkConfiguration for Network {
+    fn to_network(&self) -> Network {
         *self
     }
 
