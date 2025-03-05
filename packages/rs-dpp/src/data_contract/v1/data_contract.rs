@@ -44,6 +44,7 @@ use crate::metadata::Metadata;
 ///
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractV1 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.
