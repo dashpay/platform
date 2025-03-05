@@ -710,7 +710,7 @@ impl DapiRequestExecutor for Sdk {
 /// Mandatory steps of initialization in normal mode are:
 ///
 /// 1. Create an instance of [SdkBuilder] with [`SdkBuilder::new()`]
-/// 2. Set up network type with [`SdkBuilder::with_network_settings()`] (not needed for mock)
+/// 2. Set up network type with [`SdkBuilder::with_network()`]
 /// 3. Configure the builder with [`SdkBuilder::with_core()`]
 /// 4. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
 pub struct SdkBuilder {
@@ -811,7 +811,7 @@ impl SdkBuilder {
     ///
     /// It creates new SdkBuilder, preconfigured to connect to provided addresses.
     ///
-    /// Once created, you need to set [NetworkType] with [`SdkBuilder::with_network_settings()`].
+    /// Once created, consider setting the [Network] with [`SdkBuilder::with_network()`].
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
@@ -862,8 +862,6 @@ impl SdkBuilder {
     /// * [Network::Regtest] for local development environments (eg. whole network started with dashmate on one host).
     ///
     /// Defaults to [Network::Dash].
-    ///
-    /// For more control over the configuration, use [SdkBuilder::with_network_settings()].
     pub fn with_network(mut self, network: Network) -> Self {
         self.network = network;
         self
