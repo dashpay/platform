@@ -11,14 +11,15 @@ use thiserror::Error;
 )]
 #[error("Action '{action}' is not allowed on Data Contract {data_contract_id}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractUpdateActionNotAllowedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
-    action: String,
+    pub data_contract_id: Identifier,
+    pub action: String,
 }
 
 impl DataContractUpdateActionNotAllowedError {

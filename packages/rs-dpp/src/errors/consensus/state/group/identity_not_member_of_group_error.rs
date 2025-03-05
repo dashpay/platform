@@ -17,10 +17,11 @@ use thiserror::Error;
     group_contract_position
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityNotMemberOfGroupError {
-    identity_id: Identifier,
-    data_contract_id: Identifier,
-    group_contract_position: GroupContractPosition,
+    pub identity_id: Identifier,
+    pub data_contract_id: Identifier,
+    pub group_contract_position: GroupContractPosition,
 }
 
 impl IdentityNotMemberOfGroupError {
