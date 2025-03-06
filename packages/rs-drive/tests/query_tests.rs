@@ -630,7 +630,7 @@ impl Domain {
             let label = first_names.choose(&mut rng).unwrap();
             let domain = Domain {
                 id: Identifier::random_with_rng(&mut rng),
-                owner_id: if let Some(_) = total_owners {
+                owner_id: if total_owners.is_some() {
                     // Pick a random owner from the owners list
                     *owners.choose(&mut rng).unwrap()
                 } else {
@@ -4728,7 +4728,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
 #[test]
 fn test_dpns_query_first_version() {
     let platform_version = PlatformVersion::first();
-    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, &platform_version);
+    let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -6117,8 +6117,6 @@ fn test_dpns_query_start_after_with_null_id() {
         &drive.config,
     )
     .expect("query should be built");
-
-    println!("{:?}", query);
 
     // We are commenting this out on purpose to make it easier to find
     // let mut query_operations: Vec<QueryOperation> = vec![];

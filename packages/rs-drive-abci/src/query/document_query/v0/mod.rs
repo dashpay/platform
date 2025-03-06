@@ -131,8 +131,6 @@ impl<C> Platform<C> {
                 &self.config.drive,
             ));
 
-        println!("{:?}", drive_query);
-
         let response = if prove {
             let proof =
                 match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
@@ -185,7 +183,6 @@ mod tests {
     use crate::query::tests::{
         assert_invalid_identifier, setup_platform, store_data_contract, store_document,
     };
-    use assert_matches::assert_matches;
     use ciborium::value::Value as CborValue;
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -521,7 +518,7 @@ mod tests {
         );
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -559,7 +556,7 @@ mod tests {
             .expect("expected to verify proof");
 
         assert_eq!(documents.len(), 1);
-        assert_eq!(documents.get(0).expect("first"), &random_document);
+        assert_eq!(documents.first().expect("first"), &random_document);
     }
 
     #[test]
@@ -594,7 +591,7 @@ mod tests {
         }
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -679,7 +676,7 @@ mod tests {
             .to_buffer();
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
