@@ -270,9 +270,13 @@ where
             })?; // This is a system error
 
         // Rebroadcast expired withdrawals if they exist
+        // We do that before we mark withdrawals as expired
+        // to rebroadcast them on the next block but not the same
+        // one
+        // TODO: It must be also only on core height change
         self.rebroadcast_expired_withdrawal_documents(
             &block_info,
-            &last_committed_platform_state,
+            last_committed_platform_state,
             transaction,
             platform_version,
         )?;
@@ -364,7 +368,7 @@ where
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees
-        let processed_block_fees = self.process_block_fees(
+        let processed_block_fees = self.process_block_fees_and_validate_sum_trees(
             &block_execution_context,
             block_fees_v0.into(),
             transaction,

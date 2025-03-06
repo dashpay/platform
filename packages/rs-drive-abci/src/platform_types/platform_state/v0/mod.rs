@@ -1,9 +1,11 @@
+mod old_structures;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::dashcore::{ProTxHash, QuorumHash};
 
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore::hashes::Hash;
@@ -126,7 +128,7 @@ fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode)]
-pub struct PlatformStateForSavingV0 {
+pub(super) struct PlatformStateForSavingV0 {
     /// Information about the genesis block
     pub genesis_block_info: Option<BlockInfo>,
     /// Information about the last block
@@ -143,7 +145,7 @@ pub struct PlatformStateForSavingV0 {
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
     #[bincode(with_serde)]
-    pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
+    pub validator_sets: Vec<(Bytes32, old_structures::OldStructureValidatorSet)>,
 
     /// The quorums used for validating chain locks
     pub chain_lock_validating_quorums: SignatureVerificationQuorumSetForSaving,
@@ -267,7 +269,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
             validator_sets: value
                 .validator_sets
                 .into_iter()
-                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
+                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
             chain_lock_validating_quorums: value.chain_lock_validating_quorums.into(),
             instant_lock_validating_quorums: value.instant_lock_validating_quorums.into(),

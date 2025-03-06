@@ -1,0 +1,62 @@
+{
+  "contract": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "referenceType": "contract",
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byKeyword",
+        "properties": [
+          {
+            "keyword": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "keyword": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 50,
+        "position": 0
+      }
+    },
+    "required": [
+      "$contractId",
+      "keyword"
+    ],
+    "additionalProperties": false
+  },
+  "token": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "referenceType": "token",
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byKeyword",
+        "properties": [
+          {
+            "keyword": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "keyword": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 50,
+        "position": 0
+      }
+    },
+    "required": [
+      "$tokenId",
+      "keyword"
+    ],
+    "additionalProperties": false
+  }
+}

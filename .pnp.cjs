@@ -66,6 +66,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/platform-test-suite"\
     },\
     {\
+      "name": "@dashevo/token-history-contract",\
+      "reference": "workspace:packages/token-history-contract"\
+    },\
+    {\
       "name": "@dashevo/wallet-lib",\
       "reference": "workspace:packages/wallet-lib"\
     },\
@@ -97,6 +101,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],\
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
+    ["@dashevo/token-history-contract", ["workspace:packages/token-history-contract"]],\
     ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
     ["@dashevo/wallet-utils-contract", ["workspace:packages/wallet-utils-contract"]],\
     ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
@@ -2569,7 +2574,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
           ["lodash", "npm:4.17.21"],\
           ["mathjs", "npm:10.4.3"],\
-          ["mocha", "npm:10.2.0"]\
+          ["mocha", "npm:11.1.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2617,7 +2622,7 @@ const RAW_RUNTIME_STATE =
           ["jayson", "npm:4.1.0"],\
           ["lodash", "npm:4.17.21"],\
           ["lru-cache", "npm:5.1.1"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["nyc", "npm:15.1.0"],\
           ["pino", "npm:8.16.2"],\
@@ -2668,7 +2673,7 @@ const RAW_RUNTIME_STATE =
           ["karma-mocha-reporter", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.2.5"],\
           ["karma-webpack", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:5.0.0"],\
           ["lodash", "npm:4.17.21"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["node-fetch", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:2.6.7"],\
           ["node-inspect-extracted", "npm:1.0.8"],\
           ["nyc", "npm:15.1.0"],\
@@ -2707,7 +2712,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
           ["google-protobuf", "npm:3.19.1"],\
           ["long", "npm:5.2.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
@@ -2738,7 +2743,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
           ["levelup", "npm:4.4.0"],\
           ["memdown", "npm:5.1.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["should", "npm:13.2.3"],\
           ["sinon", "npm:17.0.1"],\
           ["wasm-x11-hash", "npm:0.0.2"]\
@@ -2809,7 +2814,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -2851,7 +2856,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -2869,7 +2874,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -2893,7 +2898,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
           ["lodash", "npm:4.17.21"],\
           ["long", "npm:5.2.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["nyc", "npm:15.1.0"],\
           ["semver", "npm:7.5.3"],\
@@ -2914,7 +2919,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -2979,7 +2984,7 @@ const RAW_RUNTIME_STATE =
           ["karma-sourcemap-loader", "npm:0.3.8"],\
           ["karma-webpack", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:5.0.0"],\
           ["localforage", "npm:1.10.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["net", "npm:1.0.2"],\
           ["nodeforage", "npm:1.1.2"],\
           ["os-browserify", "npm:0.3.0"],\
@@ -3032,6 +3037,24 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@dashevo/token-history-contract", [\
+      ["workspace:packages/token-history-contract", {\
+        "packageLocation": "./packages/token-history-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/token-history-contract", "workspace:packages/token-history-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["eslint", "npm:8.53.0"],\
+          ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
+          ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
+          ["mocha", "npm:11.1.0"],\
+          ["sinon", "npm:17.0.1"],\
+          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
     ["@dashevo/wallet-lib", [\
       ["workspace:packages/wallet-lib", {\
         "packageLocation": "./packages/wallet-lib/",\
@@ -3067,7 +3090,7 @@ const RAW_RUNTIME_STATE =
           ["karma-sourcemap-loader", "npm:0.3.8"],\
           ["karma-webpack", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:5.0.0"],\
           ["lodash", "npm:4.17.21"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["node-inspect-extracted", "npm:1.0.8"],\
           ["nyc", "npm:15.1.0"],\
           ["os-browserify", "npm:0.3.0"],\
@@ -3102,7 +3125,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -3150,7 +3173,7 @@ const RAW_RUNTIME_STATE =
           ["karma-webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.0.0"],\
           ["lodash", "npm:4.17.21"],\
           ["long", "npm:5.2.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["sinon", "npm:17.0.1"],\
@@ -3181,7 +3204,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
@@ -3527,15 +3550,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@jridgewell/source-map", [\
-      ["npm:0.3.2", {\
-        "packageLocation": "./.yarn/cache/@jridgewell-source-map-npm-0.3.2-6fd1f37b22-1aaa42075b.zip/node_modules/@jridgewell/source-map/",\
-        "packageDependencies": [\
-          ["@jridgewell/source-map", "npm:0.3.2"],\
-          ["@jridgewell/gen-mapping", "npm:0.3.3"],\
-          ["@jridgewell/trace-mapping", "npm:0.3.18"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:0.3.6", {\
         "packageLocation": "./.yarn/cache/@jridgewell-source-map-npm-0.3.6-fe0849eb05-0a9aca9320.zip/node_modules/@jridgewell/source-map/",\
         "packageDependencies": [\
@@ -3903,7 +3917,7 @@ const RAW_RUNTIME_STATE =
           ["chalk", "npm:4.1.2"],\
           ["clean-stack", "npm:3.0.1"],\
           ["cli-progress", "npm:3.12.0"],\
-          ["debug", "virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4"],\
+          ["debug", "virtual:02719845fd5201c955bdd7a997ac097487e4abbecfc5636e22f31b749d9380689c8965647293b3e329ccc5fe1790fddb1d7f8791f5385e4538cbcf7c463cfc82#npm:4.3.4"],\
           ["ejs", "npm:3.1.10"],\
           ["get-package-type", "npm:0.1.0"],\
           ["globby", "npm:11.1.0"],\
@@ -3937,7 +3951,7 @@ const RAW_RUNTIME_STATE =
           ["chalk", "npm:4.1.2"],\
           ["clean-stack", "npm:3.0.1"],\
           ["cli-progress", "npm:3.12.0"],\
-          ["debug", "virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4"],\
+          ["debug", "virtual:02719845fd5201c955bdd7a997ac097487e4abbecfc5636e22f31b749d9380689c8965647293b3e329ccc5fe1790fddb1d7f8791f5385e4538cbcf7c463cfc82#npm:4.3.4"],\
           ["ejs", "npm:3.1.10"],\
           ["get-package-type", "npm:0.1.0"],\
           ["globby", "npm:11.1.0"],\
@@ -3972,7 +3986,7 @@ const RAW_RUNTIME_STATE =
           ["clean-stack", "npm:3.0.1"],\
           ["cli-progress", "npm:3.12.0"],\
           ["color", "npm:4.2.3"],\
-          ["debug", "virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4"],\
+          ["debug", "virtual:02719845fd5201c955bdd7a997ac097487e4abbecfc5636e22f31b749d9380689c8965647293b3e329ccc5fe1790fddb1d7f8791f5385e4538cbcf7c463cfc82#npm:4.3.4"],\
           ["ejs", "npm:3.1.10"],\
           ["get-package-type", "npm:0.1.0"],\
           ["globby", "npm:11.1.0"],\
@@ -5214,15 +5228,6 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
-    ["@ungap/promise-all-settled", [\
-      ["npm:1.1.2", {\
-        "packageLocation": "./.yarn/cache/@ungap-promise-all-settled-npm-1.1.2-c0f42e147b-ee8fe811be.zip/node_modules/@ungap/promise-all-settled/",\
-        "packageDependencies": [\
-          ["@ungap/promise-all-settled", "npm:1.1.2"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
     ["@ungap/structured-clone", [\
       ["npm:1.2.0", {\
         "packageLocation": "./.yarn/cache/@ungap-structured-clone-npm-1.2.0-648f0b82e0-c6fe89a505.zip/node_modules/@ungap/structured-clone/",\
@@ -6057,6 +6062,13 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/ansi-colors-npm-4.1.1-97ad42f223-e862fddd0a.zip/node_modules/ansi-colors/",\
         "packageDependencies": [\
           ["ansi-colors", "npm:4.1.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:4.1.3", {\
+        "packageLocation": "./.yarn/cache/ansi-colors-npm-4.1.3-8ffd0ae6c7-43d6e2fc7b.zip/node_modules/ansi-colors/",\
+        "packageDependencies": [\
+          ["ansi-colors", "npm:4.1.3"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -7507,6 +7519,21 @@ const RAW_RUNTIME_STATE =
           ["readdirp", "npm:3.6.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.6.0", {\
+        "packageLocation": "./.yarn/cache/chokidar-npm-3.6.0-3c413a828f-c327fb0770.zip/node_modules/chokidar/",\
+        "packageDependencies": [\
+          ["chokidar", "npm:3.6.0"],\
+          ["anymatch", "npm:3.1.2"],\
+          ["braces", "npm:3.0.2"],\
+          ["fsevents", "patch:fsevents@npm%3A2.3.2#optional!builtin<compat/fsevents>::version=2.3.2&hash=df0bf1"],\
+          ["glob-parent", "npm:5.1.2"],\
+          ["is-binary-path", "npm:2.1.0"],\
+          ["is-glob", "npm:4.0.3"],\
+          ["normalize-path", "npm:3.0.0"],\
+          ["readdirp", "npm:3.6.0"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["chownr", [\
@@ -7690,6 +7717,16 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/cliui-npm-7.0.4-d6b8a9edb6-db858c49af.zip/node_modules/cliui/",\
         "packageDependencies": [\
           ["cliui", "npm:7.0.4"],\
+          ["string-width", "npm:4.2.3"],\
+          ["strip-ansi", "npm:6.0.1"],\
+          ["wrap-ansi", "npm:7.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:8.0.1", {\
+        "packageLocation": "./.yarn/cache/cliui-npm-8.0.1-3b029092cf-eaa5561aeb.zip/node_modules/cliui/",\
+        "packageDependencies": [\
+          ["cliui", "npm:8.0.1"],\
           ["string-width", "npm:4.2.3"],\
           ["strip-ansi", "npm:6.0.1"],\
           ["wrap-ansi", "npm:7.0.0"]\
@@ -8524,7 +8561,7 @@ const RAW_RUNTIME_STATE =
           ["karma-mocha", "npm:2.0.1"],\
           ["karma-mocha-reporter", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.2.5"],\
           ["karma-webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.0.0"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["net", "npm:1.0.2"],\
           ["node-inspect-extracted", "npm:1.0.8"],\
           ["nodemon", "npm:2.0.20"],\
@@ -8537,12 +8574,11 @@ const RAW_RUNTIME_STATE =
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
           ["string_decoder", "npm:1.3.0"],\
-          ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.3"],\
+          ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.11"],\
           ["tls", "npm:0.0.1"],\
           ["ts-loader", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:9.5.0"],\
-          ["ts-mocha", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.0.0"],\
           ["ts-mock-imports", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:1.3.8"],\
-          ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.1"],\
+          ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.2"],\
           ["tsd", "npm:0.28.1"],\
           ["typescript", "patch:typescript@npm%3A3.9.10#optional!builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
           ["url", "npm:0.11.3"],\
@@ -8597,7 +8633,7 @@ const RAW_RUNTIME_STATE =
           ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:5.0.7"],\
           ["lodash", "npm:4.17.21"],\
           ["memory-streams", "npm:0.1.3"],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["node-forge", "npm:1.3.1"],\
           ["node-graceful", "npm:3.1.0"],\
@@ -8610,7 +8646,7 @@ const RAW_RUNTIME_STATE =
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
-          ["systeminformation", "npm:5.22.11"],\
+          ["systeminformation", "npm:5.25.11"],\
           ["table", "npm:6.8.1"],\
           ["tar", "npm:7.4.3"],\
           ["wrap-ansi", "npm:7.0.0"]\
@@ -8658,13 +8694,6 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["npm:4.3.3", {\
-        "packageLocation": "./.yarn/cache/debug-npm-4.3.3-710fd4cc7f-723a9570dc.zip/node_modules/debug/",\
-        "packageDependencies": [\
-          ["debug", "npm:4.3.3"]\
-        ],\
-        "linkType": "SOFT"\
-      }],\
       ["npm:4.3.4", {\
         "packageLocation": "./.yarn/cache/debug-npm-4.3.4-4513954577-0073c3bcbd.zip/node_modules/debug/",\
         "packageDependencies": [\
@@ -8678,6 +8707,27 @@ const RAW_RUNTIME_STATE =
           ["debug", "npm:4.3.5"]\
         ],\
         "linkType": "SOFT"\
+      }],\
+      ["npm:4.4.0", {\
+        "packageLocation": "./.yarn/cache/debug-npm-4.4.0-f6efe76023-1847944c2e.zip/node_modules/debug/",\
+        "packageDependencies": [\
+          ["debug", "npm:4.4.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:02719845fd5201c955bdd7a997ac097487e4abbecfc5636e22f31b749d9380689c8965647293b3e329ccc5fe1790fddb1d7f8791f5385e4538cbcf7c463cfc82#npm:4.3.4", {\
+        "packageLocation": "./.yarn/__virtual__/debug-virtual-8dcd8821e8/0/cache/debug-npm-4.3.4-4513954577-0073c3bcbd.zip/node_modules/debug/",\
+        "packageDependencies": [\
+          ["debug", "virtual:02719845fd5201c955bdd7a997ac097487e4abbecfc5636e22f31b749d9380689c8965647293b3e329ccc5fe1790fddb1d7f8791f5385e4538cbcf7c463cfc82#npm:4.3.4"],\
+          ["@types/supports-color", null],\
+          ["ms", "npm:2.1.2"],\
+          ["supports-color", "npm:8.1.1"]\
+        ],\
+        "packagePeers": [\
+          "@types/supports-color",\
+          "supports-color"\
+        ],\
+        "linkType": "HARD"\
       }],\
       ["virtual:2a426afc4b2eef43db12a540d29c2b5476640459bfcd5c24f86bb401cf8cce97e63bd81794d206a5643057e7f662643afd5ce3dfc4d4bfd8e706006c6309c5fa#npm:3.2.7", {\
         "packageLocation": "./.yarn/__virtual__/debug-virtual-d2345003b7/0/cache/debug-npm-3.2.7-754e818c7a-d86fd7be2b.zip/node_modules/debug/",\
@@ -8735,12 +8785,12 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4", {\
-        "packageLocation": "./.yarn/__virtual__/debug-virtual-762d08cbe9/0/cache/debug-npm-4.3.4-4513954577-0073c3bcbd.zip/node_modules/debug/",\
+      ["virtual:7c863baca008f921c1e24f38003335491c058753bf49ebec53a1a774c2d4d1d76e539a4898cf50421ee0c2f73a2b57bfc16cfbb7223a003be922dfa7447aac72#npm:4.4.0", {\
+        "packageLocation": "./.yarn/__virtual__/debug-virtual-451630b954/0/cache/debug-npm-4.4.0-f6efe76023-1847944c2e.zip/node_modules/debug/",\
         "packageDependencies": [\
-          ["debug", "virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4"],\
+          ["debug", "virtual:7c863baca008f921c1e24f38003335491c058753bf49ebec53a1a774c2d4d1d76e539a4898cf50421ee0c2f73a2b57bfc16cfbb7223a003be922dfa7447aac72#npm:4.4.0"],\
           ["@types/supports-color", null],\
-          ["ms", "npm:2.1.2"],\
+          ["ms", "npm:2.1.3"],\
           ["supports-color", "npm:8.1.1"]\
         ],\
         "packagePeers": [\
@@ -8756,20 +8806,6 @@ const RAW_RUNTIME_STATE =
           ["@types/supports-color", null],\
           ["ms", "npm:2.0.0"],\
           ["supports-color", null]\
-        ],\
-        "packagePeers": [\
-          "@types/supports-color",\
-          "supports-color"\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3", {\
-        "packageLocation": "./.yarn/__virtual__/debug-virtual-0dd0b2b0b9/0/cache/debug-npm-4.3.3-710fd4cc7f-723a9570dc.zip/node_modules/debug/",\
-        "packageDependencies": [\
-          ["debug", "virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3"],\
-          ["@types/supports-color", null],\
-          ["ms", "npm:2.1.2"],\
-          ["supports-color", "npm:8.1.1"]\
         ],\
         "packagePeers": [\
           "@types/supports-color",\
@@ -9011,13 +9047,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["diff", [\
-      ["npm:3.5.0", {\
-        "packageLocation": "./.yarn/cache/diff-npm-3.5.0-a321a0df19-cfbc2df98d.zip/node_modules/diff/",\
-        "packageDependencies": [\
-          ["diff", "npm:3.5.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:4.0.2", {\
         "packageLocation": "./.yarn/cache/diff-npm-4.0.2-73133c7102-ec09ec2101.zip/node_modules/diff/",\
         "packageDependencies": [\
@@ -9025,17 +9054,17 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:5.0.0", {\
-        "packageLocation": "./.yarn/cache/diff-npm-5.0.0-ad6900db18-4a179a75b1.zip/node_modules/diff/",\
-        "packageDependencies": [\
-          ["diff", "npm:5.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:5.1.0", {\
         "packageLocation": "./.yarn/cache/diff-npm-5.1.0-d24d222280-f4557032a9.zip/node_modules/diff/",\
         "packageDependencies": [\
           ["diff", "npm:5.1.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:5.2.0", {\
+        "packageLocation": "./.yarn/cache/diff-npm-5.2.0-f523a581f3-01b7b440f8.zip/node_modules/diff/",\
+        "packageDependencies": [\
+          ["diff", "npm:5.2.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -11018,19 +11047,6 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:7.2.0", {\
-        "packageLocation": "./.yarn/cache/glob-npm-7.2.0-bb4644d239-bc78b6ea07.zip/node_modules/glob/",\
-        "packageDependencies": [\
-          ["glob", "npm:7.2.0"],\
-          ["fs.realpath", "npm:1.0.0"],\
-          ["inflight", "npm:1.0.6"],\
-          ["inherits", "npm:2.0.4"],\
-          ["minimatch", "npm:3.1.2"],\
-          ["once", "npm:1.4.0"],\
-          ["path-is-absolute", "npm:1.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:7.2.3", {\
         "packageLocation": "./.yarn/cache/glob-npm-7.2.3-2d866d17a5-59452a9202.zip/node_modules/glob/",\
         "packageDependencies": [\
@@ -11231,15 +11247,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/grouped-queue-npm-2.0.0-81fdc84ef7-be5c6cfac0.zip/node_modules/grouped-queue/",\
         "packageDependencies": [\
           ["grouped-queue", "npm:2.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["growl", [\
-      ["npm:1.10.5", {\
-        "packageLocation": "./.yarn/cache/growl-npm-1.10.5-2d1da54198-1391a9add9.zip/node_modules/growl/",\
-        "packageDependencies": [\
-          ["growl", "npm:1.10.5"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -12949,7 +12956,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["karma-mocha", "npm:2.0.1"],\
           ["minimist", "npm:1.2.6"],\
-          ["mocha", "npm:9.2.2"]\
+          ["mocha", "npm:11.1.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -14034,22 +14041,6 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:4.2.1", {\
-        "packageLocation": "./.yarn/cache/minimatch-npm-4.2.1-558ec7f418-27e49fb720.zip/node_modules/minimatch/",\
-        "packageDependencies": [\
-          ["minimatch", "npm:4.2.1"],\
-          ["brace-expansion", "npm:1.1.11"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:5.0.1", {\
-        "packageLocation": "./.yarn/cache/minimatch-npm-5.0.1-612724f6f0-2656580f18.zip/node_modules/minimatch/",\
-        "packageDependencies": [\
-          ["minimatch", "npm:5.0.1"],\
-          ["brace-expansion", "npm:2.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:5.1.6", {\
         "packageLocation": "./.yarn/cache/minimatch-npm-5.1.6-1e71429f4c-126b36485b.zip/node_modules/minimatch/",\
         "packageDependencies": [\
@@ -14276,61 +14267,29 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["mocha", [\
-      ["npm:10.2.0", {\
-        "packageLocation": "./.yarn/cache/mocha-npm-10.2.0-87db25c7c5-f7362898ae.zip/node_modules/mocha/",\
+      ["npm:11.1.0", {\
+        "packageLocation": "./.yarn/cache/mocha-npm-11.1.0-7c863baca0-50d1305813.zip/node_modules/mocha/",\
         "packageDependencies": [\
-          ["mocha", "npm:10.2.0"],\
-          ["ansi-colors", "npm:4.1.1"],\
+          ["mocha", "npm:11.1.0"],\
+          ["ansi-colors", "npm:4.1.3"],\
           ["browser-stdout", "npm:1.3.1"],\
-          ["chokidar", "npm:3.5.3"],\
-          ["debug", "virtual:87db25c7c5e6b25bbc12571091cdabc648b79d427ab445d1714ccfdcdfb3265c9de6561ca760cc3de470037cbedf3af4be56ba3b684b3a1c01d4c9c2fd55a741#npm:4.3.4"],\
-          ["diff", "npm:5.0.0"],\
+          ["chokidar", "npm:3.6.0"],\
+          ["debug", "virtual:7c863baca008f921c1e24f38003335491c058753bf49ebec53a1a774c2d4d1d76e539a4898cf50421ee0c2f73a2b57bfc16cfbb7223a003be922dfa7447aac72#npm:4.4.0"],\
+          ["diff", "npm:5.2.0"],\
           ["escape-string-regexp", "npm:4.0.0"],\
           ["find-up", "npm:5.0.0"],\
-          ["glob", "npm:7.2.0"],\
+          ["glob", "npm:10.4.5"],\
           ["he", "npm:1.2.0"],\
           ["js-yaml", "npm:4.1.0"],\
           ["log-symbols", "npm:4.1.0"],\
-          ["minimatch", "npm:5.0.1"],\
+          ["minimatch", "npm:5.1.6"],\
           ["ms", "npm:2.1.3"],\
-          ["nanoid", "npm:3.3.8"],\
-          ["serialize-javascript", "npm:6.0.0"],\
+          ["serialize-javascript", "npm:6.0.2"],\
           ["strip-json-comments", "npm:3.1.1"],\
           ["supports-color", "npm:8.1.1"],\
-          ["workerpool", "npm:6.2.1"],\
-          ["yargs", "npm:16.2.0"],\
-          ["yargs-parser", "npm:20.2.4"],\
-          ["yargs-unparser", "npm:2.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:9.2.2", {\
-        "packageLocation": "./.yarn/cache/mocha-npm-9.2.2-f7735febb8-8ee58bff86.zip/node_modules/mocha/",\
-        "packageDependencies": [\
-          ["mocha", "npm:9.2.2"],\
-          ["@ungap/promise-all-settled", "npm:1.1.2"],\
-          ["ansi-colors", "npm:4.1.1"],\
-          ["browser-stdout", "npm:1.3.1"],\
-          ["chokidar", "npm:3.5.3"],\
-          ["debug", "virtual:f7735febb87b1fbb8215178a6f0b0bc1e3e251c18455c0481843aea1b7aa4c7d6fbdbd3eeee04078e2e2e368e4d4b513dd87411eb2f12aa6ea556f640295bc68#npm:4.3.3"],\
-          ["diff", "npm:5.0.0"],\
-          ["escape-string-regexp", "npm:4.0.0"],\
-          ["find-up", "npm:5.0.0"],\
-          ["glob", "npm:7.2.0"],\
-          ["growl", "npm:1.10.5"],\
-          ["he", "npm:1.2.0"],\
-          ["js-yaml", "npm:4.1.0"],\
-          ["log-symbols", "npm:4.1.0"],\
-          ["minimatch", "npm:4.2.1"],\
-          ["ms", "npm:2.1.3"],\
-          ["nanoid", "npm:3.3.8"],\
-          ["serialize-javascript", "npm:6.0.0"],\
-          ["strip-json-comments", "npm:3.1.1"],\
-          ["supports-color", "npm:8.1.1"],\
-          ["which", "npm:2.0.2"],\
-          ["workerpool", "npm:6.2.0"],\
-          ["yargs", "npm:16.2.0"],\
-          ["yargs-parser", "npm:20.2.4"],\
+          ["workerpool", "npm:6.5.1"],\
+          ["yargs", "npm:17.7.2"],\
+          ["yargs-parser", "npm:21.1.1"],\
           ["yargs-unparser", "npm:2.0.0"]\
         ],\
         "linkType": "HARD"\
@@ -14350,7 +14309,7 @@ const RAW_RUNTIME_STATE =
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["@types/mocha", null],\
           ["@types/sinon", null],\
-          ["mocha", "npm:10.2.0"],\
+          ["mocha", "npm:11.1.0"],\
           ["sinon", "npm:17.0.1"]\
         ],\
         "packagePeers": [\
@@ -14479,15 +14438,6 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["nan", "npm:2.20.0"],\
           ["node-gyp", "npm:10.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["nanoid", [\
-      ["npm:3.3.8", {\
-        "packageLocation": "./.yarn/cache/nanoid-npm-3.3.8-d22226208b-2d1766606c.zip/node_modules/nanoid/",\
-        "packageDependencies": [\
-          ["nanoid", "npm:3.3.8"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -17050,6 +17000,17 @@ const RAW_RUNTIME_STATE =
           ["ajv-keywords", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:5.1.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:4.3.0", {\
+        "packageLocation": "./.yarn/cache/schema-utils-npm-4.3.0-6f0a75e2e2-86c5a7c72a.zip/node_modules/schema-utils/",\
+        "packageDependencies": [\
+          ["schema-utils", "npm:4.3.0"],\
+          ["@types/json-schema", "npm:7.0.15"],\
+          ["ajv", "npm:8.12.0"],\
+          ["ajv-formats", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:2.1.1"],\
+          ["ajv-keywords", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:5.1.0"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["scoped-regex", [\
@@ -17102,14 +17063,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["serialize-javascript", [\
-      ["npm:6.0.0", {\
-        "packageLocation": "./.yarn/cache/serialize-javascript-npm-6.0.0-0bb8a3c88d-ed3dabfbb5.zip/node_modules/serialize-javascript/",\
-        "packageDependencies": [\
-          ["serialize-javascript", "npm:6.0.0"],\
-          ["randombytes", "npm:2.1.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:6.0.2", {\
         "packageLocation": "./.yarn/cache/serialize-javascript-npm-6.0.2-cc09461d45-445a420a6f.zip/node_modules/serialize-javascript/",\
         "packageDependencies": [\
@@ -18111,10 +18064,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["systeminformation", [\
-      ["npm:5.22.11", {\
-        "packageLocation": "./.yarn/unplugged/systeminformation-npm-5.22.11-e704a1605b/node_modules/systeminformation/",\
+      ["npm:5.25.11", {\
+        "packageLocation": "./.yarn/unplugged/systeminformation-npm-5.25.11-e1c9348b68/node_modules/systeminformation/",\
         "packageDependencies": [\
-          ["systeminformation", "npm:5.22.11"]\
+          ["systeminformation", "npm:5.25.11"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -18229,21 +18182,21 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["terser", [\
-      ["npm:5.14.2", {\
-        "packageLocation": "./.yarn/cache/terser-npm-5.14.2-b0f8815852-0646b5db1d.zip/node_modules/terser/",\
+      ["npm:5.31.6", {\
+        "packageLocation": "./.yarn/cache/terser-npm-5.31.6-535b99d333-78057c5802.zip/node_modules/terser/",\
         "packageDependencies": [\
-          ["terser", "npm:5.14.2"],\
-          ["@jridgewell/source-map", "npm:0.3.2"],\
-          ["acorn", "npm:8.11.2"],\
+          ["terser", "npm:5.31.6"],\
+          ["@jridgewell/source-map", "npm:0.3.6"],\
+          ["acorn", "npm:8.12.1"],\
           ["commander", "npm:2.20.3"],\
           ["source-map-support", "npm:0.5.21"]\
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:5.31.6", {\
-        "packageLocation": "./.yarn/cache/terser-npm-5.31.6-535b99d333-78057c5802.zip/node_modules/terser/",\
+      ["npm:5.39.0", {\
+        "packageLocation": "./.yarn/cache/terser-npm-5.39.0-127c67156d-d84aff6423.zip/node_modules/terser/",\
         "packageDependencies": [\
-          ["terser", "npm:5.31.6"],\
+          ["terser", "npm:5.39.0"],\
           ["@jridgewell/source-map", "npm:0.3.6"],\
           ["acorn", "npm:8.12.1"],\
           ["commander", "npm:2.20.3"],\
@@ -18260,10 +18213,10 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["npm:5.3.3", {\
-        "packageLocation": "./.yarn/cache/terser-webpack-plugin-npm-5.3.3-659a8e4514-db2bc0e570.zip/node_modules/terser-webpack-plugin/",\
+      ["npm:5.3.11", {\
+        "packageLocation": "./.yarn/cache/terser-webpack-plugin-npm-5.3.11-1a5bba0883-a8f7c92c75.zip/node_modules/terser-webpack-plugin/",\
         "packageDependencies": [\
-          ["terser-webpack-plugin", "npm:5.3.3"]\
+          ["terser-webpack-plugin", "npm:5.3.11"]\
         ],\
         "linkType": "SOFT"\
       }],\
@@ -18387,11 +18340,11 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.3", {\
-        "packageLocation": "./.yarn/__virtual__/terser-webpack-plugin-virtual-65e4fce360/0/cache/terser-webpack-plugin-npm-5.3.3-659a8e4514-db2bc0e570.zip/node_modules/terser-webpack-plugin/",\
+      ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.11", {\
+        "packageLocation": "./.yarn/__virtual__/terser-webpack-plugin-virtual-55a46e8527/0/cache/terser-webpack-plugin-npm-5.3.11-1a5bba0883-a8f7c92c75.zip/node_modules/terser-webpack-plugin/",\
         "packageDependencies": [\
-          ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.3"],\
-          ["@jridgewell/trace-mapping", "npm:0.3.18"],\
+          ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.11"],\
+          ["@jridgewell/trace-mapping", "npm:0.3.25"],\
           ["@swc/core", null],\
           ["@types/esbuild", null],\
           ["@types/swc__core", null],\
@@ -18399,9 +18352,9 @@ const RAW_RUNTIME_STATE =
           ["@types/webpack", null],\
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
-          ["schema-utils", "npm:3.1.1"],\
-          ["serialize-javascript", "npm:6.0.0"],\
-          ["terser", "npm:5.14.2"],\
+          ["schema-utils", "npm:4.3.0"],\
+          ["serialize-javascript", "npm:6.0.2"],\
+          ["terser", "npm:5.39.0"],\
           ["uglify-js", null],\
           ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.94.0"]\
         ],\
@@ -18737,30 +18690,6 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
-    ["ts-mocha", [\
-      ["npm:10.0.0", {\
-        "packageLocation": "./.yarn/cache/ts-mocha-npm-10.0.0-1ee8693e11-b11f2a8cee.zip/node_modules/ts-mocha/",\
-        "packageDependencies": [\
-          ["ts-mocha", "npm:10.0.0"]\
-        ],\
-        "linkType": "SOFT"\
-      }],\
-      ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.0.0", {\
-        "packageLocation": "./.yarn/__virtual__/ts-mocha-virtual-e86a022374/0/cache/ts-mocha-npm-10.0.0-1ee8693e11-b11f2a8cee.zip/node_modules/ts-mocha/",\
-        "packageDependencies": [\
-          ["ts-mocha", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.0.0"],\
-          ["@types/mocha", "npm:8.2.3"],\
-          ["mocha", "npm:10.2.0"],\
-          ["ts-node", "npm:7.0.1"],\
-          ["tsconfig-paths", "npm:4.2.0"]\
-        ],\
-        "packagePeers": [\
-          "@types/mocha",\
-          "mocha"\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
     ["ts-mock-imports", [\
       ["npm:1.3.8", {\
         "packageLocation": "./.yarn/cache/ts-mock-imports-npm-1.3.8-ce172e5189-82ee2a7256.zip/node_modules/ts-mock-imports/",\
@@ -18795,26 +18724,17 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
-      ["npm:7.0.1", {\
-        "packageLocation": "./.yarn/cache/ts-node-npm-7.0.1-dfa4b9e69b-c1e0f15828.zip/node_modules/ts-node/",\
+      ["npm:10.9.2", {\
+        "packageLocation": "./.yarn/cache/ts-node-npm-10.9.2-3f3890b9ac-a91a15b3c9.zip/node_modules/ts-node/",\
         "packageDependencies": [\
-          ["ts-node", "npm:7.0.1"],\
-          ["arrify", "npm:1.0.1"],\
-          ["buffer-from", "npm:1.1.2"],\
-          ["diff", "npm:3.5.0"],\
-          ["make-error", "npm:1.3.6"],\
-          ["minimist", "npm:1.2.6"],\
-          ["mkdirp", "npm:0.5.6"],\
-          ["source-map-support", "npm:0.5.21"],\
-          ["typescript", "patch:typescript@npm%3A3.9.10#optional!builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
-          ["yn", "npm:2.0.0"]\
+          ["ts-node", "npm:10.9.2"]\
         ],\
-        "linkType": "HARD"\
+        "linkType": "SOFT"\
       }],\
-      ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.1", {\
-        "packageLocation": "./.yarn/__virtual__/ts-node-virtual-b591c0cf5f/0/cache/ts-node-npm-10.9.1-6c268be7f4-bee56d4dc9.zip/node_modules/ts-node/",\
+      ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.2", {\
+        "packageLocation": "./.yarn/__virtual__/ts-node-virtual-488d8351d8/0/cache/ts-node-npm-10.9.2-3f3890b9ac-a91a15b3c9.zip/node_modules/ts-node/",\
         "packageDependencies": [\
-          ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.1"],\
+          ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.2"],\
           ["@cspotcode/source-map-support", "npm:0.8.1"],\
           ["@swc/core", null],\
           ["@swc/wasm", null],\
@@ -20241,17 +20161,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["workerpool", [\
-      ["npm:6.2.0", {\
-        "packageLocation": "./.yarn/cache/workerpool-npm-6.2.0-d2a722f6bb-c7dce6eae0.zip/node_modules/workerpool/",\
+      ["npm:6.5.1", {\
+        "packageLocation": "./.yarn/cache/workerpool-npm-6.5.1-7e0dd85ca7-b1b00139fe.zip/node_modules/workerpool/",\
         "packageDependencies": [\
-          ["workerpool", "npm:6.2.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:6.2.1", {\
-        "packageLocation": "./.yarn/cache/workerpool-npm-6.2.1-1486cb2056-3e637f7632.zip/node_modules/workerpool/",\
-        "packageDependencies": [\
-          ["workerpool", "npm:6.2.1"]\
+          ["workerpool", "npm:6.5.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20482,6 +20395,20 @@ const RAW_RUNTIME_STATE =
           ["yargs-parser", "npm:20.2.9"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:17.7.2", {\
+        "packageLocation": "./.yarn/cache/yargs-npm-17.7.2-80b62638e1-abb3e37678.zip/node_modules/yargs/",\
+        "packageDependencies": [\
+          ["yargs", "npm:17.7.2"],\
+          ["cliui", "npm:8.0.1"],\
+          ["escalade", "npm:3.1.1"],\
+          ["get-caller-file", "npm:2.0.5"],\
+          ["require-directory", "npm:2.1.1"],\
+          ["string-width", "npm:4.2.3"],\
+          ["y18n", "npm:5.0.8"],\
+          ["yargs-parser", "npm:21.1.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["yargs-parser", [\
@@ -20494,17 +20421,17 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:20.2.4", {\
-        "packageLocation": "./.yarn/cache/yargs-parser-npm-20.2.4-1de20916a6-db8f251ae4.zip/node_modules/yargs-parser/",\
-        "packageDependencies": [\
-          ["yargs-parser", "npm:20.2.4"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:20.2.9", {\
         "packageLocation": "./.yarn/cache/yargs-parser-npm-20.2.9-a1d19e598d-0188f430a0.zip/node_modules/yargs-parser/",\
         "packageDependencies": [\
           ["yargs-parser", "npm:20.2.9"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:21.1.1", {\
+        "packageLocation": "./.yarn/cache/yargs-parser-npm-21.1.1-8fdc003314-9dc2c217ea.zip/node_modules/yargs-parser/",\
+        "packageDependencies": [\
+          ["yargs-parser", "npm:21.1.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20606,13 +20533,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["yn", [\
-      ["npm:2.0.0", {\
-        "packageLocation": "./.yarn/cache/yn-npm-2.0.0-3ad11617c1-9d49527cb3.zip/node_modules/yn/",\
-        "packageDependencies": [\
-          ["yn", "npm:2.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:3.1.1", {\
         "packageLocation": "./.yarn/cache/yn-npm-3.1.1-8ad4259784-2c487b0e14.zip/node_modules/yn/",\
         "packageDependencies": [\

@@ -7,7 +7,7 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
-    pub(crate) fn grove_clear_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_clear_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         transaction: TransactionArg,

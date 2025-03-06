@@ -8,7 +8,7 @@ const {
   ExtendedDocument,
   DataContract,
   ValidationResult,
-  DocumentsBatchTransition,
+  BatchTransition,
   DashPlatformProtocol,
   DataContractNotPresentError,
 } = require('../../..');
@@ -95,7 +95,7 @@ describe('DocumentFacade', () => {
   });
 
   describe('createStateTransition', () => {
-    it('should create DocumentsBatchTransition with passed documents - Rust', () => {
+    it('should create BatchTransition with passed documents - Rust', () => {
       const identityId = documents[0].getOwnerId();
       const contractId = documents[0].getDataContractId();
 
@@ -103,11 +103,11 @@ describe('DocumentFacade', () => {
         create: documents,
       }, {
         [identityId.toString()]: {
-          [contractId.toString()]: 1,
+          [contractId.toString()]: '1',
         },
       });
 
-      expect(result).to.be.instanceOf(DocumentsBatchTransition);
+      expect(result).to.be.instanceOf(BatchTransition);
       // expect(result.getTransitions().map((t) => t.toObject()))
       //   .has.deep.members(getDocumentTransitionsFixture({
       //     create: documentsJs,

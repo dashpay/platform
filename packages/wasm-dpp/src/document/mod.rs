@@ -126,15 +126,13 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: Option<u32>) {
-        // TODO: JS feeding Number here (u32). Is it okay to cast u32 to u64?
+    pub fn set_revision(&mut self, revision: Option<u64>) {
         self.0.set_revision(revision.map(|r| r as u64));
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> Option<u32> {
-        // TODO: JS tests expecting Number (u32). Is it okay to cast u64 to u32 here?
-        self.0.revision().map(|r| r as u32)
+    pub fn get_revision(&self) -> Option<u64> {
+        self.0.revision().map(|r| r)
     }
 
     #[wasm_bindgen(js_name=setData)]

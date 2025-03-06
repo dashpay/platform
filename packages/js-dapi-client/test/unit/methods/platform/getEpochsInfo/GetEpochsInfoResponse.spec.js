@@ -23,7 +23,7 @@ describe('GetEpochsInfoResponse', () => {
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    epochInfoFixture = new EpochInfoClass(1, 1, 1, Date.now(), 1.1);
+    epochInfoFixture = new EpochInfoClass(1, BigInt(1), 1, BigInt(Date.now()), 1.1);
     proofFixture = getProofFixture();
 
     const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
@@ -71,6 +71,7 @@ describe('GetEpochsInfoResponse', () => {
 
     const epochsInfo = getEpochsInfoResponse.getEpochsInfo();
     const proof = getEpochsInfoResponse.getProof();
+    const metadata = getEpochsInfoResponse.getMetadata();
 
     expect(epochsInfo).to.deep.equal([]);
     expect(proof).to.be.an.instanceOf(Proof);
@@ -78,6 +79,15 @@ describe('GetEpochsInfoResponse', () => {
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
+
+    expect(metadata.getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(metadata.getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(metadata.getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(metadata.getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
   });
 
   it('should create an instance from proto', () => {
@@ -85,12 +95,14 @@ describe('GetEpochsInfoResponse', () => {
     expect(getEpochsInfoResponse).to.be.an.instanceOf(GetEpochsInfoResponseClass);
     expect(getEpochsInfoResponse.getEpochsInfo()).to.deep.equal([epochInfoFixture]);
 
-    expect(getEpochsInfoResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getEpochsInfoResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getEpochsInfoResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getEpochsInfoResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getEpochsInfoResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getEpochsInfoResponse.getProof()).to.equal(undefined);
   });
@@ -109,7 +121,15 @@ describe('GetEpochsInfoResponse', () => {
     getEpochsInfoResponse = GetEpochsInfoResponseClass.createFromProto(proto);
 
     expect(getEpochsInfoResponse.getEpochsInfo()).to.deep.equal([]);
-    expect(getEpochsInfoResponse.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getEpochsInfoResponse.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getEpochsInfoResponse.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getEpochsInfoResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getEpochsInfoResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getEpochsInfoResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);

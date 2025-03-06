@@ -1,5 +1,6 @@
 use crate::BlsPrivateKey;
 use dashcore_rpc::json::MasternodeListItem;
+use dpp::bls_signatures::Bls12381G2Impl;
 use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -32,13 +33,16 @@ impl UpdateMasternodeListItem for MasternodeListItem {
                 1 => self.state.voting_address = rng.gen::<[u8; 20]>(),
                 2 => self.state.payout_address = rng.gen::<[u8; 20]>(),
                 3 => {
-                    let private_key_operator = BlsPrivateKey::generate_dash(rng)
-                        .expect("expected to generate a private key");
-                    let pub_key_operator = private_key_operator
-                        .g1_element()
-                        .expect("expected to get public key")
+                    let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
+                        .expect("expected to generate a private key")
                         .to_bytes()
                         .to_vec();
+                    let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+                        &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+                    )
+                    .expect("expected the conversion between bls signatures library and blsful to happen without failing");
+                    let pub_key_operator =
+                        private_key_operator.public_key().0.to_compressed().to_vec();
                     self.state.pub_key_operator = pub_key_operator;
                 }
                 4 => {
@@ -70,9 +74,9 @@ impl UpdateMasternodeListItem for MasternodeListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore_rpc::dashcore::hashes::Hash;
-    use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, Txid};
 
     use rand::SeedableRng;
     use std::net::SocketAddr;
@@ -83,13 +87,15 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         let i = 0;
         let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
-        let private_key_operator =
-            BlsPrivateKey::generate_dash(&mut rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        )
+            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
+        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash,

@@ -68,23 +68,6 @@ export default function stopNodeTaskFactory(
         })),
       },
       {
-        title: 'Save core node time',
-        enabled: () => config.get('group') === 'local',
-        skip: (ctx) => ctx.isForce,
-        task: async () => {
-          const rpcClient = createRpcClient({
-            port: config.get('core.rpc.port'),
-            user: 'dashmate',
-            pass: config.get('core.rpc.users.dashmate.password'),
-            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
-          });
-
-          const { result: { mediantime } } = await rpcClient.getBlockchainInfo();
-
-          config.set('core.miner.mediantime', mediantime);
-        },
-      },
-      {
         title: `Stopping ${config.getName()} node`,
         task: async (ctx) => {
           const profiles = [];

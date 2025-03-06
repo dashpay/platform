@@ -1,4 +1,4 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use crate::core_types::validator::v0::ValidatorV0;
 use crate::core_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
@@ -80,7 +80,7 @@ impl ValidatorSetV0Getters for ValidatorSet {
         }
     }
 
-    fn threshold_public_key(&self) -> &BlsPublicKey {
+    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl> {
         match self {
             ValidatorSet::V0(v0) => v0.threshold_public_key(),
         }
@@ -112,7 +112,7 @@ impl ValidatorSetV0Setters for ValidatorSet {
         }
     }
 
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>) {
         match self {
             ValidatorSet::V0(v0) => v0.set_threshold_public_key(threshold_public_key),
         }

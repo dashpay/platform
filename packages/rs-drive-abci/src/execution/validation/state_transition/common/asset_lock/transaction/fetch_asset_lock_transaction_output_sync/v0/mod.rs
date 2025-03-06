@@ -5,7 +5,7 @@ use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
     InvalidAssetLockProofTransactionHeightError,
 };
-use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
+use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 use dpp::prelude::{AssetLockProof, ConsensusValidationResult};
@@ -49,7 +49,7 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             let Some(transaction_info) = maybe_transaction_info else {
                 // Transaction hash bytes needs to be reversed to match actual transaction hash
-                let mut hash = transaction_hash.as_raw_hash().into_32();
+                let mut hash: [u8; 32] = transaction_hash.as_raw_hash().to_byte_array();
                 hash.reverse();
 
                 return Ok(ValidationResult::new_with_error(

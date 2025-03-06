@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
+use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 
 use crate::drive::Drive;
 
@@ -10,7 +10,7 @@ use crate::error::drive::DriveError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
+use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
 
 use std::collections::HashMap;
 
@@ -39,7 +39,7 @@ impl Drive {
     pub(crate) fn stateless_delete_of_non_tree_for_costs(
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
-        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
+        is_known_to_be_subtree_with_sum: Option<MaybeTree>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,

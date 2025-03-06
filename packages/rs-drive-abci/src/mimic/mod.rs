@@ -13,6 +13,7 @@ use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
 use crate::rpc::core::CoreRPCLike;
 use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
+use dpp::bls_signatures::SignatureSchemes;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -33,11 +34,11 @@ use tenderdash_abci::proto::abci::{
     ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{
     Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
     StateId, VoteExtension, VoteExtensionType,
 };
+use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::Hashable;
 use tenderdash_abci::{proto::version::Consensus, signatures::Signable, Application};
 
@@ -238,7 +239,9 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             app_version,
             core_chain_locked_height: core_height,
             height,
-            time: time.to_milis(),
+            time: time
+                .to_millis()
+                .expect("expected to convert time to millis"),
         };
         let state_id_hash = state_id
             .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
@@ -514,9 +517,12 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                         public_key = ?current_quorum.public_key,
                         "Signing block"
                     );
-            let block_signature = current_quorum.private_key.sign(digest.as_slice());
+            let block_signature = current_quorum
+                .private_key
+                .sign(SignatureSchemes::Basic, digest.as_slice())
+                .expect("expected to be able to sign");
 
-            commit_info.block_signature = block_signature.to_bytes().to_vec();
+            commit_info.block_signature = block_signature.as_raw_value().to_compressed().to_vec();
         } else {
             commit_info.block_signature = [0u8; 96].to_vec();
         }

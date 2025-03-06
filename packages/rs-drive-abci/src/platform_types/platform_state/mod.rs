@@ -9,7 +9,6 @@ use crate::platform_types::platform_state::v0::{
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
@@ -25,6 +24,7 @@ use indexmap::IndexMap;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
+use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;

@@ -1,6 +1,7 @@
 use versioned_feature_core::FeatureVersionBounds;
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionSerializationVersions {
@@ -13,7 +14,7 @@ pub struct DPPStateTransitionSerializationVersions {
     pub masternode_vote_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
-    pub documents_batch_state_transition: FeatureVersionBounds,
+    pub batch_state_transition: FeatureVersionBounds,
     pub document_base_state_transition: FeatureVersionBounds,
     pub document_create_state_transition: DocumentFeatureVersionBounds,
     pub document_replace_state_transition: DocumentFeatureVersionBounds,

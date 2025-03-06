@@ -1,6 +1,5 @@
 use std::default::Default;
 
-use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::BlsAdapter;
@@ -101,11 +100,10 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                        value,
-                        "IdentityPublicKeyWithWitness",
-                    )?;
+                let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                    value,
+                    "IdentityPublicKeyWithWitness",
+                )?;
                 Ok(public_key.clone().into())
             })
             .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
@@ -120,11 +118,10 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
-                        value,
-                        "IdentityPublicKeyWithWitness",
-                    )?;
+                let public_key = generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
+                    value,
+                    "IdentityPublicKeyWithWitness",
+                )?;
                 Ok(public_key.clone().into())
             })
             .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
@@ -168,6 +165,16 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
         (IdentityCreateTransitionAccessorsV0::owner_id(&self.0)).into()
+    }
+
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase() as u16
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
     }
 
     #[wasm_bindgen(js_name=toObject)]

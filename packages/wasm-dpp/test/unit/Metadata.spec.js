@@ -9,41 +9,26 @@ describe('Metadata', () => {
 
   describe('#constructor', () => {
     it('should set height and core chain-locked height', () => {
-      const result = new Metadata({
-        blockHeight: 42,
-        coreChainLockedHeight: 1,
-        timeMs: 100,
-        protocolVersion: 2,
-      });
+      const result = new Metadata(BigInt(42), 1, BigInt(100), 2);
 
-      expect(result.getBlockHeight()).to.equal(42);
+      expect(result.getBlockHeight()).to.equal(BigInt(42));
       expect(result.getCoreChainLockedHeight()).to.equal(1);
-      expect(result.getTimeMs()).to.equal(100);
+      expect(result.getTimeMs()).to.equal(BigInt(100));
       expect(result.getProtocolVersion()).to.equal(2);
     });
   });
 
   describe('#getBlockHeight', () => {
     it('should get block height', () => {
-      const result = new Metadata({
-        blockHeight: 42,
-        coreChainLockedHeight: 1,
-        timeMs: 100,
-        protocolVersion: 2,
-      });
+      const result = new Metadata(BigInt(42), 1, BigInt(100), 2);
 
-      expect(result.getBlockHeight()).to.equal(42);
+      expect(result.getBlockHeight()).to.equal(BigInt(42));
     });
   });
 
   describe('#getCoreChainLockedHeight', () => {
     it('should get core chain-locked height', () => {
-      const result = new Metadata({
-        blockHeight: 1,
-        coreChainLockedHeight: 42,
-        timeMs: 100,
-        protocolVersion: 2,
-      });
+      const result = new Metadata(BigInt(1), 42, BigInt(100), 2);
 
       expect(result.getCoreChainLockedHeight()).to.equal(42);
     });

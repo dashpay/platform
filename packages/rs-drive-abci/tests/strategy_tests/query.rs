@@ -5,6 +5,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashRequest, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
@@ -23,8 +24,8 @@ use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 use strategy_tests::frequency::Frequency;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::{Hashable, Signable};
 
 #[derive(Clone, Debug, Default)]
@@ -68,10 +69,10 @@ pub struct ProofVerification<'a> {
     pub signature: &'a [u8; 96],
 
     /// Threshold key used to verify the signature
-    pub public_key: &'a dpp::bls_signatures::PublicKey,
+    pub public_key: &'a dpp::bls_signatures::PublicKey<Bls12381G2Impl>,
 }
 
-impl<'a> ProofVerification<'a> {
+impl ProofVerification<'_> {
     /// Verify proof signature
     ///
     /// Constructs new signature for provided state ID and checks if signature is still valid.
@@ -105,17 +106,20 @@ impl<'a> ProofVerification<'a> {
             Err(e) => return SimpleValidationResult::new_with_error(e.into()),
         };
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let signature = match dpp::bls_signatures::Signature::from_bytes(self.signature) {
-            Ok(signature) => signature,
-            Err(e) => {
-                return SimpleValidationResult::new_with_error(
-                    AbciError::BlsErrorOfTenderdashThresholdMechanism(
-                        e,
-                        format!("Malformed signature data: {}", hex::encode(self.signature)),
-                    ),
-                );
-            }
-        };
+        let signature =
+            match <Bls12381G2Impl as Pairing>::Signature::from_compressed(self.signature)
+                .into_option()
+            {
+                Some(signature) => Signature::Basic(signature),
+                None => {
+                    return SimpleValidationResult::new_with_error(
+                        AbciError::BlsErrorOfTenderdashThresholdMechanism(
+                            BlsError::InvalidSignature,
+                            format!("malformed signature data: {}", hex::encode(self.signature)),
+                        ),
+                    );
+                }
+            };
         tracing::trace!(
             digest=hex::encode(&digest),
             ?state_id,
@@ -123,14 +127,11 @@ impl<'a> ProofVerification<'a> {
             verification_context = ?self,
             "Proof verification"
         );
-        match self.public_key.verify(&signature, &digest) {
-            true => SimpleValidationResult::default(),
-            false => {
-                SimpleValidationResult::new_with_error(AbciError::BadCommitSignature(format!(
-                    "commit signature {} is wrong",
-                    hex::encode(signature.to_bytes().as_slice())
-                )))
-            }
+        match signature.verify(self.public_key, &digest) {
+            Ok(_) => SimpleValidationResult::default(),
+            Err(e) => SimpleValidationResult::new_with_error(AbciError::BadCommitSignature(
+                format!("commit signature {} is wrong: {}", signature, e),
+            )),
         }
     }
 
@@ -156,7 +157,7 @@ impl<'a> ProofVerification<'a> {
             app_version: self.app_version,
             core_chain_locked_height: self.core_chain_locked_height,
             height: self.height as u64,
-            time: self.time.to_milis(),
+            time: self.time.to_millis().expect("time as milliseconds"),
         };
 
         self.verify_signature(state_id, proof.round)
@@ -167,7 +168,7 @@ impl QueryStrategy {
     pub(crate) fn query_chain_for_strategy(
         &self,
         proof_verification: &ProofVerification,
-        current_identities: &Vec<Identity>,
+        current_identities: &[Identity],
         abci_app: &FullAbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
         platform_version: &PlatformVersion,
@@ -193,7 +194,7 @@ impl QueryStrategy {
 
     pub(crate) fn query_identities_by_public_key_hashes(
         proof_verification: &ProofVerification,
-        current_identities: &Vec<Identity>,
+        current_identities: &[Identity],
         frequency: &Frequency,
         abci_app: &FullAbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
