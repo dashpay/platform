@@ -276,7 +276,7 @@ impl Sdk {
     }
 
     /// Get configured Dash Core network type.
-    pub fn core_network(&self) -> Network {
+    pub fn network(&self) -> Network {
         self.network
     }
 
@@ -304,7 +304,7 @@ impl Sdk {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
-                self.core_network(),
+                self.network(),
                 self.version(),
                 &provider,
             ),
