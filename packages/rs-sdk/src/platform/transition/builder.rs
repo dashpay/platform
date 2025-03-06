@@ -9,7 +9,8 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 /// Trait for building state transitions
-#[allow(async_fn_in_trait)]
+#[async_trait::async_trait]
+#[async_trait::async_trait]
 pub trait StateTransitionBuilder {
     /// Returns the settings for the state transition
     ///
