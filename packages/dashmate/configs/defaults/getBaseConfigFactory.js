@@ -309,7 +309,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:feat-statesync-integration',
+              image: 'dashpay/tenderdash:feat-statesync-improvements',
             },
             p2p: {
               host: '0.0.0.0',
