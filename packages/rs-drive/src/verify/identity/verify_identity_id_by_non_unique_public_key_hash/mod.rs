@@ -38,7 +38,7 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         public_key_hash: [u8; 20],
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
         match platform_version

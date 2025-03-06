@@ -8,8 +8,8 @@ use grovedb::query_result_type::QueryResultType;
 
 use grovedb::{PathQuery, TransactionArg};
 
-use std::ops::RangeFull;
 use platform_version::version::PlatformVersion;
+use std::ops::RangeFull;
 
 impl Drive {
     /// Fetches identity ids from storage.
@@ -17,7 +17,7 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         limit: Option<u16>,
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
@@ -37,7 +37,7 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         limit: Option<u16>,
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -49,10 +49,7 @@ impl Drive {
                 QueryItem::RangeAfter(after.to_vec()..),
             )
         } else {
-            PathQuery::new_single_query_item(
-                non_unique_key_hashes,
-                QueryItem::RangeFull(RangeFull),
-            )
+            PathQuery::new_single_query_item(non_unique_key_hashes, QueryItem::RangeFull(RangeFull))
         };
         path_query.query.limit = limit;
 

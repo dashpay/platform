@@ -5,7 +5,10 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse, GetIdentityByPublicKeyHashResponse};
+use dapi_grpc::platform::v0::{
+    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
+    GetIdentityByPublicKeyHashResponse,
+};
 use dpp::version::PlatformVersion;
 
 mod v0;

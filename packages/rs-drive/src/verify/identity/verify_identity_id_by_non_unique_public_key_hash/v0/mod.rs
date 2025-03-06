@@ -38,23 +38,16 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         public_key_hash: [u8; 20],
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
-        let mut path_query = Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
+        let mut path_query =
+            Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
         path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         if proved_key_values.len() == 1 {
@@ -65,11 +58,9 @@ impl Drive {
                         .to_string(),
                 )));
             }
-            let identity_id = key
-                        .try_into()
-                        .map_err(|_| {
-                            Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
-                        })?;
+            let identity_id = key.try_into().map_err(|_| {
+                Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
+            })?;
             Ok((root_hash, Some(identity_id)))
         } else {
             Ok((root_hash, None))

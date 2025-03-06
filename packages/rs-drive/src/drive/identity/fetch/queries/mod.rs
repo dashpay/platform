@@ -1,6 +1,9 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{identity_tree_path_vec, non_unique_key_hashes_tree_path, non_unique_key_hashes_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::{
+    identity_tree_path_vec, non_unique_key_hashes_tree_path, non_unique_key_hashes_tree_path_vec,
+    unique_key_hashes_tree_path_vec, Drive,
+};
 use std::ops::RangeFull;
 
 use crate::error::Error;
@@ -92,13 +95,14 @@ impl Drive {
 
     /// The query for proving an identity id from a non-unique public key hash.
     /// This should be used for absence proofs
-    pub fn identity_id_by_non_unique_public_key_hash_query(public_key_hash: [u8; 20], after: Option<[u8;32]>) -> PathQuery {
+    pub fn identity_id_by_non_unique_public_key_hash_query(
+        public_key_hash: [u8; 20],
+        after: Option<[u8; 32]>,
+    ) -> PathQuery {
         let non_unique_key_hashes = non_unique_key_hashes_tree_path_vec();
         let mut query = Query::new_single_key(public_key_hash.to_vec());
         let sub_query = if let Some(after) = after {
-            Query::new_single_query_item(QueryItem::RangeFrom(
-                after.to_vec()..,
-            ))
+            Query::new_single_query_item(QueryItem::RangeFrom(after.to_vec()..))
         } else {
             Query::new_range_full()
         };
@@ -233,7 +237,7 @@ impl Drive {
     pub fn full_identity_with_non_unique_public_key_hash_query(
         public_key_hash: [u8; 20],
         identity_id: [u8; 32],
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         grove_version: &GroveVersion,
     ) -> Result<PathQuery, Error> {
         let full_identity_query = Self::full_identity_query(&identity_id, grove_version)?;
@@ -243,7 +247,7 @@ impl Drive {
             vec![&full_identity_query, &identity_id_by_public_key_hash_query],
             grove_version,
         )
-            .map_err(Error::GroveDB)
+        .map_err(Error::GroveDB)
     }
 
     /// The query full identities with key hashes too

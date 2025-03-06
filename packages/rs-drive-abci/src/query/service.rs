@@ -9,7 +9,41 @@ use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest, GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest, GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse, GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse, GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse};
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
+    GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
+    GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
+    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
+    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
+    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
@@ -378,13 +412,16 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_identity_by_non_unique_public_key_hash(&self, request: Request<GetIdentityByNonUniquePublicKeyHashRequest>) -> Result<Response<GetIdentityByNonUniquePublicKeyHashResponse>, Status> {
+    async fn get_identity_by_non_unique_public_key_hash(
+        &self,
+        request: Request<GetIdentityByNonUniquePublicKeyHashRequest>,
+    ) -> Result<Response<GetIdentityByNonUniquePublicKeyHashResponse>, Status> {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_non_unique_public_key_hash,
             "get_identity_by_non_unique_public_key_hash",
         )
-            .await
+        .await
     }
 
     async fn wait_for_state_transition_result(

@@ -25,7 +25,7 @@ impl Drive {
     pub fn fetch_full_identity_by_non_unique_public_key_hash(
         &self,
         public_key_hash: [u8; 20],
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {

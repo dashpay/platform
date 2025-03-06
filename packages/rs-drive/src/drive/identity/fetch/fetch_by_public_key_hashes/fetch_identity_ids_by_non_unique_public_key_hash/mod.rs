@@ -2,9 +2,9 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
+use crate::fees::op::LowLevelDriveOperation;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use crate::fees::op::LowLevelDriveOperation;
 
 impl Drive {
     /// Fetches identity ids from storage based on a non-unique public key hash.
@@ -25,11 +25,12 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         limit: Option<u16>,
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -55,12 +56,13 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         limit: Option<u16>,
-        after: Option<[u8;32]>,
+        after: Option<[u8; 32]>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch

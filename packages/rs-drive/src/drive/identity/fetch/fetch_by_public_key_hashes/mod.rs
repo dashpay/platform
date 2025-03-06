@@ -1,4 +1,5 @@
 mod fetch_full_identities_by_unique_public_key_hashes;
+mod fetch_full_identity_by_non_unique_public_key_hash;
 mod fetch_full_identity_by_unique_public_key_hash;
 mod fetch_identity_id_by_unique_public_key_hash;
 mod fetch_identity_ids_by_non_unique_public_key_hash;
@@ -7,7 +8,6 @@ mod has_any_of_unique_public_key_hashes;
 mod has_non_unique_public_key_hash;
 mod has_non_unique_public_key_hash_already_for_identity;
 mod has_unique_public_key_hash;
-mod fetch_full_identity_by_non_unique_public_key_hash;
 
 #[cfg(feature = "server")]
 #[cfg(test)]

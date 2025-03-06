@@ -636,9 +636,14 @@ message GetIdentityByNonUniquePublicKeyHashResponse {
     message IdentityResponse {
       optional bytes identity = 1;
     }
+
+    message IdentityProvedResponse {
+      Proof grovedb_identity_public_key_hash_proof = 1;
+      optional bytes identity_proof_bytes = 2; // A hack, we return 2 proofs
+    }
     oneof result {
       IdentityResponse identity = 1;
-      Proof proof = 2;
+      IdentityProvedResponse proof = 2;
     }
 
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
