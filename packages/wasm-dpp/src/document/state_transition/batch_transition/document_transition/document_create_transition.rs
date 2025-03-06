@@ -4,8 +4,8 @@ use dpp::state_transition::batch_transition::document_create_transition::Documen
 
 use dpp::document::INITIAL_REVISION;
 
-use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use wasm_bindgen::prelude::*;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
@@ -80,8 +80,8 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter, js_name=INITIAL_REVISION)]
-    pub fn initial_revision() -> u32 {
-        INITIAL_REVISION as u32
+    pub fn initial_revision() -> u64 {
+        INITIAL_REVISION
     }
 
     #[wasm_bindgen(js_name = getEntropy)]

@@ -27,7 +27,7 @@ describe('getIdentityBalanceFactory', () => {
   let proofResponse;
 
   beforeEach(async function beforeEach() {
-    balance = 1337;
+    balance = BigInt(1337);
 
     identityId = Buffer.alloc(32).fill(0);
 
@@ -84,7 +84,16 @@ describe('getIdentityBalanceFactory', () => {
       options,
     );
     expect(result.getBalance()).to.deep.equal(balance);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getProof()).to.equal(undefined);
   });
 
@@ -110,20 +119,22 @@ describe('getIdentityBalanceFactory', () => {
       options,
     );
 
-    expect(result.getBalance()).to.deep.equal(0);
+    expect(result.getBalance()).to.deep.equal(BigInt(0));
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
     expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
-    expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
-    expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
-      metadataFixture.coreChainLockedHeight,
-    );
   });
 
   it('should throw unknown error', async () => {

@@ -181,11 +181,11 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     fn entropy(&self) -> Option<Vec<u8>> {
         match self {
             DocumentTransition::Create(t) => Some(Vec::from(t.entropy())),
-            DocumentTransition::Replace(t) => None,
-            DocumentTransition::Delete(t) => None,
-            DocumentTransition::Transfer(t) => None,
-            DocumentTransition::UpdatePrice(t) => None,
-            DocumentTransition::Purchase(t) => None,
+            DocumentTransition::Replace(_) => None,
+            DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(_) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 

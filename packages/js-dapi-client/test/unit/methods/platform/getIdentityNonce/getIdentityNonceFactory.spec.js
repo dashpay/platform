@@ -25,7 +25,7 @@ describe('getIdentityNonceFactory', () => {
   let proofResponse;
 
   beforeEach(async function beforeEach() {
-    nonce = 1;
+    nonce = BigInt(1);
     identityId = Buffer.alloc(32).fill(0);
 
     metadataFixture = getMetadataFixture();
@@ -81,7 +81,16 @@ describe('getIdentityNonceFactory', () => {
       options,
     );
     expect(result.getIdentityNonce()).to.deep.equal(nonce);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
+
     expect(result.getProof()).to.equal(undefined);
   });
 
@@ -107,20 +116,22 @@ describe('getIdentityNonceFactory', () => {
       options,
     );
 
-    expect(result.getIdentityNonce()).to.deep.equal(0);
+    expect(result.getIdentityNonce()).to.deep.equal(BigInt(0));
 
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
+    expect(result.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(result.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(result.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(result.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
     expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
-    expect(result.getMetadata()).to.deep.equal(metadataFixture);
-    expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
-    expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(
-      metadataFixture.coreChainLockedHeight,
-    );
   });
 
   it('should throw unknown error', async () => {
