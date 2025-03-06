@@ -55,6 +55,37 @@ pub enum Error {
     /// Epoch not found; we must have at least one epoch
     #[error("No epoch found on Platform; it should never happen")]
     EpochNotFound,
+    /// Quorum not found; try again later
+    #[error(
+        "Quorum {quorum_hash_hex} of type {quorum_type} at height {core_chain_locked_height}: {e}"
+    )]
+    QuorumNotFound {
+        quorum_hash_hex: String,
+        quorum_type: u32,
+        core_chain_locked_height: u32,
+        e: ContextProviderError,
+    },
+
+    /// Asset lock not found; try again later.
+    ///
+    /// ## Parameters
+    ///
+    /// - core locked height in asset lock
+    /// - current core locked height on the platform
+    #[error("Asset lock for core locked height {core_locked_height_in_asset_lock} not available yet, max available locked core height is {core_locked_height_on_platform}; try again later")]
+    CoreLockedHeightNotYetAvailable {
+        core_locked_height_in_asset_lock: u32,
+        core_locked_height_on_platform: u32,
+    },
+
+    /// Provided asset lock is invalid
+    ///
+    /// ## Parameters
+    ///
+    /// - 0 - detailed error message
+    #[error("Invalid asset lock: {0}")]
+    InvalidAssetLock(String),
+
     /// SDK operation timeout reached error
     #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
     TimeoutReached(Duration, String),
@@ -100,7 +131,7 @@ impl TryFrom<StateTransitionBroadcastErrorProto> for StateTransitionBroadcastErr
     type Error = Error;
 
     fn try_from(value: StateTransitionBroadcastErrorProto) -> Result<Self, Self::Error> {
-        let cause = if value.data.len() > 0 {
+        let cause = if !value.data.is_empty() {
             let consensus_error =
                 ConsensusError::deserialize_from_bytes(&value.data).map_err(|e| {
                     tracing::debug!("Failed to deserialize consensus error: {}", e);
@@ -178,7 +209,13 @@ where
 
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
-        matches!(self, Error::StaleNode(..) | Error::TimeoutReached(_, _))
+        matches!(
+            self,
+            Error::StaleNode(..)
+                | Error::TimeoutReached(_, _)
+                | Error::CoreLockedHeightNotYetAvailable { .. }
+                | Error::QuorumNotFound { .. }
+        )
     }
 }
 

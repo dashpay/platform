@@ -119,6 +119,7 @@ impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
     }
 }
 
+#[async_trait::async_trait]
 impl StateTransitionBuilder for TokenDestroyFrozenFundsTransitionBuilder<'_> {
     /// Returns the settings for the token destroy transition
     ///

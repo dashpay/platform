@@ -111,6 +111,7 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
     }
 }
 
+#[async_trait::async_trait]
 impl StateTransitionBuilder for TokenBurnTransitionBuilder<'_> {
     /// Returns the settings for the token burn transition
     ///

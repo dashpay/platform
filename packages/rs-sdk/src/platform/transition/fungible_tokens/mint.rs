@@ -139,6 +139,7 @@ impl<'a> TokenMintTransitionBuilder<'a> {
     }
 }
 
+#[async_trait::async_trait]
 impl StateTransitionBuilder for TokenMintTransitionBuilder<'_> {
     /// Returns the settings for the token mint transition
     ///

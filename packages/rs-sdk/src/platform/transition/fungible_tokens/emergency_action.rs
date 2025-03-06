@@ -148,6 +148,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
     }
 }
 
+#[async_trait::async_trait]
 impl StateTransitionBuilder for TokenEmergencyActionTransitionBuilder<'_> {
     /// Returns the settings for the token emergency action transition
     ///

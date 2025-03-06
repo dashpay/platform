@@ -86,7 +86,7 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     }
 }
 
-impl<'a, T: ContextProvider + 'a> ContextProvider for std::sync::Mutex<T>
+impl<T: ContextProvider> ContextProvider for std::sync::Mutex<T>
 where
     Self: Sync + Send,
 {

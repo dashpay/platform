@@ -143,6 +143,7 @@ impl<'a> TokenTransferTransitionBuilder<'a> {
     }
 }
 
+#[async_trait::async_trait]
 impl StateTransitionBuilder for TokenTransferTransitionBuilder<'_> {
     /// Returns the settings for the token transfer transition
     ///

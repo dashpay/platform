@@ -241,7 +241,7 @@ impl TryFrom<&GetStatusResponse> for Version {
                 let protocol = v0
                     .version
                     .as_ref()
-                    .and_then(|v| v.protocol.clone())
+                    .and_then(|v| v.protocol)
                     .map(|p| Protocol {
                         tenderdash: p.tenderdash.map(|t| TenderdashProtocol {
                             p2p: t.p2p,

@@ -119,6 +119,7 @@ impl<'a> TokenFreezeTransitionBuilder<'a> {
     }
 }
 
+#[async_trait::async_trait]
 impl StateTransitionBuilder for TokenFreezeTransitionBuilder<'_> {
     /// Returns the settings for the token freeze transition
     ///
