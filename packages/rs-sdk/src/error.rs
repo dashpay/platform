@@ -11,6 +11,8 @@ use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 
+use crate::core::DashCoreError;
+
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
 #[derive(Debug, thiserror::Error)]
@@ -45,7 +47,7 @@ pub enum Error {
     MerkleBlockError(#[from] dpp::dashcore::merkle_tree::MerkleBlockError),
     /// Core client error, for example, connection error
     #[error("Core client error: {0}")]
-    CoreClientError(#[from] dashcore_rpc::Error),
+    CoreClientError(#[from] DashCoreError),
     /// Dependency not found, for example data contract for a document not found
     #[error("Required {0} not found: {1}")]
     MissingDependency(String, String),
@@ -176,9 +178,20 @@ where
     }
 }
 
+impl From<dashcore_rpc::Error> for Error {
+    fn from(value: dashcore_rpc::Error) -> Self {
+        Self::CoreClientError(value.into())
+    }
+}
+
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
-        matches!(self, Error::StaleNode(..) | Error::TimeoutReached(_, _))
+        match self {
+            Error::StaleNode(..) => true,
+            Error::TimeoutReached(..) => true,
+            Error::CoreClientError(e) => e.can_retry(),
+            _ => false,
+        }
     }
 }
 

@@ -587,7 +587,7 @@ impl MasternodeListItemWithUpdates {
 
         match closest_height {
             Some(h) => &self.updates[&h],
-            None => &self.masternode,
+            Option::None => &self.masternode,
         }
     }
 }

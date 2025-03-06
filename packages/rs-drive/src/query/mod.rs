@@ -2154,7 +2154,6 @@ impl<'a> DriveDocumentQuery<'a> {
             drive_operations,
             platform_version,
         )?;
-
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
