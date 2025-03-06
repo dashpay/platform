@@ -13,7 +13,7 @@ impl From<TokenTransferTransition> for TokenTransferTransitionWasm {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenTransferTransition)]
 impl TokenTransferTransitionWasm {
     #[wasm_bindgen(js_name=getRecipientId)]
     pub fn recipient_id(&self) -> IdentifierWrapper {

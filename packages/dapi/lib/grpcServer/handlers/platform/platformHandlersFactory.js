@@ -95,7 +95,7 @@ function platformHandlersFactory(
   );
 
   // waitForStateTransitionResult
-  const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient);
+  const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient, dpp);
 
   const getExistingTransactionResult = getExistingTransactionResultFactory(
     rpcClient,

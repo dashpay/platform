@@ -34,9 +34,9 @@ use crate::batch_transition::document_transition::DocumentTransitionWasm;
 use crate::batch_transition::token_transition::TokenTransitionWasm;
 use dpp::state_transition::StateTransitionIdentitySigned;
 
-mod batched_transition;
+pub mod batched_transition;
 pub mod document_transition;
-mod token_transition;
+pub mod token_transition;
 // pub mod validation;
 
 #[derive(Clone, Debug)]
