@@ -1,21 +1,21 @@
 class Metadata {
   /**
    * @param {object} properties
-   * @param {number} properties.height - block height
+   * @param {bigint|string} properties.height - block height
    * @param {number} properties.coreChainLockedHeight - core chain locked height
-   * @param {number} properties.timeMs - block time
+   * @param {bigint|string} properties.timeMs - block time
    * @param {number} properties.protocolVersion - protocol version
    */
   constructor(properties) {
-    this.height = properties.height;
+    this.height = BigInt(properties.height);
     this.coreChainLockedHeight = properties.coreChainLockedHeight;
-    this.timeMs = properties.timeMs;
+    this.timeMs = BigInt(properties.timeMs);
     this.protocolVersion = properties.protocolVersion;
   }
 
   /**
    * Get height
-   * @returns {number} - block height
+   * @returns {bigint} - block height
    */
   getHeight() {
     return this.height;
@@ -31,7 +31,7 @@ class Metadata {
 
   /**
    * Get block time
-   * @returns {number}
+   * @returns {bigint}
    */
   getTimeMs() {
     return this.timeMs;

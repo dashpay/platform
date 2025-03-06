@@ -1,11 +1,11 @@
-use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
     MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::prelude::TimestampMillis;
 use serde_json::Value;
@@ -151,11 +151,6 @@ pub const CORE_RPC_PARSE_ERROR: i32 = -32700;
 pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
 /// Invalid, missing or duplicate parameter
 pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
-
-/// Asset Unlock consensus error "bad-assetunlock-not-active-quorum"
-pub const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
-/// Asset Unlock consensus error "bad-assetunlock-not-active-quorum"
-pub const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
 macro_rules! retry {
     ($action:expr) => {{

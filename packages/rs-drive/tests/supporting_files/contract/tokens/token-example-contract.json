@@ -1,0 +1,23 @@
+{
+  "$format_version": "0",
+  "id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "ownerId": "HLfavpy1B2mVHnpYYDKDVM76eWJRqvPfuuASy7cyJBXC",
+  "version": 1,
+  "tokens": {
+    "flurgon": {      
+      "shouldCapitalize": true,
+      "pluralForm": "flurgons",
+      "maintainer": "GQcEb4CaXEXtPUpnJyHUt78jDij6etgEXUKyect7ZRSm",
+      "initialSupply": 100000000000,
+      "decimals": 8,
+      "transferable": true,
+      "maxSupply": 100000000000,
+      "roles": {
+        "maintainer": {
+          "canMint": true,
+          "canBurn": true
+        }
+      }
+    }
+  }
+}

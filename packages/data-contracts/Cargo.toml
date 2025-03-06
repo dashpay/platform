@@ -1,7 +1,7 @@
 [package]
 name = "data-contracts"
 description = "Dash Platform system data contracts"
-version = "1.6.2"
+version = "1.8.0"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
@@ -17,3 +17,4 @@ dashpay-contract = { path = "../dashpay-contract" }
 feature-flags-contract = { path = "../feature-flags-contract" }
 platform-value = { path = "../rs-platform-value" }
 wallet-utils-contract = { path = "../wallet-utils-contract" }
+token-history-contract = { path = "../token-history-contract" }

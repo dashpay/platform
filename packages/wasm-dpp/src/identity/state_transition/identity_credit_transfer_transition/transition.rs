@@ -90,13 +90,33 @@ impl IdentityCreditTransferTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getAmount)]
-    pub fn get_amount(&self) -> f64 {
-        self.0.amount() as f64
+    pub fn get_amount(&self) -> u64 {
+        self.0.amount()
     }
 
     #[wasm_bindgen(js_name=setAmount)]
-    pub fn set_amount(&mut self, amount: f64) {
-        self.0.set_amount(amount as u64);
+    pub fn set_amount(&mut self, amount: u64) {
+        self.0.set_amount(amount);
+    }
+
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase()
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
+    #[wasm_bindgen(js_name=getNonce)]
+    pub fn get_nonce(&self) -> u64 {
+        self.0.nonce()
+    }
+
+    #[wasm_bindgen(js_name=setNonce)]
+    pub fn set_nonce(&mut self, nonce: u64) {
+        self.0.set_nonce(nonce)
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -161,7 +181,7 @@ impl IdentityCreditTransferTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"amount".to_owned().into(),
-            &JsValue::from_f64(object.amount as f64),
+            &JsValue::bigint_from_str(&object.amount.to_string()),
         )?;
 
         Ok(js_object.into())
@@ -236,7 +256,7 @@ impl IdentityCreditTransferTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"amount".to_owned().into(),
-            &JsValue::from_f64(object.amount as f64),
+            &JsValue::bigint_from_str(&object.amount.to_string()),
         )?;
 
         Ok(js_object.into())
@@ -316,6 +336,11 @@ impl IdentityCreditTransferTransitionWasm {
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
             .set_signature(BinaryData::new(signature.unwrap_or_default()))
+    }
+
+    #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen]

@@ -1,10 +1,14 @@
 #[cfg(feature = "server")]
 use crate::drive::contract::DataContractFetchInfo;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
+#[cfg(feature = "server")]
 use crate::error::document::DocumentError;
+#[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -13,6 +17,7 @@ use dpp::identifier::Identifier;
 use dpp::ProtocolError;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 

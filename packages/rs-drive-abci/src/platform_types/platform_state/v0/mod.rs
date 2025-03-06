@@ -2,10 +2,10 @@ mod old_structures;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::dashcore::{ProTxHash, QuorumHash};
 
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore::hashes::Hash;
@@ -145,7 +145,7 @@ pub(super) struct PlatformStateForSavingV0 {
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
     #[bincode(with_serde)]
-    pub validator_sets: Vec<(Bytes32, old_structures::ValidatorSet)>,
+    pub validator_sets: Vec<(Bytes32, old_structures::OldStructureValidatorSet)>,
 
     /// The quorums used for validating chain locks
     pub chain_lock_validating_quorums: SignatureVerificationQuorumSetForSaving,

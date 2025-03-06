@@ -6,8 +6,6 @@ use crate::strategy::{
     StrategyRandomness, ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
     MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkType,
@@ -15,6 +13,8 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::FromMilis;
+use tenderdash_abci::proto::FromMillis;
 use tenderdash_abci::Application;
 
 pub const GENESIS_TIME_MS: u64 = 1681094380000;
@@ -1137,7 +1137,7 @@ pub(crate) fn continue_chain_for_strategy(
             verify_state_transitions_were_or_were_not_executed(
                 &abci_app,
                 &root_app_hash,
-                &state_transaction_results,
+                state_transaction_results.as_slice(),
                 &expected_validation_errors,
                 platform_version,
             );
@@ -1156,7 +1156,7 @@ pub(crate) fn continue_chain_for_strategy(
                     height: state_id.height as i64,
                     block_hash: &block_hash,
                     app_hash: &root_app_hash,
-                    time: Timestamp::from_milis(state_id.time),
+                    time: Timestamp::from_millis(state_id.time).expect("must convert to millis"),
                     signature: &signature,
                     public_key: &current_quorum_with_test_info.public_key,
                 },

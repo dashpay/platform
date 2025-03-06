@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "1.6.2"
+version = "1.8.0"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -46,4 +46,4 @@ platform-version = { path = "../rs-platform-version", features = [
 ] }
 
 # For tests of grovedb verify
-rocksdb = { version = "0.22.0" }
+rocksdb = { version = "0.23.0" }

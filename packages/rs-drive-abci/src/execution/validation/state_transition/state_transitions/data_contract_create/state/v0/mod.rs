@@ -161,8 +161,8 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_return_invalid_result_when_transform_into_action_failed() {
-            let platform_version = PlatformVersion::latest();
+        fn should_return_invalid_result_when_transform_into_action_failed_v7() {
+            let platform_version = PlatformVersion::get(7).expect("expected version 7");
             let identity_nonce = IdentityNonce::default();
 
             let platform = TestPlatformBuilder::new()
@@ -193,7 +193,103 @@ mod tests {
 
             // Make the contract invalid
             let DataContractInSerializationFormat::V0(ref mut contract) =
-                data_contract_for_serialization;
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 0")
+            };
+
+            contract
+                .document_schemas
+                .insert("invalidType".to_string(), Value::Null);
+
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract_for_serialization,
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &Epoch::default(),
+                    None,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )
+                )] if message == "document schema must be an object: structure error: value is not a map"
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityNonceAction(action)) if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_transform_into_action_failed_latest() {
+            let platform_version = PlatformVersion::latest();
+            let identity_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            let identity_id = data_contract.owner_id();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            // Make the contract invalid
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
 
             contract
                 .document_schemas
@@ -413,8 +509,11 @@ mod tests {
                 .expect("failed to convert data contract");
 
             // Make the contract invalid
-            let DataContractInSerializationFormat::V0(ref mut contract) =
-                data_contract_for_serialization;
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
 
             contract
                 .document_schemas

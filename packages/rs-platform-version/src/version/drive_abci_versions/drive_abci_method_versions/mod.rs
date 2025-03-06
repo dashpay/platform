@@ -4,6 +4,8 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
+pub mod v6;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciMethodVersions {
@@ -12,6 +14,7 @@ pub struct DriveAbciMethodVersions {
     pub core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions,
     pub protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions,
     pub block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions,
+    pub tokens_processing: DriveAbciTokensProcessingMethodVersions,
     pub core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants,
     pub core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions,
     pub fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions,
@@ -75,7 +78,12 @@ pub struct DriveAbciInitializationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockFeeProcessingMethodVersions {
     pub add_process_epoch_change_operations: FeatureVersion,
-    pub process_block_fees: FeatureVersion,
+    pub process_block_fees_and_validate_sum_trees: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciTokensProcessingMethodVersions {
+    pub validate_token_aggregated_balance: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

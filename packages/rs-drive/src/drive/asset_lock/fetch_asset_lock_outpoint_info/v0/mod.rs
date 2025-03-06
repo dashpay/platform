@@ -13,7 +13,7 @@ use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::platform_value::Bytes36;
 use dpp::serialization::PlatformDeserializable;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// Checks if a given `outpoint` is present as an asset lock in the transaction.
@@ -68,7 +68,7 @@ impl Drive {
             StatefulDirectQuery
         } else {
             StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(36),
             }
         };

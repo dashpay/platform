@@ -47,12 +47,12 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   let metadata;
   const responseMetadata = dataContractResponse.getMetadata();
   if (responseMetadata) {
-    metadata = new Metadata({
-      blockHeight: responseMetadata.getHeight(),
-      coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
-      timeMs: responseMetadata.getTimeMs(),
-      protocolVersion: responseMetadata.getProtocolVersion(),
-    });
+    metadata = new Metadata(
+      responseMetadata.getHeight(),
+      responseMetadata.getCoreChainLockedHeight(),
+      responseMetadata.getTimeMs(),
+      responseMetadata.getProtocolVersion(),
+    );
   }
   contract.setMetadata(metadata);
 
