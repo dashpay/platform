@@ -144,7 +144,7 @@ where
             )))?;
         }
 
-        reconstruct_platform_state(app)?;
+        reconstruct_platform_state(app, session.app_hash.as_slice())?;
 
         Ok(proto::ResponseApplySnapshotChunk {
             result: proto::response_apply_snapshot_chunk::Result::CompleteSnapshot.into(),
@@ -155,7 +155,7 @@ where
     }
 }
 
-fn reconstruct_platform_state<'a, 'db: 'a, A, C: 'db>(app: &'a A) -> Result<(), Error>
+fn reconstruct_platform_state<'a, 'db: 'a, A, C: 'db>(app: &'a A, app_hash: &[u8]) -> Result<(), Error>
 where
     A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
     C: CoreRPCLike,
@@ -177,13 +177,25 @@ where
         )));
     };
 
-    let Some(last_committed_block) = v0.last_committed_block_info else {
-        return Err(Error::from(AbciError::StateSyncInternalError(
-            "reduced_platform_state missing last_committed_info".to_string(),
-        )));
+    let block_info = Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
+        .ok_or_else(|| {
+            AbciError::StateSyncInternalError("last_block_info".to_string())
+        })?;
+    let core_height = block_info.core_height;
+
+    let last_committed_block = ExtendedBlockInfo::V0 {
+        0: ExtendedBlockInfoV0 {
+            basic_info: block_info,
+            app_hash: app_hash.try_into().unwrap(),
+            quorum_hash: [0u8; 32],
+            block_id_hash: [0u8; 32],
+            proposer_pro_tx_hash: [0u8; 32],
+            signature: [0u8; 96],
+            round: 0,
+        },
+        
     };
 
-    let core_height = last_committed_block.basic_info().core_height;
     let mut platform_state = PlatformState::V0(PlatformStateV0 {
         genesis_block_info: None,
         last_committed_block_info: Some(last_committed_block),

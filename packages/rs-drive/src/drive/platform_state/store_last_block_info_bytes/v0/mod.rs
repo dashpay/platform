@@ -1,23 +1,23 @@
-use crate::drive::platform_state::REDUCED_PLATFORM_STATE_KEY;
-use crate::drive::system::misc_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::{Element, TransactionArg};
 use grovedb::operations::insert::InsertOptions;
-use platform_version::version::PlatformVersion;
+use dpp::version::PlatformVersion;
+use crate::drive::platform_state::LAST_BLOCK_INFO_KEY;
+use crate::drive::system::misc_path;
 
 impl Drive {
-    pub(super) fn store_reduced_platform_state_bytes_v0(
+    pub(super) fn store_last_block_info_bytes_v0(
         &self,
-        reduced_state_bytes: &[u8],
+        last_block_info_bytes: &[u8],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         self.grove
             .insert(
                 &misc_path(),
-                REDUCED_PLATFORM_STATE_KEY,
-                Element::Item(reduced_state_bytes.to_vec(), None),
+                LAST_BLOCK_INFO_KEY,
+                Element::Item(last_block_info_bytes.to_vec(), None),
                 Some(InsertOptions::default()),
                 transaction,
                 &platform_version.drive.grove_version,

@@ -8,9 +8,9 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Store the execution state in grovedb storage
-    pub fn store_reduced_platform_state_bytes(
+    pub fn store_last_block_info_bytes(
         &self,
-        state_bytes: &[u8],
+        last_block_info_bytes: &[u8],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -20,9 +20,9 @@ impl Drive {
             .reduced_platform_state
             .store_reduced_platform_state_bytes
         {
-            0 => self.store_reduced_platform_state_bytes_v0(state_bytes, transaction, platform_version),
+            0 => self.store_last_block_info_bytes_v0(last_block_info_bytes, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "store_reduced_platform_state_bytes".to_string(),
+                method: "store_last_block_info_bytes_v0".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
