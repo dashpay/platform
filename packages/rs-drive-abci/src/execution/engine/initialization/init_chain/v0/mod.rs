@@ -1,3 +1,4 @@
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -18,7 +19,7 @@ use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::FromMilis;
+use tenderdash_abci::proto::FromMillis;
 
 impl<C> Platform<C>
 where
@@ -154,7 +155,12 @@ where
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
-            genesis_time: Some(Timestamp::from_milis(genesis_time)),
+            genesis_time: Some(Timestamp::from_millis(genesis_time).map_err(|e| {
+                AbciError::InvalidChainLock(format!(
+                    "chainlock contains invalid genesis time: {}",
+                    e
+                ))
+            })?),
         })
     }
 }

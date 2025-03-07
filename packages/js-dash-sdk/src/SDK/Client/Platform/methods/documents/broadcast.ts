@@ -47,7 +47,7 @@ export default async function broadcast(
 
   const documentsBatchTransition = dpp.document.createStateTransition(documents, {
     [identityId.toString()]: {
-      [dataContractId.toString()]: identityContractNonce,
+      [dataContractId.toString()]: identityContractNonce.toString(),
     },
   });
 

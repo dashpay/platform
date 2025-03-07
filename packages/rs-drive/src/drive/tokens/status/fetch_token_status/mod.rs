@@ -12,18 +12,16 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches the Token status from the backing store.
-    /// Passing `apply = false` will return estimated costs (0 or Some(0) in place of actual values).
     ///
     /// # Arguments
     ///
     /// * `token_id` - The ID of the token.
-    /// * `apply` - Whether to actually fetch from state (true) or estimate costs (false).
     /// * `transaction` - The current transaction.
     /// * `platform_version` - The platform version to use.
     ///
     /// # Returns
     ///
-    /// * `Result<Option<Credits>, Error>` - The token info of the Identity if successful, or an error.
+    /// * `Result<Option<TokenStatus>, Error>` - The token status if successful, or an error.
     pub fn fetch_token_status(
         &self,
         token_id: [u8; 32],
@@ -83,7 +81,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<Option<Credits>, Error>` - The token info of the Identity if successful, or an error.
+    /// * `Result<Option<TokenStatus>, Error>` - The token info of the Identity if successful, or an error.
     pub fn fetch_token_status_operations(
         &self,
         token_id: [u8; 32],

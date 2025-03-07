@@ -163,13 +163,11 @@ export class Client extends EventEmitter {
       throw new Error('Wallet is not initialized, pass `wallet` option to Client');
     }
 
-    options = {
+    return this.wallet.getAccount({
       index: this.defaultAccountIndex,
       synchronize: true,
       ...options,
-    };
-
-    return this.wallet.getAccount(options);
+    });
   }
 
   /**

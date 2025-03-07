@@ -85,7 +85,7 @@ describe('ExtendedDocument', () => {
       expect(result.$id.toBuffer()).to.deep.equal(document.getId().toBuffer());
       expect(result.$ownerId.toBuffer()).to.deep.equal(document.getOwnerId().toBuffer());
       expect(result.identifierField.toBuffer()).to.deep.equal(document.get('identifierField').toBuffer());
-      expect(result.$revision).to.deep.equal(document.getRevision());
+      expect(BigInt(result.$revision)).to.deep.equal(document.getRevision());
       expect(result.$type).to.deep.equal(document.getType());
       expect(result.byteArrayField).to.deep.equal(document.get('byteArrayField'));
     });
@@ -93,12 +93,7 @@ describe('ExtendedDocument', () => {
 
   describe('#setMetadata', () => {
     it('should set metadata - Rust', () => {
-      const otherMetadata = new Metadata({
-        blockHeight: 43,
-        coreChainLockedHeight: 1,
-        timeMs: 100,
-        protocolVersion: 2,
-      });
+      const otherMetadata = new Metadata(BigInt(43), 1, BigInt(100), 2);
       document.setMetadata(otherMetadata);
 
       expect(document.getMetadata().toObject()).to.deep.equal(otherMetadata.toObject());

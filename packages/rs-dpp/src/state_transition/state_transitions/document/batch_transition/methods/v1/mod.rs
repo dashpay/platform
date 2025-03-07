@@ -11,13 +11,12 @@ use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::batch_transition::token_transfer_transition::{
-    PrivateEncryptedNote, SharedEncryptedNote,
-};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]

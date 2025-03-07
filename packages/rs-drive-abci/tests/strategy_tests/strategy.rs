@@ -1,9 +1,9 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-use dashcore_rpc::dashcore::{Network, PrivateKey};
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::{Network, PrivateKey};
+use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::ProtocolError;
 

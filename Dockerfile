@@ -44,7 +44,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.18
+ARG ALPINE_VERSION=3.21
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
@@ -72,6 +72,7 @@ RUN apk add --no-cache \
         ca-certificates \
         clang-static clang-dev \
         cmake \
+        curl \
         git \
         libc-dev \
         linux-headers \
@@ -148,7 +149,13 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
 # Switch to clang
-RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+# Note that CC / CXX can be updated later on (eg. when configuring sccache)
+RUN rm /usr/bin/cc && \
+    ln -s /usr/bin/clang /usr/bin/cc
+RUN <<EOS
+echo "export CXX='clang++'" >> /root/env
+echo "export CC='clang'" >> /root/env
+EOS
 
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
@@ -287,6 +294,7 @@ git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib
+
 mkdir -p /opt/rocksdb/usr/local/lib
 cp librocksdb.a /opt/rocksdb/usr/local/lib/
 cp -r include /opt/rocksdb/usr/local/
@@ -494,11 +502,13 @@ WORKDIR /platform
 COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
+# Note we unset CFLAGS and CXXFLAGS as they have `-march` included, which breaks wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset CFLAGS CXXFLAGS && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
@@ -546,12 +556,14 @@ COPY --parents \
     packages/dash-spv \
     /platform/
 
+# We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     --mount=type=secret,id=AWS \
     source /root/env && \
+    unset CFLAGS CXXFLAGS && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \

@@ -1,7 +1,7 @@
 [package]
-name = "token-history-contract"
-description = "Token history data contract schema and tools"
-version = "1.6.2"
+name = "search-contract"
+description = "Search data contract schema and tools. Search contract is using to find other contracts and tokens"
+version = "1.8.0"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"

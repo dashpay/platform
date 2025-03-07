@@ -4,16 +4,12 @@ version = "1.8.0"
 edition = "2021"
 rust-version.workspace = true
 
-crate-type = ["cdylib"]
-
 [features]
-default = ["mocks"]
+default = []
 mocks = [
   "dep:serde",
   "dep:serde_json",
-  "dep:bincode",
   "dep:platform-serialization-derive",
-  "dep:platform-serialization",
   "dpp/document-serde-conversion",
   "indexmap/serde",
 ]
@@ -21,19 +17,22 @@ mocks = [
 [dependencies]
 
 thiserror = { version = "1.0.63" }
-dapi-grpc = { path = "../dapi-grpc" }
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
+  "platform",
+] }
+
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
 dpp = { path = "../rs-dpp", features = [
   "bls-signatures",
-  "document-value-conversion",
-  "extended-document",
+  #  "document-value-conversion",
+  #  "extended-document",
   "core-types-serialization",
 ], default-features = false }
-bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
-platform-serialization = { path = "../rs-platform-serialization", optional = true }
+platform-serialization = { path = "../rs-platform-serialization" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.3.0", tag = "v1.3.0+1.3.0", features = [
   "crypto",
   "serde",
