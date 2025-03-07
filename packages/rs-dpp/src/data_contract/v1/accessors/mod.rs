@@ -6,18 +6,18 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DocumentName, GroupContractPosition, TokenContractPosition};
 
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::group::Group;
+use crate::identity::TimestampMillis;
+use crate::prelude::BlockHeight;
 use crate::tokens::calculate_token_id;
 use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use crate::block::epoch::EpochIndex;
-use crate::identity::TimestampMillis;
-use crate::prelude::BlockHeight;
 
 impl DataContractV0Getters for DataContractV1 {
     fn id(&self) -> Identifier {
@@ -129,7 +129,7 @@ impl DataContractV0Setters for DataContractV1 {
     fn set_owner_id(&mut self, owner_id: Identifier) {
         self.owner_id = owner_id;
     }
-    
+
     fn set_config(&mut self, config: DataContractConfig) {
         self.config = config;
     }

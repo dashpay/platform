@@ -77,9 +77,11 @@ impl Drive {
                         }
                     };
 
-                    let identifier = pro_tx_hash.try_into().map_err(|_| Error::Drive(DriveError::CorruptedDriveState(
-                        "pro_tx_hash should be 32 bytes".to_string(),
-                    )))?;
+                    let identifier = pro_tx_hash.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "pro_tx_hash should be 32 bytes".to_string(),
+                        ))
+                    })?;
 
                     Ok((identifier, block_count))
                 })
@@ -117,10 +119,12 @@ impl Drive {
                             )))
                         })?,
                     );
-                    
-                    let identifier = pro_tx_hash.try_into().map_err(|_| Error::Drive(DriveError::CorruptedDriveState(
-                        "pro_tx_hash should be 32 bytes".to_string(),
-                    )))?;
+
+                    let identifier = pro_tx_hash.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "pro_tx_hash should be 32 bytes".to_string(),
+                        ))
+                    })?;
 
                     Ok((identifier, block_count))
                 })
@@ -134,12 +138,12 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::query::proposer_block_count_query::ProposerQueryType;
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::GroveDbOpBatch;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::identifier::Identifier;
-    use crate::query::proposer_block_count_query::ProposerQueryType;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -157,7 +161,8 @@ mod tests {
 
         batch.push(epoch.init_proposers_tree_operation());
 
-        batch.push(epoch.update_proposer_block_count_operation(pro_tx_hash.as_bytes(), block_count));
+        batch
+            .push(epoch.update_proposer_block_count_operation(pro_tx_hash.as_bytes(), block_count));
 
         drive
             .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)

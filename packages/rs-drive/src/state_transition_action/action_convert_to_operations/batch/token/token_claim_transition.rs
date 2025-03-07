@@ -51,7 +51,8 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                         _,
                         _,
                         TokenDistributionResolvedRecipient::Identity(identity),
-                    ) | TokenDistributionInfo::Perpetual(
+                    )
+                    | TokenDistributionInfo::Perpetual(
                         _,
                         _,
                         TokenDistributionResolvedRecipient::Evonode(identity),

@@ -1,7 +1,7 @@
-use dpp::block::block_info::BlockInfo;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 
 use dpp::consensus::basic::document::DataContractNotPresentError;
@@ -59,8 +59,12 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let mut action =
-            self.transform_into_action_v0(block_info, validation_mode, execution_context, platform_version)?;
+        let mut action = self.transform_into_action_v0(
+            block_info,
+            validation_mode,
+            execution_context,
+            platform_version,
+        )?;
 
         if !action.is_valid() {
             return Ok(action);
@@ -145,7 +149,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 validation_result.errors,
             ));
         }
-        
+
         new_data_contract.set_created_at(old_data_contract.created_at());
         new_data_contract.set_created_at_block_height(old_data_contract.created_at_block_height());
         new_data_contract.set_created_at_epoch(old_data_contract.created_at_epoch());

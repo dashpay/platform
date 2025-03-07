@@ -237,8 +237,9 @@ impl TokenClaimTransitionActionV0 {
 
         let (amount, distribution_info) = match distribution_type {
             TokenDistributionType::PreProgrammed => {
-                let Some(pre_programmed_distribution) =
-                    token_config.distribution_rules().pre_programmed_distribution()
+                let Some(pre_programmed_distribution) = token_config
+                    .distribution_rules()
+                    .pre_programmed_distribution()
                 else {
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
@@ -253,7 +254,12 @@ impl TokenClaimTransitionActionV0 {
                         ConsensusValidationResult::new_with_data_and_errors(
                             batched_action.into(),
                             vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch::new("pre programmed distribution", base.token_id())),
+                                StateError::InvalidTokenClaimPropertyMismatch(
+                                    InvalidTokenClaimPropertyMismatch::new(
+                                        "pre programmed distribution",
+                                        base.token_id(),
+                                    ),
+                                ),
                             )],
                         ),
                         fee_result,
@@ -263,7 +269,7 @@ impl TokenClaimTransitionActionV0 {
                 // We need to find the oldest pre-programmed distribution that wasn't yet claimed
                 // for this identity
                 let oldest_time = 0;
-                
+
                 let amount = 0;
 
                 (amount, TokenDistributionInfo::PreProgrammed(0, owner_id))
@@ -286,7 +292,12 @@ impl TokenClaimTransitionActionV0 {
                         ConsensusValidationResult::new_with_data_and_errors(
                             batched_action.into(),
                             vec![ConsensusError::StateError(
-                                StateError::InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch::new("perpetual distribution", value.base().token_id())),
+                                StateError::InvalidTokenClaimPropertyMismatch(
+                                    InvalidTokenClaimPropertyMismatch::new(
+                                        "perpetual distribution",
+                                        value.base().token_id(),
+                                    ),
+                                ),
                             )],
                         ),
                         fee_result,
@@ -295,12 +306,26 @@ impl TokenClaimTransitionActionV0 {
 
                 let mut last_paid_time_operations = vec![];
 
-                let last_paid_moment = drive.fetch_perpetual_distribution_last_paid_moment_operations(base.token_id().to_buffer(), owner_id, perpetual_distribution.distribution_type(), &mut last_paid_time_operations, transaction, platform_version)?;
+                let last_paid_moment = drive
+                    .fetch_perpetual_distribution_last_paid_moment_operations(
+                        base.token_id().to_buffer(),
+                        owner_id,
+                        perpetual_distribution.distribution_type(),
+                        &mut last_paid_time_operations,
+                        transaction,
+                        platform_version,
+                    )?;
 
                 // if the token has never been paid then we use the token creation
-                
-                let start_from_moment_for_distribution = last_paid_moment.or(perpetual_distribution.distribution_type().contract_creation_moment(&base_action.data_contract_fetch_info().contract)).ok_or(Error::Drive(DriveError::ContractDoesNotHaveAStartMoment(base_action.data_contract_fetch_info().contract.id())))?;
-                
+
+                let start_from_moment_for_distribution = last_paid_moment
+                    .or(perpetual_distribution
+                        .distribution_type()
+                        .contract_creation_moment(&base_action.data_contract_fetch_info().contract))
+                    .ok_or(Error::Drive(DriveError::ContractDoesNotHaveAStartMoment(
+                        base_action.data_contract_fetch_info().contract.id(),
+                    )))?;
+
                 let last_paid_time_fee_result = Drive::calculate_fee(
                     None,
                     Some(last_paid_time_operations),
@@ -309,28 +334,51 @@ impl TokenClaimTransitionActionV0 {
                     platform_version,
                     None,
                 )?;
-                
+
                 fee_result.checked_add_assign(last_paid_time_fee_result)?;
 
                 let recipient = match perpetual_distribution.distribution_recipient() {
                     TokenDistributionRecipient::ContractOwner => {
-                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(base_action.data_contract_fetch_info().contract.owner_id())
+                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(
+                            base_action.data_contract_fetch_info().contract.owner_id(),
+                        )
                     }
                     TokenDistributionRecipient::Identity(identifier) => {
                         TokenDistributionResolvedRecipient::Identity(identifier)
                     }
                     TokenDistributionRecipient::EvonodesByParticipation => {
-                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) = start_from_moment_for_distribution else {
-                            return Err(Error::Drive(DriveError::NotSupported("evonodes by participation can only use epoch based distribution")));
+                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) =
+                            start_from_moment_for_distribution
+                        else {
+                            return Err(Error::Drive(DriveError::NotSupported(
+                                "evonodes by participation can only use epoch based distribution",
+                            )));
                         };
-                        let epochs : BTreeMap<EpochIndex, FinalizedEpochInfo> = drive.get_finalized_epoch_infos(epoch_index, true, block_info.epoch.index, false, transaction, platform_version)?;
+                        let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = drive
+                            .get_finalized_epoch_infos(
+                                epoch_index,
+                                true,
+                                block_info.epoch.index,
+                                false,
+                                transaction,
+                                platform_version,
+                            )?;
                         TokenDistributionResolvedRecipient::Evonode(owner_id)
                     }
                 };
 
-                let amount = perpetual_distribution.distribution_type().rewards_in_interval(start_from_moment_for_distribution, block_info)?;
+                let amount = perpetual_distribution
+                    .distribution_type()
+                    .rewards_in_interval(start_from_moment_for_distribution, block_info)?;
 
-                (amount, TokenDistributionInfo::Perpetual(RewardDistributionMoment::TimeBasedMoment(0),RewardDistributionMoment::TimeBasedMoment(0), recipient))
+                (
+                    amount,
+                    TokenDistributionInfo::Perpetual(
+                        RewardDistributionMoment::TimeBasedMoment(0),
+                        RewardDistributionMoment::TimeBasedMoment(0),
+                        recipient,
+                    ),
+                )
             }
         };
 

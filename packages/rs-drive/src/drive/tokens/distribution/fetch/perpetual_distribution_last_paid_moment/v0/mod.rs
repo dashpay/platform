@@ -41,7 +41,8 @@ impl Drive {
     ) -> Result<Option<RewardDistributionMoment>, Error> {
         let direct_query_type = DirectQueryType::StatefulDirectQuery;
 
-        let perpetual_distributions_path = token_perpetual_distributions_identity_last_claimed_time_path(&token_id);
+        let perpetual_distributions_path =
+            token_perpetual_distributions_identity_last_claimed_time_path(&token_id);
 
         match self.grove_get_raw_optional(
             (&perpetual_distributions_path).into(),
@@ -52,12 +53,12 @@ impl Drive {
             &platform_version.drive,
         ) {
             Ok(Some(Item(value, _))) => {
-                let moment = distribution_type.moment_from_bytes(&value).map_err(|e| Error::Drive(DriveError::CorruptedDriveState(
-                    format!(
+                let moment = distribution_type.moment_from_bytes(&value).map_err(|e| {
+                    Error::Drive(DriveError::CorruptedDriveState(format!(
                         "Moment should be specific amount of bytes: {}",
                         e
-                    ),
-                )))?;
+                    )))
+                })?;
                 Ok(Some(moment))
             }
 

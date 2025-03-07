@@ -1,13 +1,13 @@
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::{GroupContractPosition, TokenContractPosition};
+use crate::identity::TimestampMillis;
+use crate::prelude::BlockHeight;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use crate::block::epoch::EpochIndex;
-use crate::identity::TimestampMillis;
-use crate::prelude::BlockHeight;
 
 pub trait DataContractV1Getters: DataContractV0Getters {
     /// Gets a group at a certain position.

@@ -45,7 +45,8 @@ impl<C> Platform<C> {
             )
             .map_err(Error::Drive)?;
 
-        let total_payouts = storage_and_processing_fees.total_credits
+        let total_payouts = storage_and_processing_fees
+            .total_credits
             .checked_add(core_block_rewards)
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::Overflow("overflow when adding reward fees"))
@@ -164,7 +165,7 @@ impl<C> Platform<C> {
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
 
-        Ok((storage_and_processing_fees,proposers))
+        Ok((storage_and_processing_fees, proposers))
     }
 }
 
@@ -298,7 +299,8 @@ mod tests {
                     &mut batch,
                     platform_version,
                 )
-                .expect("should distribute fees").1;
+                .expect("should distribute fees")
+                .1;
 
             platform
                 .drive

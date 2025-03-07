@@ -1,4 +1,5 @@
 mod burn;
+mod claim;
 mod config;
 mod destroy;
 mod emergency_action;
@@ -6,9 +7,9 @@ mod freeze;
 mod mint;
 mod transfer;
 mod unfreeze;
-mod claim;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
+use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destroy::TokenDestroyFrozenFundsTransitionWasm;
 use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
@@ -16,7 +17,6 @@ use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
-use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
 use crate::identifier::IdentifierWrapper;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
@@ -25,7 +25,6 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::v0_metho
 use js_sys::Number;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-
 
 #[wasm_bindgen]
 pub enum TokenTransitionType {
@@ -117,9 +116,7 @@ impl TokenTransitionWasm {
             TokenTransition::ConfigUpdate(config_update) => {
                 TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
             }
-            TokenTransition::Claim(claim) => {
-                TokenClaimTransitionWasm::from(claim.clone()).into()
-            }
+            TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
         }
     }
 }

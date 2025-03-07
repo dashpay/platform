@@ -17,11 +17,11 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
+use dpp::prelude::Identifier;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::{Element, TransactionArg, TreeType};
-use dpp::prelude::Identifier;
 
 /// Operations on Epochs
 pub trait EpochOperations {
@@ -903,9 +903,9 @@ mod tests {
     }
 
     mod delete_proposers {
-        use dpp::prelude::Identifier;
         use super::*;
         use crate::query::proposer_block_count_query::ProposerQueryType;
+        use dpp::prelude::Identifier;
 
         #[test]
         fn test_values_are_being_deleted() {

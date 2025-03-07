@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use platform_value::Identifier;
-use platform_value::Value;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::config::DataContractConfig;
@@ -12,6 +10,8 @@ use crate::data_contract::{
 };
 use crate::identity::TimestampMillis;
 use crate::prelude::BlockHeight;
+use platform_value::Identifier;
+use platform_value::Value;
 
 /// `DataContractV1` represents a data contract in a decentralized platform.
 ///
@@ -44,7 +44,7 @@ use crate::prelude::BlockHeight;
 ///   with governance rules (e.g., who can mint or burn tokens).
 ///
 /// ## 3. **Timestamps and Block Height Tracking**
-/// To improve traceability and accountability of contract creation and modifications, four 
+/// To improve traceability and accountability of contract creation and modifications, four
 /// new fields were added:
 ///
 /// - **`created_at`** (`Option<TimestampMillis>`)  
@@ -61,7 +61,7 @@ use crate::prelude::BlockHeight;
 ///   - Useful for historical analysis, rollback mechanisms, and ensuring changes are anchored
 ///     to specific blockchain states.
 ///
-/// These additions ensure that data contracts are not only more flexible and governed but also 
+/// These additions ensure that data contracts are not only more flexible and governed but also
 /// fully auditable in terms of when and how they evolve over time.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataContractV1 {
@@ -77,7 +77,7 @@ pub struct DataContractV1 {
 
     /// A mapping of document names to their corresponding document types.
     pub document_types: BTreeMap<DocumentName, DocumentType>,
-    
+
     /// Internal configuration for the contract.
     pub config: DataContractConfig,
 

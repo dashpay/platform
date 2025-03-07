@@ -686,7 +686,11 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             generic_consensus_error!(GroupTotalPowerLessThanRequiredError, e).into()
         }
         BasicError::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(e) => {
-            generic_consensus_error!(GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, e).into()
+            generic_consensus_error!(
+                GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
+                e
+            )
+            .into()
         }
         BasicError::InvalidTokenAmountError(e) => {
             generic_consensus_error!(InvalidTokenAmountError, e).into()
@@ -698,10 +702,15 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             generic_consensus_error!(InvalidTokenDistributionFunctionDivideByZeroError, e).into()
         }
         BasicError::InvalidTokenDistributionFunctionInvalidParameterError(e) => {
-            generic_consensus_error!(InvalidTokenDistributionFunctionInvalidParameterError, e).into()
+            generic_consensus_error!(InvalidTokenDistributionFunctionInvalidParameterError, e)
+                .into()
         }
         BasicError::InvalidTokenDistributionFunctionInvalidParameterTupleError(e) => {
-            generic_consensus_error!(InvalidTokenDistributionFunctionInvalidParameterTupleError, e).into()
+            generic_consensus_error!(
+                InvalidTokenDistributionFunctionInvalidParameterTupleError,
+                e
+            )
+            .into()
         }
         BasicError::InvalidTokenDistributionFunctionIncoherenceError(e) => {
             generic_consensus_error!(InvalidTokenDistributionFunctionIncoherenceError, e).into()

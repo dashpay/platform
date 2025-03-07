@@ -1,5 +1,5 @@
-use std::fmt;
 use crate::fee::Credits;
+use std::fmt;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct StorageAndProcessingPoolCredits {

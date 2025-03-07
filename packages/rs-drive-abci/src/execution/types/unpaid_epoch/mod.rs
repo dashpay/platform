@@ -129,17 +129,13 @@ impl UnpaidEpochV0Setters for UnpaidEpoch {
 
     fn set_protocol_version(&mut self, protocol_version: ProtocolVersion) {
         match self {
-            UnpaidEpoch::V0(v0) => {
-                v0.set_protocol_version(protocol_version)
-            }
+            UnpaidEpoch::V0(v0) => v0.set_protocol_version(protocol_version),
         }
     }
 
     fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
         match self {
-            UnpaidEpoch::V0(v0) => {
-                v0.set_fee_multiplier(fee_multiplier)
-            }
+            UnpaidEpoch::V0(v0) => v0.set_fee_multiplier(fee_multiplier),
         }
     }
 }

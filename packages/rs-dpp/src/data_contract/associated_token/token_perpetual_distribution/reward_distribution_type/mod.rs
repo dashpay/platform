@@ -46,18 +46,18 @@ pub enum RewardDistributionType {
 impl RewardDistributionType {
     /// Determines the starting moment of reward distribution based on the contract creation time.
     ///
-    /// This function returns the appropriate `RewardDistributionMoment`, which represents when 
-    /// a reward distribution should begin, based on the type of distribution and when the 
+    /// This function returns the appropriate `RewardDistributionMoment`, which represents when
+    /// a reward distribution should begin, based on the type of distribution and when the
     /// `DataContract` was created.
     ///
     /// # Arguments
     ///
-    /// * `data_contract` - A reference to the `DataContract`, which contains details about 
+    /// * `data_contract` - A reference to the `DataContract`, which contains details about
     ///   when the contract was created in terms of block height, timestamp, and epoch index.
     ///
     /// # Returns
     ///
-    /// * `Some(RewardDistributionMoment)` if the contract's creation time can be mapped to 
+    /// * `Some(RewardDistributionMoment)` if the contract's creation time can be mapped to
     ///   a valid distribution start moment.
     /// * `None` if the contract creation time is unavailable or not applicable.
     pub fn contract_creation_moment(
@@ -65,15 +65,15 @@ impl RewardDistributionType {
         data_contract: &DataContract,
     ) -> Option<RewardDistributionMoment> {
         match self {
-            RewardDistributionType::BlockBasedDistribution { .. } => {
-                data_contract.created_at_block_height().map(RewardDistributionMoment::BlockBasedMoment)
-            }
-            RewardDistributionType::TimeBasedDistribution { .. } => {
-                data_contract.created_at().map(RewardDistributionMoment::TimeBasedMoment)
-            }
-            RewardDistributionType::EpochBasedDistribution { .. } => {
-                data_contract.created_at_epoch().map(RewardDistributionMoment::EpochBasedMoment)
-            }
+            RewardDistributionType::BlockBasedDistribution { .. } => data_contract
+                .created_at_block_height()
+                .map(RewardDistributionMoment::BlockBasedMoment),
+            RewardDistributionType::TimeBasedDistribution { .. } => data_contract
+                .created_at()
+                .map(RewardDistributionMoment::TimeBasedMoment),
+            RewardDistributionType::EpochBasedDistribution { .. } => data_contract
+                .created_at_epoch()
+                .map(RewardDistributionMoment::EpochBasedMoment),
         }
     }
     /// Converts a byte slice into the corresponding `RewardDistributionMoment` variant
@@ -96,7 +96,10 @@ impl RewardDistributionType {
     /// # Errors
     ///
     /// - `ProtocolError::DecodingError`: If the provided bytes slice does not have the expected length
-    pub fn moment_from_bytes(&self, bytes: &[u8]) -> Result<RewardDistributionMoment, ProtocolError> {
+    pub fn moment_from_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<RewardDistributionMoment, ProtocolError> {
         match self {
             RewardDistributionType::BlockBasedDistribution { .. } => {
                 if bytes.len() != 8 {
@@ -106,7 +109,9 @@ impl RewardDistributionType {
                 }
                 let mut array = [0u8; 8];
                 array.copy_from_slice(bytes);
-                Ok(RewardDistributionMoment::BlockBasedMoment(u64::from_be_bytes(array)))
+                Ok(RewardDistributionMoment::BlockBasedMoment(
+                    u64::from_be_bytes(array),
+                ))
             }
             RewardDistributionType::TimeBasedDistribution { .. } => {
                 if bytes.len() != 8 {
@@ -116,7 +121,9 @@ impl RewardDistributionType {
                 }
                 let mut array = [0u8; 8];
                 array.copy_from_slice(bytes);
-                Ok(RewardDistributionMoment::TimeBasedMoment(u64::from_be_bytes(array)))
+                Ok(RewardDistributionMoment::TimeBasedMoment(
+                    u64::from_be_bytes(array),
+                ))
             }
             RewardDistributionType::EpochBasedDistribution { .. } => {
                 if bytes.len() != 2 {
@@ -126,7 +133,9 @@ impl RewardDistributionType {
                 }
                 let mut array = [0u8; 2];
                 array.copy_from_slice(bytes);
-                Ok(RewardDistributionMoment::EpochBasedMoment(u16::from_be_bytes(array)))
+                Ok(RewardDistributionMoment::EpochBasedMoment(
+                    u16::from_be_bytes(array),
+                ))
             }
         }
     }

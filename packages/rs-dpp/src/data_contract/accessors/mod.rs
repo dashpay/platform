@@ -8,15 +8,15 @@ use crate::prelude::{BlockHeight, DataContract};
 
 use platform_value::Identifier;
 
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::group::Group;
+use crate::identity::TimestampMillis;
 use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
-use crate::block::epoch::EpochIndex;
-use crate::identity::TimestampMillis;
 
 pub mod v0;
 pub mod v1;
@@ -357,7 +357,6 @@ impl DataContractV1Setters for DataContract {
             }
         }
     }
-
 
     /// Sets the timestamp in milliseconds when the contract was created.
     fn set_created_at(&mut self, created_at: Option<TimestampMillis>) {

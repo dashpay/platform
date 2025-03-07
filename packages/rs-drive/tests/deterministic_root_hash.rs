@@ -305,7 +305,12 @@ mod tests {
             _ => "830cca9b7ffc3120c28301a8da4b64cac21b33555d59b6b09c867e3c4d4d0f92",
         };
 
-        assert_eq!(hex::encode(app_hash), expected_app_hash, "not matching after contract insertion for protocol version {}", platform_version.protocol_version);
+        assert_eq!(
+            hex::encode(app_hash),
+            expected_app_hash,
+            "not matching after contract insertion for protocol version {}",
+            platform_version.protocol_version
+        );
     }
 
     /// Runs `test_root_hash_with_batches` 10 times.
@@ -333,7 +338,7 @@ mod tests {
         let drive = setup_drive(None, None);
 
         let db_transaction = drive.grove.start_transaction();
-        
+
         for i in 1..=PlatformVersion::latest().protocol_version {
             let platform_version = PlatformVersion::get(i).expect("expected platform version");
 

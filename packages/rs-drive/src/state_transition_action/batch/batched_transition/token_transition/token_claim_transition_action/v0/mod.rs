@@ -100,8 +100,10 @@ impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionActionV0 {
 
     fn recipient(&self) -> TokenDistributionRecipient {
         match &self.distribution_info {
-            TokenDistributionInfo::PreProgrammed(_, identifier) => { TokenDistributionRecipient::Identity(*identifier)}
-            TokenDistributionInfo::Perpetual(_, _, resolved_recipient) => { resolved_recipient.into() }
+            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionInfo::Perpetual(_, _, resolved_recipient) => resolved_recipient.into(),
         }
     }
 

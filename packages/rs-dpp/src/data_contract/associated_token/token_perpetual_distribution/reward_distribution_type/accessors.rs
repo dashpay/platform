@@ -10,9 +10,15 @@ impl RewardDistributionType {
     /// - `BlockHeightInterval`, `TimestampMillisInterval`, or `EpochInterval`, depending on the variant.
     pub fn interval(&self) -> RewardDistributionMoment {
         match self {
-            RewardDistributionType::BlockBasedDistribution { interval, .. } => RewardDistributionMoment::BlockBasedMoment(*interval),
-            RewardDistributionType::TimeBasedDistribution { interval, .. } => RewardDistributionMoment::TimeBasedMoment(*interval),
-            RewardDistributionType::EpochBasedDistribution { interval, .. } => RewardDistributionMoment::EpochBasedMoment(*interval),
+            RewardDistributionType::BlockBasedDistribution { interval, .. } => {
+                RewardDistributionMoment::BlockBasedMoment(*interval)
+            }
+            RewardDistributionType::TimeBasedDistribution { interval, .. } => {
+                RewardDistributionMoment::TimeBasedMoment(*interval)
+            }
+            RewardDistributionType::EpochBasedDistribution { interval, .. } => {
+                RewardDistributionMoment::EpochBasedMoment(*interval)
+            }
         }
     }
 

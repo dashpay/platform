@@ -1,9 +1,9 @@
 mod v0;
 
-use grovedb::batch::QualifiedGroveDbOp;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use grovedb::batch::QualifiedGroveDbOp;
 
 use dpp::block::epoch::Epoch;
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
@@ -58,10 +58,7 @@ impl Drive {
             .epochs
             .add_epoch_final_info_operation
         {
-            0 => self.add_epoch_final_info_operation_v0(
-                epoch,
-                finalized_epoch_info,
-            ),
+            0 => self.add_epoch_final_info_operation_v0(epoch, finalized_epoch_info),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_epoch_final_info_operation".to_string(),
                 known_versions: vec![0],

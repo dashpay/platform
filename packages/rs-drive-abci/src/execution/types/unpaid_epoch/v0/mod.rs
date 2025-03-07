@@ -84,7 +84,10 @@ pub trait UnpaidEpochV0Setters {
     /// Set the block height of the first block in the epoch in the core chain
     fn set_start_block_core_height(&mut self, start_block_core_height: CoreBlockHeight);
     /// Set the block height of the first block in the next epoch in the core chain
-    fn set_next_epoch_start_block_core_height(&mut self, next_epoch_start_block_core_height: CoreBlockHeight);
+    fn set_next_epoch_start_block_core_height(
+        &mut self,
+        next_epoch_start_block_core_height: CoreBlockHeight,
+    );
 
     /// Set the protocol version that the epoch used
     fn set_protocol_version(&mut self, protocol_version: ProtocolVersion);

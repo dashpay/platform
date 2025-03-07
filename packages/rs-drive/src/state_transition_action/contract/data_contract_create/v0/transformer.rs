@@ -1,6 +1,6 @@
+use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
-use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use dpp::validation::operations::ProtocolValidationOperation;

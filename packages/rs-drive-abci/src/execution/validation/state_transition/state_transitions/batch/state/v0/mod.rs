@@ -220,16 +220,15 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             platform_version,
                         )?
                     }
-                    TokenTransitionAction::ClaimAction(claim_action) => {
-                        claim_action.validate_state(
+                    TokenTransitionAction::ClaimAction(claim_action) => claim_action
+                        .validate_state(
                             platform,
                             owner_id,
                             block_info,
                             execution_context,
                             transaction,
                             platform_version,
-                        )?
-                    }
+                        )?,
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

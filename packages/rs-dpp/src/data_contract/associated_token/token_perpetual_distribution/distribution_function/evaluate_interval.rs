@@ -121,18 +121,17 @@ impl DistributionFunction {
         if !(start_not_included.same_type(&step)
             && start_not_included.same_type(&end_included)
             && start_bounds_included
-            .as_ref()
-            .map_or(true, |b| start_not_included.same_type(b))
+                .as_ref()
+                .map_or(true, |b| start_not_included.same_type(b))
             && end_bounds_included
-            .as_ref()
-            .map_or(true, |b| start_not_included.same_type(b)))
+                .as_ref()
+                .map_or(true, |b| start_not_included.same_type(b)))
         {
             return Err(ProtocolError::AddingDifferentTypes(
                 "Mismatched RewardDistributionMoment types".to_string(),
             ));
         }
 
-        
         if step == 0u64 {
             return Err(ProtocolError::InvalidDistributionStep(
                 "evaluate_interval_in_bounds: step cannot be zero".into(),
@@ -173,11 +172,13 @@ impl DistributionFunction {
         let mut total: u64 = 0;
         let mut x = effective_start;
         while x <= effective_end {
-            total = total.checked_add(self.evaluate(x.to_u64())?).ok_or_else(|| {
-                ProtocolError::Overflow(
-                    "Total evaluation overflow in evaluate_interval_in_bounds".into(),
-                )
-            })?;
+            total = total
+                .checked_add(self.evaluate(x.to_u64())?)
+                .ok_or_else(|| {
+                    ProtocolError::Overflow(
+                        "Total evaluation overflow in evaluate_interval_in_bounds".into(),
+                    )
+                })?;
             x = (x + step)?;
         }
         Ok(total)

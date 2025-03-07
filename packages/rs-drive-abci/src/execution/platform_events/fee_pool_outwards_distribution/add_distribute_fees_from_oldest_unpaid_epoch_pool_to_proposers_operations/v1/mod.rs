@@ -2,8 +2,8 @@ use crate::error::Error;
 use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
-use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::fee::Credits;
@@ -80,13 +80,14 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = unpaid_epoch.into();
 
-        let (storage_and_processing_credits, block_proposers) = self.add_epoch_pool_to_proposers_payout_operations(
-            &unpaid_epoch,
-            core_block_rewards,
-            transaction,
-            batch,
-            platform_version,
-        )?;
+        let (storage_and_processing_credits, block_proposers) = self
+            .add_epoch_pool_to_proposers_payout_operations(
+                &unpaid_epoch,
+                core_block_rewards,
+                transaction,
+                batch,
+                platform_version,
+            )?;
 
         let mut inner_batch = GroveDbOpBatch::new();
 
@@ -97,10 +98,10 @@ impl<C> Platform<C> {
         inner_batch.push(update_unpaid_epoch_index_operation(
             unpaid_epoch.next_unpaid_epoch_index(),
         ));
-        
-        let proposers_paid_count =  block_proposers.len() as u16;
 
-        let finalized_epoch_info : FinalizedEpochInfo = FinalizedEpochInfoV0 {
+        let proposers_paid_count = block_proposers.len() as u16;
+
+        let finalized_epoch_info: FinalizedEpochInfo = FinalizedEpochInfoV0 {
             first_block_time: unpaid_epoch.epoch_start_time(),
             first_block_height: unpaid_epoch.start_block_height(),
             total_blocks_in_epoch: unpaid_epoch.block_count()?,
@@ -113,12 +114,17 @@ impl<C> Platform<C> {
             block_proposers,
             fee_multiplier_permille: unpaid_epoch.fee_multiplier(),
             protocol_version: unpaid_epoch.protocol_version(),
-        }.into();
-        
-        let add_epoch_final_info_operation = self.drive.add_epoch_final_info_operation(&unpaid_epoch_tree, finalized_epoch_info, platform_version)?;
+        }
+        .into();
+
+        let add_epoch_final_info_operation = self.drive.add_epoch_final_info_operation(
+            &unpaid_epoch_tree,
+            finalized_epoch_info,
+            platform_version,
+        )?;
 
         inner_batch.push(add_epoch_final_info_operation);
-        
+
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
         // We paid to all epoch proposers last block. Since proposers paid count

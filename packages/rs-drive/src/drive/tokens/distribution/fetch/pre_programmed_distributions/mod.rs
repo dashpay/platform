@@ -39,7 +39,8 @@ impl Drive {
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<dpp::prelude::TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error> {
+    ) -> Result<BTreeMap<dpp::prelude::TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error>
+    {
         self.fetch_token_pre_programmed_distributions_operations(
             token_id,
             start_at,
@@ -78,7 +79,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<dpp::prelude::TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error> {
+    ) -> Result<BTreeMap<dpp::prelude::TimestampMillis, BTreeMap<Identifier, TokenAmount>>, Error>
+    {
         match platform_version
             .drive
             .methods

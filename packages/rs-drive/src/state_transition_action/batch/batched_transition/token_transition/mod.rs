@@ -168,33 +168,15 @@ impl TokenTransitionAction {
     pub fn keeps_history(&self) -> Result<bool, Error> {
         let keeps_history = self.base().token_configuration()?.keeps_history();
         match self {
-            TokenTransitionAction::BurnAction(_) => {
-                Ok(keeps_history.keeps_burning_history())
-            }
-            TokenTransitionAction::MintAction(_) => {
-                Ok(keeps_history.keeps_minting_history())
-            }
-            TokenTransitionAction::TransferAction(_) => {
-                Ok(keeps_history.keeps_transfer_history())
-            }
-            TokenTransitionAction::FreezeAction(_) => {
-                Ok(keeps_history.keeps_freezing_history())
-            }
-            TokenTransitionAction::UnfreezeAction(_) => {
-                Ok(keeps_history.keeps_freezing_history())
-            }
-            TokenTransitionAction::ClaimAction(_) => {
-                Ok(true)
-            }
-            TokenTransitionAction::EmergencyActionAction(_) => {
-                Ok(true)
-            }
-            TokenTransitionAction::DestroyFrozenFundsAction(_) => {
-                Ok(true)
-            }
-            TokenTransitionAction::ConfigUpdateAction(_) => {
-                Ok(true)
-            }
+            TokenTransitionAction::BurnAction(_) => Ok(keeps_history.keeps_burning_history()),
+            TokenTransitionAction::MintAction(_) => Ok(keeps_history.keeps_minting_history()),
+            TokenTransitionAction::TransferAction(_) => Ok(keeps_history.keeps_transfer_history()),
+            TokenTransitionAction::FreezeAction(_) => Ok(keeps_history.keeps_freezing_history()),
+            TokenTransitionAction::UnfreezeAction(_) => Ok(keeps_history.keeps_freezing_history()),
+            TokenTransitionAction::ClaimAction(_) => Ok(true),
+            TokenTransitionAction::EmergencyActionAction(_) => Ok(true),
+            TokenTransitionAction::DestroyFrozenFundsAction(_) => Ok(true),
+            TokenTransitionAction::ConfigUpdateAction(_) => Ok(true),
         }
     }
 }

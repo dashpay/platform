@@ -18,9 +18,13 @@ impl Drive {
         finalized_epoch_info: FinalizedEpochInfo,
     ) -> Result<QualifiedGroveDbOp, Error> {
         let epoch_tree_path = epoch.get_path_vec();
-        
+
         let serialized = finalized_epoch_info.serialize_consume_to_bytes()?;
 
-        Ok(QualifiedGroveDbOp::insert_or_replace_op(epoch_tree_path, epoch_key_constants::KEY_FINISHED_EPOCH_INFO.to_vec(), Element::new_item(serialized)))
+        Ok(QualifiedGroveDbOp::insert_or_replace_op(
+            epoch_tree_path,
+            epoch_key_constants::KEY_FINISHED_EPOCH_INFO.to_vec(),
+            Element::new_item(serialized),
+        ))
     }
 }

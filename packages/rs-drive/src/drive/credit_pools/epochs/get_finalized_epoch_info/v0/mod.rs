@@ -1,16 +1,16 @@
+use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_FINISHED_EPOCH_INFO;
+use crate::drive::credit_pools::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::QueryItem;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
-use dpp::ProtocolError;
-use grovedb::query_result_type::{QueryResultType};
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::serialization::PlatformDeserializable;
-use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_FINISHED_EPOCH_INFO;
-use crate::drive::credit_pools::pools_vec_path;
-use crate::query::QueryItem;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 
 impl Drive {
     /// Retrieves finalized epoch information for a given range of epochs.
@@ -65,7 +65,9 @@ impl Drive {
     /// - Returns errors from the underlying storage query if the query fails.
     /// - Returns an empty vector if the range is empty due to exclusion of boundaries.
     ///
-    pub(super) fn get_finalized_epoch_infos_v0<T: FromIterator<(EpochIndex, FinalizedEpochInfo)>>(
+    pub(super) fn get_finalized_epoch_infos_v0<
+        T: FromIterator<(EpochIndex, FinalizedEpochInfo)>,
+    >(
         &self,
         start_epoch_index: u16,
         start_epoch_index_included: bool,
@@ -75,9 +77,11 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
         // Compute the start and end keys with the offset.
-        let start_index = start_epoch_index.checked_add(EPOCH_KEY_OFFSET)
+        let start_index = start_epoch_index
+            .checked_add(EPOCH_KEY_OFFSET)
             .ok_or(ProtocolError::Overflow("Stored epoch index too high"))?;
-        let end_index = end_epoch_index.checked_add(EPOCH_KEY_OFFSET)
+        let end_index = end_epoch_index
+            .checked_add(EPOCH_KEY_OFFSET)
             .ok_or(ProtocolError::Overflow("Stored epoch index too high"))?;
 
         let start_key = start_index.to_be_bytes().to_vec();
@@ -123,10 +127,7 @@ impl Drive {
         let mut query = Query::new_single_query_item(query_item);
         query.left_to_right = ascending;
         query.set_subquery_key(KEY_FINISHED_EPOCH_INFO.to_vec());
-        let path_query = PathQuery::new(
-            pools_vec_path(),
-            SizedQuery::new(query, None, None),
-        );
+        let path_query = PathQuery::new(pools_vec_path(), SizedQuery::new(query, None, None));
 
         let results = self
             .grove_get_path_query(
@@ -137,33 +138,36 @@ impl Drive {
                 &platform_version.drive,
             )?
             .0;
-        
-        results.to_path_key_elements().into_iter().map(|(mut path, _, element)| {
-            let epoch_index_vec =
-                path.pop()
-                    .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                        "the path must have a last element".to_string(),
-                    )))?;
-            
-            let epoch_index_bytes: [u8; 2] =
-                epoch_index_vec.as_slice().try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedSerialization(
-                        "extended epoch info: item has an invalid length".to_string(),
-                    ))
-                })?;
-            let epoch_index =
-                EpochIndex::from_be_bytes(epoch_index_bytes)
+
+        results
+            .to_path_key_elements()
+            .into_iter()
+            .map(|(mut path, _, element)| {
+                let epoch_index_vec =
+                    path.pop()
+                        .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                            "the path must have a last element".to_string(),
+                        )))?;
+
+                let epoch_index_bytes: [u8; 2] =
+                    epoch_index_vec.as_slice().try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "extended epoch info: item has an invalid length".to_string(),
+                        ))
+                    })?;
+                let epoch_index = EpochIndex::from_be_bytes(epoch_index_bytes)
                     .checked_sub(EPOCH_KEY_OFFSET)
                     .ok_or(Error::Drive(DriveError::CorruptedSerialization(
                         "epoch bytes on disk too small, should be over epoch key offset"
                             .to_string(),
                     )))?;
-            
-            let item_bytes = element.as_item_bytes()?;
 
-            let epoch_info = FinalizedEpochInfo::deserialize_from_bytes(item_bytes)?;
-            
-            Ok((epoch_index, epoch_info))
-        }).collect::<Result<T, Error>>()
+                let item_bytes = element.as_item_bytes()?;
+
+                let epoch_info = FinalizedEpochInfo::deserialize_from_bytes(item_bytes)?;
+
+                Ok((epoch_index, epoch_info))
+            })
+            .collect::<Result<T, Error>>()
     }
 }

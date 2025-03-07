@@ -39,9 +39,12 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => {
-                self.transform_into_action_v0(block_info, validation_mode, execution_context, platform_version)
-            }
+            0 => self.transform_into_action_v0(
+                block_info,
+                validation_mode,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],

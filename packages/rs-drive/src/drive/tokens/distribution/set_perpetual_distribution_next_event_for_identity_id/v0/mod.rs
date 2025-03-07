@@ -39,24 +39,40 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let perpetual_distributions_path = token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
-        
+        let perpetual_distributions_path =
+            token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
+
         let moment_bytes = moment.to_be_bytes_vec();
 
         // Generate storage flags for tracking historical cleanup
-        let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity_id.to_buffer()));
-        
+        let storage_flags =
+            StorageFlags::new_single_epoch(block_info.epoch.index, Some(identity_id.to_buffer()));
+
         if known_to_be_replace {
             // This is slightly more performant
             self.batch_replace(
-                PathKeyElementInfo::<0>::PathKeyRefElement((perpetual_distributions_path, identity_id.as_slice(), Element::new_item_with_flags(moment_bytes, storage_flags.to_some_element_flags()))),
+                PathKeyElementInfo::<0>::PathKeyRefElement((
+                    perpetual_distributions_path,
+                    identity_id.as_slice(),
+                    Element::new_item_with_flags(
+                        moment_bytes,
+                        storage_flags.to_some_element_flags(),
+                    ),
+                )),
                 drive_operations,
                 &platform_version.drive,
             )?;
         } else {
             // Insert the timestamp into the tree
             self.batch_insert(
-                PathKeyElementInfo::<0>::PathKeyRefElement((perpetual_distributions_path, identity_id.as_slice(), Element::new_item_with_flags(moment_bytes, storage_flags.to_some_element_flags()))),
+                PathKeyElementInfo::<0>::PathKeyRefElement((
+                    perpetual_distributions_path,
+                    identity_id.as_slice(),
+                    Element::new_item_with_flags(
+                        moment_bytes,
+                        storage_flags.to_some_element_flags(),
+                    ),
+                )),
                 drive_operations,
                 &platform_version.drive,
             )?;

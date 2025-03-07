@@ -36,17 +36,13 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
 
-        let epoch_start_time = self.drive.get_epoch_start_time(
-            &unpaid_epoch,
-            transaction,
-            platform_version,
-        )?;
+        let epoch_start_time =
+            self.drive
+                .get_epoch_start_time(&unpaid_epoch, transaction, platform_version)?;
 
-        let epoch_protocol_version = self.drive.get_epoch_protocol_version(
-            &unpaid_epoch,
-            transaction,
-            platform_version,
-        )?;
+        let epoch_protocol_version =
+            self.drive
+                .get_epoch_protocol_version(&unpaid_epoch, transaction, platform_version)?;
 
         let start_block_height = self.drive.get_epoch_start_block_height(
             &unpaid_epoch,
@@ -60,11 +56,9 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let fee_multiplier = self.drive.get_epoch_fee_multiplier(
-            &unpaid_epoch,
-            transaction,
-            platform_version,
-        )?;
+        let fee_multiplier =
+            self.drive
+                .get_epoch_fee_multiplier(&unpaid_epoch, transaction, platform_version)?;
 
         let next_unpaid_epoch_info = if unpaid_epoch.index == current_epoch_index - 1 {
             // Use cached or committed block height for previous epoch
@@ -151,9 +145,9 @@ mod tests {
     use super::*;
 
     mod find_oldest_epoch_needing_payment {
-        use assert_matches::assert_matches;
         use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use assert_matches::assert_matches;
         use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
         use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;

@@ -34,7 +34,9 @@ impl Drive {
             processing_pool_credits,
             total_credits: storage_pool_credits
                 .checked_add(processing_pool_credits)
-                .ok_or_else(|| get_overflow_error("overflow getting total credits for distribution"))?
+                .ok_or_else(|| {
+                    get_overflow_error("overflow getting total credits for distribution")
+                })?,
         })
     }
 }
@@ -81,7 +83,8 @@ mod tests {
 
         let retrieved_combined_fee = drive
             .get_epoch_total_credits_for_distribution(&epoch, Some(&transaction), platform_version)
-            .expect("should get combined fee").total_credits;
+            .expect("should get combined fee")
+            .total_credits;
 
         assert_eq!(retrieved_combined_fee, processing_fee + storage_fee);
     }

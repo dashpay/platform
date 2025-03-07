@@ -55,21 +55,27 @@ impl Add for RewardDistributionMoment {
 
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (RewardDistributionMoment::BlockBasedMoment(a), RewardDistributionMoment::BlockBasedMoment(b)) => {
-                a.checked_add(b)
-                    .map(RewardDistributionMoment::BlockBasedMoment)
-                    .ok_or(ProtocolError::Overflow("Block height addition overflow"))
-            }
-            (RewardDistributionMoment::TimeBasedMoment(a), RewardDistributionMoment::TimeBasedMoment(b)) => {
-                a.checked_add(b)
-                    .map(RewardDistributionMoment::TimeBasedMoment)
-                    .ok_or(ProtocolError::Overflow("Timestamp addition overflow"))
-            }
-            (RewardDistributionMoment::EpochBasedMoment(a), RewardDistributionMoment::EpochBasedMoment(b)) => {
-                a.checked_add(b)
-                    .map(RewardDistributionMoment::EpochBasedMoment)
-                    .ok_or(ProtocolError::Overflow("Epoch index addition overflow"))
-            }
+            (
+                RewardDistributionMoment::BlockBasedMoment(a),
+                RewardDistributionMoment::BlockBasedMoment(b),
+            ) => a
+                .checked_add(b)
+                .map(RewardDistributionMoment::BlockBasedMoment)
+                .ok_or(ProtocolError::Overflow("Block height addition overflow")),
+            (
+                RewardDistributionMoment::TimeBasedMoment(a),
+                RewardDistributionMoment::TimeBasedMoment(b),
+            ) => a
+                .checked_add(b)
+                .map(RewardDistributionMoment::TimeBasedMoment)
+                .ok_or(ProtocolError::Overflow("Timestamp addition overflow")),
+            (
+                RewardDistributionMoment::EpochBasedMoment(a),
+                RewardDistributionMoment::EpochBasedMoment(b),
+            ) => a
+                .checked_add(b)
+                .map(RewardDistributionMoment::EpochBasedMoment)
+                .ok_or(ProtocolError::Overflow("Epoch index addition overflow")),
             _ => Err(ProtocolError::AddingDifferentTypes(
                 "Cannot add different types of RewardDistributionMoment".to_string(),
             )),
@@ -88,7 +94,7 @@ impl PartialEq<&u64> for RewardDistributionMoment {
                 } else {
                     value == &(**other as u16)
                 }
-            },
+            }
         }
     }
 }
@@ -150,7 +156,7 @@ impl PartialEq<usize> for RewardDistributionMoment {
 impl RewardDistributionMoment {
     /// Converts a reference to `BlockInfo` and a `RewardDistributionType` into a `RewardDistributionMoment`.
     ///
-    /// This determines the appropriate `RewardDistributionMoment` based on the type of 
+    /// This determines the appropriate `RewardDistributionMoment` based on the type of
     /// `RewardDistributionType`. The function selects:
     /// - **Block height** for block-based distributions.
     /// - **Timestamp (milliseconds)** for time-based distributions.

@@ -132,7 +132,13 @@ impl DataContractV1 {
             owner_id,
             document_schemas,
             schema_defs,
-            created_at, updated_at, created_at_block_height, updated_at_block_height, created_at_epoch, updated_at_epoch, groups,
+            created_at,
+            updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_epoch,
+            updated_at_epoch,
+            groups,
             tokens,
         } = data_contract_data;
 

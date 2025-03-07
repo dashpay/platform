@@ -76,13 +76,15 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = unpaid_epoch.into();
 
-        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
-            &unpaid_epoch,
-            core_block_rewards,
-            transaction,
-            batch,
-            platform_version,
-        )?.1;
+        let proposers_paid_count = self
+            .add_epoch_pool_to_proposers_payout_operations(
+                &unpaid_epoch,
+                core_block_rewards,
+                transaction,
+                batch,
+                platform_version,
+            )?
+            .1;
 
         let mut inner_batch = GroveDbOpBatch::new();
 

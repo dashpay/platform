@@ -1,9 +1,9 @@
 mod v0;
 mod v1;
 
-use dpp::fee::Credits;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::fee::Credits;
 
 use crate::execution::types::proposer_payouts::v0::ProposersPayouts;
 use crate::platform_types::platform::Platform;

@@ -1097,7 +1097,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -1145,7 +1145,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -1172,8 +1172,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152, 86,
-            46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
+            32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152,
+            86, 46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -1212,7 +1212,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -1326,7 +1326,7 @@ mod tests {
             person_document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize from bytes");
+        .expect("we should be able to deserialize from bytes");
         let last_name = document
             .get("lastName")
             .expect("we should be able to get the last name")
@@ -1430,7 +1430,7 @@ mod tests {
             person_document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize from bytes");
+        .expect("we should be able to deserialize from bytes");
         let last_name = document
             .get("lastName")
             .expect("we should be able to get the last name")
@@ -1543,7 +1543,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1599,7 +1599,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1650,7 +1650,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1702,7 +1702,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1762,7 +1762,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1810,7 +1810,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1870,7 +1870,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -1929,7 +1929,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -2160,13 +2160,13 @@ mod tests {
             document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize the document");
+        .expect("we should be able to deserialize the document");
 
         assert_eq!(
             last_person.id().to_vec(),
             vec![
-                76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
-                116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
+                76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
+                189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
             ]
         );
 
@@ -2204,7 +2204,7 @@ mod tests {
             document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize the document");
+        .expect("we should be able to deserialize the document");
 
         assert_eq!(
             last_person.id().to_vec(),
@@ -2271,13 +2271,13 @@ mod tests {
             document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize the document");
+        .expect("we should be able to deserialize the document");
 
         assert_eq!(
             last_person.id().to_vec(),
             vec![
-                249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
-                107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
+                249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175,
+                200, 107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
             ]
         );
 
@@ -2348,7 +2348,7 @@ mod tests {
             false,
             platform_version,
         )
-            .expect("expected to get cbor document");
+        .expect("expected to get cbor document");
 
         drive
             .apply_contract(
@@ -2486,8 +2486,8 @@ mod tests {
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                251, 69, 177, 93, 128, 236, 106, 87, 205, 123, 80, 61, 44, 107, 186, 193, 22, 192, 239,
-                7, 107, 110, 97, 197, 59, 245, 26, 12, 63, 91, 248, 231
+                251, 69, 177, 93, 128, 236, 106, 87, 205, 123, 80, 61, 44, 107, 186, 193, 22, 192,
+                239, 7, 107, 110, 97, 197, 59, 245, 26, 12, 63, 91, 248, 231
             ],
         );
     }
@@ -2507,7 +2507,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192, 75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
+            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192,
+            75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2546,7 +2547,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -2660,7 +2661,7 @@ mod tests {
             person_document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize from bytes");
+        .expect("we should be able to deserialize from bytes");
         let last_name = document
             .get("lastName")
             .expect("we should be able to get the last name")
@@ -2764,7 +2765,7 @@ mod tests {
             person_document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize from bytes");
+        .expect("we should be able to deserialize from bytes");
         let last_name = document
             .get("lastName")
             .expect("we should be able to get the last name")
@@ -2877,7 +2878,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -2933,7 +2934,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -2984,7 +2985,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -3036,7 +3037,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -3096,7 +3097,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -3144,7 +3145,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -3204,7 +3205,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -3263,7 +3264,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -3494,13 +3495,13 @@ mod tests {
             document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize the document");
+        .expect("we should be able to deserialize the document");
 
         assert_eq!(
             last_person.id().to_vec(),
             vec![
-                76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
-                116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
+                76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
+                189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
             ]
         );
 
@@ -3538,7 +3539,7 @@ mod tests {
             document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize the document");
+        .expect("we should be able to deserialize the document");
 
         assert_eq!(
             last_person.id().to_vec(),
@@ -3605,13 +3606,13 @@ mod tests {
             document_type,
             platform_version,
         )
-            .expect("we should be able to deserialize the document");
+        .expect("we should be able to deserialize the document");
 
         assert_eq!(
             last_person.id().to_vec(),
             vec![
-                249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
-                107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
+                249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175,
+                200, 107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
             ]
         );
 
@@ -3682,7 +3683,7 @@ mod tests {
             false,
             platform_version,
         )
-            .expect("expected to get cbor document");
+        .expect("expected to get cbor document");
 
         drive
             .apply_contract(
@@ -3820,7 +3821,8 @@ mod tests {
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                5, 92, 86, 251, 178, 238, 8, 246, 80, 139, 148, 81, 135, 108, 57, 197, 114, 102, 219, 71, 50, 0, 47, 252, 106, 157, 118, 30, 128, 199, 55, 126,
+                5, 92, 86, 251, 178, 238, 8, 246, 80, 139, 148, 81, 135, 108, 57, 197, 114, 102,
+                219, 71, 50, 0, 47, 252, 106, 157, 118, 30, 128, 199, 55, 126,
             ],
         );
     }
@@ -3892,7 +3894,8 @@ mod tests {
             last_name: String::from("Ogwu"),
             age: rng.gen_range(0..85),
         };
-        let serialized_person = serde_json::to_value(updated_fixed_person).expect("serialized person");
+        let serialized_person =
+            serde_json::to_value(updated_fixed_person).expect("serialized person");
         let person_cbor = cbor_serializer::serializable_value_to_cbor(&serialized_person, Some(0))
             .expect("expected to serialize to cbor");
         let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -3931,7 +3934,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -3969,7 +3972,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192, 75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
+            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192,
+            75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4011,7 +4015,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -4070,7 +4074,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -4123,7 +4127,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -4182,7 +4186,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("proof should be executed");
@@ -4238,14 +4242,14 @@ mod tests {
             }),
             None,
         )
-            .expect("expected to serialize to cbor");
+        .expect("expected to serialize to cbor");
         let query1 = DriveDocumentQuery::from_cbor(
             query_cbor.as_slice(),
             &contract,
             person_document_type,
             &drive.config,
         )
-            .expect("should build query");
+        .expect("should build query");
 
         let sql_string = "select * from person order by firstName asc limit 100";
         let query2 =
@@ -4263,14 +4267,14 @@ mod tests {
             }),
             None,
         )
-            .expect("expected to serialize to cbor");
+        .expect("expected to serialize to cbor");
         let query1 = DriveDocumentQuery::from_cbor(
             query_cbor.as_slice(),
             &contract,
             person_document_type,
             &drive.config,
         )
-            .expect("should build query");
+        .expect("should build query");
 
         let sql_string = "select * from person where firstName = 'Chris'";
         let query2 =
@@ -4292,14 +4296,14 @@ mod tests {
             }),
             None,
         )
-            .expect("expected to serialize to cbor");
+        .expect("expected to serialize to cbor");
         let query1 = DriveDocumentQuery::from_cbor(
             query_cbor.as_slice(),
             &contract,
             person_document_type,
             &drive.config,
         )
-            .expect("should build query");
+        .expect("should build query");
 
         let sql_string =
             "select * from person where firstName < 'Chris' order by firstName asc limit 100";
@@ -4322,14 +4326,14 @@ mod tests {
             }),
             None,
         )
-            .expect("expected to serialize to cbor");
+        .expect("expected to serialize to cbor");
         let query1 = DriveDocumentQuery::from_cbor(
             query_cbor.as_slice(),
             &contract,
             person_document_type,
             &drive.config,
         )
-            .expect("should build query");
+        .expect("should build query");
 
         let sql_string =
             "select * from person where firstName like 'C%' order by firstName asc limit 100";
@@ -4353,14 +4357,14 @@ mod tests {
             }),
             None,
         )
-            .expect("expected to serialize to cbor");
+        .expect("expected to serialize to cbor");
         let query1 = DriveDocumentQuery::from_cbor(
             query_cbor.as_slice(),
             &contract,
             person_document_type,
             &drive.config,
         )
-            .expect("should build query");
+        .expect("should build query");
 
         let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
         let query2 =
@@ -4383,14 +4387,14 @@ mod tests {
             }),
             None,
         )
-            .expect("expected to serialize to cbor");
+        .expect("expected to serialize to cbor");
         let query1 = DriveDocumentQuery::from_cbor(
             query_cbor.as_slice(),
             &contract,
             person_document_type,
             &drive.config,
         )
-            .expect("should build query");
+        .expect("should build query");
 
         let sql_string =
             "select * from person where firstName in ('a', 'b') order by firstName limit 100";
@@ -4420,7 +4424,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            40, 208, 218, 141, 51, 7, 57, 5, 17, 42, 78, 70, 239, 65, 98, 146, 20, 42, 68, 135, 241, 126, 28, 204, 213, 7, 128, 14, 31, 163, 15, 2,
+            40, 208, 218, 141, 51, 7, 57, 5, 17, 42, 78, 70, 239, 65, 98, 146, 20, 42, 68, 135,
+            241, 126, 28, 204, 213, 7, 128, 14, 31, 163, 15, 2,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4459,7 +4464,7 @@ mod tests {
             person_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -4542,7 +4547,8 @@ mod tests {
 
         // Make sure the state is deterministic
         let expected_app_hash = vec![
-            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192, 75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
+            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192,
+            75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4620,7 +4626,7 @@ mod tests {
             contract.id().into_buffer(),
             platform_version,
         )
-            .expect("expected to get contract from proof");
+        .expect("expected to get contract from proof");
 
         assert_eq!(root_hash, proof_root_hash);
         assert_eq!(
@@ -4664,7 +4670,7 @@ mod tests {
             contract.id().into_buffer(),
             platform_version,
         )
-            .expect("expected to get contract from proof");
+        .expect("expected to get contract from proof");
 
         assert_eq!(root_hash, proof_root_hash);
         assert_eq!(
@@ -4688,8 +4694,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
-            233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
+            142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241,
+            201, 233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4729,7 +4735,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -4780,7 +4786,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -4834,8 +4840,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -4860,7 +4867,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -4892,8 +4899,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain desc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -4918,7 +4926,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -4993,7 +5001,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5049,7 +5057,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5097,7 +5105,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5241,8 +5249,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
-            233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
+            142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241,
+            201, 233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -5262,8 +5270,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -5287,7 +5296,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5336,7 +5345,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136, 190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
+            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136,
+            190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -5356,8 +5366,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -5381,7 +5392,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5430,7 +5441,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136, 190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
+            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136,
+            190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5450,8 +5462,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -5475,7 +5488,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5524,7 +5537,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136, 190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
+            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136,
+            190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5544,8 +5558,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -5569,7 +5584,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5618,7 +5633,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136, 190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
+            89, 134, 179, 83, 10, 119, 219, 251, 215, 151, 38, 111, 63, 245, 250, 229, 201, 136,
+            190, 129, 75, 226, 88, 216, 93, 69, 152, 224, 156, 93, 170, 125,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5638,8 +5654,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -5663,7 +5680,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -5773,8 +5790,9 @@ mod tests {
         let value1 = serde_json::to_value(domain1).expect("serialized domain");
         let document_cbor1 = cbor_serializer::serializable_value_to_cbor(&value1, Some(0))
             .expect("expected to serialize to cbor");
-        let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
-            .expect("document should be properly deserialized");
+        let document1 =
+            Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
@@ -5811,7 +5829,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            236, 213, 202, 143, 111, 54, 250, 174, 57, 239, 156, 18, 122, 223, 88, 20, 13, 180, 89, 144, 31, 20, 138, 189, 2, 148, 160, 95, 231, 108, 216, 163,
+            236, 213, 202, 143, 111, 54, 250, 174, 57, 239, 156, 18, 122, 223, 88, 20, 13, 180, 89,
+            144, 31, 20, 138, 189, 2, 148, 160, 95, 231, 108, 216, 163,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5855,7 +5874,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
@@ -5930,8 +5949,9 @@ mod tests {
         let value0 = serde_json::to_value(domain0).expect("serialized domain");
         let document_cbor0 = cbor_serializer::serializable_value_to_cbor(&value0, Some(0))
             .expect("expected to serialize to cbor");
-        let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None, platform_version)
-            .expect("document should be properly deserialized");
+        let document0 =
+            Document::from_cbor(document_cbor0.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -5976,8 +5996,9 @@ mod tests {
         let value1 = serde_json::to_value(domain1).expect("serialized domain");
         let document_cbor1 = cbor_serializer::serializable_value_to_cbor(&value1, Some(0))
             .expect("expected to serialize to cbor");
-        let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
-            .expect("document should be properly deserialized");
+        let document1 =
+            Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -6015,7 +6036,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            236, 213, 202, 143, 111, 54, 250, 174, 57, 239, 156, 18, 122, 223, 88, 20, 13, 180, 89, 144, 31, 20, 138, 189, 2, 148, 160, 95, 231, 108, 216, 163
+            236, 213, 202, 143, 111, 54, 250, 174, 57, 239, 156, 18, 122, 223, 88, 20, 13, 180, 89,
+            144, 31, 20, 138, 189, 2, 148, 160, 95, 231, 108, 216, 163,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6059,7 +6081,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
 
         // We are commenting this out on purpose to make it easier to find
         // let mut query_operations: Vec<QueryOperation> = vec![];
@@ -6139,8 +6161,9 @@ mod tests {
         let value0 = serde_json::to_value(domain0).expect("serialized domain");
         let document_cbor0 = cbor_serializer::serializable_value_to_cbor(&value0, Some(0))
             .expect("expected to serialize to cbor");
-        let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None, platform_version)
-            .expect("document should be properly deserialized");
+        let document0 =
+            Document::from_cbor(document_cbor0.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -6183,8 +6206,9 @@ mod tests {
         let value1 = serde_json::to_value(domain1).expect("serialized domain");
         let document_cbor1 = cbor_serializer::serializable_value_to_cbor(&value1, Some(0))
             .expect("expected to serialize to cbor");
-        let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
-            .expect("document should be properly deserialized");
+        let document1 =
+            Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -6222,7 +6246,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            236, 213, 202, 143, 111, 54, 250, 174, 57, 239, 156, 18, 122, 223, 88, 20, 13, 180, 89, 144, 31, 20, 138, 189, 2, 148, 160, 95, 231, 108, 216, 163,
+            236, 213, 202, 143, 111, 54, 250, 174, 57, 239, 156, 18, 122, 223, 88, 20, 13, 180, 89,
+            144, 31, 20, 138, 189, 2, 148, 160, 95, 231, 108, 216, 163,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6276,7 +6301,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -6330,7 +6355,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -6359,8 +6384,9 @@ mod tests {
 
         // A query getting one element starting with a in dash parent domain asc
 
-        let anna_id = hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
-            .expect("expected to decode id");
+        let anna_id =
+            hex::decode("0e97eb86ceca4309751616089336a127a5d48282712473b2d0fc5663afb1a080")
+                .expect("expected to decode id");
         let encoded_start_at = bs58::encode(anna_id).into_string();
 
         let query_value = json!({
@@ -6384,7 +6410,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -6434,7 +6460,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            174, 178, 50, 69, 201, 231, 248, 75, 88, 168, 83, 29, 141, 40, 117, 63, 157, 205, 24, 56, 113, 108, 224, 27, 225, 24, 134, 153, 157, 130, 80, 200,
+            174, 178, 50, 69, 201, 231, 248, 75, 88, 168, 83, 29, 141, 40, 117, 63, 157, 205, 24,
+            56, 113, 108, 224, 27, 225, 24, 134, 153, 157, 130, 80, 200,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6468,7 +6495,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -6513,7 +6540,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            174, 178, 50, 69, 201, 231, 248, 75, 88, 168, 83, 29, 141, 40, 117, 63, 157, 205, 24, 56, 113, 108, 224, 27, 225, 24, 134, 153, 157, 130, 80, 200,
+            174, 178, 50, 69, 201, 231, 248, 75, 88, 168, 83, 29, 141, 40, 117, 63, 157, 205, 24,
+            56, 113, 108, 224, 27, 225, 24, 134, 153, 157, 130, 80, 200,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6566,7 +6594,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -6613,7 +6641,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            174, 178, 50, 69, 201, 231, 248, 75, 88, 168, 83, 29, 141, 40, 117, 63, 157, 205, 24, 56, 113, 108, 224, 27, 225, 24, 134, 153, 157, 130, 80, 200,
+            174, 178, 50, 69, 201, 231, 248, 75, 88, 168, 83, 29, 141, 40, 117, 63, 157, 205, 24,
+            56, 113, 108, 224, 27, 225, 24, 134, 153, 157, 130, 80, 200,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6669,7 +6698,7 @@ mod tests {
             domain_document_type,
             &drive.config,
         )
-            .expect("query should be built");
+        .expect("query should be built");
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("proof should be executed");
@@ -6762,8 +6791,8 @@ mod tests {
           }
         });
 
-        let factory =
-            DataContractFactory::new(platform_version.protocol_version).expect("should create factory");
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("should create factory");
 
         let contract = factory
             .create_with_value_config(owner_id, 0, documents, None, None)
@@ -6923,7 +6952,7 @@ mod tests {
                 ["$createdAt", "==", created_at]
             ],
         })
-            .expect("should create cbor");
+        .expect("should create cbor");
 
         let query_bytes = cbor_serializer::serializable_value_to_cbor(&query_cbor, None)
             .expect("should serialize cbor value to bytes");
@@ -6938,7 +6967,7 @@ mod tests {
             document_type,
             &DriveConfig::default(),
         )
-            .expect("should create a query from cbor");
+        .expect("should create a query from cbor");
 
         assert_eq!(
             query.internal_clauses.equal_clauses.get("$createdAt"),

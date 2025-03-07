@@ -2,6 +2,7 @@ use crate::data_contract::config::v0::DataContractConfigV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
@@ -9,13 +10,12 @@ use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{
     DataContract, DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
 };
+use crate::identity::TimestampMillis;
+use crate::prelude::BlockHeight;
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use crate::block::epoch::EpochIndex;
-use crate::identity::TimestampMillis;
-use crate::prelude::BlockHeight;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
@@ -134,7 +134,13 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     owner_id,
                     schema_defs,
                     document_types,
-                    created_at, updated_at, created_at_block_height, updated_at_block_height, created_at_epoch, updated_at_epoch, groups,
+                    created_at,
+                    updated_at,
+                    created_at_block_height,
+                    updated_at_block_height,
+                    created_at_epoch,
+                    updated_at_epoch,
+                    groups,
                     tokens,
                 } = v1;
 
