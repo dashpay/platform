@@ -30,6 +30,7 @@ use dpp::fee::default_costs::{
     CachedEpochIndexFeeVersions, CachedEpochIndexFeeVersionsFieldsBeforeVersion4,
     EpochIndexFeeVersionsForStorage,
 };
+use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
 use dpp::version::fee::FeeVersion;
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -114,6 +115,7 @@ impl Debug for PlatformStateV0 {
                 "instant_lock_validating_quorums",
                 &self.instant_lock_validating_quorums,
             )
+            .field("previous_fee_versions", &self.previous_fee_versions)
             .finish()
     }
 }
@@ -243,6 +245,29 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV1 {
                     ))
                 })
                 .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
+            previous_fee_versions: value
+                .previous_fee_versions
+                .into_iter()
+                .map(|(epoch_index, fee_version)| (epoch_index, fee_version.fee_version_number))
+                .collect(),
+        })
+    }
+}
+
+impl TryFrom<PlatformStateV0> for ReducedPlatformStateForSavingV0 {
+    type Error = Error;
+
+    fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
+        Ok(ReducedPlatformStateForSavingV0 {
+            current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
+            next_epoch_protocol_version: value.next_epoch_protocol_version,
+            current_validator_set_quorum_hash: value
+                .current_validator_set_quorum_hash
+                .to_byte_array()
+                .into(),
+            next_validator_set_quorum_hash: value
+                .next_validator_set_quorum_hash
+                .map(|quorum_hash| quorum_hash.to_byte_array().into()),
             previous_fee_versions: value
                 .previous_fee_versions
                 .into_iter()

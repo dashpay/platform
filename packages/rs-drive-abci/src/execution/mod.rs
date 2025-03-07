@@ -3,7 +3,7 @@ mod check_tx;
 /// Engine module
 pub mod engine;
 /// platform execution events
-pub(in crate::execution) mod platform_events;
+pub(crate) mod platform_events;
 /// Storage implementation for the execution state
 pub mod storage;
 /// Types needed in execution

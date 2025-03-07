@@ -59,6 +59,7 @@ pub mod voting;
 pub mod core_types;
 
 pub mod group;
+pub mod reduced_platform_state;
 pub mod withdrawal;
 
 pub use async_trait;
