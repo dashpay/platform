@@ -26,6 +26,8 @@ pub mod token_claim_transition_action;
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contracts::SystemDataContract;
 use dpp::document::Document;
@@ -34,7 +36,7 @@ use dpp::prelude::{DataContract, IdentityNonce};
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 use crate::error::Error;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::{TokenConfigUpdateTransitionAction, TokenConfigUpdateTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::{TokenFreezeTransitionAction, TokenFreezeTransitionActionAccessorsV0};
@@ -160,5 +162,39 @@ impl TokenTransitionAction {
                 platform_version,
             )
             .map_err(Error::Protocol)
+    }
+
+    /// Do we keep history for this action
+    pub fn keeps_history(&self) -> Result<bool, Error> {
+        let keeps_history = self.base().token_configuration()?.keeps_history();
+        match self {
+            TokenTransitionAction::BurnAction(_) => {
+                Ok(keeps_history.keeps_burning_history())
+            }
+            TokenTransitionAction::MintAction(_) => {
+                Ok(keeps_history.keeps_minting_history())
+            }
+            TokenTransitionAction::TransferAction(_) => {
+                Ok(keeps_history.keeps_transfer_history())
+            }
+            TokenTransitionAction::FreezeAction(_) => {
+                Ok(keeps_history.keeps_freezing_history())
+            }
+            TokenTransitionAction::UnfreezeAction(_) => {
+                Ok(keeps_history.keeps_freezing_history())
+            }
+            TokenTransitionAction::ClaimAction(_) => {
+                Ok(true)
+            }
+            TokenTransitionAction::EmergencyActionAction(_) => {
+                Ok(true)
+            }
+            TokenTransitionAction::DestroyFrozenFundsAction(_) => {
+                Ok(true)
+            }
+            TokenTransitionAction::ConfigUpdateAction(_) => {
+                Ok(true)
+            }
+        }
     }
 }

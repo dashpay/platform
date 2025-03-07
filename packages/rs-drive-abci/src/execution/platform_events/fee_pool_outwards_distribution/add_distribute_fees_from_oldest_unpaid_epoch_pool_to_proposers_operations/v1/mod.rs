@@ -7,7 +7,6 @@ use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::fee::Credits;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
@@ -98,6 +97,8 @@ impl<C> Platform<C> {
         inner_batch.push(update_unpaid_epoch_index_operation(
             unpaid_epoch.next_unpaid_epoch_index(),
         ));
+        
+        let proposers_paid_count =  block_proposers.len() as u16;
 
         let finalized_epoch_info : FinalizedEpochInfo = FinalizedEpochInfoV0 {
             first_block_time: unpaid_epoch.epoch_start_time(),
@@ -122,7 +123,7 @@ impl<C> Platform<C> {
 
         // We paid to all epoch proposers last block. Since proposers paid count
         // was equal to proposers limit, we paid to 0 proposers this block
-        if block_proposers.len() == 0 {
+        if proposers_paid_count == 0 {
             return Ok(None);
         }
 

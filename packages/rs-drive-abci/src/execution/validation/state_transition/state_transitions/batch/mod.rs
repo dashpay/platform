@@ -10201,7 +10201,6 @@ mod tests {
         use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
         use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
-        use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationLocalizationsV0;
         use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -10209,6 +10208,7 @@ mod tests {
         use dpp::group::GroupStateTransitionInfoStatus;
         use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
         use dpp::state_transition::batch_transition::TokenConfigUpdateTransition;
+        use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
         mod token_mint_tests {
             use super::*;
 
@@ -15197,6 +15197,7 @@ mod tests {
             }
 
             mod with_group {
+                use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
                 use super::*;
 
                 #[test]
@@ -16206,11 +16207,11 @@ mod tests {
                                 TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
                                     localizations: [(
                                         "en".to_string(),
-                                        TokenConfigurationLocalizationsV0 {
+                                        TokenConfigurationLocalizationV0 {
                                             should_capitalize: true,
                                             singular_form: "garzon".to_string(),
                                             plural_form: "garzons".to_string(),
-                                        },
+                                        }.into(),
                                     )]
                                     .into(),
                                     decimals: 8,
@@ -16275,11 +16276,11 @@ mod tests {
                                 TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
                                     localizations: [(
                                         "en".to_string(),
-                                        TokenConfigurationLocalizationsV0 {
+                                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
                                             should_capitalize: true,
                                             singular_form: "garzon".to_string(),
                                             plural_form: "garzons".to_string(),
-                                        },
+                                        }),
                                     )]
                                     .into(),
                                     decimals: 8,

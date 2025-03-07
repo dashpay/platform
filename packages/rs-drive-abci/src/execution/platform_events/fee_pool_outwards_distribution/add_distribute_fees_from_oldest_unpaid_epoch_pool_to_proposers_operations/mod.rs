@@ -55,7 +55,7 @@ impl<C> Platform<C> {
                 batch,
                 platform_version,
             ),
-            0 => self.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v1(
+            1 => self.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v1(
                 current_epoch_index,
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,

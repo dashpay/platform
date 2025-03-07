@@ -93,7 +93,7 @@ impl Drive {
                 QueryItem::Key(start_key)
             } else {
                 // No epochs satisfy the range.
-                return Ok(vec![]);
+                return Ok(T::from_iter(std::iter::empty()));
             }
         } else if ascending {
             // Ascending order: start_epoch_index < end_epoch_index.

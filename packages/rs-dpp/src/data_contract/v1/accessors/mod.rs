@@ -5,7 +5,6 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DocumentName, GroupContractPosition, TokenContractPosition};
-use crate::metadata::Metadata;
 
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
@@ -16,6 +15,9 @@ use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
+use crate::block::epoch::EpochIndex;
+use crate::identity::TimestampMillis;
+use crate::prelude::BlockHeight;
 
 impl DataContractV0Getters for DataContractV1 {
     fn id(&self) -> Identifier {
@@ -96,14 +98,6 @@ impl DataContractV0Getters for DataContractV1 {
         &mut self.document_types
     }
 
-    fn metadata(&self) -> Option<&Metadata> {
-        self.metadata.as_ref()
-    }
-
-    fn metadata_mut(&mut self) -> Option<&mut Metadata> {
-        self.metadata.as_mut()
-    }
-
     fn config(&self) -> &DataContractConfig {
         &self.config
     }
@@ -135,11 +129,7 @@ impl DataContractV0Setters for DataContractV1 {
     fn set_owner_id(&mut self, owner_id: Identifier) {
         self.owner_id = owner_id;
     }
-
-    fn set_metadata(&mut self, metadata: Option<Metadata>) {
-        self.metadata = metadata;
-    }
-
+    
     fn set_config(&mut self, config: DataContractConfig) {
         self.config = config;
     }
@@ -204,6 +194,36 @@ impl DataContractV1Getters for DataContractV1 {
             .get(&position)
             .map(|_| calculate_token_id(self.id.as_bytes(), position).into())
     }
+
+    /// Returns the timestamp in milliseconds when the contract was created.
+    fn created_at(&self) -> Option<TimestampMillis> {
+        self.created_at
+    }
+
+    /// Returns the timestamp in milliseconds when the contract was last updated.
+    fn updated_at(&self) -> Option<TimestampMillis> {
+        self.updated_at
+    }
+
+    /// Returns the block height at which the contract was created.
+    fn created_at_block_height(&self) -> Option<BlockHeight> {
+        self.created_at_block_height
+    }
+
+    /// Returns the block height at which the contract was last updated.
+    fn updated_at_block_height(&self) -> Option<BlockHeight> {
+        self.updated_at_block_height
+    }
+
+    /// Returns the epoch at which the contract was created.
+    fn created_at_epoch(&self) -> Option<EpochIndex> {
+        self.created_at_epoch
+    }
+
+    /// Returns the epoch at which the contract was last updated.
+    fn updated_at_epoch(&self) -> Option<EpochIndex> {
+        self.updated_at_epoch
+    }
 }
 
 impl DataContractV1Setters for DataContractV1 {
@@ -221,5 +241,35 @@ impl DataContractV1Setters for DataContractV1 {
 
     fn add_token(&mut self, name: TokenContractPosition, token: TokenConfiguration) {
         self.tokens.insert(name, token);
+    }
+
+    /// Sets the timestamp in milliseconds when the contract was created.
+    fn set_created_at(&mut self, created_at: Option<TimestampMillis>) {
+        self.created_at = created_at;
+    }
+
+    /// Sets the timestamp in milliseconds when the contract was last updated.
+    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
+        self.updated_at = updated_at;
+    }
+
+    /// Sets the block height at which the contract was created.
+    fn set_created_at_block_height(&mut self, block_height: Option<BlockHeight>) {
+        self.created_at_block_height = block_height;
+    }
+
+    /// Sets the block height at which the contract was last updated.
+    fn set_updated_at_block_height(&mut self, block_height: Option<BlockHeight>) {
+        self.updated_at_block_height = block_height;
+    }
+
+    /// Sets the epoch at which the contract was created.
+    fn set_created_at_epoch(&mut self, epoch: Option<EpochIndex>) {
+        self.created_at_epoch = epoch;
+    }
+
+    /// Sets the epoch at which the contract was last updated.
+    fn set_updated_at_epoch(&mut self, epoch: Option<EpochIndex>) {
+        self.updated_at_epoch = epoch;
     }
 }

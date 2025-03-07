@@ -110,7 +110,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 epoch_info.current_epoch_index(),
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,
-                storage_fee_distribution_outcome.map(|s| s.total_distributed_storage_fees).unwrap_or_default(),
+                storage_fee_distribution_outcome.as_ref().map(|s| s.total_distributed_storage_fees).unwrap_or_default(),
                 transaction,
                 &mut batch,
                 platform_version,

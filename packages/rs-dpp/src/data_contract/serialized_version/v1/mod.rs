@@ -13,6 +13,9 @@ use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use crate::block::epoch::EpochIndex;
+use crate::identity::TimestampMillis;
+use crate::prelude::BlockHeight;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +38,19 @@ pub struct DataContractInSerializationFormatV1 {
 
     /// Document JSON Schemas per type
     pub document_schemas: BTreeMap<DocumentName, Value>,
+
+    /// The time in milliseconds that the contract was created.
+    pub created_at: Option<TimestampMillis>,
+    /// The time in milliseconds that the contract was last updated.
+    pub updated_at: Option<TimestampMillis>,
+    /// The block that the document was created.
+    pub created_at_block_height: Option<BlockHeight>,
+    /// The block that the contract was last updated
+    pub updated_at_block_height: Option<BlockHeight>,
+    /// The epoch at which the contract was created.
+    pub created_at_epoch: Option<EpochIndex>,
+    /// The epoch at which the contract was last updated.
+    pub updated_at_epoch: Option<EpochIndex>,
 
     /// Groups that allow for specific multiparty actions on the contract
     #[serde(default, deserialize_with = "deserialize_u16_group_map")]
@@ -100,6 +116,12 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                         .into_iter()
                         .map(|(key, document_type)| (key, document_type.schema_owned()))
                         .collect(),
+                    created_at: None,
+                    updated_at: None,
+                    created_at_block_height: None,
+                    updated_at_block_height: None,
+                    created_at_epoch: None,
+                    updated_at_epoch: None,
                     groups: Default::default(),
                     tokens: Default::default(),
                 }
@@ -112,9 +134,8 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     owner_id,
                     schema_defs,
                     document_types,
-                    groups,
+                    created_at, updated_at, created_at_block_height, updated_at_block_height, created_at_epoch, updated_at_epoch, groups,
                     tokens,
-                    ..
                 } = v1;
 
                 DataContractInSerializationFormatV1 {
@@ -127,6 +148,12 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                         .into_iter()
                         .map(|(key, document_type)| (key, document_type.schema_owned()))
                         .collect(),
+                    created_at,
+                    updated_at,
+                    created_at_block_height,
+                    updated_at_block_height,
+                    created_at_epoch,
+                    updated_at_epoch,
                     groups,
                     tokens,
                 }

@@ -22,6 +22,7 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_transition_action::TokenBurnTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_claim_transition_action::TokenClaimTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_config_update_transition_action::TokenConfigUpdateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
@@ -211,6 +212,16 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                     )?,
                     TokenTransitionAction::ConfigUpdateAction(config_update_action) => {
                         config_update_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
+                    TokenTransitionAction::ClaimAction(claim_action) => {
+                        claim_action.validate_state(
                             platform,
                             owner_id,
                             block_info,

@@ -151,6 +151,7 @@ mod tests {
     use super::*;
 
     mod find_oldest_epoch_needing_payment {
+        use assert_matches::assert_matches;
         use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
@@ -466,10 +467,10 @@ mod tests {
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 unpaid_epoch,
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
-            ));
+            );
         }
     }
 }

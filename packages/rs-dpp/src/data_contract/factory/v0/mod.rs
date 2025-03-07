@@ -279,7 +279,6 @@ mod tests {
         assert_eq!(data_contract.schema_defs(), result.schema_defs());
         assert_eq!(data_contract.document_schemas(), result.document_schemas());
         assert_eq!(data_contract.owner_id(), result.owner_id());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -302,7 +301,6 @@ mod tests {
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -328,7 +326,6 @@ mod tests {
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[test]

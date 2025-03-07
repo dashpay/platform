@@ -21,6 +21,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::{Element, TransactionArg, TreeType};
+use dpp::prelude::Identifier;
 
 /// Operations on Epochs
 pub trait EpochOperations {
@@ -93,7 +94,7 @@ pub trait EpochOperations {
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
     fn add_delete_proposers_operations(
         &self,
-        pro_tx_hashes: Vec<Vec<u8>>,
+        pro_tx_hashes: Vec<Identifier>,
         batch: &mut GroveDbOpBatch,
     );
 }
@@ -298,11 +299,11 @@ impl EpochOperations for Epoch {
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
     fn add_delete_proposers_operations(
         &self,
-        pro_tx_hashes: Vec<Vec<u8>>,
+        pro_tx_hashes: Vec<Identifier>,
         batch: &mut GroveDbOpBatch,
     ) {
         for pro_tx_hash in pro_tx_hashes.into_iter() {
-            batch.add_delete(self.get_proposers_path_vec(), pro_tx_hash);
+            batch.add_delete(self.get_proposers_path_vec(), pro_tx_hash.to_vec());
         }
     }
 }
@@ -902,6 +903,7 @@ mod tests {
     }
 
     mod delete_proposers {
+        use dpp::prelude::Identifier;
         use super::*;
         use crate::query::proposer_block_count_query::ProposerQueryType;
 
@@ -947,8 +949,8 @@ mod tests {
 
             let mut awaited_result = pro_tx_hashes
                 .iter()
-                .map(|hash| (hash.to_vec(), 1))
-                .collect::<Vec<(Vec<u8>, u64)>>();
+                .map(|hash| ((*hash).into(), 1))
+                .collect::<Vec<(Identifier, u64)>>();
 
             // sort both result to be able to compare them
             stored_proposers.sort();

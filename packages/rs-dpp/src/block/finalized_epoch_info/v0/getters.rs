@@ -2,7 +2,6 @@ use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
 use platform_value::Identifier;
-use std::collections::BTreeMap;
 
 /// Trait for accessing fields of `FinalizedEpochInfoV0`.
 pub trait FinalizedEpochInfoGettersV0 {

@@ -4,12 +4,11 @@ mod evaluate_interval;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-use crate::prelude::{
-    BlockHeight, BlockHeightInterval, EpochInterval, TimestampMillis, TimestampMillisInterval,
-};
+use crate::prelude::{BlockHeight, BlockHeightInterval, DataContract, EpochInterval, TimestampMillis, TimestampMillisInterval};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::ProtocolError;
 
@@ -45,6 +44,38 @@ pub enum RewardDistributionType {
 }
 
 impl RewardDistributionType {
+    /// Determines the starting moment of reward distribution based on the contract creation time.
+    ///
+    /// This function returns the appropriate `RewardDistributionMoment`, which represents when 
+    /// a reward distribution should begin, based on the type of distribution and when the 
+    /// `DataContract` was created.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract` - A reference to the `DataContract`, which contains details about 
+    ///   when the contract was created in terms of block height, timestamp, and epoch index.
+    ///
+    /// # Returns
+    ///
+    /// * `Some(RewardDistributionMoment)` if the contract's creation time can be mapped to 
+    ///   a valid distribution start moment.
+    /// * `None` if the contract creation time is unavailable or not applicable.
+    pub fn contract_creation_moment(
+        &self,
+        data_contract: &DataContract,
+    ) -> Option<RewardDistributionMoment> {
+        match self {
+            RewardDistributionType::BlockBasedDistribution { .. } => {
+                data_contract.created_at_block_height().map(RewardDistributionMoment::BlockBasedMoment)
+            }
+            RewardDistributionType::TimeBasedDistribution { .. } => {
+                data_contract.created_at().map(RewardDistributionMoment::TimeBasedMoment)
+            }
+            RewardDistributionType::EpochBasedDistribution { .. } => {
+                data_contract.created_at_epoch().map(RewardDistributionMoment::EpochBasedMoment)
+            }
+        }
+    }
     /// Converts a byte slice into the corresponding `RewardDistributionMoment` variant
     /// based on the type of reward distribution.
     ///

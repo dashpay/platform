@@ -1,3 +1,4 @@
+use dpp::block::block_info::BlockInfo;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -26,8 +27,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -35,6 +36,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -45,13 +47,14 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let action = self.transform_into_action_v0::<C>(
+            block_info,
             validation_mode,
             execution_context,
             platform_version,
@@ -63,7 +66,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
         let contract_fetch_info = platform.drive.get_contract_with_fetch_info_and_fee(
             self.data_contract().id().to_buffer(),
-            Some(epoch),
+            Some(&block_info.epoch),
             false,
             tx,
             platform_version,
@@ -98,6 +101,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -108,6 +112,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         // The contract in serialized form into it's execution form
         let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
             self,
+            block_info,
             validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
@@ -227,8 +232,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -320,8 +325,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -403,8 +408,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -470,8 +475,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -534,6 +539,7 @@ mod tests {
 
             let result = transition
                 .transform_into_action_v0::<MockCoreRPCLike>(
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
                     platform_version,
@@ -588,6 +594,7 @@ mod tests {
 
             let result = transition
                 .transform_into_action_v0::<MockCoreRPCLike>(
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
                     platform_version,

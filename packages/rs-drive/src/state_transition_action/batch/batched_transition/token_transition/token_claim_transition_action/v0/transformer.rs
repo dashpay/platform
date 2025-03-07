@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::EpochIndex;
+use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::InvalidTokenClaimPropertyMismatch;
@@ -294,6 +297,10 @@ impl TokenClaimTransitionActionV0 {
 
                 let last_paid_moment = drive.fetch_perpetual_distribution_last_paid_moment_operations(base.token_id().to_buffer(), owner_id, perpetual_distribution.distribution_type(), &mut last_paid_time_operations, transaction, platform_version)?;
 
+                // if the token has never been paid then we use the token creation
+                
+                let start_from_moment_for_distribution = last_paid_moment.or(perpetual_distribution.distribution_type().contract_creation_moment(&base_action.data_contract_fetch_info().contract)).ok_or(Error::Drive(DriveError::ContractDoesNotHaveAStartMoment(base_action.data_contract_fetch_info().contract.id())))?;
+                
                 let last_paid_time_fee_result = Drive::calculate_fee(
                     None,
                     Some(last_paid_time_operations),
@@ -310,18 +317,18 @@ impl TokenClaimTransitionActionV0 {
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(base_action.data_contract_fetch_info().contract.owner_id())
                     }
                     TokenDistributionRecipient::Identity(identifier) => {
-                        TokenDistributionResolvedRecipient::Identity(*identifier)
+                        TokenDistributionResolvedRecipient::Identity(identifier)
                     }
                     TokenDistributionRecipient::EvonodesByParticipation => {
-                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) = last_paid_moment else {
+                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) = start_from_moment_for_distribution else {
                             return Err(Error::Drive(DriveError::NotSupported("evonodes by participation can only use epoch based distribution")));
                         };
-                        drive.get_finalized_epoch_infos(epoch_index, true, block_info.epoch.index, false, transaction, platform_version)?;
-                        TokenDistributionResolvedRecipient::Evonode(*owner_id)
+                        let epochs : BTreeMap<EpochIndex, FinalizedEpochInfo> = drive.get_finalized_epoch_infos(epoch_index, true, block_info.epoch.index, false, transaction, platform_version)?;
+                        TokenDistributionResolvedRecipient::Evonode(owner_id)
                     }
                 };
 
-                let amount = perpetual_distribution.distribution_type().rewards_in_interval(last_paid_moment, block_info)?;
+                let amount = perpetual_distribution.distribution_type().rewards_in_interval(start_from_moment_for_distribution, block_info)?;
 
                 (amount, TokenDistributionInfo::Perpetual(RewardDistributionMoment::TimeBasedMoment(0),RewardDistributionMoment::TimeBasedMoment(0), recipient))
             }

@@ -1,5 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
 impl RewardDistributionType {
@@ -7,11 +8,11 @@ impl RewardDistributionType {
     ///
     /// # Returns
     /// - `BlockHeightInterval`, `TimestampMillisInterval`, or `EpochInterval`, depending on the variant.
-    pub fn interval(&self) -> u64 {
+    pub fn interval(&self) -> RewardDistributionMoment {
         match self {
-            RewardDistributionType::BlockBasedDistribution { interval, .. } => *interval,
-            RewardDistributionType::TimeBasedDistribution { interval, .. } => *interval,
-            RewardDistributionType::EpochBasedDistribution { interval, .. } => *interval as u64,
+            RewardDistributionType::BlockBasedDistribution { interval, .. } => RewardDistributionMoment::BlockBasedMoment(*interval),
+            RewardDistributionType::TimeBasedDistribution { interval, .. } => RewardDistributionMoment::TimeBasedMoment(*interval),
+            RewardDistributionType::EpochBasedDistribution { interval, .. } => RewardDistributionMoment::EpochBasedMoment(*interval),
         }
     }
 
@@ -39,29 +40,43 @@ impl RewardDistributionType {
         }
     }
 
-    /// Returns the optional start time of the distribution.
+    /// Returns the optional start moment of the distribution.
     ///
     /// # Returns
-    /// - `Some(BlockHeight)`, `Some(TimestampMillis)`, or `Some(EpochIndex)`, depending on the variant.
-    /// - `None` if the start time is not set.
-    pub fn start(&self) -> Option<u64> {
+    /// - `Some(RewardDistributionMoment::BlockBasedMoment)`, `Some(RewardDistributionMoment::TimeBasedMoment)`,
+    ///   or `Some(RewardDistributionMoment::EpochBasedMoment)`, depending on the distribution type.
+    /// - `None` if the start moment is not set.
+    pub fn start(&self) -> Option<RewardDistributionMoment> {
         match self {
-            RewardDistributionType::BlockBasedDistribution { start, .. } => *start,
-            RewardDistributionType::TimeBasedDistribution { start, .. } => *start,
-            RewardDistributionType::EpochBasedDistribution { start, .. } => start.map(|s| s as u64),
+            RewardDistributionType::BlockBasedDistribution { start, .. } => {
+                start.map(RewardDistributionMoment::BlockBasedMoment)
+            }
+            RewardDistributionType::TimeBasedDistribution { start, .. } => {
+                start.map(RewardDistributionMoment::TimeBasedMoment)
+            }
+            RewardDistributionType::EpochBasedDistribution { start, .. } => {
+                start.map(RewardDistributionMoment::EpochBasedMoment)
+            }
         }
     }
 
-    /// Returns the optional end time of the distribution.
+    /// Returns the optional end moment of the distribution.
     ///
     /// # Returns
-    /// - `Some(BlockHeight)`, `Some(TimestampMillis)`, or `Some(EpochIndex)`, depending on the variant.
-    /// - `None` if the end time is not set.
-    pub fn end(&self) -> Option<u64> {
+    /// - `Some(RewardDistributionMoment::BlockBasedMoment)`, `Some(RewardDistributionMoment::TimeBasedMoment)`,
+    ///   or `Some(RewardDistributionMoment::EpochBasedMoment)`, depending on the distribution type.
+    /// - `None` if the end moment is not set.
+    pub fn end(&self) -> Option<RewardDistributionMoment> {
         match self {
-            RewardDistributionType::BlockBasedDistribution { end, .. } => *end,
-            RewardDistributionType::TimeBasedDistribution { end, .. } => *end,
-            RewardDistributionType::EpochBasedDistribution { end, .. } => end.map(|e| e as u64),
+            RewardDistributionType::BlockBasedDistribution { end, .. } => {
+                end.map(RewardDistributionMoment::BlockBasedMoment)
+            }
+            RewardDistributionType::TimeBasedDistribution { end, .. } => {
+                end.map(RewardDistributionMoment::TimeBasedMoment)
+            }
+            RewardDistributionType::EpochBasedDistribution { end, .. } => {
+                end.map(RewardDistributionMoment::EpochBasedMoment)
+            }
         }
     }
 }

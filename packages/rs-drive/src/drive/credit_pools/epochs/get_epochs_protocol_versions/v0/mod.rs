@@ -77,7 +77,7 @@ impl Drive {
                     )));
                 };
 
-                let epoch_index_bytes: [u8; 16] =
+                let epoch_index_bytes: [u8; 2] =
                     epoch_index_vec.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
                             "extended epoch info: item has an invalid length".to_string(),

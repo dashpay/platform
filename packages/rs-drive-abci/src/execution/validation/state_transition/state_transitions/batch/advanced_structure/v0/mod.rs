@@ -29,14 +29,6 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::TokenConfigUpdateTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::TokenFreezeTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -46,14 +38,6 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_burn_transition_action::TokenBurnTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_config_update_transition_action::TokenConfigUpdateTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_mint_transition_action::TokenMintTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
-use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {

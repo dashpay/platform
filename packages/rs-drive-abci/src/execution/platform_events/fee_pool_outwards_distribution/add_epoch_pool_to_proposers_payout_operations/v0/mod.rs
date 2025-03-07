@@ -71,12 +71,12 @@ impl<C> Platform<C> {
         tracing::trace!(
             unpaid_block_count = unpaid_epoch_block_count,
             unpaid_epoch_index = unpaid_epoch.epoch_index(),
-            fees = storage_and_processing_fees,
             core_block_rewards,
             total_payouts,
-            "Pay {total_payouts} credits to {proposers_len} proposers for {} proposed blocks in epoch {}",
+            "Pay {total_payouts} credits to {proposers_len} proposers for {} proposed blocks in epoch {}, decomposed as {}",
             unpaid_epoch_block_count,
             unpaid_epoch.epoch_index(),
+            storage_and_processing_fees
         );
 
         for (i, (proposer_tx_hash, proposed_block_count)) in proposers.iter().enumerate() {
@@ -287,6 +287,7 @@ mod tests {
                 next_epoch_start_block_core_height: 1,
                 epoch_start_time: 0,
                 protocol_version: platform_version.protocol_version,
+                fee_multiplier: 0,
             };
 
             let proposers_paid_count = platform

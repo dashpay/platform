@@ -267,12 +267,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 );
                             }
                             BatchedTransitionAction::TokenAction(token_transition_action) => {
-                                if token_transition_action
-                                    .base()
-                                    .token_configuration()
-                                    .expect("expected token configuration")
-                                    .keeps_history()
-                                {
+                                if token_transition_action.keeps_history().expect("expected no error in token action keeps history") {
                                     // if we keep history we just need to check the historical document
                                     proofs_request.documents.push(
                                         get_proofs_request_v0::DocumentRequest {
@@ -506,12 +501,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 }
                             }
                             BatchedTransitionAction::TokenAction(token_transition_action) => {
-                                if token_transition_action
-                                    .base()
-                                    .token_configuration()
-                                    .expect("expected token configuration")
-                                    .keeps_history()
-                                {
+                                if token_transition_action.keeps_history().expect("expected no error in token action keeps history") {
                                     let token_id = token_transition_action.base().token_id();
                                     let document_type_name = token_transition_action
                                         .historical_document_type_name()

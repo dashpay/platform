@@ -1,5 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::ProtocolError;
 
 impl DistributionFunction {
@@ -76,42 +77,64 @@ impl DistributionFunction {
     /// (inclusive) and `end_bounds_included` (inclusive) are considered.
     ///
     /// # Parameters
-    /// - `start_not_included` (`u64`):  
-    ///   The block height after which emissions are considered (exclusive).
-    /// - `step` (`u64`):  
-    ///   The interval in blocks between evaluations. **Must be greater than zero**.
-    /// - `end_included` (`u64`):  
-    ///   The final block height at which emissions are considered (inclusive).
-    /// - `start_bounds_included` (`Option<u64>`):  
+    ///
+    /// - `start_not_included` (`RewardDistributionMoment`):  
+    ///   The moment after which emissions are considered (exclusive).
+    /// - `step` (`RewardDistributionMoment`):  
+    ///   The interval step between evaluations. **Must be greater than zero**.
+    /// - `end_included` (`RewardDistributionMoment`):  
+    ///   The final moment at which emissions are considered (inclusive).
+    /// - `start_bounds_included` (`Option<RewardDistributionMoment>`):  
     ///   An optional lower bound for evaluation. Only evaluation points ≥ this value will be included.
-    /// - `end_bounds_included` (`Option<u64>`):  
+    /// - `end_bounds_included` (`Option<RewardDistributionMoment>`):  
     ///   An optional upper bound for evaluation. Only evaluation points ≤ this value will be included.
+    ///
+    /// # Type Consistency
+    ///
+    /// This function **requires all input values to be of the same variant** (`BlockBasedMoment`, `TimeBasedMoment`, or `EpochBasedMoment`).
+    /// If a mismatch occurs, the function returns an error.
     ///
     /// # Returns
     /// - `Ok(TokenAmount)`: The total sum of token emissions over all valid evaluation points.
-    /// - `Err(ProtocolError)`: If any evaluation fails (e.g., due to overflow or division-by-zero), or if
-    ///   `step` is zero.
+    /// - `Err(ProtocolError)`: If any evaluation fails (e.g., type mismatch, overflow, division-by-zero, or if
+    ///   `step` is zero).
     ///
     /// # Behavior
     /// The function computes the effective start point as the larger of:
-    ///   - `start_not_included + step` (i.e. the first natural evaluation point), and
+    ///   - `start_not_included + step` (i.e., the first natural evaluation point).
     ///   - `start_bounds_included` (if provided).
     ///
     /// Similarly, the effective end point is computed as the smaller of:
-    ///   - `end_included`, and
+    ///   - `end_included`.
     ///   - `end_bounds_included` (if provided).
     ///
     /// It then iterates over these evaluation points, accumulating the token amounts.
     pub fn evaluate_interval_in_bounds(
         &self,
-        start_not_included: u64,
-        step: u64,
-        end_included: u64,
-        start_bounds_included: Option<u64>,
-        end_bounds_included: Option<u64>,
+        start_not_included: RewardDistributionMoment,
+        step: RewardDistributionMoment,
+        end_included: RewardDistributionMoment,
+        start_bounds_included: Option<RewardDistributionMoment>,
+        end_bounds_included: Option<RewardDistributionMoment>,
     ) -> Result<TokenAmount, ProtocolError> {
-        if step == 0 {
-            return Err(ProtocolError::DivideByZero(
+        // Ensure that all moments are of the same type.
+        if !(start_not_included.same_type(&step)
+            && start_not_included.same_type(&end_included)
+            && start_bounds_included
+            .as_ref()
+            .map_or(true, |b| start_not_included.same_type(b))
+            && end_bounds_included
+            .as_ref()
+            .map_or(true, |b| start_not_included.same_type(b)))
+        {
+            return Err(ProtocolError::AddingDifferentTypes(
+                "Mismatched RewardDistributionMoment types".to_string(),
+            ));
+        }
+
+        
+        if step == 0u64 {
+            return Err(ProtocolError::InvalidDistributionStep(
                 "evaluate_interval_in_bounds: step cannot be zero".into(),
             ));
         }
@@ -120,7 +143,7 @@ impl DistributionFunction {
         }
 
         // The first natural evaluation point is start_not_included + step.
-        let first_point = start_not_included + step;
+        let first_point = (start_not_included + step)?;
         // Determine the effective starting point: the larger of first_point and start_bounds_included (if provided).
         let effective_start = if let Some(lb) = start_bounds_included {
             if lb > first_point {
@@ -150,12 +173,12 @@ impl DistributionFunction {
         let mut total: u64 = 0;
         let mut x = effective_start;
         while x <= effective_end {
-            total = total.checked_add(self.evaluate(x)?).ok_or_else(|| {
+            total = total.checked_add(self.evaluate(x.to_u64())?).ok_or_else(|| {
                 ProtocolError::Overflow(
                     "Total evaluation overflow in evaluate_interval_in_bounds".into(),
                 )
             })?;
-            x += step;
+            x = (x + step)?;
         }
         Ok(total)
     }

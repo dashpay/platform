@@ -1,3 +1,4 @@
+use dpp::block::block_info::BlockInfo;
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -11,6 +12,7 @@ impl DataContractUpdateTransitionAction {
     /// if validation is false, the data contract base structure is created regardless of if it is valid
     pub fn try_from_transition(
         value: DataContractUpdateTransition,
+        block_info: &BlockInfo,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -19,6 +21,7 @@ impl DataContractUpdateTransitionAction {
             DataContractUpdateTransition::V0(v0) => {
                 Ok(DataContractUpdateTransitionActionV0::try_from_transition(
                     v0,
+                    block_info,
                     full_validation,
                     validation_operations,
                     platform_version,
@@ -34,6 +37,7 @@ impl DataContractUpdateTransitionAction {
 
     pub fn try_from_borrowed_transition(
         value: &DataContractUpdateTransition,
+        block_info: &BlockInfo,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -42,6 +46,7 @@ impl DataContractUpdateTransitionAction {
             DataContractUpdateTransition::V0(v0) => Ok(
                 DataContractUpdateTransitionActionV0::try_from_borrowed_transition(
                     v0,
+                    block_info,
                     full_validation,
                     validation_operations,
                     platform_version,
