@@ -17,14 +17,20 @@ impl Drive {
     ) -> Result<u64, Error> {
         let element = self
             .grove
-            .get(
-                &epoch_tree.get_path(),
+            .get_raw_optional(
+                (&epoch_tree.get_path()).into(),
                 KEY_START_TIME.as_slice(),
                 transaction,
                 &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
+
+        let Some(element) = element else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                format!("epoch {} start time should exist", epoch_tree.index)
+            )));
+        };
 
         let Element::Item(encoded_start_time, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(

@@ -439,15 +439,15 @@ mod tests {
                 .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
+            let epoch_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 2;
 
             let mut batch = GroveDbOpBatch::new();
 
-            batch.push(epoch_0_tree.update_start_block_height_operation(1));
-            batch.push(epoch_0_tree.update_start_block_core_height_operation(1));
-
+            batch.push(epoch_0.update_start_block_height_operation(1));
+            batch.push(epoch_0.update_start_block_core_height_operation(1));
+            
             platform
                 .drive
                 .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
