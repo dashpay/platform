@@ -27,9 +27,11 @@ impl<C> Platform<C> {
             .map(|bytes| {
                 let config = config::standard().with_big_endian().with_no_limit();
                 let (block_info, _): (BlockInfo, _) = bincode::decode_from_slice(&bytes, config)
-                    .map_err(|_|
-                        Error::Drive(drive::error::Error::Drive(CorruptedDriveState("corrupted last block_info serialisation".to_string())))
-                    )?;
+                    .map_err(|_| {
+                        Error::Drive(drive::error::Error::Drive(CorruptedDriveState(
+                            "corrupted last block_info serialisation".to_string(),
+                        )))
+                    })?;
 
                 Ok(block_info)
             })

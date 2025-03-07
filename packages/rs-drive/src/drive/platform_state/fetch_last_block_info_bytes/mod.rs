@@ -16,8 +16,8 @@ impl Drive {
         match platform_version
             .drive
             .methods
-            .reduced_platform_state
-            .fetch_reduced_platform_state_bytes
+            .last_block_info
+            .fetch_last_block_info_bytes
         {
             0 => self.fetch_last_block_info_bytes_v0(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

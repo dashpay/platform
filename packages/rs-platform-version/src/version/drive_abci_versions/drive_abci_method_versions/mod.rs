@@ -27,6 +27,7 @@ pub struct DriveAbciMethodVersions {
     pub block_end: DriveAbciBlockEndMethodVersions,
     pub platform_state_storage: DriveAbciPlatformStateStorageMethodVersions,
     pub platform_reduced_state_storage: DriveAbciReducedPlatformStateStorageMethodVersions,
+    pub last_block_info_storage: DriveAbciLastBlockInfoStorageMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -39,6 +40,12 @@ pub struct DriveAbciPlatformStateStorageMethodVersions {
 pub struct DriveAbciReducedPlatformStateStorageMethodVersions {
     pub fetch_reduced_platform_state: FeatureVersion,
     pub store_reduced_platform_state: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciLastBlockInfoStorageMethodVersions {
+    pub fetch_last_block_info: FeatureVersion,
+    pub store_last_block_info: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

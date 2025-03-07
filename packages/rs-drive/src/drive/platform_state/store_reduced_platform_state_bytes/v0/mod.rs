@@ -2,8 +2,8 @@ use crate::drive::platform_state::REDUCED_PLATFORM_STATE_KEY;
 use crate::drive::system::misc_path;
 use crate::drive::Drive;
 use crate::error::Error;
-use grovedb::{Element, TransactionArg};
 use grovedb::operations::insert::InsertOptions;
+use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 
 impl Drive {

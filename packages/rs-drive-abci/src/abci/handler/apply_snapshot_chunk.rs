@@ -155,7 +155,10 @@ where
     }
 }
 
-fn reconstruct_platform_state<'a, 'db: 'a, A, C: 'db>(app: &'a A, app_hash: &[u8]) -> Result<(), Error>
+fn reconstruct_platform_state<'a, 'db: 'a, A, C: 'db>(
+    app: &'a A,
+    app_hash: &[u8],
+) -> Result<(), Error>
 where
     A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
     C: CoreRPCLike,
@@ -178,9 +181,7 @@ where
     };
 
     let block_info = Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
-        .ok_or_else(|| {
-            AbciError::StateSyncInternalError("last_block_info".to_string())
-        })?;
+        .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
     let core_height = block_info.core_height;
 
     let last_committed_block = ExtendedBlockInfo::V0 {
@@ -193,7 +194,6 @@ where
             signature: [0u8; 96],
             round: 0,
         },
-        
     };
 
     let mut platform_state = PlatformState::V0(PlatformStateV0 {

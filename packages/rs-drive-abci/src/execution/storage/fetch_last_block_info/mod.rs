@@ -1,7 +1,7 @@
-use dpp::block::block_info::BlockInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use dpp::block::block_info::BlockInfo;
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -19,12 +19,10 @@ impl<C> Platform<C> {
         match platform_version
             .drive_abci
             .methods
-            .platform_reduced_state_storage
-            .fetch_reduced_platform_state
+            .last_block_info_storage
+            .fetch_last_block_info
         {
-            0 => {
-                Platform::<C>::fetch_last_block_info_v0(drive, transaction, platform_version)
-            }
+            0 => Platform::<C>::fetch_last_block_info_v0(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "fetch_last_block_info".to_string(),
                 known_versions: vec![0],

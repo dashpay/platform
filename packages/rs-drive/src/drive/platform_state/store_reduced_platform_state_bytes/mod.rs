@@ -20,7 +20,11 @@ impl Drive {
             .reduced_platform_state
             .store_reduced_platform_state_bytes
         {
-            0 => self.store_reduced_platform_state_bytes_v0(state_bytes, transaction, platform_version),
+            0 => self.store_reduced_platform_state_bytes_v0(
+                state_bytes,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "store_reduced_platform_state_bytes".to_string(),
                 known_versions: vec![0],

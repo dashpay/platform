@@ -22,6 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciLastBlockInfoStorageMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
     DriveAbciReducedPlatformStateStorageMethodVersions,
@@ -160,6 +161,10 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             platform_reduced_state_storage: DriveAbciReducedPlatformStateStorageMethodVersions {
                 fetch_reduced_platform_state: 0,
                 store_reduced_platform_state: 0,
+            },
+            last_block_info_storage: DriveAbciLastBlockInfoStorageMethodVersions {
+                fetch_last_block_info: 0,
+                store_last_block_info: 0,
             },
         },
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V3,
