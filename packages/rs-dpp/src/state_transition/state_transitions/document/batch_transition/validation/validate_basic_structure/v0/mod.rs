@@ -142,34 +142,38 @@ impl BatchTransition {
                 )));
             }
 
-            match transition {
+            let consensus_result = match transition {
                 TokenTransition::Burn(burn_transition) => {
-                    burn_transition.validate_structure(platform_version)?;
+                    burn_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::Mint(mint_transition) => {
-                    mint_transition.validate_structure(platform_version)?;
+                    mint_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::Transfer(transfer_transition) => {
-                    transfer_transition.validate_structure(self.owner_id(), platform_version)?;
+                    transfer_transition.validate_structure(self.owner_id(), platform_version)?
                 }
                 TokenTransition::Freeze(freeze_transition) => {
-                    freeze_transition.validate_structure(platform_version)?;
+                    freeze_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::Unfreeze(unfreeze_transition) => {
-                    unfreeze_transition.validate_structure(platform_version)?;
+                    unfreeze_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::DestroyFrozenFunds(destroy_frozen_funds_transition) => {
-                    destroy_frozen_funds_transition.validate_structure(platform_version)?;
+                    destroy_frozen_funds_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::EmergencyAction(emergency_action_transition) => {
-                    emergency_action_transition.validate_structure(platform_version)?;
+                    emergency_action_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::ConfigUpdate(config_update_transition) => {
-                    config_update_transition.validate_structure(platform_version)?;
+                    config_update_transition.validate_structure(platform_version)?
                 }
                 TokenTransition::Claim(release_transition) => {
-                    release_transition.validate_structure(platform_version)?;
+                    release_transition.validate_structure(platform_version)?
                 }
+            };
+
+            if !consensus_result.is_valid() {
+                return Ok(consensus_result);
             }
 
             // We need to verify that the action id given matches the expected action id

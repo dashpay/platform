@@ -524,7 +524,7 @@ mod tests {
                 .get_epoch_start_time(&epoch, Some(&transaction), platform_version)
                 .expect("should get start time");
 
-            assert_eq!(stored_start_time, start_time);
+            assert_eq!(stored_start_time, Some(start_time));
 
             let stored_block_height = drive
                 .get_epoch_start_block_height(&epoch, Some(&transaction), platform_version)
@@ -692,7 +692,7 @@ mod tests {
             .get_epoch_start_time(&epoch_tree, Some(&transaction), platform_version)
             .expect("should get start time");
 
-        assert_eq!(start_time_ms, actual_start_time_ms);
+        assert_eq!(Some(start_time_ms), actual_start_time_ms);
     }
 
     #[test]

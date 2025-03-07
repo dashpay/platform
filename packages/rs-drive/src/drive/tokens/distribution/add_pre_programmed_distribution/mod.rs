@@ -38,6 +38,7 @@ impl Drive {
     /// - Prevents overflow errors by ensuring token amounts do not exceed `i64::MAX`.
     ///
     /// # Tree structure
+    /// ```text
     ///
     ///                          [ROOT: Tokens]
     ///                                 │
@@ -82,8 +83,10 @@ impl Drive {
     ///                                                        └─────┬───────┘                                   │
     ///                                                              │                                           │
     ///                                                [ Reference Tree: Serialized Distribution Keys ]  ────────┘
+    /// ```
 
     /// # Explanation of Each Layer
+    /// ```text
     /// 	1.	Root Level (Tokens):
     /// 	•	The top-level of the tree corresponds to the tokens in the system. The path starts with the root identifier for tokens.
     /// 	2.	Distributions Branch (TOKEN_DISTRIBUTIONS_KEY):
@@ -106,8 +109,10 @@ impl Drive {
     /// 	•	In parallel, a reference is inserted into the Millisecond Timed Distributions branch for the same timestamp.
     /// 	•	This reference links back to the pre-programmed distribution data. It uses a TokenDistributionKey (which includes the token ID, recipient, and distribution type) to serialize and store a reference.
     /// 	•	This reference is stored in a subtree keyed by the timestamp (again, 8 bytes).
+    /// ```
 
     /// # What the Function Does
+    /// ```text
     /// 	1.	Insert the Pre-Programmed Distributions Tree:
     /// 	•	First, the function ensures that the subtree for pre‑programmed distributions for the token exists.
     /// 	•	It uses the fixed path:
@@ -126,6 +131,7 @@ impl Drive {
     /// 	•	This hierarchical tree structure allows for efficient queries and proofs.
     /// 	•	You can query by token, then by time, and then by recipient, and also verify that distributions were made at specific times.
     /// 	•	The reference links between the pre-programmed and timed distributions trees help verify the ordering and correctness of distribution events.
+    /// ```
     ///
     /// # Returns
     /// - `Ok(())` if the distributions are successfully added.
