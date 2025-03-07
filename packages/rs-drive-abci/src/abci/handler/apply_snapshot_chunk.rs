@@ -187,7 +187,14 @@ where
     let last_committed_block = ExtendedBlockInfo::V0 {
         0: ExtendedBlockInfoV0 {
             basic_info: block_info,
-            app_hash: app_hash.try_into().unwrap(),
+            app_hash: match app_hash.try_into() {
+                Ok(hash) => hash,
+                Err(_) => {
+                    return Err(Error::from(
+                        AbciError::StateSyncInternalError("Invalid app_hash length".to_string())
+                    ));
+                }
+            },
             quorum_hash: [0u8; 32],
             block_id_hash: [0u8; 32],
             proposer_pro_tx_hash: [0u8; 32],

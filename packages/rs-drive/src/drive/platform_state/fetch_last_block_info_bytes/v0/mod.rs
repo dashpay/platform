@@ -30,7 +30,7 @@ impl Drive {
 
         if res.len() != 1 {
             return Err(Error::GroveDB(grovedb::Error::InvalidQuery(
-                "Invalid number of reduced platform state elements",
+                "Invalid number of last block info elements",
             )));
         }
         Ok(res.into_iter().next())
