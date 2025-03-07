@@ -1,11 +1,12 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError};
+use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, TokenIsPausedError};
 use dpp::prelude::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
+use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::{TokenTransferTransitionAction};
+use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::v0::TokenTransferTransitionActionAccessorsV0;
@@ -60,7 +61,6 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
             .unwrap_or_default();
         execution_context.add_operation(ValidationOperation::RetrieveIdentityTokenBalance);
         if balance < self.amount() {
-            // The identity does not exist
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                     IdentityDoesNotHaveEnoughTokenBalanceError::new(
@@ -75,17 +75,17 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
         }
 
         // We need to verify that our token account is not frozen
-
-        // We need to verify that we have enough of the token
-        let info = platform.drive.fetch_identity_token_info(
+        let (info, fee_result) = platform.drive.fetch_identity_token_info_with_costs(
             self.token_id().to_buffer(),
             owner_id.to_buffer(),
+            block_info,
+            true,
             transaction,
             platform_version,
         )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
         if let Some(info) = info {
-            // We have an info, we need to check that we are not frozen
-            if info.frozen() == true {
+            if info.frozen() {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
                         IdentityTokenAccountFrozenError::new(
@@ -97,6 +97,25 @@ impl TokenTransferTransitionActionStateValidationV0 for TokenTransferTransitionA
                 ));
             }
         };
+
+        // We need to verify that the token is not paused
+        let (token_status, fee_result) = platform.drive.fetch_token_status_with_costs(
+            self.token_id().to_buffer(),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+        if let Some(status) = token_status {
+            if status.paused() {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::TokenIsPausedError(
+                        TokenIsPausedError::new(self.token_id()),
+                    )),
+                ));
+            }
+        }
 
         Ok(SimpleConsensusValidationResult::new())
     }

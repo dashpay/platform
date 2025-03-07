@@ -11,11 +11,10 @@ const ReconnectableStream = require('../transport/ReconnectableStream');
 
 /**
  * Creates continues masternode list stream
- *
  * @param {createDAPIAddressProviderFromOptions} createDAPIAddressProviderFromOptions
  * @param {ListDAPIAddressProvider} listDAPIAddressProvider
- * @param {Object} options
- * @return {function(...[*]): Promise<ReconnectableStream>}
+ * @param {object} options
+ * @returns {function(...[*]): Promise<ReconnectableStream>}
  */
 function createMasternodeListStreamFactory(
   createDAPIAddressProviderFromOptions,

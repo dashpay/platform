@@ -39,6 +39,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
+#[cfg(feature = "state-transition-signing")]
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
@@ -71,13 +72,13 @@ use crate::state_transition::batch_transition::token_freeze_transition::TokenFre
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::batch_transition::token_transfer_transition::{PrivateEncryptedNote, SharedEncryptedNote};
-#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::emergency_action::TokenEmergencyAction;
+#[cfg(feature = "state-transition-signing")]
+use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
     type IterType<'a>
@@ -650,7 +651,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 token_id,
                 using_group_info: None,
             }),
-            frozen_identity_id,
+            identity_to_freeze_id: frozen_identity_id,
             public_note,
         });
 

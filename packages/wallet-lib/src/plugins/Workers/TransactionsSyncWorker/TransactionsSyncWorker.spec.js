@@ -878,7 +878,7 @@ describe('TransactionsSyncWorker', () => {
       chainStore = storage.getDefaultChainStore();
     });
 
-    it('should not process same merkle block two times', function () {
+    it('should not process same merkle block two times', function it() {
       const merkleBlock = mockMerkleBlock([]);
       const merkleBlockHeight = 500;
 

@@ -11,11 +11,7 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Identity {} is not authorized to perform action: {} on token: {}. Authorized action takers: {:?}",
-    identity_id,
-    token_id,
-    action,
-    authorized_action_takers
+    "Identity {identity_id} is not authorized to perform action: {action} on token: {token_id}. Authorized action takers: {authorized_action_takers:?}",    
 )]
 #[platform_serialize(unversioned)]
 pub struct UnauthorizedTokenActionError {

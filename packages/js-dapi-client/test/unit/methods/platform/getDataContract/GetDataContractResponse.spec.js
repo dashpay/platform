@@ -63,6 +63,8 @@ describe('GetDataContractResponse', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
       new GetDataContractResponseV0()
@@ -74,12 +76,14 @@ describe('GetDataContractResponse', () => {
     expect(getDataContractResponse).to.be.an.instanceOf(GetDataContractResponseClass);
     expect(getDataContractResponse.getDataContract()).to.deep.equal(dataContractFixture.toBuffer());
 
-    expect(getDataContractResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getDataContractResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getDataContractResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getDataContractResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getDataContractResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(getDataContractResponse.getProof()).to.equal(undefined);
   });
@@ -97,6 +101,8 @@ describe('GetDataContractResponse', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
       new GetDataContractResponseV0()
@@ -109,12 +115,14 @@ describe('GetDataContractResponse', () => {
     expect(getDataContractResponse).to.be.an.instanceOf(GetDataContractResponseClass);
     expect(getDataContractResponse.getDataContract()).to.deep.equal(Buffer.alloc(0));
 
-    expect(getDataContractResponse.getMetadata())
-      .to.be.an.instanceOf(Metadata);
     expect(getDataContractResponse.getMetadata().getHeight())
-      .to.equal(metadataFixture.height);
+      .to.deep.equal(BigInt(metadataFixture.height));
     expect(getDataContractResponse.getMetadata().getCoreChainLockedHeight())
-      .to.equal(metadataFixture.coreChainLockedHeight);
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getDataContractResponse.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getDataContractResponse.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getDataContractResponse.getProof();
 

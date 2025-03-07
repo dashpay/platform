@@ -113,7 +113,15 @@ describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
       .createFromProto(proto);
 
     expect(getProtocolVersionUpgradeVoteStatus.getVersionSignals()).to.deep.equal([]);
-    expect(getProtocolVersionUpgradeVoteStatus.getMetadata()).to.deep.equal(metadataFixture);
+
+    expect(getProtocolVersionUpgradeVoteStatus.getMetadata().getHeight())
+      .to.deep.equal(BigInt(metadataFixture.height));
+    expect(getProtocolVersionUpgradeVoteStatus.getMetadata().getCoreChainLockedHeight())
+      .to.deep.equal(metadataFixture.coreChainLockedHeight);
+    expect(getProtocolVersionUpgradeVoteStatus.getMetadata().getTimeMs())
+      .to.deep.equal(BigInt(metadataFixture.timeMs));
+    expect(getProtocolVersionUpgradeVoteStatus.getMetadata().getProtocolVersion())
+      .to.deep.equal(metadataFixture.protocolVersion);
 
     const proof = getProtocolVersionUpgradeVoteStatus.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
