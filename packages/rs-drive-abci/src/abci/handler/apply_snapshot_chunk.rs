@@ -190,9 +190,9 @@ where
             app_hash: match app_hash.try_into() {
                 Ok(hash) => hash,
                 Err(_) => {
-                    return Err(Error::from(
-                        AbciError::StateSyncInternalError("Invalid app_hash length".to_string())
-                    ));
+                    return Err(Error::from(AbciError::StateSyncInternalError(
+                        "Invalid app_hash length".to_string(),
+                    )));
                 }
             },
             quorum_hash: [0u8; 32],
