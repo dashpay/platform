@@ -31,8 +31,6 @@ serde = ["dep:serde", "dep:serde_bytes", "tenderdash-proto/serde"]
 mocks = ["serde", "dep:serde_json"]
 
 [dependencies]
-tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.3.0", tag = "v1.3.0+1.3.0", default-features = false }
-
 prost = { version = "0.13" }
 futures-core = "0.3.30"
 tonic = { version = "0.12.3", features = [
