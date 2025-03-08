@@ -20,6 +20,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+#[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::v1::DataContractV1;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;

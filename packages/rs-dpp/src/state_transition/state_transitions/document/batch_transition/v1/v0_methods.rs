@@ -27,7 +27,9 @@ use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransi
 use std::iter::Map;
 use std::slice::Iter;
 
-use crate::state_transition::batch_transition::{BatchTransitionV1, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
+use crate::state_transition::batch_transition::BatchTransitionV1;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::{TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{
     BatchTransition, DocumentDeleteTransition,

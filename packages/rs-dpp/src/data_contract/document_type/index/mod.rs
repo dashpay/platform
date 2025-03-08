@@ -16,6 +16,7 @@ use crate::ProtocolError;
 use anyhow::anyhow;
 
 use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
+#[cfg(feature = "validation")]
 use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
