@@ -2374,7 +2374,7 @@ mod tests {
                     true,
                     platform_version,
                 )
-                    .expect("expected to get contract from a json document");
+                .expect("expected to get contract from a json document");
 
                 let contract = created_contract.data_contract();
 
@@ -2467,8 +2467,14 @@ mod tests {
                     .with_config(config.clone())
                     .build_with_mock_rpc();
 
-                let outcome =
-                    run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+                let outcome = run_chain_for_strategy(
+                    &mut platform,
+                    block_count,
+                    strategy,
+                    config,
+                    15,
+                    &mut None,
+                );
                 assert_eq!(outcome.identities.len() as u64, 472);
                 assert_eq!(outcome.masternode_identity_balances.len(), 100);
                 let balance_count = outcome
@@ -2483,7 +2489,12 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                    .visualize_verify_grovedb(
+                        None,
+                        true,
+                        false,
+                        &platform_version.drive.grove_version,
+                    )
                     .expect("expected to have no issues");
 
                 assert_eq!(
