@@ -6,6 +6,7 @@ use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::version::PlatformVersion;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 use std::hash::Hash;
@@ -180,6 +181,7 @@ impl ContextProvider for GrpcContextProvider {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
+        _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));

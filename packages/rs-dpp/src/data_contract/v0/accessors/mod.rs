@@ -5,7 +5,6 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
-use crate::metadata::Metadata;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use platform_value::Identifier;
@@ -90,14 +89,6 @@ impl DataContractV0Getters for DataContractV0 {
         &mut self.document_types
     }
 
-    fn metadata(&self) -> Option<&Metadata> {
-        self.metadata.as_ref()
-    }
-
-    fn metadata_mut(&mut self) -> Option<&mut Metadata> {
-        self.metadata.as_mut()
-    }
-
     fn config(&self) -> &DataContractConfig {
         &self.config
     }
@@ -128,10 +119,6 @@ impl DataContractV0Setters for DataContractV0 {
 
     fn set_owner_id(&mut self, owner_id: Identifier) {
         self.owner_id = owner_id;
-    }
-
-    fn set_metadata(&mut self, metadata: Option<Metadata>) {
-        self.metadata = metadata;
     }
 
     fn set_config(&mut self, config: DataContractConfig) {

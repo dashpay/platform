@@ -28,7 +28,7 @@ impl<C> Platform<C> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.
     pub(super) fn fetch_reward_shares_list_for_masternode_v0(
         &self,
-        masternode_owner_id: &[u8],
+        masternode_owner_id: &[u8; 32],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {

@@ -29,6 +29,13 @@ impl DataContractUpdateTransitionAction {
         }
     }
 
+    /// data contract mut
+    pub fn data_contract_mut(&mut self) -> &mut DataContract {
+        match self {
+            DataContractUpdateTransitionAction::V0(transition) => &mut transition.data_contract,
+        }
+    }
+
     /// identity contract nonce
     pub fn identity_contract_nonce(&self) -> IdentityNonce {
         match self {

@@ -1,35 +1,73 @@
-use crate::drive::tokens::distribution::queries::{
-    pre_programmed_distributions_query, QueryPreProgrammedDistributionStartAt,
-};
+mod v0;
+
+use crate::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Fetches the pre‑programmed distributions for a token as a proof.
+    /// Proves the pre‑programmed distributions for a token, using the appropriate versioned method.
     ///
-    /// This method queries the backing store for the pre‑programmed distributions tree at the path
-    /// defined by `token_pre_programmed_distributions_path_vec(token_id)`. It then extracts a nested
-    /// mapping where:
+    /// This method queries the pre‑programmed distributions tree at the path
+    /// `token_pre_programmed_distributions_path_vec(token_id)`. It constructs a nested mapping where:
     ///
-    /// - **Outer keys:** Are timestamps (`TimestampMillis`) representing each distribution time,
-    ///   extracted from the 5th path component (index 4). The time is expected to be stored as 4 bytes in big‑endian.
-    /// - **Inner keys:** Are recipient identifiers (`Identifier`) derived from the query key.
-    /// - **Values:** Are token amounts (`TokenAmount`), extracted from elements that are sum items.
+    /// - **Outer keys:** Timestamps (`TimestampMillis`) representing each distribution time.
+    /// - **Inner keys:** Recipient identifiers (`Identifier`).
+    /// - **Values:** Token amounts (`TokenAmount`).
+    ///
+    /// The method dispatches to the correct versioned implementation based on the `platform_version`.
+    ///
+    /// # Parameters
+    ///
+    /// - `token_id`: The 32‑byte identifier for the token.
+    /// - `transaction`: The current GroveDB transaction.
+    /// - `platform_version`: The platform version to determine the method variant.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a nested `BTreeMap` on success or an `Error` on failure.
+    pub fn prove_token_pre_programmed_distributions(
+        &self,
+        token_id: [u8; 32],
+        start_at: Option<QueryPreProgrammedDistributionStartAt>,
+        limit: Option<u16>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        self.prove_token_pre_programmed_distributions_operations(
+            token_id,
+            start_at,
+            limit,
+            &mut vec![],
+            transaction,
+            platform_version,
+        )
+    }
+    /// Proves the pre‑programmed distributions for a token, using the appropriate versioned method.
+    ///
+    /// This method queries the pre‑programmed distributions tree at the path
+    /// `token_pre_programmed_distributions_path_vec(token_id)`. It constructs a nested mapping where:
+    ///
+    /// - **Outer keys:** Timestamps (`TimestampMillis`) representing each distribution time.
+    /// - **Inner keys:** Recipient identifiers (`Identifier`).
+    /// - **Values:** Token amounts (`TokenAmount`).
+    ///
+    /// The method dispatches to the correct versioned implementation based on the `platform_version`.
     ///
     /// # Parameters
     ///
     /// - `token_id`: The 32‑byte identifier for the token.
     /// - `drive_operations`: A mutable vector to accumulate low-level drive operations.
     /// - `transaction`: The current GroveDB transaction.
-    /// - `platform_version`: The platform version to use.
+    /// - `platform_version`: The platform version to determine the method variant.
     ///
     /// # Returns
     ///
     /// A `Result` containing a nested `BTreeMap` on success or an `Error` on failure.
-    pub(super) fn prove_token_pre_programmed_distributions_operations_v0(
+    pub(crate) fn prove_token_pre_programmed_distributions_operations(
         &self,
         token_id: [u8; 32],
         start_at: Option<QueryPreProgrammedDistributionStartAt>,
@@ -38,13 +76,26 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path_query = pre_programmed_distributions_query(token_id, start_at, limit);
-
-        self.grove_get_proved_path_query(
-            &path_query,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )
+        match platform_version
+            .drive
+            .methods
+            .token
+            .prove
+            .pre_programmed_distributions
+        {
+            0 => self.prove_token_pre_programmed_distributions_operations_v0(
+                token_id,
+                start_at,
+                limit,
+                drive_operations,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "prove_pre_programmed_distributions_operations".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }

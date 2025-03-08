@@ -17,6 +17,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
+use dpp::prelude::Identifier;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
@@ -93,7 +94,7 @@ pub trait EpochOperations {
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
     fn add_delete_proposers_operations(
         &self,
-        pro_tx_hashes: Vec<Vec<u8>>,
+        pro_tx_hashes: Vec<Identifier>,
         batch: &mut GroveDbOpBatch,
     );
 }
@@ -298,11 +299,11 @@ impl EpochOperations for Epoch {
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
     fn add_delete_proposers_operations(
         &self,
-        pro_tx_hashes: Vec<Vec<u8>>,
+        pro_tx_hashes: Vec<Identifier>,
         batch: &mut GroveDbOpBatch,
     ) {
         for pro_tx_hash in pro_tx_hashes.into_iter() {
-            batch.add_delete(self.get_proposers_path_vec(), pro_tx_hash);
+            batch.add_delete(self.get_proposers_path_vec(), pro_tx_hash.to_vec());
         }
     }
 }
@@ -523,7 +524,7 @@ mod tests {
                 .get_epoch_start_time(&epoch, Some(&transaction), platform_version)
                 .expect("should get start time");
 
-            assert_eq!(stored_start_time, start_time);
+            assert_eq!(stored_start_time, Some(start_time));
 
             let stored_block_height = drive
                 .get_epoch_start_block_height(&epoch, Some(&transaction), platform_version)
@@ -691,7 +692,7 @@ mod tests {
             .get_epoch_start_time(&epoch_tree, Some(&transaction), platform_version)
             .expect("should get start time");
 
-        assert_eq!(start_time_ms, actual_start_time_ms);
+        assert_eq!(Some(start_time_ms), actual_start_time_ms);
     }
 
     #[test]
@@ -904,6 +905,7 @@ mod tests {
     mod delete_proposers {
         use super::*;
         use crate::query::proposer_block_count_query::ProposerQueryType;
+        use dpp::prelude::Identifier;
 
         #[test]
         fn test_values_are_being_deleted() {
@@ -947,8 +949,8 @@ mod tests {
 
             let mut awaited_result = pro_tx_hashes
                 .iter()
-                .map(|hash| (hash.to_vec(), 1))
-                .collect::<Vec<(Vec<u8>, u64)>>();
+                .map(|hash| ((*hash).into(), 1))
+                .collect::<Vec<(Identifier, u64)>>();
 
             // sort both result to be able to compare them
             stored_proposers.sort();

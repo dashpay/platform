@@ -4,8 +4,9 @@ use crate::state_transition::batch_transition::batched_transition::{
 };
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition,
-    TokenFreezeTransition, TokenMintTransition, TokenTransferTransition,
+    TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
+    TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
+    TokenMintTransition, TokenTransferTransition,
 };
 
 pub trait BatchTransitionResolversV0 {
@@ -22,5 +23,9 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_token_destroy_frozen_funds(
         &self,
     ) -> Option<&TokenDestroyFrozenFundsTransition>;
+
+    fn as_transition_token_claim(&self) -> Option<&TokenClaimTransition>;
     fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition>;
+
+    fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition>;
 }

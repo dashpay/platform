@@ -27,7 +27,7 @@ impl<C> Platform<C> {
     /// * `Result<Vec<Document>, Error>` - A list of `Document` if successful. Otherwise, an `Error`.
     pub fn fetch_reward_shares_list_for_masternode(
         &self,
-        masternode_owner_id: &[u8],
+        masternode_owner_id: &[u8; 32],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {

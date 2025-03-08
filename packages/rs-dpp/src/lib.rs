@@ -82,6 +82,8 @@ pub mod prelude {
 
     pub type BlockHeight = u64;
 
+    pub type FeeMultiplier = u64;
+
     pub type BlockHeightInterval = u64;
 
     pub type CoreBlockHeight = u32;

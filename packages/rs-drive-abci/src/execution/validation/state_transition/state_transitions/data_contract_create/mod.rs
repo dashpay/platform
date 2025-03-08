@@ -43,7 +43,7 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _block_info: &BlockInfo,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -58,6 +58,7 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
             .transform_into_action
         {
             0 => self.transform_into_action_v0::<C>(
+                block_info,
                 validation_mode,
                 execution_context,
                 platform_version,
@@ -124,8 +125,8 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         {
             0 => self.validate_state_v0(
                 platform,
+                block_info,
                 validation_mode,
-                &block_info.epoch,
                 tx,
                 execution_context,
                 platform_version,

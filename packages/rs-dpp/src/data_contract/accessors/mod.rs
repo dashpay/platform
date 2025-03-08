@@ -4,15 +4,16 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::{
     DocumentName, GroupContractPosition, TokenContractPosition, EMPTY_GROUPS, EMPTY_TOKENS,
 };
-use crate::metadata::Metadata;
-use crate::prelude::DataContract;
+use crate::prelude::{BlockHeight, DataContract};
 
 use platform_value::Identifier;
 
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::group::Group;
+use crate::identity::TimestampMillis;
 use crate::tokens::errors::TokenError;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
@@ -115,20 +116,6 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn metadata(&self) -> Option<&Metadata> {
-        match self {
-            DataContract::V0(v0) => v0.metadata(),
-            DataContract::V1(v1) => v1.metadata(),
-        }
-    }
-
-    fn metadata_mut(&mut self) -> Option<&mut Metadata> {
-        match self {
-            DataContract::V0(v0) => v0.metadata_mut(),
-            DataContract::V1(v1) => v1.metadata_mut(),
-        }
-    }
-
     fn config(&self) -> &DataContractConfig {
         match self {
             DataContract::V0(v0) => v0.config(),
@@ -170,13 +157,6 @@ impl DataContractV0Setters for DataContract {
         match self {
             DataContract::V0(v0) => v0.set_owner_id(owner_id),
             DataContract::V1(v1) => v1.set_owner_id(owner_id),
-        }
-    }
-
-    fn set_metadata(&mut self, metadata: Option<Metadata>) {
-        match self {
-            DataContract::V0(v0) => v0.set_metadata(metadata),
-            DataContract::V1(v1) => v1.set_metadata(metadata),
         }
     }
 
@@ -287,6 +267,54 @@ impl DataContractV1Getters for DataContract {
             DataContract::V1(v1) => v1.token_id(position),
         }
     }
+
+    /// Returns the timestamp in milliseconds when the contract was created.
+    fn created_at(&self) -> Option<TimestampMillis> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.created_at,
+        }
+    }
+
+    /// Returns the timestamp in milliseconds when the contract was last updated.
+    fn updated_at(&self) -> Option<TimestampMillis> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.updated_at,
+        }
+    }
+
+    /// Returns the block height at which the contract was created.
+    fn created_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.created_at_block_height,
+        }
+    }
+
+    /// Returns the block height at which the contract was last updated.
+    fn updated_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.updated_at_block_height,
+        }
+    }
+
+    /// Returns the epoch at which the contract was created.
+    fn created_at_epoch(&self) -> Option<EpochIndex> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.created_at_epoch,
+        }
+    }
+
+    /// Returns the epoch at which the contract was last updated.
+    fn updated_at_epoch(&self) -> Option<EpochIndex> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.updated_at_epoch,
+        }
+    }
 }
 
 impl DataContractV1Setters for DataContract {
@@ -327,6 +355,48 @@ impl DataContractV1Setters for DataContract {
             DataContract::V1(v1) => {
                 v1.tokens.insert(id, token);
             }
+        }
+    }
+
+    /// Sets the timestamp in milliseconds when the contract was created.
+    fn set_created_at(&mut self, created_at: Option<TimestampMillis>) {
+        if let DataContract::V1(v1) = self {
+            v1.created_at = created_at;
+        }
+    }
+
+    /// Sets the timestamp in milliseconds when the contract was last updated.
+    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
+        if let DataContract::V1(v1) = self {
+            v1.updated_at = updated_at;
+        }
+    }
+
+    /// Sets the block height at which the contract was created.
+    fn set_created_at_block_height(&mut self, block_height: Option<BlockHeight>) {
+        if let DataContract::V1(v1) = self {
+            v1.created_at_block_height = block_height;
+        }
+    }
+
+    /// Sets the block height at which the contract was last updated.
+    fn set_updated_at_block_height(&mut self, block_height: Option<BlockHeight>) {
+        if let DataContract::V1(v1) = self {
+            v1.updated_at_block_height = block_height;
+        }
+    }
+
+    /// Sets the epoch at which the contract was created.
+    fn set_created_at_epoch(&mut self, epoch: Option<EpochIndex>) {
+        if let DataContract::V1(v1) = self {
+            v1.created_at_epoch = epoch;
+        }
+    }
+
+    /// Sets the epoch at which the contract was last updated.
+    fn set_updated_at_epoch(&mut self, epoch: Option<EpochIndex>) {
+        if let DataContract::V1(v1) = self {
+            v1.updated_at_epoch = epoch;
         }
     }
 }

@@ -5,6 +5,8 @@ use crate::data_contract::associated_token::token_configuration_convention::v0::
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+use crate::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
@@ -25,9 +27,9 @@ pub struct TokenConfigurationV0 {
     /// The maximum supply the token can ever have
     #[serde(default)]
     pub max_supply: Option<TokenAmount>,
-    /// Do we keep history, default is true.
-    #[serde(default = "default_keeps_history")]
-    pub keeps_history: bool,
+    /// The rules for keeping history.
+    #[serde(default = "default_token_keeps_history_rules")]
+    pub keeps_history: TokenKeepsHistoryRules,
     /// Do we start off as paused, meaning that we can not transfer till we unpause.
     #[serde(default = "default_starts_as_paused")]
     pub start_as_paused: bool,
@@ -64,6 +66,15 @@ fn default_keeps_history() -> bool {
 // Default function for `starts_as_paused`
 fn default_starts_as_paused() -> bool {
     false
+}
+
+fn default_token_keeps_history_rules() -> TokenKeepsHistoryRules {
+    TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+        keeps_transfer_history: true,
+        keeps_freezing_history: true,
+        keeps_minting_history: true,
+        keeps_burning_history: true,
+    })
 }
 
 fn default_token_distribution_rules() -> TokenDistributionRules {
@@ -158,7 +169,12 @@ impl TokenConfigurationV0 {
             .into(),
             base_supply: 100000,
             max_supply: None,
-            keeps_history: true,
+            keeps_history: TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+                keeps_transfer_history: true,
+                keeps_freezing_history: true,
+                keeps_minting_history: true,
+                keeps_burning_history: true,
+            }),
             start_as_paused: false,
             max_supply_change_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,

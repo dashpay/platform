@@ -89,7 +89,10 @@ impl<C> Platform<C> {
                     platform_version,
                 )?
                 .into_iter()
-                .map(|(pro_tx_hash, count)| EvonodeProposedBlocks { pro_tx_hash, count })
+                .map(|(pro_tx_hash, count)| EvonodeProposedBlocks {
+                    pro_tx_hash: pro_tx_hash.to_vec(),
+                    count,
+                })
                 .collect();
 
             let evonode_proposed_blocks = EvonodesProposedBlocks {

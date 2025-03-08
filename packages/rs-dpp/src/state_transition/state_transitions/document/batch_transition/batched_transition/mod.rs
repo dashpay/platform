@@ -16,6 +16,7 @@ pub mod multi_party_action;
 mod resolvers;
 pub mod token_base_transition;
 pub mod token_burn_transition;
+pub mod token_claim_transition;
 pub mod token_config_update_transition;
 pub mod token_destroy_frozen_funds_transition;
 pub mod token_emergency_action_transition;

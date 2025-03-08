@@ -1,7 +1,7 @@
 use crate::from_request::TryFromRequest;
 use crate::provider::DataContractProvider;
 use crate::verify::verify_tenderdash_proof;
-use crate::{types, types::*, ContextProvider, Error};
+use crate::{types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
@@ -51,7 +51,7 @@ use std::num::TryFromIntError;
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
 /// Use [`FromProof::maybe_from_proof()`] or [`FromProof::from_proof()`] to parse and verify proofs received
-/// from the Dash Platform (including verification of grovedb-generated proofs and cryptographic proofs geneerated
+/// from the Dash Platform (including verification of grovedb-generated proofs and cryptographic proofs generated
 /// by Tenderdash).
 ///
 /// gRPC responses, received from the Dash Platform in response to requests containing `prove: true`, contain
@@ -60,7 +60,7 @@ use std::num::TryFromIntError;
 /// object (or information that the object does not exist) in one step.
 ///
 /// This trait is implemented by several objects defined in [Dash Platform Protocol](dpp), like [Identity],
-/// [DataContract], [Documents], etc. It is also implemented by several helper objects from [crate::types] module.
+/// [DataContract], [Documents], etc. It is also implemented by several helper objects from [types] module.
 pub trait FromProof<Req> {
     /// Request type for which this trait is implemented.
     type Request;
@@ -487,7 +487,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
 
                             match v {
                                 Err(e) =>Err(e),
-                                Ok(d) => Ok(((*k as u8),d)),
+                                Ok(d) => Ok((*k as u8,d)),
                             }
                 })
                 .collect::<Result<BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,Error>>()?;
@@ -521,15 +521,14 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let identity_id = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_nonce_request::Version::V0(v0) => {
-                Ok::<dpp::identifier::Identifier, Error>(
+        let identity_id =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identity_nonce_request::Version::V0(v0) => Ok::<Identifier, Error>(
                     Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
                         error: e.to_string(),
                     })?,
-                )
-            }
-        }?;
+                ),
+            }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_nonce) = Drive::verify_identity_nonce(
@@ -551,7 +550,7 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
-            maybe_nonce.map(types::IdentityNonceFetcher),
+            maybe_nonce.map(IdentityNonceFetcher),
             mtd.clone(),
             proof.clone(),
         ))
@@ -582,7 +581,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
 
         let (identity_id, contract_id) = match request.version.ok_or(Error::EmptyVersion)? {
             get_identity_contract_nonce_request::Version::V0(v0) => {
-                Ok::<(dpp::identifier::Identifier, dpp::identifier::Identifier), Error>((
+                Ok::<(Identifier, Identifier), Error>((
                     Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
                         error: e.to_string(),
                     })?,
@@ -614,7 +613,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
-            maybe_identity.map(types::IdentityContractNonceFetcher),
+            maybe_identity.map(IdentityContractNonceFetcher),
             mtd.clone(),
             proof.clone(),
         ))
@@ -1014,7 +1013,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: (mtd.epoch as u16).try_into()?,
         };
 
-        let contracts_provider_fn = provider.as_contract_lookup_fn();
+        let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
@@ -1253,11 +1252,11 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
             .into_iter()
             .map(|(key, value)| {
                 ProTxHash::from_slice(&key)
-                    .map(|protxhash| {
+                    .map(|pro_tx_hash| {
                         (
-                            protxhash,
+                            pro_tx_hash,
                             Some(MasternodeProtocolVote {
-                                pro_tx_hash: protxhash,
+                                pro_tx_hash,
                                 voted_version: value,
                             }),
                         )
@@ -1310,7 +1309,6 @@ impl FromProof<GetPathElementsRequest> for Elements {
     }
 }
 
-// #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where
     Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
@@ -1476,8 +1474,9 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&provider.as_contract_lookup_fn())?;
+        let resolved_request = drive_query.resolve_with_known_contracts_provider(
+            &provider.as_contract_lookup_fn(platform_version),
+        )?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -1525,7 +1524,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Resolve request to get verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn();
+        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
         let resolved_request =
             drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
 
@@ -1584,7 +1583,7 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn();
+        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
 
         let resolved_request =
             drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
@@ -1640,7 +1639,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let contract_provider_fn = provider.as_contract_lookup_fn();
+        let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
         let (root_hash, voters) = drive_query
             .verify_identity_votes_given_proof::<Vec<_>>(
                 &proof.grovedb_proof,
@@ -2005,7 +2004,7 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     let i: Option<u16> = if i != 0 {
         let i: u16 = i
             .try_into()
-            .map_err(|e: std::num::TryFromIntError| Error::RequestError {
+            .map_err(|e: TryFromIntError| Error::RequestError {
                 error: format!("value {} out of range: {}", i, e),
             })?;
         Some(i)
@@ -2084,7 +2083,7 @@ impl<K, T> Length for IndexMap<K, Option<T>> {
 /// # Arguments
 ///
 /// * `$object`: The type for which to implement Length trait
-/// * `$len`: A closure that returns the length of the object; if ommitted, defaults to 1
+/// * `$len`: A closure that returns the length of the object; if omitted, defaults to 1
 macro_rules! define_length {
     ($object:ty,$some:expr,$counter:expr) => {
         impl Length for $object {

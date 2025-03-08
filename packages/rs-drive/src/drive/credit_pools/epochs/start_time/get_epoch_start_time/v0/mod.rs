@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
+use dpp::prelude::TimestampMillis;
 use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 
@@ -14,11 +15,11 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
+    ) -> Result<Option<TimestampMillis>, Error> {
         let element = self
             .grove
-            .get(
-                &epoch_tree.get_path(),
+            .get_raw_optional(
+                (&epoch_tree.get_path()).into(),
                 KEY_START_TIME.as_slice(),
                 transaction,
                 &platform_version.drive.grove_version,
@@ -26,20 +27,41 @@ impl Drive {
             .unwrap()
             .map_err(Error::GroveDB)?;
 
+        let Some(element) = element else {
+            return Ok(None);
+        };
+
         let Element::Item(encoded_start_time, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "start time must be an item",
             )));
         };
 
-        let start_time =
-            u64::from_be_bytes(encoded_start_time.as_slice().try_into().map_err(|_| {
+        let start_time = TimestampMillis::from_be_bytes(
+            encoded_start_time.as_slice().try_into().map_err(|_| {
                 Error::Drive(DriveError::CorruptedSerialization(String::from(
                     "start time must be u64",
                 )))
-            })?);
+            })?,
+        );
 
-        Ok(start_time)
+        Ok(Some(start_time))
+    }
+}
+
+impl Drive {
+    /// Returns the start time of the given Epoch.
+    pub(super) fn get_expected_epoch_start_time_v0(
+        &self,
+        epoch: &Epoch,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<TimestampMillis, Error> {
+        self.get_epoch_start_time_v0(epoch, transaction, platform_version)?
+            .ok_or(Error::Drive(DriveError::CorruptedDriveState(format!(
+                "expected start time for epoch {}",
+                epoch.index
+            ))))
     }
 }
 
@@ -52,6 +74,7 @@ mod tests {
 
     mod get_epoch_start_time {
         use super::*;
+        use assert_matches::assert_matches;
         use dpp::version::PlatformVersion;
 
         #[test]
@@ -63,20 +86,20 @@ mod tests {
 
             let non_initiated_epoch_tree = Epoch::new(7000).unwrap();
 
-            let result = drive.get_epoch_start_time(
+            let result = drive.get_expected_epoch_start_time(
                 &non_initiated_epoch_tree,
                 Some(&transaction),
                 platform_version,
             );
 
-            assert!(matches!(
+            assert_matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
-            ));
+                Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+            );
         }
 
         #[test]
-        fn test_error_if_value_is_not_set() {
+        fn test_none_if_value_is_not_set() {
             let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
@@ -87,7 +110,7 @@ mod tests {
             let result =
                 drive.get_epoch_start_time(&epoch_tree, Some(&transaction), platform_version);
 
-            assert!(matches!(result, Err(Error::GroveDB(_))));
+            assert_matches!(result, Ok(None));
         }
 
         #[test]

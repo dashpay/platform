@@ -99,11 +99,8 @@ CF_EXTERN_C_BEGIN
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActions;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent;
-@class GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncryptedNote;
-@class GetGroupActionsResponse_GetGroupActionsResponseV0_SharedEncryptedNote;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent;
-@class GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent;
 @class GetGroupInfoRequest_GetGroupInfoRequestV0;
 @class GetGroupInfoResponse_GetGroupInfoResponseV0;
@@ -6762,44 +6759,6 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalE
 
 @end
 
-#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent
-
-typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber) {
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_RecipientId = 1,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_PublicNote = 2,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_SharedEncryptedNote = 3,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_PersonalEncryptedNote = 4,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_Amount = 5,
-};
-
-/**
- * Transfer event
- **/
-GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent : GPBMessage
-
-/** Recipient identifier */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *recipientId;
-
-/** Public note */
-@property(nonatomic, readwrite, copy, null_resettable) NSString *publicNote;
-/** Test to see if @c publicNote has been set. */
-@property(nonatomic, readwrite) BOOL hasPublicNote;
-
-/** Shared encrypted note */
-@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_SharedEncryptedNote *sharedEncryptedNote;
-/** Test to see if @c sharedEncryptedNote has been set. */
-@property(nonatomic, readwrite) BOOL hasSharedEncryptedNote;
-
-/** Personal encrypted note */
-@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncryptedNote *personalEncryptedNote;
-/** Test to see if @c personalEncryptedNote has been set. */
-@property(nonatomic, readwrite) BOOL hasPersonalEncryptedNote;
-
-/** Amount transferred */
-@property(nonatomic, readwrite) uint64_t amount;
-
-@end
-
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent_FieldNumber) {
@@ -6974,9 +6933,8 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Fi
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_Freeze = 3,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_Unfreeze = 4,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_DestroyFrozenFunds = 5,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_Transfer = 6,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_EmergencyAction = 7,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_TokenConfigUpdate = 8,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_EmergencyAction = 6,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_TokenConfigUpdate = 7,
 };
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase) {
@@ -6986,9 +6944,8 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Ty
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_Freeze = 3,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_Unfreeze = 4,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_DestroyFrozenFunds = 5,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_Transfer = 6,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_EmergencyAction = 7,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_TokenConfigUpdate = 8,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_EmergencyAction = 6,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_TokenConfigUpdate = 7,
 };
 
 /**
@@ -7012,9 +6969,6 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEven
 
 /** Destroy frozen funds */
 @property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_DestroyFrozenFundsEvent *destroyFrozenFunds;
-
-/** Transfer event details */
-@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent *transfer;
 
 /** Emergency action details */
 @property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent *emergencyAction;

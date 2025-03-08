@@ -128,11 +128,8 @@ GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupA
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActions);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent);
-GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncryptedNote);
-GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_SharedEncryptedNote);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent);
-GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent);
 GPBObjCClassDeclaration(GetGroupInfoRequest);
 GPBObjCClassDeclaration(GetGroupInfoRequest_GetGroupInfoRequestV0);
@@ -17586,96 +17583,6 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncrypt
 
 @end
 
-#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent
-
-@implementation GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent
-
-@dynamic recipientId;
-@dynamic hasPublicNote, publicNote;
-@dynamic hasSharedEncryptedNote, sharedEncryptedNote;
-@dynamic hasPersonalEncryptedNote, personalEncryptedNote;
-@dynamic amount;
-
-typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_ {
-  uint32_t _has_storage_[1];
-  NSData *recipientId;
-  NSString *publicNote;
-  GetGroupActionsResponse_GetGroupActionsResponseV0_SharedEncryptedNote *sharedEncryptedNote;
-  GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncryptedNote *personalEncryptedNote;
-  uint64_t amount;
-} GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "recipientId",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_RecipientId,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_, recipientId),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
-      },
-      {
-        .name = "publicNote",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_PublicNote,
-        .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_, publicNote),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeString,
-      },
-      {
-        .name = "sharedEncryptedNote",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_SharedEncryptedNote),
-        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_SharedEncryptedNote,
-        .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_, sharedEncryptedNote),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "personalEncryptedNote",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_PersonalEncryptedNote),
-        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_PersonalEncryptedNote,
-        .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_, personalEncryptedNote),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "amount",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent_FieldNumber_Amount,
-        .hasIndex = 4,
-        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_, amount),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt64,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent
 
 @implementation GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent
@@ -18135,7 +18042,6 @@ void GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent_ClearTypeOn
 @dynamic freeze;
 @dynamic unfreeze;
 @dynamic destroyFrozenFunds;
-@dynamic transfer;
 @dynamic emergencyAction;
 @dynamic tokenConfigUpdate;
 
@@ -18146,7 +18052,6 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
   GetGroupActionsResponse_GetGroupActionsResponseV0_FreezeEvent *freeze;
   GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent *unfreeze;
   GetGroupActionsResponse_GetGroupActionsResponseV0_DestroyFrozenFundsEvent *destroyFrozenFunds;
-  GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent *transfer;
   GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent *emergencyAction;
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent *tokenConfigUpdate;
 } GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_;
@@ -18199,15 +18104,6 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
         .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_DestroyFrozenFunds,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, destroyFrozenFunds),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "transfer",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_TransferEvent),
-        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_Transfer,
-        .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, transfer),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

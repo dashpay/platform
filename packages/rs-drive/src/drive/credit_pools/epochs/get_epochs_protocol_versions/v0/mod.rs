@@ -77,19 +77,18 @@ impl Drive {
                     )));
                 };
 
-                let epoch_index_bytes: [u8; 32] =
+                let epoch_index_bytes: [u8; 2] =
                     epoch_index_vec.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
                             "extended epoch info: item has an invalid length".to_string(),
                         ))
                     })?;
-                let epoch_index =
-                    EpochIndex::from_be_bytes([epoch_index_bytes[0], epoch_index_bytes[1]])
-                        .checked_sub(EPOCH_KEY_OFFSET)
-                        .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                            "epoch bytes on disk too small, should be over epoch key offset"
-                                .to_string(),
-                        )))?;
+                let epoch_index = EpochIndex::from_be_bytes(epoch_index_bytes)
+                    .checked_sub(EPOCH_KEY_OFFSET)
+                    .ok_or(Error::Drive(DriveError::CorruptedSerialization(
+                        "epoch bytes on disk too small, should be over epoch key offset"
+                            .to_string(),
+                    )))?;
 
                 let Element::Item(encoded_protocol_version, _) = protocol_version_element else {
                     return Err(Error::Drive(DriveError::UnexpectedElementType(

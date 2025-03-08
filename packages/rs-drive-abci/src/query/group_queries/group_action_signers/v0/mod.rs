@@ -29,7 +29,6 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetGroupActionSignersResponseV0>, Error> {
-        let config = &self.config.drive;
         let contract_id: Identifier =
             check_validation_result_with_data!(contract_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(

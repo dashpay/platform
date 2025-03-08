@@ -325,25 +325,6 @@ impl DataContractWasm {
         self.identity_nonce.unwrap_or_default()
     }
 
-    #[wasm_bindgen(js_name=getMetadata)]
-    pub fn metadata(&self) -> Option<MetadataWasm> {
-        self.inner.metadata().cloned().map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
-        let metadata = if !metadata.is_falsy() {
-            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
-            Some(metadata.to_owned().into())
-        } else {
-            None
-        };
-
-        self.inner.set_metadata(metadata);
-
-        Ok(())
-    }
-
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let platform_version = PlatformVersion::first();

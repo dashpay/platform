@@ -8,6 +8,7 @@ use bincode::Encode;
 use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

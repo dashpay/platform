@@ -2,7 +2,9 @@ use crate::data_contract::associated_token::token_configuration_convention::v0::
 use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
+mod accessors;
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
@@ -11,8 +13,6 @@ pub enum TokenConfigurationConvention {
     #[serde(rename = "0")]
     V0(TokenConfigurationConventionV0),
 }
-
-use std::fmt;
 
 impl fmt::Display for TokenConfigurationConvention {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

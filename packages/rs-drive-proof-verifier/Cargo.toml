@@ -12,13 +12,14 @@ mocks = [
   "dep:platform-serialization-derive",
   "dpp/document-serde-conversion",
   "indexmap/serde",
+  "dpp/data-contract-serde-conversion"
 ]
 
 [dependencies]
 
 thiserror = { version = "1.0.63" }
 dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
-  "platform",
+  "platform", "client"
 ] }
 
 drive = { path = "../rs-drive", default-features = false, features = [

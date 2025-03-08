@@ -132,7 +132,7 @@ impl BroadcastStateTransition for StateTransition {
                 self,
                 &block_info,
                 proof.grovedb_proof.as_slice(),
-                &context_provider.as_contract_lookup_fn(),
+                &context_provider.as_contract_lookup_fn(sdk.version()),
                 sdk.version(),
             )
             .wrap_to_execution_result(&response)?
