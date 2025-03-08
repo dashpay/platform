@@ -44,18 +44,6 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   const contract = await this.dpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract() as Uint8Array);
 
-  let metadata;
-  const responseMetadata = dataContractResponse.getMetadata();
-  if (responseMetadata) {
-    metadata = new Metadata(
-      responseMetadata.getHeight(),
-      responseMetadata.getCoreChainLockedHeight(),
-      responseMetadata.getTimeMs(),
-      responseMetadata.getProtocolVersion(),
-    );
-  }
-  contract.setMetadata(metadata);
-
   // Store contract to the cache
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {

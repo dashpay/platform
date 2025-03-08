@@ -298,17 +298,6 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#setMetadata', () => {
-    it('should set metadata', () => {
-      const otherMetadata = new Metadata(BigInt(43), 1, BigInt(100), 2);
-      const otherMetadataToObject = otherMetadata.toObject();
-
-      dataContract.setMetadata(otherMetadata);
-
-      expect(dataContract.getMetadata().toObject()).to.deep.equal(otherMetadataToObject);
-    });
-  });
-
   describe.skip('#setConfig', () => {
     it('should set config', () => {
       const config = {
