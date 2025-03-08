@@ -16,11 +16,10 @@ describe('DataContract', () => {
 
   let DataContract;
   let Identifier;
-  let Metadata;
 
   before(async () => {
     ({
-      DataContract, Identifier, Metadata,
+      DataContract, Identifier,
     } = await loadWasmDpp());
   });
 
