@@ -119,6 +119,8 @@ grovedbg = ["drive/grovedbg"]
 name = "drive-abci"
 path = "src/main.rs"
 
+[profile.test]
+stack_size = 4194304  # 4MB
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
