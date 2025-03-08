@@ -1,4 +1,4 @@
-import { Identifier, Metadata } from '@dashevo/wasm-dpp';
+import { Identifier } from '@dashevo/wasm-dpp';
 import { GetDataContractResponse } from '@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse';
 import { Platform } from '../../Platform';
 
