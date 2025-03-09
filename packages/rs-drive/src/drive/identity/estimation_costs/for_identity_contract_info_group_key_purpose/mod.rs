@@ -3,10 +3,10 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::identity::Purpose;
-use dpp::version::drive_versions::DriveVersion;
+use dpp::identity::identity_public_key::Purpose;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

@@ -1,7 +1,8 @@
 // TODO: Move to state_transitions module
 
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::ProtocolError;
-use asset_lock_proof::AssetLockProof;
+// pub use asset_lock_proof::AssetLockProof;
 
 pub mod asset_lock_proof;
 

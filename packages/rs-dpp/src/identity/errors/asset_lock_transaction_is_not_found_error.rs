@@ -1,12 +1,13 @@
-use dashcore::Txid;
+use dashcore::hash_types::Txid;
 use thiserror::Error;
 
 use crate::DPPError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Asset Lock transaction {transaction_id:?} is not found")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct AssetLockTransactionIsNotFoundError {
-    transaction_id: Txid,
+    pub transaction_id: Txid,
 }
 
 impl AssetLockTransactionIsNotFoundError {

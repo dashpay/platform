@@ -1,11 +1,11 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
 
-use crate::consensus::state::data_trigger::DataTriggerError;
+use crate::errors::consensus::state::data_trigger::DataTriggerError;
 use bincode::{Decode, Encode};
 
 #[derive(
@@ -13,15 +13,16 @@ use bincode::{Decode, Encode};
 )]
 #[error("{message}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataTriggerConditionError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    data_contract_id: Identifier,
-    document_id: Identifier,
-    message: String,
+    pub data_contract_id: Identifier,
+    pub document_id: Identifier,
+    pub message: String,
 }
 
 impl DataTriggerConditionError {

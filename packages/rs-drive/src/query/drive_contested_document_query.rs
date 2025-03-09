@@ -12,11 +12,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::prelude::Identifier;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::ops::BitXor;
 

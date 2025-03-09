@@ -51,9 +51,10 @@ use crate::data_contract::serialized_version::{
 };
 use crate::util::hash::hash_double_to_vec;
 
-use crate::version::{FeatureVersion, PlatformVersion};
-use crate::ProtocolError;
-use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use crate::errors::ProtocolError;
+use crate::errors::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 pub use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
@@ -61,15 +62,20 @@ use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
-pub use serde_json::Value as JsonValue;
 
-type JsonSchema = JsonValue;
-type DefinitionName = String;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
+pub type JsonSchema = serde_json::Value;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
+pub type DefinitionName = String;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type DocumentName = String;
 pub type TokenName = String;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type GroupContractPosition = u16;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type TokenContractPosition = u16;
-type PropertyPath = String;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
+pub type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 
@@ -104,6 +110,7 @@ static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
 
 /// Here we use PlatformSerialize, because
 #[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContract {
     V0(DataContractV0),
     V1(DataContractV1),
@@ -331,8 +338,8 @@ mod tests {
     use crate::tests::fixtures::{
         get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
     };
-    use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_contract_serialization() {

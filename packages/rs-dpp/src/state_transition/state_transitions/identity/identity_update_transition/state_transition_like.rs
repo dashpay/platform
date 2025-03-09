@@ -1,8 +1,8 @@
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use versioned_feature_core::FeatureVersion;
 
 impl StateTransitionLike for IdentityUpdateTransition {
     /// Returns ID of the updated contract

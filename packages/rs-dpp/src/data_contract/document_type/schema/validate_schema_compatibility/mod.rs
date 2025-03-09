@@ -1,5 +1,5 @@
-use crate::data_contract::JsonValue;
-use crate::ProtocolError;
+// use crate::data_contract::JsonValue;
+use crate::errors::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 mod v0;
@@ -13,8 +13,8 @@ pub struct IncompatibleJsonSchemaOperation {
 }
 
 pub fn validate_schema_compatibility(
-    original_schema: &JsonValue,
-    new_schema: &JsonValue,
+    original_schema: &serde_json::Value,
+    new_schema: &serde_json::Value,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
     match platform_version

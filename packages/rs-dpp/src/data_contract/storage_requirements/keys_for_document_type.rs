@@ -1,7 +1,7 @@
-use crate::consensus::basic::data_contract::UnknownStorageKeyRequirementsError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::consensus::basic::data_contract::UnknownStorageKeyRequirementsError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use serde_repr::*;
 use std::convert::TryFrom;
@@ -10,6 +10,7 @@ use std::convert::TryFrom;
 // @append_only
 #[repr(u8)]
 #[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq, Copy, Clone, Encode, Decode)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StorageKeyRequirements {
     Unique = 0,
     Multiple = 1,

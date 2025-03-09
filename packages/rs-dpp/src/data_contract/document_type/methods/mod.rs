@@ -18,11 +18,11 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
+use crate::errors::ProtocolError;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::{Identifier, Value};
 

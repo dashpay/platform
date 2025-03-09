@@ -14,17 +14,18 @@ use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
+use crate::identity::identity_public_key::KeyID;
+use crate::{data_contract::DataContract, errors::protocol_error::ProtocolError};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use bincode::{Decode, Encode};
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::state_transition::StateTransition;
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 ///DataContractCreateTransitionV0 has the same encoding structure
 
@@ -34,6 +35,7 @@ use crate::version::PlatformVersion;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,

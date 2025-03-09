@@ -21,7 +21,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Removes the terminal reference.

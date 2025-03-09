@@ -1,8 +1,9 @@
 pub mod v1;
 
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct SystemDataContractVersions {
     pub withdrawals: FeatureVersion,
     pub dpns: FeatureVersion,

@@ -6,7 +6,7 @@ use crate::query::QueryItem;
 
 use grovedb::query_result_type::QueryResultType;
 
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 use grovedb::{PathQuery, TransactionArg};
 

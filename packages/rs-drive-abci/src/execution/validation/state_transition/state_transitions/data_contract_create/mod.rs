@@ -5,7 +5,7 @@ mod state;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;
@@ -147,8 +147,8 @@ mod tests {
     use assert_matches::assert_matches;
     use dpp::balances::credits::TokenAmount;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
@@ -163,8 +163,8 @@ mod tests {
     use dpp::identity::TimestampMillis;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::state_transitions::contract::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::tokens::calculate_token_id;
     use platform_version::version::PlatformVersion;

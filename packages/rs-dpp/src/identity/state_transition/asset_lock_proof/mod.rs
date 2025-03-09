@@ -6,14 +6,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use bincode::{Decode, Encode};
 
-pub use instant::*;
+pub use instant::{InstantAssetLockProof, RawInstantLockProof};
+use platform_value::Identifier;
 use platform_value::Value;
 #[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
 use serde::de::Error;
 
-use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use crate::prelude::Identifier;
+use crate::identity::state_transition::asset_lock_proof::chain::chain_asset_lock_proof::ChainAssetLockProof;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{ProtocolError, SerdeParsingError};
@@ -25,6 +25,7 @@ pub mod validate_asset_lock_transaction_structure;
 // TODO: Serialization with bincode
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(#[bincode(with_serde)] ChainAssetLockProof),

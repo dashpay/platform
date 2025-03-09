@@ -1,14 +1,14 @@
 use crate::error::Error;
-use dpp::consensus::basic::identity::{
+use dpp::errors::consensus::basic::identity::{
     DisablingKeyIdAlsoBeingAddedInSameTransitionError, DuplicatedIdentityPublicKeyIdBasicError,
     InvalidIdentityUpdateTransitionEmptyError,
 };
-use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use std::collections::HashSet;

@@ -1,4 +1,4 @@
-use crate::state_transition::batch_transition::batched_transition::{
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{
     BatchedTransitionMutRef, BatchedTransitionRef,
 };
 pub trait DocumentsBatchTransitionAccessorsV0 {

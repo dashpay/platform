@@ -1,20 +1,21 @@
-#[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
-use crate::consensus::basic::data_contract::DuplicateIndexError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
 use crate::data_contract::document_type::Index;
 #[cfg(feature = "validation")]
+use crate::errors::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
+use crate::errors::consensus::basic::data_contract::DuplicateIndexError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IndexType {
     /// A normal non unique index
     NonUniqueIndex,
@@ -30,6 +31,7 @@ pub enum IndexType {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IndexLevelTypeInfo {
     /// should we insert if all fields up to here are null
     pub should_insert_with_all_null: bool,
@@ -50,13 +52,14 @@ impl IndexType {
 pub type ShouldInsertWithAllNull = bool;
 
 #[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IndexLevel {
     /// the lower index levels from this level
-    sub_index_levels: BTreeMap<String, IndexLevel>,
+    pub sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
-    has_index_with_type: Option<IndexLevelTypeInfo>,
+    pub has_index_with_type: Option<IndexLevelTypeInfo>,
     /// unique level identifier
-    level_identifier: u64,
+    pub level_identifier: u64,
 }
 
 impl IndexLevel {

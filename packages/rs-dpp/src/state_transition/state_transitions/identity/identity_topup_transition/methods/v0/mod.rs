@@ -1,14 +1,18 @@
 #[cfg(feature = "state-transition-signing")]
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 pub trait IdentityTopUpTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

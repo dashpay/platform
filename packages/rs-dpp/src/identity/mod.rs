@@ -1,13 +1,17 @@
 pub use credits_converter::*;
 
-pub use identity::*;
+pub use identity::{Identity, PartialIdentity};
 #[cfg(feature = "client")]
 pub use identity_facade::*;
-pub use identity_public_key::*;
+pub use identity_public_key::contract_bounds::{ContractBounds, ContractBoundsType};
+pub use identity_public_key::fields::BINARY_DATA_FIELDS;
+pub use identity_public_key::security_level::SecurityLevel;
+pub use identity_public_key::v0::IdentityPublicKeyV0;
+pub use identity_public_key::TimestampMillis;
 
 pub mod core_script;
 mod get_biggest_possible_identity;
-mod identity;
+pub mod identity;
 pub mod identity_public_key;
 
 pub mod state_transition;
@@ -31,5 +35,5 @@ pub mod random;
 pub mod v0;
 
 pub use fields::*;
-
-pub use v0::*;
+pub use identity_public_key::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose};
+pub use v0::IdentityV0;

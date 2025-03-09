@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::basic::document::DuplicateDocumentTransitionsWithIdsError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::document::DuplicateDocumentTransitionsWithIdsError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
 use std::iter::FromIterator;
 use wasm_bindgen::prelude::*;

@@ -1,4 +1,4 @@
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 
 use crate::error::Error;
 use crate::platform_types::event_execution_result::EstimatedFeeResult;

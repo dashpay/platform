@@ -1,9 +1,9 @@
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::errors::consensus::ConsensusError;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 
 impl IdentityCreateTransitionAction {
     /// try from

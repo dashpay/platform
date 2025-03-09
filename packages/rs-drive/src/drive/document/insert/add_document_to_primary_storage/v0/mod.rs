@@ -45,7 +45,7 @@ use crate::drive::document::paths::{
     contract_documents_primary_key_path,
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document to primary storage.

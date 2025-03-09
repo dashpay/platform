@@ -1,9 +1,9 @@
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use platform_version::TryFromPlatformVersioned;
 
-use crate::consensus::basic::decode::SerializedObjectParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::decode::SerializedObjectParsingError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 
 use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
@@ -16,14 +16,14 @@ use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
 use crate::data_contract::v1::DataContractV1;
+use crate::errors::ProtocolError;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
-use crate::{errors::ProtocolError, prelude::Identifier};
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -213,7 +213,7 @@ mod tests {
     use crate::data_contract::schema::DataContractSchemaMethodsV0;
 
     use crate::serialization::PlatformSerializableWithPlatformVersion;
-    use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+    use crate::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
 

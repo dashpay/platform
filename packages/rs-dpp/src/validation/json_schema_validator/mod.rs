@@ -1,6 +1,5 @@
 pub mod methods;
 
-use crate::data_contract::JsonValue;
 use crate::validation::{DataValidator, SimpleConsensusValidationResult};
 use anyhow::Context;
 use jsonschema::JSONSchema;
@@ -14,7 +13,7 @@ pub struct JsonSchemaValidator {
 
 // TODO: Remove?
 impl DataValidator for JsonSchemaValidator {
-    type Item = JsonValue;
+    type Item = serde_json::Value;
     fn validate(
         &self,
         data: &Self::Item,
@@ -24,5 +23,28 @@ impl DataValidator for JsonSchemaValidator {
             .validate(data, platform_version)
             .context("error during validating json schema")?;
         Ok(result)
+    }
+}
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[cfg_attr(
+    feature = "ferment",
+    ferment_macro::register(dpp::validation::json_schema_validator::JsonSchemaValidator)
+)]
+pub struct dpp_validation_JsonSchemaValidator {
+    validator: RwLock<Option<jsonschema::JSONSchema>>,
+}
+#[cfg(feature = "ferment")]
+impl ferment::FFIConversionFrom<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
+    unsafe fn ffi_from_const(_ffi: *const Self) -> JsonSchemaValidator {
+        JsonSchemaValidator::new()
+    }
+}
+#[cfg(feature = "ferment")]
+impl ferment::FFIConversionTo<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
+    unsafe fn ffi_to_const(obj: JsonSchemaValidator) -> *const Self {
+        ferment::boxed(dpp_validation_JsonSchemaValidator {
+            validator: obj.validator,
+        })
     }
 }

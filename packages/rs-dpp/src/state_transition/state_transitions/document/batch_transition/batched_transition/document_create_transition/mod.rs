@@ -6,7 +6,7 @@ mod v0_methods;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
-use crate::state_transition::batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
@@ -21,6 +21,7 @@ pub use v0::DocumentCreateTransitionV0;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentCreateTransition {
     #[display("V0({})", "_0")]
     V0(DocumentCreateTransitionV0),

@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::masternode::v0::MasternodeV0;
 use bincode::{Decode, Encode};
 use dashcore_rpc::json::MasternodeListItem;
-use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+use platform_version::{version::PlatformVersion, TryFromPlatformVersioned};
 
 mod accessors;
 /// Version 0

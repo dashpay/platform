@@ -11,8 +11,8 @@ use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
+use crate::errors::ProtocolError;
 use crate::validation::operations::ProtocolValidationOperation;
-use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::{Identifier, Value};
@@ -21,8 +21,8 @@ use platform_versioning::PlatformVersioned;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-pub(in crate::data_contract) mod v0;
-pub(in crate::data_contract) mod v1;
+pub mod v0;
+pub mod v1;
 
 pub mod property_names {
     pub const ID: &str = "id";
@@ -39,6 +39,7 @@ pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
     derive(Serialize, Deserialize),
     serde(tag = "$format_version")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContractInSerializationFormat {
     #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "0"))]
     V0(DataContractInSerializationFormatV0),

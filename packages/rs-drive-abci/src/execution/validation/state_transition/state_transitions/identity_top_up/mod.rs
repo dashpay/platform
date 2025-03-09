@@ -1,7 +1,7 @@
 pub(crate) mod identity_retrieval;
 mod structure;
 mod transform_into_action;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 
@@ -110,8 +110,8 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
-    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
     use platform_version::version::PlatformVersion;

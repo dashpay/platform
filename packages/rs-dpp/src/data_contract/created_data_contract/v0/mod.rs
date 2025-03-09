@@ -9,11 +9,12 @@ use crate::{
         conversion::value::v0::DataContractValueConversionMethodsV0,
         created_data_contract::fields::property_names::{DATA_CONTRACT, IDENTITY_NONCE},
     },
-    version::PlatformVersion,
     ProtocolError,
 };
 #[cfg(feature = "data-contract-value-conversion")]
 use platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Error, Value};
+#[cfg(feature = "data-contract-value-conversion")]
+use platform_version::version::PlatformVersion;
 
 // TODO: Decide on what we need ExtendedDataContract with metadata or CreatedDataContract or both.
 #[derive(Clone, Debug, PartialEq)]

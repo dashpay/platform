@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -13,10 +13,11 @@ use bincode::{Decode, Encode};
 #[error("Updated document type '{document_type_name}' schema is not backward compatible with previous version. Incompatible change '{operation}' of property '{property_path}'"
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IncompatibleDocumentTypeSchemaError {
-    document_type_name: String,
-    operation: String,
-    property_path: String,
+    pub document_type_name: String,
+    pub operation: String,
+    pub property_path: String,
 }
 
 impl IncompatibleDocumentTypeSchemaError {

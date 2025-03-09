@@ -5,8 +5,9 @@ use crate::InvalidVectorSizeError;
 
 #[derive(Debug, Error, Clone, Eq, PartialEq)]
 #[error("Serde parsing error: {message:?}")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct SerdeParsingError {
-    message: String,
+    pub message: String,
 }
 
 impl SerdeParsingError {

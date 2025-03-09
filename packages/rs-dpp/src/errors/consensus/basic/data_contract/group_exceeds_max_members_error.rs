@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,8 +10,9 @@ use thiserror::Error;
 )]
 #[error("Group exceeds the maximum allowed number of members: {max_members}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupExceedsMaxMembersError {
-    max_members: u32,
+    pub max_members: u32,
 }
 
 impl GroupExceedsMaxMembersError {

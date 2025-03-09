@@ -1,4 +1,4 @@
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::StateTransitionJsonConvert;
 
 impl<'a> StateTransitionJsonConvert<'a> for IdentityUpdateTransitionV0 {}
@@ -6,10 +6,10 @@ impl<'a> StateTransitionJsonConvert<'a> for IdentityUpdateTransitionV0 {}
 #[cfg(test)]
 mod test {
     use crate::identity::accessors::IdentityGettersV0;
-    use crate::state_transition::identity_update_transition::fields::property_names::*;
-    use crate::state_transition::identity_update_transition::fields::*;
-    use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use crate::state_transition::state_transitions::identity::identity_update_transition::fields::property_names::*;
+    use crate::state_transition::state_transitions::identity::identity_update_transition::fields::*;
+    use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
     use crate::state_transition::{
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
@@ -17,7 +17,7 @@ mod test {
     use crate::tests::utils::generate_random_identifier_struct;
     use assert_matches::assert_matches;
     use platform_value::BinaryData;
-    use serde_json::Value as JsonValue;
+    // use serde_json::Value as JsonValue;
 
     #[test]
     fn conversion_to_json_object() {
@@ -41,8 +41,11 @@ mod test {
                 into_validating_json: false,
             })
             .expect("conversion to json shouldn't fail");
-        assert_matches!(result[IDENTITY_ID], JsonValue::String(_));
-        assert_matches!(result[SIGNATURE], JsonValue::String(_));
-        assert_matches!(result[ADD_PUBLIC_KEYS][0]["data"], JsonValue::String(_));
+        assert_matches!(result[IDENTITY_ID], serde_json::Value::String(_));
+        assert_matches!(result[SIGNATURE], serde_json::Value::String(_));
+        assert_matches!(
+            result[ADD_PUBLIC_KEYS][0]["data"],
+            serde_json::Value::String(_)
+        );
     }
 }

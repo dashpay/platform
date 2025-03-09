@@ -2,9 +2,10 @@ use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
 
+use crate::errors::ProtocolError;
 use crate::util::hash::hash_double;
-use crate::{identifier::Identifier, ProtocolError};
 use dashcore::OutPoint;
+use platform_value::Identifier;
 
 /// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
 /// transitions. It is a proof that specific output of dash is locked in credits
@@ -12,6 +13,7 @@ use dashcore::OutPoint;
 /// To prove that the output is locked, a height where transaction was chain locked is provided.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ChainAssetLockProof {
     /// Core height on which the asset lock transaction was chain locked or higher
     pub core_chain_locked_height: u32,

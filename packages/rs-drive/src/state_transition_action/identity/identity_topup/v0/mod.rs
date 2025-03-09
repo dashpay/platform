@@ -5,7 +5,7 @@ use dpp::identifier::Identifier;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 
 /// action v0
 #[derive(Debug, Clone)]

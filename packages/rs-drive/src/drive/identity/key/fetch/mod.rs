@@ -1,4 +1,6 @@
 // Conditional imports for the features "server" or "verify"
+#[cfg(feature = "server")]
+use crate::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
     crate::{
@@ -12,15 +14,11 @@ use {
         },
         query::{Query, QueryItem},
     },
-    dpp::{
-        identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        identity::{KeyID, Purpose},
-    },
+    dpp::identity::identity_public_key::{KeyID, Purpose},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
     std::{collections::BTreeMap, ops::RangeFull},
 };
-
 // Conditional imports for the feature "server"
 use crate::drive::identity::identity_transfer_keys_path_vec;
 #[cfg(feature = "server")]
@@ -28,9 +26,8 @@ use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
         fee::Credits,
-        identity::{IdentityPublicKey, SecurityLevel},
+        identity::{identity_public_key::SecurityLevel, IdentityPublicKey},
         serialization::PlatformDeserializable,
-        version::PlatformVersion,
     },
     grovedb::{
         query_result_type::{
@@ -39,6 +36,7 @@ use {
         Element,
         Element::Item,
     },
+    platform_version::version::PlatformVersion,
     std::collections::HashSet,
 };
 

@@ -10,21 +10,17 @@ mod version;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, Identifier, Value};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
-use crate::{
-    identity::KeyID,
-    prelude::{Identifier, Revision},
-    ProtocolError,
-};
+use crate::{identity::identity_public_key::KeyID, prelude::Revision, ProtocolError};
 
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(
@@ -37,6 +33,7 @@ use crate::{
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
 #[derive(Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,

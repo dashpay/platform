@@ -11,6 +11,10 @@ pub use {
     vote_query::IdentityBasedVoteDriveQuery,
 };
 // Imports available when either "server" or "verify" features are enabled
+#[cfg(all(feature = "server", feature = "verify"))]
+use crate::verify::RootHash;
+#[cfg(feature = "server")]
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
     crate::{
@@ -24,15 +28,13 @@ use {
             document_type::{DocumentTypeRef, Index, IndexProperty},
             DataContract,
         },
-        document::{
-            document_methods::DocumentMethodsV0,
-            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
-        },
-        platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
-        version::PlatformVersion,
+        document::{document_methods::DocumentMethodsV0, Document, DocumentV0Getters},
+        platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper,
         ProtocolError,
     },
     indexmap::IndexMap,
+    platform_value::Value,
+    platform_version::version::PlatformVersion,
     sqlparser::{
         ast::{self, OrderByExpr, Select, Statement, TableFactor::Table, Value::Number},
         dialect::MySqlDialect,
@@ -41,9 +43,6 @@ use {
     std::{collections::BTreeMap, ops::BitXor},
 };
 
-#[cfg(feature = "verify")]
-use crate::verify::RootHash;
-
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},
@@ -51,7 +50,7 @@ pub use grovedb::{
 };
 
 use dpp::document;
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, fees::op::LowLevelDriveOperation},
@@ -103,8 +102,8 @@ pub mod vote_polls_by_document_type_query;
 /// It should be implemented by the caller in order to provide data
 /// contract required for operations like proof verification.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
-    + 'a;
+pub type ContractLookupFn<'a> =
+    dyn Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error> + 'a;
 
 /// Creates a [ContractLookupFn] function that returns provided data contract when requested.
 ///
@@ -120,13 +119,12 @@ pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<O
 pub fn contract_lookup_fn_for_contract<'a>(
     data_contract: Arc<DataContract>,
 ) -> Box<ContractLookupFn<'a>> {
-    let func = move
-        |id: &dpp::identifier::Identifier| -> Result<Option<Arc<DataContract>>, crate::error::Error> {
-            if data_contract.id().ne(id) {
-                return Ok(None);
-            }
-            Ok(Some(Arc::clone(&data_contract)))
-        };
+    let func = move |id: &Identifier| -> Result<Option<Arc<DataContract>>, Error> {
+        if data_contract.id().ne(id) {
+            return Ok(None);
+        }
+        Ok(Some(Arc::clone(&data_contract)))
+    };
     Box::new(func)
 }
 
@@ -2281,9 +2279,9 @@ mod tests {
 
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-    use dpp::prelude::Identifier;
     use grovedb::Query;
     use indexmap::IndexMap;
+    use platform_value::Identifier;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;

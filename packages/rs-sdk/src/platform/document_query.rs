@@ -15,10 +15,11 @@ use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
+        DataContract,
     },
     document::Document,
+    identifier::Identifier,
     platform_value::{platform_value, Value},
-    prelude::{DataContract, Identifier},
     InvalidVectorSizeError, ProtocolError,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};

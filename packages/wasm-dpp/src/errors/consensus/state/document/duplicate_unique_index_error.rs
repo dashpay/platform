@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
+use dpp::errors::consensus::ConsensusError;
 
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;

@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

@@ -3,10 +3,10 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
+use crate::errors::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 #[cfg(feature = "json-schema-validation")]
-use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
-use crate::consensus::basic::data_contract::{
+use crate::errors::consensus::basic::data_contract::InvalidJsonSchemaRefError;
+use crate::errors::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
@@ -24,10 +24,10 @@ use crate::consensus::basic::data_contract::{
     UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
     UnknownTransferableTypeError,
 };
-use crate::consensus::basic::decode::{
+use crate::errors::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
-use crate::consensus::basic::document::{
+use crate::errors::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
@@ -38,8 +38,8 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionTypeError, MissingDocumentTypeError,
     MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
-use crate::consensus::basic::identity::{
-    DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+use crate::errors::consensus::basic::identity::{
+    DataContractBoundsNotPresentError,
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
@@ -59,35 +59,37 @@ use crate::consensus::basic::identity::{
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
     TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
-use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use crate::consensus::basic::state_transition::{
+use crate::errors::consensus::basic::identity::disabling_key_id_also_being_added_in_same_transition_error::DisablingKeyIdAlsoBeingAddedInSameTransitionError;
+use crate::errors::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
     StateTransitionMaxSizeExceededError,
 };
-use crate::consensus::basic::{
+use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
 };
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
-use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
-use crate::consensus::basic::overflow_error::OverflowError;
-use crate::consensus::basic::token::{
+use crate::data_contract::errors::contract::DataContractError;
+use crate::errors::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
+use crate::errors::consensus::basic::overflow_error::OverflowError;
+use crate::errors::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenIdError,
     InvalidTokenPositionError, TokenTransferToOurselfError,
 };
-use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
-use crate::consensus::basic::value_error::ValueError;
+use crate::errors::consensus::basic::unsupported_version_error::UnsupportedVersionError;
+use crate::errors::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
-use crate::consensus::basic::{
+use crate::errors::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
-use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
-use crate::data_contract::errors::DataContractError;
+use crate::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 
 #[derive(
     Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum BasicError {
     /*
 

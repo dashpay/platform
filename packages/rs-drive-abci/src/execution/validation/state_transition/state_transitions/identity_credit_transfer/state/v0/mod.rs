@@ -2,13 +2,13 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::signature::IdentityNotFoundError;
+use dpp::errors::consensus::signature::IdentityNotFoundError;
 
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::errors::consensus::state::identity::IdentityInsufficientBalanceError;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use drive::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 
 use dpp::version::PlatformVersion;

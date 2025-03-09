@@ -4,8 +4,8 @@ use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
 
+use crate::errors::ProtocolError;
 use crate::util::cbor_value::value_to_hash;
-use crate::ProtocolError;
 
 pub trait CborBTreeMapHelper {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, ProtocolError>;

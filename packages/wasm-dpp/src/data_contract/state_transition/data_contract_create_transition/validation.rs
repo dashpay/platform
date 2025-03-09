@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::data_contract::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 
-use dpp::consensus::basic::value_error::ValueError;
+use dpp::errors::consensus::basic::value_error::ValueError;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
-    data_contract::state_transition::data_contract_create_transition::validation::state::{
+    data_contract::state_transition::state_transitions::contract::data_contract_create_transition::validation::state::{
         validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator,
         validate_data_contract_create_transition_state::validate_data_contract_create_transition_state as dpp_validate_data_contract_create_transition_state,
     },

@@ -1,12 +1,13 @@
 use thiserror::Error;
 
+use crate::errors::ProtocolError;
 use crate::state_transition::StateTransition;
-use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone)]
 #[error("State Transition is not signed")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct StateTransitionIsNotSignedError {
-    state_transition: StateTransition,
+    pub state_transition: StateTransition,
 }
 
 impl StateTransitionIsNotSignedError {

@@ -7,21 +7,21 @@ use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
 #[cfg(feature = "validation")]
-pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
+pub use validator::StatelessJsonSchemaLazyValidator;
 
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::document::transfer::Transferable;
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 use crate::nft::TradeMode;
 use platform_value::{Identifier, Value};
 
-mod accessors;
+pub mod accessors;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
 #[cfg(feature = "validation")]
-mod validator;
+pub mod validator;
 pub const DEFAULT_HASH_SIZE: usize = 32;
 pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
@@ -29,45 +29,44 @@ pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 #[derive(Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentTypeV0 {
-    pub(in crate::data_contract) name: String,
-    pub(in crate::data_contract) schema: Value,
-    pub(in crate::data_contract) indices: BTreeMap<String, Index>,
-    pub(in crate::data_contract) index_structure: IndexLevel,
+    pub name: String,
+    pub schema: Value,
+    pub indices: BTreeMap<String, Index>,
+    pub index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
-    pub(in crate::data_contract) flattened_properties: IndexMap<String, DocumentProperty>,
+    pub flattened_properties: IndexMap<String, DocumentProperty>,
     /// Document field can contain sub objects.
-    pub(in crate::data_contract) properties: IndexMap<String, DocumentProperty>,
-    pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
-    pub(in crate::data_contract) binary_paths: BTreeSet<String>,
+    pub properties: IndexMap<String, DocumentProperty>,
+    pub identifier_paths: BTreeSet<String>,
+    pub binary_paths: BTreeSet<String>,
     /// The required fields on the document type
-    pub(in crate::data_contract) required_fields: BTreeSet<String>,
+    pub required_fields: BTreeSet<String>,
     /// The transient fields on the document type
-    pub(in crate::data_contract) transient_fields: BTreeSet<String>,
+    pub transient_fields: BTreeSet<String>,
     /// Should documents keep history?
-    pub(in crate::data_contract) documents_keep_history: bool,
+    pub documents_keep_history: bool,
     /// Are documents mutable?
-    pub(in crate::data_contract) documents_mutable: bool,
+    pub documents_mutable: bool,
     /// Can documents of this type be deleted?
-    pub(in crate::data_contract) documents_can_be_deleted: bool,
+    pub documents_can_be_deleted: bool,
     /// Can documents be transferred without a trade?
-    pub(in crate::data_contract) documents_transferable: Transferable,
+    pub documents_transferable: Transferable,
     /// How are these documents traded?
-    pub(in crate::data_contract) trade_mode: TradeMode,
+    pub trade_mode: TradeMode,
     /// Is document creation restricted?
-    pub(in crate::data_contract) creation_restriction_mode: CreationRestrictionMode,
+    pub creation_restriction_mode: CreationRestrictionMode,
     /// The data contract id
-    pub(in crate::data_contract) data_contract_id: Identifier,
+    pub data_contract_id: Identifier,
     /// Encryption key storage requirements
-    pub(in crate::data_contract) requires_identity_encryption_bounded_key:
-        Option<StorageKeyRequirements>,
+    pub requires_identity_encryption_bounded_key: Option<StorageKeyRequirements>,
     /// Decryption key storage requirements
-    pub(in crate::data_contract) requires_identity_decryption_bounded_key:
-        Option<StorageKeyRequirements>,
-    pub(in crate::data_contract) security_level_requirement: SecurityLevel,
-    #[cfg(feature = "validation")]
-    pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
+    pub requires_identity_decryption_bounded_key: Option<StorageKeyRequirements>,
+    pub security_level_requirement: SecurityLevel,
+    // #[cfg(feature = "validation")]
+    // pub json_schema_validator: StatelessJsonSchemaLazyValidator,
 }
 
 impl DocumentTypeV0 {

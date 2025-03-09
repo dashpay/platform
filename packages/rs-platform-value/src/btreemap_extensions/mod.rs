@@ -1,5 +1,5 @@
-#[cfg(feature = "json")]
-use serde_json::Value as JsonValue;
+//#[cfg(feature = "json")]
+//use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -94,12 +94,12 @@ pub trait BTreeValueMapHelper {
         key: &str,
     ) -> Result<I, Error>;
     #[cfg(feature = "json")]
-    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<Option<I>, Error>;
     #[cfg(feature = "json")]
-    fn get_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<I, Error>;
@@ -363,7 +363,7 @@ where
     }
 
     #[cfg(feature = "json")]
-    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<Option<I>, Error> {
@@ -385,7 +385,7 @@ where
     }
 
     #[cfg(feature = "json")]
-    fn get_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+    fn get_inner_str_json_value_map<I: FromIterator<(String, serde_json::Value)>>(
         &self,
         key: &str,
     ) -> Result<I, Error> {

@@ -4,7 +4,7 @@ use crate::util::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 use grovedb::TransactionArg;
 

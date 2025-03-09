@@ -9,7 +9,10 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
-use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes};
+use crate::{
+    identity::identity_public_key::security_level::SecurityLevel,
+    state_transition::StateTransitionFieldTypes,
+};
 
 pub use self::batched_transition::{
     document_base_transition, document_create_transition,
@@ -40,19 +43,19 @@ mod json_conversion;
 pub mod methods;
 pub mod resolvers;
 mod state_transition_like;
-mod v0;
-mod v1;
+pub mod v0;
+pub mod v1;
 #[cfg(feature = "validation")]
 mod validation;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
 
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
 
-use crate::state_transition::batch_transition::fields::property_names;
+use crate::state_transition::state_transitions::document::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
@@ -79,6 +82,7 @@ pub use v1::*;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.batch_state_transition"
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum BatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(BatchTransitionV0),

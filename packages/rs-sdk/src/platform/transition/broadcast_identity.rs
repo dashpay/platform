@@ -10,10 +10,11 @@ use std::fmt::Debug;
 use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::identity::Identity;
 use dpp::native_bls::NativeBlsModule;
-use dpp::prelude::{AssetLockProof, Identity};
-use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::TransportRequest;
@@ -32,7 +33,7 @@ use crate::error::Error;
 /// ## Example
 ///
 /// To broadcast a new [Identity](dpp::prelude::Identity) state transition, you would typically
-/// create an [IdentityCreateTransition](dpp::state_transition::identity_create_transition::IdentityCreateTransition),
+/// create an [IdentityCreateTransition](dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition),
 /// sign it, and use the `broadcast_new_identity` method provided by this trait:
 ///
 /// ```rust, ignore

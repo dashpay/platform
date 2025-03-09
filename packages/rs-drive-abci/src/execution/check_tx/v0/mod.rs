@@ -10,7 +10,7 @@ use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_container::v0::{
@@ -207,13 +207,13 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::signature::SignatureError;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::signature::SignatureError;
     use simple_signer::signer::SimpleSigner;
 
-    use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
+    use dpp::errors::consensus::ConsensusError;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -223,22 +223,23 @@ mod tests {
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 
+    use dpp::identity::IdentityPublicKey;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::{Identifier, IdentityPublicKey};
+    use dpp::prelude::Identifier;
     use dpp::serialization::{PlatformSerializable, Signable};
 
     use dpp::native_bls::NativeBlsModule;
-    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::batch_transition::BatchTransition;
-    use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-    use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
-    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
+    use dpp::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::state_transitions::identity::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionLike};
     use dpp::tests::fixtures::{
         get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
@@ -252,20 +253,20 @@ mod tests {
     };
     use crate::platform_types::platform::PlatformRef;
     use assert_matches::assert_matches;
-    use dpp::consensus::state::state_error::StateError;
     use dpp::dash_to_credits;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
-    use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
+    use dpp::errors::consensus::state::state_error::StateError;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
-    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-    use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-    use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+    use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;

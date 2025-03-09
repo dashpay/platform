@@ -1,7 +1,7 @@
 use crate::error::Error;
-use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::errors::consensus::basic::{BasicError, UnsupportedFeatureError};
+use dpp::errors::consensus::ConsensusError;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 

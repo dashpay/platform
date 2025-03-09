@@ -3,17 +3,17 @@ mod v0;
 use crate::data_contract::DataContract;
 use std::collections::BTreeMap;
 
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use derive_more::From;
 use platform_value::{Bytes32, Identifier, Value};
+use platform_version::version::PlatformVersion;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::batch_transition::{
+use crate::state_transition::state_transitions::document::batch_transition::{
     batched_transition::document_transition_action_type::DocumentTransitionActionType,
     BatchTransition,
 };

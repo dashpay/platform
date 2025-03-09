@@ -1,28 +1,30 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-use crate::prelude::Identifier;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::identity::Identity;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use dashcore::signer;
+use platform_value::Identifier;
 
-use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

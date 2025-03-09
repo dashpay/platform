@@ -1,6 +1,6 @@
 use getrandom::getrandom;
 
-use crate::prelude::Identifier;
+use platform_value::Identifier;
 
 fn generate_random_identifier_struct() -> Identifier {
     let mut buffer = [0u8; 32];

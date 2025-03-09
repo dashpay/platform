@@ -137,12 +137,12 @@ pub(super) fn derive_platform_serialize_enum(
              impl #impl_generics #crate_name::serialization::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause {
                 type Error = #error_type;
 
-                fn serialize_to_bytes_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
+                fn serialize_to_bytes_with_platform_version(&self, platform_version: &platform_version::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
                     #config
                         platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
                 }
 
-                fn serialize_consume_to_bytes_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
+                fn serialize_consume_to_bytes_with_platform_version(self, platform_version: &platform_version::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
                     #config
                         platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
                 }

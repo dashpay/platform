@@ -5,7 +5,7 @@ use std::sync::Arc;
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{BlockHeight, CoreBlockHeight};
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::batched_transition::DocumentReplaceTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentReplaceTransition;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
 

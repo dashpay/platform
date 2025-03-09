@@ -1,9 +1,9 @@
-use crate::identifier::Identifier;
+use crate::errors::ProtocolError;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     SingleContract, SingleContractDocumentType,
 };
-use crate::ProtocolError;
 use bincode::{Decode, Encode};
+use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 pub type ContractBoundsType = u8;
@@ -19,16 +19,17 @@ pub type ContractBoundsType = u8;
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
 #[serde(tag = "type")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract
     #[serde(rename = "singleContract")]
-    SingleContract { id: Identifier } = 0,
+    SingleContract { id: Identifier },
     /// this key can only be used within a specific contract and for a specific document type
     #[serde(rename = "documentType")]
     SingleContractDocumentType {
         id: Identifier,
         document_type_name: String,
-    } = 1,
+    },
     // /// this key can only be used within contracts owned by a specified owner
     // #[serde(rename = "multipleContractsOfSameOwner")]
     // MultipleContractsOfSameOwner { owner_id: Identifier } = 2,

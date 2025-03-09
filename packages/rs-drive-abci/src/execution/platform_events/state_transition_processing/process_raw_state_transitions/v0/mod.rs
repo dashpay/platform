@@ -3,7 +3,7 @@ use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::fee::fee_result::FeeResult;
 
 use crate::execution::types::execution_event::ExecutionEvent;

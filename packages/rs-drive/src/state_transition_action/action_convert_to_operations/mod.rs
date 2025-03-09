@@ -12,7 +12,7 @@ use crate::error::Error;
 use crate::state_transition_action::StateTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 /// A converter that will get High Level Drive Operations from State transitions
 pub trait DriveHighLevelOperationConverter {

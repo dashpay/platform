@@ -4,4 +4,4 @@ pub mod data_contract;
 mod methods;
 pub mod serialization;
 
-pub use data_contract::*;
+pub use data_contract::DataContractV1;

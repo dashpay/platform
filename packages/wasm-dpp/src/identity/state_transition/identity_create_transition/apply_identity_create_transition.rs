@@ -1,4 +1,4 @@
-use dpp::identity::state_transition::identity_create_transition::ApplyIdentityCreateTransition;
+use dpp::identity::state_transition::state_transitions::identity::identity_create_transition::ApplyIdentityCreateTransition;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 

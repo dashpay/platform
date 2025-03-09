@@ -3,18 +3,19 @@ mod methods;
 pub mod v0;
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 pub use fields::*;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0};
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
 #[serde(tag = "$format_version")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContractConfig {
     #[serde(rename = "0")]
     V0(DataContractConfigV0),

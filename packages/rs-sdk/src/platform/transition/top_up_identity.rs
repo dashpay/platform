@@ -3,10 +3,11 @@ use super::put_settings::PutSettings;
 use super::waitable::Waitable;
 use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::{Identity, PartialIdentity};
-use dpp::prelude::{AssetLockProof, UserFeeIncrease};
-use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::prelude::UserFeeIncrease;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 
 #[async_trait::async_trait]
 pub trait TopUpIdentity: Waitable {

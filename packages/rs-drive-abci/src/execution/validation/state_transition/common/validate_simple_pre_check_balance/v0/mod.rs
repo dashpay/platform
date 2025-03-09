@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::errors::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;

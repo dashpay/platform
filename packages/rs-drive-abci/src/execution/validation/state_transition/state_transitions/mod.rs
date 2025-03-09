@@ -87,14 +87,13 @@ pub(in crate::execution) mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::contract_bounds::ContractBounds;
-    use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::ContractBounds;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::batch_transition::BatchTransition;
-    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-    use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
+    use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
+    use dpp::state_transition::state_transitions::identity::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
     use dpp::tokens::calculate_token_id;
     use dpp::util::hash::hash_double;
@@ -127,6 +126,7 @@ pub(in crate::execution) mod tests {
     use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::group::Group;
+    use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(

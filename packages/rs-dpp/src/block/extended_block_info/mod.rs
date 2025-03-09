@@ -2,13 +2,13 @@ use crate::block::block_info::BlockInfo;
 use crate::block::extended_block_info::v0::{
     ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
 };
-use crate::protocol_error::ProtocolError;
+use crate::errors::ProtocolError;
 
-use crate::version::FeatureVersion;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
+use versioned_feature_core::FeatureVersion;
 
 pub mod v0;
 

@@ -1,12 +1,13 @@
-use crate::consensus::basic::data_contract::UnknownDocumentCreationRestrictionModeError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::data_contract::UnknownDocumentCreationRestrictionModeError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Encode, Decode)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum CreationRestrictionMode {
     NoRestrictions,
     OwnerOnly,

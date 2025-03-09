@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

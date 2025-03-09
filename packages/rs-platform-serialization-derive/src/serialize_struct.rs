@@ -168,11 +168,11 @@ pub(super) fn derive_platform_serialize_struct(
             {
                 type Error = #error_type;
 
-                fn serialize_to_bytes_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_to_bytes_with_platform_version(&self, platform_version: &platform_version::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
                     #serialize_into
                 }
 
-                fn serialize_consume_to_bytes_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_consume_to_bytes_with_platform_version(self, platform_version: &platform_version::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
                     #serialize_into_consume
                 }
             }

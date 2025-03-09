@@ -4,7 +4,7 @@ use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::batched_transition::DocumentTransferTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentTransferTransition;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionV0};
 

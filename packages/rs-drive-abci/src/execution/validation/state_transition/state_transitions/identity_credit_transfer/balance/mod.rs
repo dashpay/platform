@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::identity_credit_transfer::balance::v0::IdentityCreditTransferTransitionBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionIdentityBalanceValidationV0;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 

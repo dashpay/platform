@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -20,6 +20,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Instant lock proof signature is invalid or wasn't created recently. Please try chain asset lock proof instead.")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidInstantAssetLockProofSignatureError;
 
 /*

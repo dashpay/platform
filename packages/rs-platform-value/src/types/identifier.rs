@@ -8,8 +8,8 @@ use std::fmt;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "json")]
-use serde_json::Value as JsonValue;
+//#[cfg(feature = "json")]
+//use serde_json::Value as JsonValue;
 
 use crate::string_encoding::{Encoding, ALL_ENCODINGS};
 use crate::types::encoding_string_to_encoding;
@@ -18,6 +18,7 @@ use crate::{string_encoding, Error, Value};
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Encode, Decode)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
 #[derive(
@@ -35,6 +36,7 @@ pub struct IdentifierBytes32(pub [u8; 32]);
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct Identifier(pub IdentifierBytes32);
 
 impl platform_serialization::PlatformVersionEncode for Identifier {
@@ -226,10 +228,10 @@ impl Identifier {
     }
 
     #[cfg(feature = "json")]
-    pub fn to_json_value_vec(&self) -> Vec<JsonValue> {
+    pub fn to_json_value_vec(&self) -> Vec<serde_json::Value> {
         self.to_buffer()
             .iter()
-            .map(|v| JsonValue::from(*v))
+            .map(|v| serde_json::Value::from(*v))
             .collect()
     }
 

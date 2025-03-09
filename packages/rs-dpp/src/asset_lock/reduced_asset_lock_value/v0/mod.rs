@@ -1,4 +1,4 @@
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use bincode::{Decode, Encode};
 use platform_value::Bytes32;
 

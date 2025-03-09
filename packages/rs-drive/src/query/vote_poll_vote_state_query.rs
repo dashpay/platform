@@ -19,10 +19,12 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
 use dpp::serialization::PlatformDeserializable;
+#[cfg(feature = "server")]
+use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
 use dpp::voting::contender_structs::{
-    ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
-    FinalizedContenderWithSerializedDocument,
+    ContenderWithSerializedDocument, FinalizedContenderWithSerializedDocument,
 };
+#[cfg(feature = "server")]
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStoredInfo, ContestedDocumentVotePollStoredInfoV0Getters,
 };

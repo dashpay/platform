@@ -1,12 +1,12 @@
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use crate::state_transition::batch_transition::{
+use crate::state_transition::state_transitions::document::batch_transition::{
     BatchTransition, BatchTransitionV0,
 };
 use crate::state_transition::StateTransitionType::Batch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use platform_value::{BinaryData, Identifier};

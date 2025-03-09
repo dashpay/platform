@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::prelude::Identifier;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -14,9 +14,10 @@ use thiserror::Error;
     expected_token_id
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenIdError {
-    expected_token_id: Identifier,
-    invalid_token_id: Identifier,
+    pub expected_token_id: Identifier,
+    pub invalid_token_id: Identifier,
 }
 
 impl InvalidTokenIdError {

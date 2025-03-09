@@ -2,8 +2,8 @@ pub mod consensus;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::platform_value;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use tenderdash_abci::proto::abci as proto;

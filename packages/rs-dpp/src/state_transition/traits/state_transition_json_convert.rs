@@ -1,7 +1,7 @@
 use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -18,7 +18,7 @@ pub trait StateTransitionJsonConvert<'a>: Serialize + StateTransitionValueConver
     fn to_json(
         &self,
         options: JsonStateTransitionSerializationOptions,
-    ) -> Result<JsonValue, ProtocolError> {
+    ) -> Result<serde_json::Value, ProtocolError> {
         if options.into_validating_json {
             self.to_object(options.skip_signature)?
                 .try_into_validating_json()

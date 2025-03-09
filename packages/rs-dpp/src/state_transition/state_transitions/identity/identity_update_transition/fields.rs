@@ -1,6 +1,6 @@
 use crate::state_transition::state_transitions;
 
-use crate::state_transition::identity_update_transition::fields::property_names::{
+use crate::state_transition::state_transitions::identity::identity_update_transition::fields::property_names::{
     ADD_PUBLIC_KEYS_DATA, ADD_PUBLIC_KEYS_SIGNATURE,
 };
 pub use state_transitions::common_fields::property_names::{

@@ -1,7 +1,7 @@
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
-use crate::identity::{KeyID, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 
-use crate::state_transition::batch_transition::BatchTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for BatchTransitionV0 {

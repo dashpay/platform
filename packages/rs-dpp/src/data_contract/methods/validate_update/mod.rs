@@ -1,4 +1,4 @@
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
 use platform_version::version::PlatformVersion;
 
 mod v0;

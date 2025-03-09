@@ -1,6 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::errors::ProtocolError;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 

@@ -1,5 +1,3 @@
-use dpp::prelude::Identifier;
-
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -35,13 +33,14 @@ use dpp::identity::TimestampMillis;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
-use dpp::{platform_value, ProtocolError};
+use dpp::{errors::ProtocolError, platform_value};
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 #[serde(rename_all = "camelCase")]
@@ -149,7 +148,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
-        let json_value: JsonValue = self
+        let json_value: serde_json::Value = self
             .0
             .properties()
             .to_json_value()
@@ -188,7 +187,7 @@ impl DocumentWasm {
                     return Ok(id.into());
                 }
                 _ => {
-                    let json_value_result: Result<JsonValue, ProtocolError> =
+                    let json_value_result: Result<serde_json::Value, ProtocolError> =
                         value.clone().try_into().map_err(ProtocolError::ValueError);
                     let json_value = json_value_result.with_js_error()?;
                     let serializer = serde_wasm_bindgen::Serializer::json_compatible();

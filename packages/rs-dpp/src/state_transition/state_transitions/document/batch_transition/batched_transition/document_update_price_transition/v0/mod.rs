@@ -8,10 +8,10 @@ use derive_more::Display;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
 
 mod property_names {
     pub const REVISION: &str = "$revision";
@@ -24,6 +24,7 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Price: {}", "base", "revision", "price")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentUpdatePriceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,

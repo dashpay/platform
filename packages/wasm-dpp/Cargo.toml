@@ -42,6 +42,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "document-json-conversion",
     "system_contracts"
 ] }
+platform-version = { path = "../rs-platform-version" }
 itertools = { version = "0.13" }
 log = { version = "0.4.6" }
 wasm-logger = { version = "0.2.0" }
@@ -52,7 +53,7 @@ anyhow = { version = "1.0.75" }
 # required, cargo-machete false positive
 wasm-bindgen-futures = "0.4.49"
 async-trait = "0.1.59"
-bincode = "2.0.0-rc.3"
+bincode = "=2.0.0-rc.3"
 [profile.release]
 lto = true
 opt-level = 'z'

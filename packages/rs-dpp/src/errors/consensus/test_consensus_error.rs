@@ -8,6 +8,7 @@ use thiserror::Error;
 )]
 #[error("{message:?}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TestConsensusError {
     pub message: String,
 }

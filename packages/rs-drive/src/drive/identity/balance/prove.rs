@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 use grovedb::TransactionArg;
 
@@ -106,7 +106,7 @@ mod tests {
 
     mod prove_many_identity_balances {
         use super::*;
-        use dpp::fee::Credits;
+        use dpp::balances::credits::Credits;
         use dpp::identity::accessors::IdentityGettersV0;
         use platform_version::version::PlatformVersion;
         use std::collections::BTreeMap;

@@ -1,4 +1,4 @@
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 /// The outcome of adding to a previous balance
 #[derive(Debug)]

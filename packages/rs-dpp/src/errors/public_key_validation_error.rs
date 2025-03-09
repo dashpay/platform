@@ -2,8 +2,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Public key validation error: {message:?}")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct PublicKeyValidationError {
-    message: String,
+    pub message: String,
 }
 
 impl PublicKeyValidationError {

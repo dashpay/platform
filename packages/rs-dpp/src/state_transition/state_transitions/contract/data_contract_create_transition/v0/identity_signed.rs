@@ -1,6 +1,6 @@
-use crate::identity::SecurityLevel::{CRITICAL, HIGH};
-use crate::identity::{KeyID, Purpose, SecurityLevel};
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+use crate::identity::identity_public_key::SecurityLevel::{CRITICAL, HIGH};
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for DataContractCreateTransitionV0 {
@@ -8,7 +8,7 @@ impl StateTransitionIdentitySigned for DataContractCreateTransitionV0 {
         self.signature_public_key_id
     }
 
-    fn set_signature_public_key_id(&mut self, key_id: crate::identity::KeyID) {
+    fn set_signature_public_key_id(&mut self, key_id: KeyID) {
         self.signature_public_key_id = key_id
     }
 

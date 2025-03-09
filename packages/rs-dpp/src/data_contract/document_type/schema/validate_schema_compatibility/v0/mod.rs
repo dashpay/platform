@@ -1,6 +1,6 @@
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
-use crate::data_contract::errors::{DataContractError, JsonSchemaError};
-use crate::data_contract::JsonValue;
+use crate::data_contract::errors::{contract::DataContractError, JsonSchemaError};
+// use crate::data_contract::JsonValue;
 use crate::validation::SimpleValidationResult;
 use crate::ProtocolError;
 use json_schema_compatibility_validator::{
@@ -29,8 +29,8 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 });
 
 pub(super) fn validate_schema_compatibility_v0(
-    original_schema: &JsonValue,
-    new_schema: &JsonValue,
+    original_schema: &serde_json::Value,
+    new_schema: &serde_json::Value,
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
     validate_schemas_compatibility(original_schema, new_schema, OPTIONS.deref())
         .map(|result| {

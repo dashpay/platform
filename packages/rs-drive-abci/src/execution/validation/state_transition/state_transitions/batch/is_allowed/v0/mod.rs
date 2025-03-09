@@ -1,11 +1,11 @@
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::block::epoch::EpochIndex;
-use dpp::consensus::basic::document::ContestedDocumentsTemporarilyNotAllowedError;
-use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
-use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::errors::consensus::basic::document::ContestedDocumentsTemporarilyNotAllowedError;
+use dpp::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::validation::ConsensusValidationResult;
 
 // TARGET_EPOCH_INDEX was introduced without versioning.

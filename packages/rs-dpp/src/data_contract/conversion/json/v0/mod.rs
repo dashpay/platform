@@ -1,10 +1,10 @@
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
-use serde_json::Value as JsonValue;
+use crate::errors::ProtocolError;
+use platform_version::version::PlatformVersion;
+// use serde_json::Value as JsonValue;
 
 pub trait DataContractJsonConversionMethodsV0 {
     fn from_json(
-        json_value: JsonValue,
+        json_value: serde_json::Value,
         full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -12,10 +12,13 @@ pub trait DataContractJsonConversionMethodsV0 {
         Self: Sized;
 
     /// Returns Data Contract as a JSON Value
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError>;
+    fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError>;
     /// Returns Data Contract as a JSON Value
     fn to_validating_json(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError>;
+    ) -> Result<serde_json::Value, ProtocolError>;
 }

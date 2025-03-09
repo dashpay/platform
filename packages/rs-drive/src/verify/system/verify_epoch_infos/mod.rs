@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 mod v0;
 

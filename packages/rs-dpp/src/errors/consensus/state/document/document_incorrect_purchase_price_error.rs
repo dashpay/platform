@@ -1,7 +1,7 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::balances::credits::Credits;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::fee::Credits;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -12,17 +12,18 @@ use thiserror::Error;
 )]
 #[error("{document_id} document can not be purchased for {trying_to_purchase_at_price}, it's sale price is {actual_price} (in credits)")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentIncorrectPurchasePriceError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
+    pub document_id: Identifier,
 
-    trying_to_purchase_at_price: Credits,
+    pub trying_to_purchase_at_price: Credits,
 
-    actual_price: Credits,
+    pub actual_price: Credits,
 }
 
 impl DocumentIncorrectPurchasePriceError {

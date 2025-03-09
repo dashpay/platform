@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

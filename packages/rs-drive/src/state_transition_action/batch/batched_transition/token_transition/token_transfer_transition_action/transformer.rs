@@ -4,7 +4,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::TokenTransferTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::TokenTransferTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;

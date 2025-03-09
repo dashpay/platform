@@ -3,17 +3,17 @@ use crate::document::property_names;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use crate::document::v0::DocumentV0;
-use crate::version::PlatformVersion;
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};

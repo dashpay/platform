@@ -3,11 +3,9 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
+use dash_sdk::platform::Identifier;
+use dpp::dashcore::{hashes::Hash, ProTxHash};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::{
-    dashcore::{hashes::Hash, ProTxHash},
-    prelude::Identifier,
-};
 use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
 use std::path::PathBuf;

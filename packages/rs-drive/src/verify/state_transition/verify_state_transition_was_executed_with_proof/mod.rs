@@ -8,7 +8,7 @@ use crate::verify::RootHash;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 mod v0;
 

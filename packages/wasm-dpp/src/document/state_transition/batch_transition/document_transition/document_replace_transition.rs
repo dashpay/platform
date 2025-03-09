@@ -1,7 +1,7 @@
 use std::convert;
 use std::convert::TryInto;
 
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -10,11 +10,11 @@ use dpp::platform_value::btreemap_extensions::{
 };
 use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
-use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::{
     prelude::{DataContract, Identifier},
-    state_transition::documents_batch_transition::{
+    state_transition::state_transitions::document::documents_batch_transition::{
         document_replace_transition, DocumentReplaceTransition,
     },
     util::json_schema::JsonSchemaExt,
@@ -25,13 +25,13 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    document::state_transition::document_batch_transition::document_transition::to_object,
+    document::state_transition::document_batch_transition::batched_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
-use dpp::state_transition::batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::batched_transition::action_type::DocumentTransitionActionType;
 
 #[wasm_bindgen(js_name=DocumentReplaceTransition)]
 #[derive(Debug, Clone)]
@@ -253,7 +253,7 @@ impl DocumentReplaceTransitionWasm {
             }
         }
 
-        let json_value: JsonValue = value
+        let json_value: serde_json::Value = value
             .clone()
             .try_into()
             .map_err(ProtocolError::ValueError)

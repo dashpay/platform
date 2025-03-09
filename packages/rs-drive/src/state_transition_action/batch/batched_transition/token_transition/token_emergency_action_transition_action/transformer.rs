@@ -7,7 +7,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_emergency_action_transition_action::{TokenEmergencyActionTransitionActionV0, TokenEmergencyActionTransitionAction};
-use dpp::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;

@@ -2,15 +2,15 @@ use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 
 use crate::data_contract::v0::DataContractV0;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
+use platform_version::version::PlatformVersion;
 
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
 impl DataContractJsonConversionMethodsV0 for DataContractV0 {
     fn from_json(
-        json_value: JsonValue,
+        json_value: serde_json::Value,
         full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -18,7 +18,10 @@ impl DataContractJsonConversionMethodsV0 for DataContractV0 {
     }
 
     /// Returns Data Contract as a JSON Value
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    fn to_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<serde_json::Value, ProtocolError> {
         self.to_value(platform_version)?
             .try_into()
             .map_err(ProtocolError::ValueError)
@@ -30,7 +33,7 @@ impl DataContractJsonConversionMethodsV0 for DataContractV0 {
     fn to_validating_json(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
+    ) -> Result<serde_json::Value, ProtocolError> {
         self.to_value(platform_version)?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)

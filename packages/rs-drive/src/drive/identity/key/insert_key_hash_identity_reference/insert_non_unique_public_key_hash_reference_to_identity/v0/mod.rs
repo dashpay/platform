@@ -10,11 +10,11 @@ use crate::error::Error;
 
 use crate::fees::op::LowLevelDriveOperation;
 
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
+use platform_version::version::drive_versions::DriveVersion;
 
-use dpp::prelude::Identifier;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use platform_value::Identifier;
 use std::collections::HashMap;
 
 impl Drive {

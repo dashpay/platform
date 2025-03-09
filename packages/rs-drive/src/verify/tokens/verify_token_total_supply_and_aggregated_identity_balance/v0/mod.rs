@@ -6,8 +6,8 @@ use crate::error::Error;
 use crate::verify::RootHash;
 
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
-use dpp::prelude::Identifier;
 use grovedb::GroveDb;
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 impl Drive {

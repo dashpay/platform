@@ -28,8 +28,9 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::block::epoch::EpochIndex;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersionError;
-use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
@@ -65,7 +66,7 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// or [FetchMany](crate::platform::FetchMany) trait:
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Identifier, Query, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let sdk = Sdk::new_mock();
@@ -157,9 +158,9 @@ impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64
     }
 }
 
-impl Query<proto::GetIdentityKeysRequest> for Identifier {
+impl Query<GetIdentityKeysRequest> for Identifier {
     /// Get all keys for an identity with provided identifier.
-    fn query(self, prove: bool) -> Result<proto::GetIdentityKeysRequest, Error> {
+    fn query(self, prove: bool) -> Result<GetIdentityKeysRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }

@@ -1,5 +1,5 @@
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
-use crate::identity::{property_names, IdentityV0};
+use crate::identity::{property_names, v0::IdentityV0};
 use crate::serialization::ValueConvertible;
 
 use crate::ProtocolError;

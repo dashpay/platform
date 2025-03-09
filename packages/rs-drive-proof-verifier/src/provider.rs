@@ -1,8 +1,10 @@
 use crate::error::ContextProviderError;
-use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::data_contract::DataContract;
+use dpp::prelude::CoreBlockHeight;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
+use platform_value::Identifier;
 use std::{io::ErrorKind, ops::Deref, sync::Arc};
 
 /// Interface between the Sdk and state of the application.

@@ -1,4 +1,4 @@
-mod v0;
+pub mod v0;
 
 use crate::block::block_info::BlockInfo;
 use crate::voting::contender_structs::{
@@ -18,6 +18,7 @@ pub use v0::ContestedDocumentVotePollStoredInfoV0Getters;
 pub type LockedVotePollCounter = u16;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedDocumentVotePollStatus {
     #[default]
     NotStarted,
@@ -57,6 +58,7 @@ impl ContestedDocumentVotePollStatus {
     Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedDocumentVotePollStoredInfo {
     /// V0.
     V0(ContestedDocumentVotePollStoredInfoV0),

@@ -1,11 +1,11 @@
-use crate::consensus::basic::data_contract::{
+use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
+use crate::data_contract::group::methods::v0::GroupMethodsV0;
+use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
+use crate::errors::consensus::basic::data_contract::{
     GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
     GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
     GroupTotalPowerLessThanRequiredError,
 };
-use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
-use crate::data_contract::group::methods::v0::GroupMethodsV0;
-use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
     Eq,
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupV0 {
     pub members: BTreeMap<Identifier, GroupMemberPower>,
     pub required_power: GroupRequiredPower,

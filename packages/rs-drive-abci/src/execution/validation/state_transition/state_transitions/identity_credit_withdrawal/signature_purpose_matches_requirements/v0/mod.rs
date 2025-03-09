@@ -1,10 +1,10 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
+use dpp::errors::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{PartialIdentity, Purpose};
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::identity::{PartialIdentity, identity_public_key::Purpose};
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;

@@ -3,8 +3,8 @@ use crate::state_transition_action::action_convert_to_operations::batch::DriveHi
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
-use dpp::prelude::Identifier;
-use dpp::version::PlatformVersion;
+use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelBatchOperationConverter for DocumentTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(

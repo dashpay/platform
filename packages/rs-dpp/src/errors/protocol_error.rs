@@ -1,23 +1,20 @@
-use thiserror::Error;
-
-use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::consensus::signature::{
+use crate::data_contract::errors::{
+    contract::DataContractError, DataContractNotPresentError, IdentityNotPresentError,
+    InvalidDocumentTypeError,
+};
+use crate::document::errors::DocumentError;
+use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
-use crate::consensus::ConsensusError;
-use crate::data_contract::errors::*;
-use crate::document::errors::*;
-
 #[cfg(any(
     feature = "state-transition-validation",
     feature = "state-transition-signing"
 ))]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+use thiserror::Error as ThisError;
 
-#[cfg(any(
-    all(feature = "state-transitions", feature = "validation"),
-    feature = "state-transition-validation"
-))]
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError;
 
 #[cfg(any(
@@ -33,19 +30,21 @@ use crate::state_transition::errors::{
     InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
     StateTransitionIsNotSignedError,
 };
-use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
-    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
-};
 
-use dashcore::consensus::encode::Error as DashCoreError;
-
+use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::dpp_init_error::DashPlatformProtocolInitError;
+use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
+use crate::errors::non_consensus_error::NonConsensusError;
+use crate::errors::serde_parsing_error::SerdeParsingError;
 use crate::tokens::errors::TokenError;
-use crate::version::FeatureVersion;
-use platform_value::{Error as ValueError, Value};
-use platform_version::error::PlatformVersionError;
 
-#[derive(Error, Debug)]
+use platform_value::{Error, Value};
+use platform_version::error::PlatformVersionError;
+use versioned_feature_core::FeatureVersion;
+
+#[derive(ThisError, Debug)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]
     IdentifierError(String),
@@ -210,7 +209,7 @@ pub enum ProtocolError {
 
     /// Value error
     #[error("value error: {0}")]
-    ValueError(#[from] ValueError),
+    ValueError(#[from] Error),
 
     /// Value error
     #[error("platform serialization error: {0}")]
@@ -222,7 +221,7 @@ pub enum ProtocolError {
 
     /// Dash core error
     #[error("dash core error: {0}")]
-    DashCoreError(#[from] DashCoreError),
+    DashCoreError(#[from] dashcore::consensus::encode::Error),
 
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {

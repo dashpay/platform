@@ -1,6 +1,6 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,11 +14,12 @@ use thiserror::Error;
     "Identity {identity_id} is not authorized to perform action: {action} on token: {token_id}. Authorized action takers: {authorized_action_takers:?}",    
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnauthorizedTokenActionError {
-    token_id: Identifier,
-    identity_id: Identifier,
-    action: String,
-    authorized_action_takers: AuthorizedActionTakers,
+    pub token_id: Identifier,
+    pub identity_id: Identifier,
+    pub action: String,
+    pub authorized_action_takers: AuthorizedActionTakers,
 }
 
 impl UnauthorizedTokenActionError {

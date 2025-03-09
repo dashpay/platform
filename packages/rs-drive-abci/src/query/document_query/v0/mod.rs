@@ -183,7 +183,6 @@ mod tests {
     use crate::query::tests::{
         assert_invalid_identifier, setup_platform, store_data_contract, store_document,
     };
-    use assert_matches::assert_matches;
     use ciborium::value::Value as CborValue;
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;

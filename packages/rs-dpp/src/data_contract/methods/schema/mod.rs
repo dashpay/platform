@@ -1,10 +1,10 @@
 mod v0;
 pub use v0::*;
 
+use crate::data_contract::DataContract;
 use crate::data_contract::{DefinitionName, DocumentName};
-use crate::prelude::DataContract;
+use crate::errors::ProtocolError;
 use crate::validation::operations::ProtocolValidationOperation;
-use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

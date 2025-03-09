@@ -2,17 +2,17 @@
     feature = "message-signature-verification",
     feature = "message-signing"
 ))]
-use crate::identity::KeyType;
+use crate::identity::identity_public_key::KeyType;
 
 use serde::{Deserialize, Serialize};
 
+use crate::errors::ProtocolError;
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::PlatformVersion;
 #[cfg(feature = "message-signing")]
 use crate::BlsModule;
-use crate::ProtocolError;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 
 pub trait Signable {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError>;

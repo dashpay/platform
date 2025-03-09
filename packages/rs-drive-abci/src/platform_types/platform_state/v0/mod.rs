@@ -19,7 +19,7 @@ use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use platform_version::{version::PlatformVersion, TryIntoPlatformVersioned};
 
 use crate::config::PlatformConfig;
 use crate::platform_types::signature_verification_quorum_set::{
@@ -30,8 +30,8 @@ use dpp::fee::default_costs::{
     CachedEpochIndexFeeVersions, CachedEpochIndexFeeVersionsFieldsBeforeVersion4,
     EpochIndexFeeVersionsForStorage,
 };
-use dpp::version::fee::FeeVersion;
 use itertools::Itertools;
+use platform_version::version::fee::FeeVersion;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 

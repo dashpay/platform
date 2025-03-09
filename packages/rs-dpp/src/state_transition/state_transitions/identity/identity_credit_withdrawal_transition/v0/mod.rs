@@ -9,14 +9,13 @@ mod version;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
-    identity::{core_script::CoreScript, KeyID},
-    prelude::Identifier,
+    identity::{core_script::CoreScript, identity_public_key::KeyID},
     withdrawal::Pooling,
     ProtocolError,
 };
@@ -28,6 +27,7 @@ use crate::{
     serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,
@@ -48,7 +48,7 @@ mod test {
     use crate::identity::KeyID;
     use crate::prelude::Revision;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
+    use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::state_transition::StateTransitionType;
     use crate::ProtocolError;
     use bincode::{Decode, Encode};

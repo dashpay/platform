@@ -2,7 +2,7 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
-use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::TokenEmergencyActionTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::token_emergency_action_transition::v0::TokenEmergencyActionTransitionV0;
 use dpp::ProtocolError;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;

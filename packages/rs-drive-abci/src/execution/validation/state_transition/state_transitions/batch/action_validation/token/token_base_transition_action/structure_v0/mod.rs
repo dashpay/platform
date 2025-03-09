@@ -1,6 +1,6 @@
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::token::ContractHasNoTokensError;
-use dpp::consensus::basic::token::InvalidTokenPositionError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::token::ContractHasNoTokensError;
+use dpp::errors::consensus::basic::token::InvalidTokenPositionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::validation::{SimpleConsensusValidationResult};

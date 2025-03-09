@@ -6,7 +6,7 @@ use crate::verify::RootHash;
 use crate::error::Error;
 use crate::query::DriveDocumentQuery;
 use dpp::document::Document;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl<'a> DriveDocumentQuery<'a> {
     /// Verifies if a document exists at the beginning of a proof,

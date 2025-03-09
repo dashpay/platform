@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractInSerializationFormatV1 {
     /// A unique identifier for the data contract.
     pub id: Identifier,

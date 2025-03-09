@@ -8,9 +8,9 @@ use crate::error::Error;
 
 use crate::verify::RootHash;
 
-pub use dpp::prelude::Identity;
+pub use dpp::identity::Identity;
 
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use std::iter::FromIterator;
 

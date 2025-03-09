@@ -1,8 +1,8 @@
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use crate::prelude::Revision;
-use crate::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 
 pub trait DocumentPurchaseTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `revision` field of the `DocumentReplaceTransitionV0`.

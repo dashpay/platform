@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::ConsensusError;
-use crate::identity::Purpose;
+use crate::errors::consensus::signature::signature_error::SignatureError;
+use crate::errors::consensus::ConsensusError;
+use crate::identity::identity_public_key::Purpose;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -15,14 +15,15 @@ use itertools::Itertools;
 )]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {}", allowed_key_purposes.iter().map(|s| s.to_string()).join(" | "))]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct WrongPublicKeyPurposeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    public_key_purpose: Purpose,
-    allowed_key_purposes: Vec<Purpose>,
+    pub public_key_purpose: Purpose,
+    pub allowed_key_purposes: Vec<Purpose>,
 }
 
 impl WrongPublicKeyPurposeError {

@@ -2,7 +2,7 @@ mod identity_contract_nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;
 
 use drive::grovedb::TransactionArg;
@@ -58,34 +58,34 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::errors::consensus::state::state_error::StateError;
+    use dpp::errors::consensus::ConsensusError;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
 
     use dpp::data_contract::DataContract;
-    use dpp::fee::Credits;
+    use dpp::balances::credits::Credits;
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-    use dpp::state_transition::data_contract_update_transition::{
+    use dpp::state_transition::state_transitions::contract::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::contract::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
 
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
-    use dpp::consensus::basic::BasicError;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
+    use dpp::errors::consensus::basic::BasicError;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
@@ -208,8 +208,8 @@ mod tests {
         use serde_json::json;
 
         use dpp::assert_state_consensus_errors;
-        use dpp::consensus::state::state_error::StateError;
-        use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
+        use dpp::errors::consensus::state::state_error::StateError;
+        use dpp::errors::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
@@ -221,7 +221,7 @@ mod tests {
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::ValidationMode;

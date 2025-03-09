@@ -1,12 +1,12 @@
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::NonceOutOfBoundsError;
-use dpp::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::document::NonceOutOfBoundsError;
+use dpp::errors::consensus::basic::BasicError;
 use dpp::identity::identity_nonce::{
     validate_identity_nonce_update, validate_new_identity_nonce, MISSING_IDENTITY_REVISIONS_FILTER,
 };
-use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 
 use dpp::validation::SimpleConsensusValidationResult;
 

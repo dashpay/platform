@@ -4,18 +4,19 @@ pub mod v0;
 use crate::data_contract::created_data_contract::v0::{
     CreatedDataContractInSerializationFormatV0, CreatedDataContractV0,
 };
-use crate::prelude::{DataContract, IdentityNonce};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::data_contract::DataContract;
+use crate::errors::ProtocolError;
+use crate::prelude::IdentityNonce;
 use bincode::{Decode, Encode};
 use derive_more::From;
+use platform_version::version::PlatformVersion;
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use crate::errors::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 #[cfg(feature = "data-contract-value-conversion")]
 use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;

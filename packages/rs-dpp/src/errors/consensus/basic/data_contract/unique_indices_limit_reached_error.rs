@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,15 +10,16 @@ use thiserror::Error;
 )]
 #[error("'{document_type}' document has more than '{index_limit}' unique indexes (contested is {is_contested_limit})")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UniqueIndicesLimitReachedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    index_limit: u16,
-    is_contested_limit: bool,
+    pub document_type: String,
+    pub index_limit: u16,
+    pub is_contested_limit: bool,
 }
 
 impl UniqueIndicesLimitReachedError {

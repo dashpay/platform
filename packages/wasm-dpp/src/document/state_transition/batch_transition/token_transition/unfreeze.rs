@@ -1,6 +1,6 @@
 use crate::identifier::IdentifierWrapper;
-use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
-use dpp::state_transition::batch_transition::TokenUnfreezeTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::TokenUnfreezeTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name=TokenUnfreezeTransition)]

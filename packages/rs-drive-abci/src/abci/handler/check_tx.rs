@@ -6,7 +6,7 @@ use crate::metrics::{LABEL_ABCI_RESPONSE_CODE, LABEL_CHECK_TX_MODE, LABEL_STATE_
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::fee::SignedCredits;
 use dpp::util::hash::hash_single;
 use metrics::Label;

@@ -1,12 +1,15 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
-        accessors::IdentityGettersV0, core_script::CoreScript, signer::Signer, Identity,
-        IdentityPublicKey, KeyType, Purpose, SecurityLevel,
+        accessors::IdentityGettersV0,
+        core_script::CoreScript,
+        identity_public_key::{IdentityPublicKey, KeyType, Purpose, SecurityLevel},
+        signer::Signer,
+        Identity,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{
-        identity_credit_withdrawal_transition::methods::PreferredKeyPurposeForSigningWithdrawal,
+        state_transitions::identity::identity_credit_withdrawal_transition::methods::PreferredKeyPurposeForSigningWithdrawal,
         GetDataContractSecurityLevelRequirementFn, StateTransition,
     },
     withdrawal::Pooling,
@@ -14,10 +17,12 @@ use crate::{
 };
 
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
-use crate::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
-use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransitionV1 {
     #[cfg(feature = "state-transition-signing")]

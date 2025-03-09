@@ -3,11 +3,10 @@
 use std::sync::Arc;
 
 use super::{common::setup_logs, config::Config};
-use dash_sdk::platform::{DocumentQuery, Fetch, FetchMany};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::platform::{DocumentQuery, Fetch, FetchMany, Identifier};
+use dpp::data_contract::{accessors::v0::DataContractV0Getters, DataContract};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::{DataContract, Identifier};
 use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.

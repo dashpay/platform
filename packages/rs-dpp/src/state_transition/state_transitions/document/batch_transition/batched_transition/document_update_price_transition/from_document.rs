@@ -1,11 +1,12 @@
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 use crate::data_contract::document_type::{DocumentTypeRef};
 use crate::document::{Document};
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::batched_transition::DocumentUpdatePriceTransition;
-use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentUpdatePriceTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
 
 impl DocumentUpdatePriceTransition {
     pub fn from_document(

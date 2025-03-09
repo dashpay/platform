@@ -25,8 +25,8 @@ mod refund_tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::Bytes32;
-    use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
     use drive::util::test_helpers::setup_contract;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;

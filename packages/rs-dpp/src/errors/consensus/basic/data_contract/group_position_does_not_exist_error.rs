@@ -1,6 +1,6 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -12,8 +12,9 @@ use thiserror::Error;
 )]
 #[error("Group position {} does not exist", missing_group_position)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupPositionDoesNotExistError {
-    missing_group_position: GroupContractPosition,
+    pub missing_group_position: GroupContractPosition,
 }
 
 impl GroupPositionDoesNotExistError {

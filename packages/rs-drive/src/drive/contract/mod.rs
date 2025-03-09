@@ -50,11 +50,11 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::document::DocumentV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{
+        ContractBounds, Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel,
+    };
     use dpp::platform_value::{platform_value, BinaryData};
-    use dpp::prelude::IdentityPublicKey;
     use dpp::tests::fixtures::{
         get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
     };
@@ -62,7 +62,7 @@ mod tests {
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
 
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]

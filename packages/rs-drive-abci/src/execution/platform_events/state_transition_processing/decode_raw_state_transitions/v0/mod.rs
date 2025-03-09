@@ -4,10 +4,10 @@ use crate::execution::types::state_transition_container::v0::{
 };
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::errors::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;

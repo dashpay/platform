@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[platform_serialize(limit = 15000, unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Vote {
     ResourceVote(ResourceVote),
 }

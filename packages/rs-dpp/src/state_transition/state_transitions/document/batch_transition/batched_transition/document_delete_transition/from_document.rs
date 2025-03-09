@@ -2,10 +2,11 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
-use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
-use crate::state_transition::batch_transition::batched_transition::DocumentDeleteTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentDeleteTransition;
 
 impl DocumentDeleteTransition {
     pub fn from_document(

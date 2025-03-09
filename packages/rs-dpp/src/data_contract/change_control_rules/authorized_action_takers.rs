@@ -11,6 +11,7 @@ use std::fmt;
 #[derive(
     Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, Default,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum AuthorizedActionTakers {
     #[default]
     NoOne,

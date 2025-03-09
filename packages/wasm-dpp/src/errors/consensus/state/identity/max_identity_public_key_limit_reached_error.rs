@@ -1,6 +1,6 @@
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

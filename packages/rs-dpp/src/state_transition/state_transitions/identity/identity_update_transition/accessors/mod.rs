@@ -1,9 +1,9 @@
 mod v0;
 
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 use crate::prelude::{IdentityNonce, Revision};
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::Identifier;
 pub use v0::*;
 

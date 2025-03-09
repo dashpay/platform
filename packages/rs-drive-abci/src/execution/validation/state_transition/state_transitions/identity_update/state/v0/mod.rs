@@ -5,14 +5,14 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::prelude::ConsensusValidationResult;
 
-use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
-use dpp::version::DefaultForPlatformVersion;
+use platform_version::DefaultForPlatformVersion;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::validate_identity_public_keys_contract_bounds;

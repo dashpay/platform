@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
 
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Generates a set of operations to replace a key in storage.

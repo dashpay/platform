@@ -1,8 +1,8 @@
 use crate::buffer::Buffer;
 
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::identity_nonce::MergeIdentityNonceResult;
 use wasm_bindgen::prelude::*;
 

@@ -1,5 +1,5 @@
 use derive_more::From;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 mod v0;
 

@@ -4,11 +4,12 @@ mod v0;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+use crate::errors::ProtocolError;
 #[cfg(feature = "validation")]
 use crate::prelude::ConsensusValidationResult;
-use crate::ProtocolError;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
 pub use v0::*;
+use versioned_feature_core::FeatureVersion;
 
 impl DocumentPlatformConversionMethodsV0 for Document {
     /// Serializes the document.

@@ -5,7 +5,7 @@ mod state;
 mod transform_into_action;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -104,7 +104,7 @@ mod tests {
     use drive::util::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use dpp::identifier::Identifier;
-    use dpp::prelude::DataContract;
+    use dpp::data_contract::DataContract;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use drive::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
     use crate::platform_types::platform_state::PlatformState;

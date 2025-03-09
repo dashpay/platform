@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
     get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0,
 };
 use dpp::check_validation_result_with_data;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use dpp::platform_value::Bytes32;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -135,9 +135,10 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::ContractBounds;
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
-    use dpp::prelude::{Identifier, IdentityPublicKey};
+    use dpp::prelude::Identifier;
+    use dpp::identity::IdentityPublicKey;
     use dpp::serialization::PlatformDeserializable;
     use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;

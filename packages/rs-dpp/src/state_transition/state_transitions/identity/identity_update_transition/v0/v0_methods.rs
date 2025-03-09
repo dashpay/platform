@@ -2,18 +2,15 @@
 use crate::serialization::Signable;
 
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::PlatformVersion;
-
-#[cfg(feature = "state-transition-signing")]
-use crate::consensus::signature::{
+use crate::errors::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
 };
 #[cfg(feature = "state-transition-signing")]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, IdentityPublicKey};
+use crate::identity::{identity_public_key::IdentityPublicKey, Identity};
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
@@ -22,22 +19,22 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
+use crate::{identity::identity_public_key::KeyID, prelude::Revision};
 #[cfg(feature = "state-transition-signing")]
-use crate::version::FeatureVersion;
-use crate::{
-    identity::KeyID,
-    prelude::{Identifier, Revision},
-};
+use crate::{identity::identity_public_key::SecurityLevel, ProtocolError};
+use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
-use crate::{identity::SecurityLevel, ProtocolError};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<'a, S: Signer>(

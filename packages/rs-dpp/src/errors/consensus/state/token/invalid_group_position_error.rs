@@ -1,6 +1,6 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::GroupContractPosition;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -18,9 +18,10 @@ use thiserror::Error;
     }
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidGroupPositionError {
-    max_group_position: Option<GroupContractPosition>,
-    invalid_group_position: GroupContractPosition,
+    pub max_group_position: Option<GroupContractPosition>,
+    pub invalid_group_position: GroupContractPosition,
 }
 
 impl InvalidGroupPositionError {

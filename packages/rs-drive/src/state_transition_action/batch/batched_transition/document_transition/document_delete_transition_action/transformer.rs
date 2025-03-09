@@ -2,7 +2,7 @@ use dpp::platform_value::Identifier;
 use std::sync::Arc;
 
 use dpp::ProtocolError;
-use dpp::state_transition::batch_transition::batched_transition::DocumentDeleteTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::DocumentDeleteTransition;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::{DocumentDeleteTransitionAction, DocumentDeleteTransitionActionV0};
 

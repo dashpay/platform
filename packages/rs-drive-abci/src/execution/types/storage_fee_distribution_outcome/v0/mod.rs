@@ -1,4 +1,4 @@
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 
 //todo: make this non versioned
 /// Result of storage fee distribution

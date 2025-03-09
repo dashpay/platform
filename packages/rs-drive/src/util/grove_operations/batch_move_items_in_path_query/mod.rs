@@ -6,9 +6,8 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchMoveApplyType;
 
-use dpp::version::drive_versions::DriveVersion;
-
 use grovedb::{PathQuery, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes multiple "delete element" and "insert element operations for items in a given path based on a `PathQuery` to `drive_operations`.

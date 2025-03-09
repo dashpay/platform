@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -14,14 +14,15 @@ use bincode::{Decode, Encode};
     "Contested documents are not allowed until epoch {target_epoch}. Current epoch is {current_epoch}"
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ContestedDocumentsTemporarilyNotAllowedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    current_epoch: EpochIndex,
-    target_epoch: EpochIndex,
+    pub current_epoch: EpochIndex,
+    pub target_epoch: EpochIndex,
 }
 
 impl ContestedDocumentsTemporarilyNotAllowedError {

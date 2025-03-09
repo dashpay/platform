@@ -1,7 +1,7 @@
 //! Definitions of errors
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
@@ -14,6 +14,7 @@ use std::time::Duration;
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
 #[derive(Debug, thiserror::Error)]
+#[ferment_macro::opaque]
 pub enum Error {
     /// SDK is not configured properly
     #[error("SDK misconfigured: {0}")]
@@ -218,10 +219,10 @@ mod tests {
         use assert_matches::assert_matches;
         use base64::Engine;
         use dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
-        use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
-        use dpp::consensus::basic::BasicError;
         use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::Txid;
+        use dpp::errors::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
+        use dpp::errors::consensus::basic::BasicError;
         use dpp::serialization::PlatformSerializableWithPlatformVersion;
         use dpp::version::PlatformVersion;
 

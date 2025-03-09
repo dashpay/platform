@@ -1,9 +1,9 @@
 mod v0;
 
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-#[cfg(feature = "state-transition-signing")]
-use platform_version::version::FeatureVersion;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 pub use v0::*;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
@@ -17,11 +17,11 @@ use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]

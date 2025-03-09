@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -13,10 +13,11 @@ use thiserror::Error;
     "Token {token_id} attempted to set max supply to {max_supply}, which is less than the current supply {current_supply}"
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenSettingMaxSupplyToLessThanCurrentSupplyError {
-    token_id: Identifier,
-    max_supply: u64,
-    current_supply: u64,
+    pub token_id: Identifier,
+    pub max_supply: u64,
+    pub current_supply: u64,
 }
 
 impl TokenSettingMaxSupplyToLessThanCurrentSupplyError {

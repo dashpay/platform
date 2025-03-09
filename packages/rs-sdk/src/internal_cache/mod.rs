@@ -1,5 +1,6 @@
-use crate::platform::Identifier;
+// use crate::platform::Identifier;
 use crate::sdk::LastQueryTimestamp;
+use dpp::identifier::Identifier;
 use dpp::prelude;
 use dpp::prelude::IdentityNonce;
 use std::collections::BTreeMap;

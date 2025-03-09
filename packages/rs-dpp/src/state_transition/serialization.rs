@@ -1,6 +1,6 @@
+use crate::errors::ProtocolError;
 use crate::serialization::PlatformDeserializable;
 use crate::state_transition::StateTransition;
-use crate::ProtocolError;
 
 impl StateTransition {
     pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {
@@ -13,39 +13,39 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::state_transition::AssetLockProof;
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::Identity;
-    use crate::prelude::AssetLockProof;
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-    use crate::state_transition::data_contract_update_transition::{
+    use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
+    use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
-    use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
-    use crate::state_transition::batch_transition::{
+    use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use crate::state_transition::state_transitions::document::batch_transition::{
         BatchTransition, BatchTransitionV1,
     };
-    use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-    use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-    use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-    use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-    use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+    use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+    use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_batched_transitions_fixture,
         get_extended_documents_fixture_with_owner_id_from_contract,
         raw_instant_asset_lock_proof_fixture,
     };
-    use crate::version::PlatformVersion;
+    use platform_version::version::PlatformVersion;
     use crate::withdrawal::Pooling;
-    use crate::ProtocolError;
+    use crate::errors::ProtocolError;
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
@@ -53,7 +53,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_create_transition_ser_de() {
         let platform_version = LATEST_PLATFORM_VERSION;
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -79,7 +78,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_topup_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -102,7 +100,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_update_transition_add_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
@@ -169,7 +166,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "state-transition-signing")]
     fn identity_update_transition_disable_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
@@ -236,7 +232,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn identity_credit_withdrawal_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -262,7 +257,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn data_contract_create_ser_de() {
         let platform_version = LATEST_PLATFORM_VERSION;
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -285,7 +279,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "random-identities")]
     fn data_contract_update_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)

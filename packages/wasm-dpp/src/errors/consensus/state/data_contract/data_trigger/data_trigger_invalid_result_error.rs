@@ -1,8 +1,8 @@
 use crate::buffer::Buffer;
 
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;

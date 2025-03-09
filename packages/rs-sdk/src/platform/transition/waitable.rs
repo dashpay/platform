@@ -5,13 +5,15 @@ use super::put_settings::PutSettings;
 use crate::platform::Fetch;
 use crate::Error;
 use crate::Sdk;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::prelude::{DataContract, Identifier, Identity};
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::identity::Identity;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionLike;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
+use platform_value::Identifier;
 
 /// Waitable trait provides a wait to wait for a response of a state transition after it has been broadcast and
 /// receive altered objects.

@@ -1,36 +1,28 @@
-#[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::{
-    DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
-};
-#[cfg(feature = "validation")]
-use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::property::array::ArrayItemType;
+use crate::data_contract::document_type::property::{
+    ByteArrayPropertySizes, DocumentProperty, DocumentPropertyType, StringPropertySizes,
+};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+#[cfg(feature = "validation")]
+use crate::errors::consensus::basic::data_contract::{
+    DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError,
+};
+#[cfg(feature = "validation")]
+use crate::errors::consensus::ConsensusError;
 use indexmap::IndexMap;
 #[cfg(feature = "validation")]
 use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-#[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
-#[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
-#[cfg(any(test, feature = "validation"))]
-use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
-#[cfg(feature = "validation")]
-use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
-#[cfg(feature = "validation")]
-use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
@@ -38,20 +30,28 @@ use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
 };
-use crate::data_contract::document_type::{
-    property_names, ByteArrayPropertySizes, DocumentType, StringPropertySizes,
-};
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::document_type::{property_names, DocumentType};
+use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::identity::SecurityLevel;
+#[cfg(feature = "validation")]
+use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
+#[cfg(feature = "validation")]
+use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
+#[cfg(any(test, feature = "validation"))]
+use crate::errors::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
+use crate::errors::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+#[cfg(feature = "validation")]
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::validation::operations::ProtocolValidationOperation;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
@@ -578,8 +578,8 @@ impl DocumentTypeV0 {
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
             security_level_requirement,
-            #[cfg(feature = "validation")]
-            json_schema_validator,
+            // #[cfg(feature = "validation")]
+            // json_schema_validator,
         })
     }
 }

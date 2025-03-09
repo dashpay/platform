@@ -18,12 +18,12 @@ use dpp::data_contract::DataContract;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 #[cfg(feature = "fixtures-and-mocks")]
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 #[cfg(test)]
 use ciborium::value::Value;

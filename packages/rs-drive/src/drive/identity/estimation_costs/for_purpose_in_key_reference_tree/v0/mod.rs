@@ -8,7 +8,7 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::identity::identity_query_keys_purpose_tree_path_vec;
 
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 

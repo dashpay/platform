@@ -6,9 +6,9 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-mod key_type;
-mod purpose;
-mod security_level;
+pub mod key_type;
+pub mod purpose;
+pub mod security_level;
 pub use key_type::KeyType;
 pub use purpose::Purpose;
 pub use security_level::SecurityLevel;
@@ -16,10 +16,10 @@ pub mod accessors;
 pub(crate) mod conversion;
 pub mod fields;
 pub mod v0;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 pub use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_version::version::PlatformVersion;
 
 pub mod methods;
 pub use methods::*;
@@ -27,8 +27,11 @@ pub mod contract_bounds;
 #[cfg(feature = "random-public-keys")]
 mod random;
 
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type KeyID = u32;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type KeyCount = KeyID;
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type TimestampMillis = u64;
 
 #[derive(
@@ -49,6 +52,7 @@ pub type TimestampMillis = u64;
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[serde(tag = "$version")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),

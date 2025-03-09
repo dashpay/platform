@@ -1,14 +1,14 @@
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
-use crate::version::PlatformVersion;
 use crate::{
-    identity::{KeyType, Purpose, SecurityLevel},
+    identity::identity_public_key::{KeyType, Purpose, SecurityLevel},
     tests::utils::generate_random_identifier_struct,
 };
 use platform_value::string_encoding::Encoding;
 use platform_value::BinaryData;
+use platform_version::version::PlatformVersion;
 
 pub fn get_identity_update_transition_fixture(
     platform_version: PlatformVersion,

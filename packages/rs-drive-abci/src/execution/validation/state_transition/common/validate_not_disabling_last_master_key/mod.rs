@@ -1,5 +1,5 @@
 use dpp::identity::IdentityPublicKey;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use crate::error::Error;

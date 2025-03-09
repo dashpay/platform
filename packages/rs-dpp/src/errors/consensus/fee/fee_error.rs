@@ -9,6 +9,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[derive(
     Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum FeeError {
     /*
 

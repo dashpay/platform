@@ -1,14 +1,12 @@
 #[cfg(test)]
 mod tests {
-
-    use dpp::prelude::*;
-
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::test_utils::identities::create_test_identity;
     use dpp::block::epoch::Epoch;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
 
     mod add_to_identity_balance {
         use dpp::block::block_info::BlockInfo;

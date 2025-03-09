@@ -7,9 +7,9 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 impl Drive {

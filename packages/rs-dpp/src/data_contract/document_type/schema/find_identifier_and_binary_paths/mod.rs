@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use indexmap::IndexMap;
 use platform_version::version::dpp_versions::dpp_contract_versions::DocumentTypeVersions;
 use std::collections::BTreeSet;

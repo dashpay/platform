@@ -3,9 +3,9 @@ use platform_value::Value;
 use std::collections::BTreeMap;
 
 use crate::prelude::Revision;
-use crate::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 
 pub trait DocumentReplaceTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `revision` field of the `DocumentReplaceTransitionV0`.

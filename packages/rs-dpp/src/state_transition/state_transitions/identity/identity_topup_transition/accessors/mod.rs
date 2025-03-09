@@ -2,7 +2,7 @@ mod v0;
 
 pub use v0::*;
 
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 
 use platform_value::Identifier;
 

@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::identifier::Identifier;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Member {member_id} has a power of 0, which is not allowed")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupMemberHasPowerOfZeroError {
-    member_id: Identifier,
+    pub member_id: Identifier,
 }
 
 impl GroupMemberHasPowerOfZeroError {

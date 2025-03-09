@@ -1,8 +1,8 @@
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use versioned_feature_core::FeatureVersion;
 
 impl StateTransitionLike for MasternodeVoteTransition {
     /// Returns ID of the credit_transferred contract

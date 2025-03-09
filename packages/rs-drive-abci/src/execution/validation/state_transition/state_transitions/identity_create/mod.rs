@@ -15,7 +15,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -204,8 +204,8 @@ mod tests {
     use dpp::native_bls::NativeBlsModule;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::state_transitions::identity::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
     use platform_version::version::PlatformVersion;

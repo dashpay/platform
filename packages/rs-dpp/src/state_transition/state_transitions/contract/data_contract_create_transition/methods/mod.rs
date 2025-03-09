@@ -4,15 +4,15 @@ pub use v0::*;
 
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
-use crate::identity::{KeyID, PartialIdentity};
+use crate::identity::{identity_public_key::KeyID, PartialIdentity};
 use crate::prelude::IdentityNonce;
-use crate::state_transition::data_contract_create_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
 use crate::state_transition::StateTransition;
-use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
     fn new_from_data_contract<S: Signer>(

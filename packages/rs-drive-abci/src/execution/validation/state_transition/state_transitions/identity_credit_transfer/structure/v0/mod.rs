@@ -1,11 +1,11 @@
-use dpp::consensus::basic::identity::{
+use dpp::errors::consensus::basic::identity::{
     IdentityCreditTransferToSelfError, InvalidIdentityCreditTransferAmountError,
 };
 
 // use dpp::platform_value::
 use crate::error::Error;
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 
 const MIN_TRANSFER_AMOUNT: u64 = 100000;

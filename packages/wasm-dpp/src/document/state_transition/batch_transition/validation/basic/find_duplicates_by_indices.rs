@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
 use crate::{
-    document_batch_transition::document_transition::to_object,
+    document_batch_transition::batched_transition::to_object,
     utils::{ToSerdeJSONExt, WithJsError},
     DataContractWasm,
 };

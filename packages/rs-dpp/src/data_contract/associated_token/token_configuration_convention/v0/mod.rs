@@ -6,6 +6,7 @@ use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenConfigurationLocalizationsV0 {
     pub should_capitalize: bool,
     pub singular_form: String,
@@ -26,6 +27,7 @@ impl fmt::Display for TokenConfigurationLocalizationsV0 {
     Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, Default,
 )]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenConfigurationConventionV0 {
     #[serde(default)]
     pub localizations: BTreeMap<String, TokenConfigurationLocalizationsV0>,

@@ -2,8 +2,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("'Unknown Asset lock proof type'")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct UnknownAssetLockProofTypeError {
-    asset_lock_type: Option<u8>,
+    pub asset_lock_type: Option<u8>,
 }
 
 impl UnknownAssetLockProofTypeError {

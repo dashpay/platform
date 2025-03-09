@@ -1,19 +1,16 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 
 use crate::prelude::UserFeeIncrease;
-use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
-use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityCreditWithdrawal;
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl From<IdentityCreditWithdrawalTransitionV0> for StateTransition {
     fn from(value: IdentityCreditWithdrawalTransitionV0) -> Self {

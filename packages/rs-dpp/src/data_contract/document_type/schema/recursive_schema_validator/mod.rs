@@ -4,9 +4,9 @@ pub use traversal_validator::*;
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::consensus::basic::BasicError;
-    use crate::consensus::codes::ErrorWithCode;
-    use crate::consensus::ConsensusError;
+    use crate::errors::consensus::basic::BasicError;
+    use crate::errors::consensus::codes::ErrorWithCode;
+    use crate::errors::consensus::ConsensusError;
     use assert_matches::assert_matches;
     use platform_value::{platform_value, Value};
     use platform_version::version::PlatformVersion;

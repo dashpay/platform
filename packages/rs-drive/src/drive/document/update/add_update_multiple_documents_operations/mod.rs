@@ -7,7 +7,7 @@ use crate::util::batch::DriveOperation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Adds multiple document update operations to the drive.

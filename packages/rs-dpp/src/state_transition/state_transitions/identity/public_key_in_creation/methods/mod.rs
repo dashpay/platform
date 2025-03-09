@@ -8,8 +8,8 @@ pub mod hash;
 mod v0;
 pub mod validate_identity_public_keys_structure;
 
-use crate::identity::IdentityPublicKey;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::identity::identity_public_key::IdentityPublicKey;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 
 pub use v0::IdentityPublicKeyInCreationMethodsV0;
 

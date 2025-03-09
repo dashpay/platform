@@ -8,8 +8,8 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathKeyElementInfo;
 
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes an "insert sum item or add to it if the item already exists" operation to `drive_operations`.

@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::identity::Purpose;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::Purpose;
 use itertools::Itertools;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]

@@ -24,8 +24,7 @@ use dapi_grpc::platform::v0::{
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
-use dpp::identity::KeyID;
-use dpp::prelude::{Identifier, IdentityPublicKey};
+use dpp::identity::identity_public_key::{IdentityPublicKey, KeyID};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
 use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
@@ -42,6 +41,7 @@ use drive_proof_verifier::types::{
     ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
+use platform_value::Identifier;
 use rs_dapi_client::{
     transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
     IntoInner, RequestSettings,

@@ -1,9 +1,9 @@
 use std::convert::TryFrom;
 
 use crate::utils::WithJsError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::signature::InvalidIdentityPublicKeyTypeError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::signature::InvalidIdentityPublicKeyTypeError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::KeyType;
 
 use wasm_bindgen::prelude::*;

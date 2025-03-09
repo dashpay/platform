@@ -1,17 +1,17 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::DataContract;
 use crate::data_contract::{
     DocumentName, GroupContractPosition, TokenContractPosition, EMPTY_GROUPS, EMPTY_TOKENS,
 };
 use crate::metadata::Metadata;
-use crate::prelude::DataContract;
 
 use platform_value::Identifier;
 
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::group::Group;
 use crate::tokens::errors::TokenError;
 use crate::ProtocolError;

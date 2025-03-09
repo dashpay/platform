@@ -5,10 +5,10 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::DriveKeyInfo;
-use dpp::identity::{Purpose, SecurityLevel};
-use dpp::version::drive_versions::DriveVersion;
+use dpp::identity::identity_public_key::{Purpose, SecurityLevel};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

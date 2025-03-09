@@ -9,7 +9,9 @@ use crate::{
 
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 /// The key purpose that is preferred for signing the withdrawal
 #[cfg(feature = "state-transition-signing")]

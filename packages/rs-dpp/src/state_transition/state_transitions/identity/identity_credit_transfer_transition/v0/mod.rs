@@ -8,14 +8,14 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::KeyID;
+use crate::identity::identity_public_key::KeyID;
 
-use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[platform_serialize(unversioned)]
 #[derive(Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
@@ -54,7 +55,7 @@ mod test {
 
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
-    use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;

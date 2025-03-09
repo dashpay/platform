@@ -1,6 +1,6 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -11,8 +11,9 @@ use thiserror::Error;
 )]
 #[error("Choosing token mint recipient not allowed for token {}", token_id)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ChoosingTokenMintRecipientNotAllowedError {
-    token_id: Identifier,
+    pub token_id: Identifier,
 }
 
 impl ChoosingTokenMintRecipientNotAllowedError {

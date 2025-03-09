@@ -1,18 +1,18 @@
 use crate::identity::core_script::CoreScript;
-use crate::prelude::Identifier;
 use crate::prelude::Revision;
 use dashcore::{PubkeyHash, ScriptBuf};
 use platform_value::string_encoding::{encode, Encoding};
 use platform_value::BinaryData;
-use platform_value::{platform_value, Value};
-use serde_json::{json, Value as JsonValue};
+use platform_value::{platform_value, Identifier, Value};
+use platform_version::version::LATEST_VERSION;
+use serde_json::json;
 
+use crate::state_transition::StateTransitionType;
 use crate::withdrawal::Pooling;
-use crate::{state_transition::StateTransitionType, version};
 
 pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
     platform_value!({
-        "protocolVersion": version::LATEST_VERSION,
+        "protocolVersion": LATEST_VERSION,
         "type": StateTransitionType::IdentityCreditWithdrawal as u8,
         "identityId": Identifier::from([1_u8; 32]),
         "amount": 1042u64,
@@ -25,9 +25,9 @@ pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
     })
 }
 
-pub fn identity_credit_withdrawal_transition_fixture_json() -> JsonValue {
+pub fn identity_credit_withdrawal_transition_fixture_json() -> serde_json::Value {
     json!({
-        "protocolVersion": version::LATEST_VERSION,
+        "protocolVersion": LATEST_VERSION,
         "type": StateTransitionType::IdentityCreditWithdrawal,
         "identityId": encode(&[1_u8; 32], Encoding::Base58),
         "amount": 1042,

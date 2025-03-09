@@ -16,5 +16,11 @@ dpns-contract = { path = "../dpns-contract" }
 dashpay-contract = { path = "../dashpay-contract" }
 feature-flags-contract = { path = "../feature-flags-contract" }
 platform-value = { path = "../rs-platform-value" }
+versioned-feature-core = "1.0.0"
 wallet-utils-contract = { path = "../wallet-utils-contract" }
 token-history-contract = { path = "../token-history-contract" }
+ferment-macro = { git = "https://github.com/dashpay/ferment", package = "ferment-macro", optional = true }
+
+[features]
+default = []
+apple = ["ferment-macro"]

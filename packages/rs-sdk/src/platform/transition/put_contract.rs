@@ -8,8 +8,8 @@ use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, PartialIdentity};
-use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransition;
 
 use super::broadcast::BroadcastStateTransition;

@@ -1,4 +1,4 @@
-use dpp::prelude::Identifier;
+use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

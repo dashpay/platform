@@ -1,4 +1,4 @@
-use dpp::consensus::basic::identity::InvalidIdentityAssetLockProofChainLockValidationError;
+use dpp::errors::consensus::basic::identity::InvalidIdentityAssetLockProofChainLockValidationError;
 
 use crate::buffer::Buffer;
 

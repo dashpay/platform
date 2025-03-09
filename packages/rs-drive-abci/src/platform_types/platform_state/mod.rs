@@ -13,13 +13,16 @@ use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
-use dpp::dashcore::{ProTxHash, QuorumHash};
+// use dpp::dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 
-use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
 use indexmap::IndexMap;
+use platform_version::{
+    version::PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned,
+};
 
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;

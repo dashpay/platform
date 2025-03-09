@@ -1,8 +1,8 @@
 use crate::document::Document;
 
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
@@ -17,13 +17,13 @@ use crate::serialization::{
     PlatformDeserializableWithBytesLenFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use crate::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 use integer_encoding::{VarInt, VarIntReader};
 
-use crate::consensus::basic::decode::DecodingError;
-use crate::data_contract::errors::DataContractError;
-use platform_version::version::FeatureVersion;
+use crate::data_contract::errors::contract::DataContractError;
+use crate::errors::consensus::basic::decode::DecodingError;
+use versioned_feature_core::FeatureVersion;
 
 impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// Serializes the extended document.

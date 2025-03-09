@@ -4,14 +4,15 @@ use platform_value::Value;
 
 use crate::ProtocolError;
 
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::state_transitions::identity_create_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_create_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl<'a> ValueConvertible<'a> for IdentityCreateTransition {}
 

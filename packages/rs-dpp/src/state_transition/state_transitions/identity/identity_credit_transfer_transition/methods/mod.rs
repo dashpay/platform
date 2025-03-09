@@ -1,13 +1,13 @@
 mod v0;
 pub use v0::*;
 
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{signer::Signer, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{
-        identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0,
+        state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0,
         StateTransition,
     },
     ProtocolError,
@@ -15,7 +15,9 @@ use crate::{
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use versioned_feature_core::FeatureVersion;
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransition {
     #[cfg(feature = "state-transition-signing")]

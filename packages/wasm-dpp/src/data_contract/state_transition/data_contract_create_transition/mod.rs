@@ -8,13 +8,13 @@ use dpp::errors::consensus::signature::SignatureError;
 use dpp::errors::consensus::ConsensusError;
 
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
 
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::PlatformVersion;
-use dpp::{state_transition::StateTransitionLike, ProtocolError};
+use dpp::{errors::ProtocolError, state_transition::StateTransitionLike};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 

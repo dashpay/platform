@@ -1,8 +1,8 @@
 use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use dpp::errors::consensus::ConsensusError;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;

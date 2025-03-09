@@ -6,7 +6,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl SingleDocumentDriveQuery {
     /// Verifies the proof of a single document query.

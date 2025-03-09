@@ -1,8 +1,8 @@
 mod v0;
 
 use std::slice::Iter;
-use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef};
-use crate::state_transition::batch_transition::BatchTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef};
+use crate::state_transition::state_transitions::document::batch_transition::BatchTransition;
 pub use v0::*;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 

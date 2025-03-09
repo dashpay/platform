@@ -37,7 +37,6 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -94,6 +93,7 @@ pub type LastQueryTimestamp = u64;
 /// ## Examples
 ///
 /// See tests/ for examples of using the SDK.
+#[ferment_macro::opaque]
 pub struct Sdk {
     /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)
     pub network: Network,
@@ -204,6 +204,13 @@ enum SdkInstance {
 }
 
 impl Sdk {
+    pub fn maybe_dapi_client(&self) -> Option<&DapiClient> {
+        match &self.inner {
+            SdkInstance::Dapi { dapi, .. } => Some(dapi),
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { .. } => None,
+        }
+    }
     /// Initialize Dash Platform  SDK in mock mode.
     ///
     /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.

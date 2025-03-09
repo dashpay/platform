@@ -4,7 +4,7 @@ use crate::state_transition_action::identity::masternode_vote::v0::{
     MasternodeVoteTransitionActionV0, PreviousVoteCount,
 };
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;

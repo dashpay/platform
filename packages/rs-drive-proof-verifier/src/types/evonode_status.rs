@@ -9,10 +9,10 @@ use dapi_grpc::platform::v0::{
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{version as platform_version, ProtocolError},
+    dpp::ProtocolError,
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-
+// use ::platform_version::version;
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",

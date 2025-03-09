@@ -1,5 +1,5 @@
 use crate::{fee::dummy_fee_result::DummyFeesResultWasm, utils::Inner};
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::Error as PlatformValueError;
 use dpp::{
     state_transition::fee::{

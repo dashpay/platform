@@ -3,6 +3,7 @@ use crate::ProtocolError;
 
 // @append-only
 #[derive(Eq, PartialEq, Debug, Copy, Clone, Hash)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentTransitionActionType {
     Create, //the entropy used
     Replace,

@@ -1,11 +1,11 @@
 use platform_value::Identifier;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::prelude::IdentityNonce;
-use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
-use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransition;
-use crate::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::token_config_update_transition::TokenConfigUpdateTransition;
+use crate::state_transition::state_transitions::document::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use crate::util::hash::hash_double;
 
 impl TokenBaseTransitionAccessors for TokenConfigUpdateTransition {

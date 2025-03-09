@@ -20,14 +20,14 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::version::PlatformVersion;
 
 mod abstract_state_transition;
+use crate::errors::ProtocolError;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
 use crate::BlsModule;
-use crate::ProtocolError;
 
-mod state_transition_types;
+pub mod state_transition_types;
 
 pub mod state_transition_factory;
 
@@ -44,43 +44,34 @@ mod traits;
 // pub mod state_transition_fee;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+use crate::errors::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 #[cfg(feature = "state-transition-validation")]
-use crate::consensus::signature::{
+use crate::errors::consensus::signature::{
     InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
 };
 #[cfg(feature = "state-transition-validation")]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 pub use traits::*;
 
+use crate::balances::credits::Credits;
 use crate::balances::credits::CREDITS_PER_DUFF;
-use crate::fee::Credits;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::identity::Purpose;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
-use crate::identity::{KeyID, SecurityLevel};
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::prelude::UserFeeIncrease;
 use crate::serialization::Signable;
-use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
-use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionSignable};
-use crate::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionSignable,
-};
-use crate::state_transition::data_contract_update_transition::{
-    DataContractUpdateTransition, DataContractUpdateTransitionSignable,
-};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
 #[cfg(feature = "state-transition-signing")]
@@ -89,26 +80,36 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
-use crate::state_transition::identity_create_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
+    DataContractCreateTransition, DataContractCreateTransitionSignable,
+};
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionSignable,
+};
+use crate::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::state_transitions::document::batch_transition::{
+    BatchTransition, BatchTransitionSignable,
+};
+use crate::state_transition::state_transitions::identity::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
-use crate::state_transition::identity_credit_transfer_transition::{
+use crate::state_transition::state_transitions::identity::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionSignable,
 };
-use crate::state_transition::identity_credit_withdrawal_transition::{
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionSignable,
 };
-use crate::state_transition::identity_topup_transition::{
+use crate::state_transition::state_transitions::identity::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionSignable,
 };
-use crate::state_transition::identity_update_transition::{
+use crate::state_transition::state_transitions::identity::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::{
+    MasternodeVoteTransition, MasternodeVoteTransitionSignable,
+};
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
-pub use state_transitions::*;
-
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -259,6 +260,7 @@ macro_rules! call_errorable_method_identity_signed {
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),

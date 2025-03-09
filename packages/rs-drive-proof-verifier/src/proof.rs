@@ -24,9 +24,8 @@ use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::Purpose;
+use dpp::identity::{Identity, identity_public_key::Purpose};
 use dpp::platform_value::{self};
-use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
@@ -47,6 +46,8 @@ use indexmap::IndexMap;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
+use dpp::data_contract::DataContract;
+use platform_value::Identifier;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///

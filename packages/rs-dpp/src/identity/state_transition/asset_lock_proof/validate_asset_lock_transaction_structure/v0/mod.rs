@@ -1,4 +1,4 @@
-use crate::consensus::basic::identity::{
+use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, InvalidIdentityAssetLockTransactionError,
     InvalidIdentityAssetLockTransactionOutputError,
 };

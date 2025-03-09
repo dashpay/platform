@@ -3,15 +3,15 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
+use crate::balances::credits::Credits;
 use crate::block::epoch::{Epoch, EpochIndex};
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 use crate::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
-use crate::fee::Credits;
-use crate::ProtocolError;
 use bincode::{Decode, Encode};
 
+use crate::ProtocolError;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;

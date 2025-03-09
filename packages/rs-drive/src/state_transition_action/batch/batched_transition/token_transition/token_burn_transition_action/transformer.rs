@@ -9,7 +9,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{
     TokenBurnTransitionAction, TokenBurnTransitionActionV0,
 };
-use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_burn_transition::TokenBurnTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::Error;

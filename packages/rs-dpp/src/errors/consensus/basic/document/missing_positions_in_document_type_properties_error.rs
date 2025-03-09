@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -24,15 +24,16 @@ use platform_value::Identifier;
     document_type_name
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct MissingPositionsInDocumentTypePropertiesError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    missing_position: u32,
-    contract_id: Identifier,
-    document_type_name: String,
+    pub missing_position: u32,
+    pub contract_id: Identifier,
+    pub document_type_name: String,
 }
 
 impl MissingPositionsInDocumentTypePropertiesError {

@@ -1,7 +1,7 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::balances::credits::Credits;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::fee::Credits;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -12,17 +12,18 @@ use thiserror::Error;
 )]
 #[error("Contest for document {document_id} was not paid for, needs payment of {expected_amount} Credits")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentContestNotPaidForError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_id: Identifier,
+    pub document_id: Identifier,
 
-    expected_amount: Credits,
+    pub expected_amount: Credits,
 
-    paid_amount: Credits,
+    pub paid_amount: Credits,
 }
 
 impl DocumentContestNotPaidForError {

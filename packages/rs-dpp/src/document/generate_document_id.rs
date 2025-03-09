@@ -1,6 +1,6 @@
 use crate::document::Document;
-use crate::{prelude::Identifier, util::hash::hash_double_to_vec};
-
+use crate::util::hash::hash_double_to_vec;
+use platform_value::Identifier;
 impl Document {
     /// Generates the document ID
     pub fn generate_document_id_v0(

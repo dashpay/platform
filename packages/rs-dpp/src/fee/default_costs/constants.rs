@@ -1,4 +1,4 @@
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 
 pub const BASE_ST_PROCESSING_FEE: Credits = 10000; // 84000
 pub const DEFAULT_USER_TIP: Credits = 0;

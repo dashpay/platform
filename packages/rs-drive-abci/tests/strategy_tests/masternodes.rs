@@ -3,7 +3,7 @@ use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeTy
 use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash, Txid};
-use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use platform_version::version::PlatformVersion;

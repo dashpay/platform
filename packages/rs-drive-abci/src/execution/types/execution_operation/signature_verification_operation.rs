@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::execution_operation::OperationLike;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::KeyType;
 use dpp::version::PlatformVersion;
 

@@ -1,7 +1,8 @@
-use crate::version::FeatureVersion;
 use thiserror::Error;
+use versioned_feature_core::FeatureVersion;
 
 #[derive(Error, Debug)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DashPlatformProtocolInitError {
     #[error(transparent)]
     SchemaDeserializationError(serde_json::Error),

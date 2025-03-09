@@ -1,6 +1,6 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
-use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
+use dpp::errors::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
+use dpp::errors::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

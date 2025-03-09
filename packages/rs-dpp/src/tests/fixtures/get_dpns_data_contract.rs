@@ -1,4 +1,5 @@
 use data_contracts::{DataContractSource, SystemDataContract};
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 use crate::data_contract::created_data_contract::CreatedDataContract;

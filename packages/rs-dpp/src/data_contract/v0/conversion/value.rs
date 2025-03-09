@@ -3,9 +3,9 @@ use crate::data_contract::serialized_version::property_names;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::v0::DataContractV0;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use platform_value::{ReplacementType, Value};
+use platform_version::version::PlatformVersion;
 use platform_version::TryFromPlatformVersioned;
 
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =

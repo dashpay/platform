@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -15,9 +15,10 @@ use thiserror::Error;
     identity_id
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenTransferToOurselfError {
-    token_id: Identifier,
-    identity_id: Identifier,
+    pub token_id: Identifier,
+    pub identity_id: Identifier,
 }
 
 impl TokenTransferToOurselfError {

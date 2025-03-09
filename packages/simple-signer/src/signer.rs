@@ -9,7 +9,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
-use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
+use dpp::{bls_signatures, ed25519_dalek, errors::ProtocolError};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 

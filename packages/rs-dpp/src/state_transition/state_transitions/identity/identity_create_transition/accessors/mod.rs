@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 
 use platform_value::Identifier;
 pub use v0::*;

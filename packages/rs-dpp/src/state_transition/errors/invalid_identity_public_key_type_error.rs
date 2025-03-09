@@ -1,12 +1,13 @@
 use thiserror::Error;
 
-use crate::identity::KeyType;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::KeyType;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid signature type")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidIdentityPublicKeyTypeError {
-    public_key_type: KeyType,
+    pub public_key_type: KeyType,
 }
 
 impl InvalidIdentityPublicKeyTypeError {

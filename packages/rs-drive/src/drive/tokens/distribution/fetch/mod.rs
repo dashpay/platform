@@ -6,9 +6,10 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::TokenAmount;
-use dpp::prelude::{Identifier, TimestampMillis};
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 impl Drive {

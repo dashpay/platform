@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use crate::error::Error;
 
-use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use dpp::errors::consensus::state::state_error::StateError;
 
 use dpp::identity::PartialIdentity;
 
@@ -12,9 +12,9 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::serialization::PlatformMessageSignable;
-use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::ConsensusValidationResult;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
 use drive::state_transition_action::StateTransitionAction;

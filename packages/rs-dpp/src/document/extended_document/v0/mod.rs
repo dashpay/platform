@@ -16,8 +16,8 @@ use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
+use crate::errors::ProtocolError;
 use crate::util::hash::hash_double_to_vec;
-use crate::ProtocolError;
 
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
@@ -45,8 +45,8 @@ use crate::validation::SimpleConsensusValidationResult;
 #[cfg(feature = "document-json-conversion")]
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "document-json-conversion")]
-use serde_json::Value as JsonValue;
+// #[cfg(feature = "document-json-conversion")]
+// use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
@@ -123,7 +123,7 @@ pub struct ExtendedDocumentV0 {
 
 impl ExtendedDocumentV0 {
     #[cfg(feature = "document-json-conversion")]
-    pub(super) fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
+    pub(super) fn properties_as_json_data(&self) -> Result<serde_json::Value, ProtocolError> {
         self.document
             .properties()
             .to_json_value()
@@ -245,7 +245,7 @@ impl ExtendedDocumentV0 {
         contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let json_value: JsonValue = serde_json::from_str(string).map_err(|_| {
+        let json_value: serde_json::Value = serde_json::from_str(string).map_err(|_| {
             ProtocolError::StringDecodeError("error decoding from json string".to_string())
         })?;
         Self::from_untrusted_platform_value(json_value.into(), contract, platform_version)
@@ -263,7 +263,7 @@ impl ExtendedDocumentV0 {
     ///
     /// Returns a `ProtocolError` if there is an error processing the raw JSON document.
     pub fn from_raw_json_document(
-        raw_document: JsonValue,
+        raw_document: serde_json::Value,
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -385,16 +385,18 @@ impl ExtendedDocumentV0 {
     pub fn to_pretty_json(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
+    ) -> Result<serde_json::Value, ProtocolError> {
         let mut value = self.document.to_json(platform_version)?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),
-            JsonValue::String(self.document_type_name.clone()),
+            serde_json::Value::String(self.document_type_name.clone()),
         );
         value_mut.insert(
             property_names::DATA_CONTRACT_ID.to_string(),
-            JsonValue::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
+            serde_json::Value::String(
+                bs58::encode(self.data_contract_id.to_buffer()).into_string(),
+            ),
         );
         Ok(value)
     }
@@ -446,7 +448,7 @@ impl ExtendedDocumentV0 {
     }
 
     #[cfg(feature = "document-json-conversion")]
-    pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
+    pub fn to_json_object_for_validation(&self) -> Result<serde_json::Value, ProtocolError> {
         self.to_value()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)

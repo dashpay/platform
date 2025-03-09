@@ -1,19 +1,18 @@
-use dpp::identity::{KeyID, Purpose};
+use dpp::identity::identity_public_key::{KeyID, Purpose};
 
 use dpp::{
-    prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
     ProtocolError,
 };
 use js_sys::Array;
 use serde::{Deserialize, Serialize};
 
-use dpp::consensus::signature::SignatureError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::signature::SignatureError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
@@ -26,8 +25,9 @@ use crate::{
 };
 
 use dpp::ed25519_dalek::ed25519::signature::SignerMut;
-use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
-use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::identifier::Identifier;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 use crate::batch_transition::batched_transition::BatchedTransitionWasm;
 use crate::batch_transition::document_transition::DocumentTransitionWasm;

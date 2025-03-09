@@ -3,6 +3,7 @@ use platform_value::Identifier;
 use std::fmt;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
     NoWinner,

@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::data_contract::DataContract;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 mod v0;
 

@@ -19,7 +19,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::identifier::Identifier;
 
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Removes the document from primary storage.

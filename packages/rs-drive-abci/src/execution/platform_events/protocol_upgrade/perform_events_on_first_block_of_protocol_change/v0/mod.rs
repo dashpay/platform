@@ -11,7 +11,6 @@ use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
-use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use drive::drive::identity::key::fetch::{
@@ -35,6 +34,7 @@ use drive::drive::RootTree;
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
+use platform_version::version::ProtocolVersion;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 

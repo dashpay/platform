@@ -1,4 +1,4 @@
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use dashcore::Network;
 
 pub trait IdentityPublicKeyHashMethodsV0 {

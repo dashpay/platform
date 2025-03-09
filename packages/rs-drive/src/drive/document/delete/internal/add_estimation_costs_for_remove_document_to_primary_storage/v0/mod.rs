@@ -20,7 +20,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Adds estimation costs for removing a document to the primary storage with version v0.

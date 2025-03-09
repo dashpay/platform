@@ -3,7 +3,7 @@ mod v0;
 use crate::drive::Drive;
 
 use dpp::data_contract::DataContract;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 use grovedb::batch::KeyInfoPath;
 

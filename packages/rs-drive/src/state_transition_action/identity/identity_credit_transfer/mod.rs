@@ -5,7 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
 use derive_more::From;
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 

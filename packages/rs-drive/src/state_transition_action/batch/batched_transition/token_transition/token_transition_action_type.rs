@@ -1,5 +1,5 @@
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
-use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::{
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition_action_type::{
     TokenTransitionActionType, TokenTransitionActionTypeGetter,
 };
 

@@ -1,7 +1,7 @@
 use dpp::identity::KeyID;
 
-use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::voting::votes::Vote;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};

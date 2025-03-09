@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::basic::data_contract::IncompatibleDataContractSchemaError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::data_contract::IncompatibleDataContractSchemaError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

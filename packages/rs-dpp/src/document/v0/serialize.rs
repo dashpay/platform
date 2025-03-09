@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, PRICE, TRANSFERRED_AT,
@@ -12,7 +12,7 @@ use crate::prelude::ConsensusValidationResult;
 
 use crate::prelude::Revision;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -20,20 +20,20 @@ use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDese
 use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
-use crate::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
+use platform_version::version::PlatformVersion;
 
 use platform_value::{Identifier, Value};
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 use std::collections::BTreeMap;
 
-use crate::consensus::basic::decode::DecodingError;
+use crate::errors::consensus::basic::decode::DecodingError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 #[cfg(feature = "validation")]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {

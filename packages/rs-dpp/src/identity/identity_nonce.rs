@@ -2,9 +2,9 @@ use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::fmt::{Debug, Display, Formatter};
 
-use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::prelude::IdentityNonce;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, Encode};
@@ -20,6 +20,7 @@ pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
     Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 /// The result of the merge of the identity contract nonce
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum MergeIdentityNonceResult {
     /// The nonce is an invalid value
     /// This could be 0
@@ -165,8 +166,8 @@ pub fn validate_identity_nonce_update(
 
 #[cfg(test)]
 mod tests {
-    use crate::consensus::state::state_error::StateError;
-    use crate::consensus::ConsensusError;
+    use crate::errors::consensus::state::state_error::StateError;
+    use crate::errors::consensus::ConsensusError;
     use crate::identity::identity_nonce::{
         validate_identity_nonce_update, MergeIdentityNonceResult,
     };

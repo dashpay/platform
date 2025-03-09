@@ -23,18 +23,18 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
-use crate::fee::Credits;
-use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use crate::balances::credits::Credits;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
-use crate::state_transition::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
-use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 #[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveTupleFromMapHelper;
 use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "state-transition-value-conversion")]
-use crate::state_transition::batch_transition;
+use crate::state_transition::state_transitions::document::batch_transition;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -53,6 +53,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
@@ -389,7 +390,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 #[cfg(test)]
 mod test {
     use crate::data_contract::v0::DataContractV0;
-    use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+    use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::DocumentCreateTransition;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::{platform_value, BinaryData, Bytes32, Identifier};
     use platform_version::version::LATEST_PLATFORM_VERSION;
@@ -397,7 +398,7 @@ mod test {
 
     use super::*;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-    use serde_json::Value as JsonValue;
+    // use serde_json::Value as JsonValue;
 
     fn init() {
         let _ = env_logger::builder()
@@ -502,22 +503,25 @@ mod test {
             DocumentCreateTransition::from_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
-        assert_eq!(json_transition["V0"]["$id"], JsonValue::String(id.into()));
+        assert_eq!(
+            json_transition["V0"]["$id"],
+            serde_json::Value::String(id.into())
+        );
         assert_eq!(
             json_transition["V0"]["$dataContractId"],
-            JsonValue::String(data_contract_id.into())
+            serde_json::Value::String(data_contract_id.into())
         );
         assert_eq!(
             json_transition["alphaBinary"],
-            JsonValue::String(alpha_binary.into())
+            serde_json::Value::String(alpha_binary.into())
         );
         assert_eq!(
             json_transition["alphaIdentifier"],
-            JsonValue::String(alpha_identifier.into())
+            serde_json::Value::String(alpha_identifier.into())
         );
         assert_eq!(
             json_transition["$entropy"],
-            JsonValue::String(entropy.into())
+            serde_json::Value::String(entropy.into())
         );
     }
 

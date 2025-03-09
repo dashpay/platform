@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::group::GroupActionAlreadySignedByIdentityError;
-use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::UnauthorizedTokenActionError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::group::GroupActionAlreadySignedByIdentityError;
+use dpp::errors::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::token::UnauthorizedTokenActionError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;

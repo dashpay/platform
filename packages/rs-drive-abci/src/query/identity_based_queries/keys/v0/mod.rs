@@ -12,7 +12,7 @@ use drive::error::query::QuerySyntaxError;
 use std::collections::BTreeMap;
 
 use crate::platform_types::platform_state::PlatformState;
-use dpp::identity::{KeyID, Purpose, SecurityLevel};
+use dpp::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{

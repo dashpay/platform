@@ -12,10 +12,11 @@ use crate::drive::votes::storage_form::contested_document_resource_reference_sto
 use crate::query::QueryItem;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::dashcore::Network;
-use dpp::prelude::{BlockHeight, Identifier};
+use dpp::prelude::BlockHeight;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use platform_value::Identifier;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is

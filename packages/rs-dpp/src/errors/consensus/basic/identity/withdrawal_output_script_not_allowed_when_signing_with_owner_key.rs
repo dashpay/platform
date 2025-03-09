@@ -2,8 +2,8 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::identity::core_script::CoreScript;
 
 use crate::identity::KeyID;
@@ -14,9 +14,10 @@ use bincode::{Decode, Encode};
 )]
 #[error("Withdrawal output script not allowed when signing with owner key {key_id}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError {
-    output_script: CoreScript,
-    key_id: KeyID,
+    pub output_script: CoreScript,
+    pub key_id: KeyID,
 }
 
 /*

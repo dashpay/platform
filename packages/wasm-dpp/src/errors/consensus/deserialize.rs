@@ -1,5 +1,5 @@
 use crate::errors::consensus::consensus_error::from_consensus_error;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};

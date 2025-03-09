@@ -13,8 +13,11 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::Purpose::TRANSFER;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::identity::identity_public_key::Purpose::TRANSFER;
+use dpp::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    Identity, IdentityPublicKey, KeyID, KeyType,
+};
 use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -405,9 +408,11 @@ mod tests {
     use dpp::dashcore::Txid;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::Identity;
+    use dpp::identity::IdentityPublicKey;
     use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
-    use dpp::prelude::{Identifier, Identity, IdentityPublicKey};
+    use dpp::prelude::Identifier;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::Rng;

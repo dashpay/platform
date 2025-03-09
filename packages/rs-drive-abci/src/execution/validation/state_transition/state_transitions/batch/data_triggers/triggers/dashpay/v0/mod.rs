@@ -1,8 +1,8 @@
 //! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::errors::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;
@@ -112,7 +112,7 @@ mod test {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
     use dpp::errors::consensus::state::data_trigger::DataTriggerError;
-    use dpp::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+    use dpp::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
     use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_batched_transitions_fixture, get_identity_fixture};
     use dpp::version::DefaultForPlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;

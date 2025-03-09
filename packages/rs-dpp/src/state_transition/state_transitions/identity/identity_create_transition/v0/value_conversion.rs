@@ -11,13 +11,13 @@ use crate::{
     ProtocolError,
 };
 
-use crate::prelude::AssetLockProof;
+use crate::state_transition::AssetLockProof;
 
 use crate::identity::state_transition::AssetLockProved;
-use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use crate::state_transition::identity_create_transition::fields::*;
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use crate::state_transition::state_transitions::identity::identity_create_transition::fields::*;
+use crate::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;

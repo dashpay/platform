@@ -1,6 +1,6 @@
-use crate::identity::{KeyID, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for DataContractUpdateTransition {

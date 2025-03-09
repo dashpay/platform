@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Returns true if the Epoch's Proposers Tree is empty

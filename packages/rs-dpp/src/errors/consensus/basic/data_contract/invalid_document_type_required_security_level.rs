@@ -1,10 +1,10 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
@@ -14,15 +14,16 @@ use platform_value::Identifier;
 )]
 #[error("Invalid document type security level error security level: got {security_level:?} for {contract_id}::{document_type_name}")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidDocumentTypeRequiredSecurityLevelError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    security_level: SecurityLevel,
-    contract_id: Identifier,
-    document_type_name: String,
+    pub security_level: SecurityLevel,
+    pub contract_id: Identifier,
+    pub document_type_name: String,
 }
 
 impl InvalidDocumentTypeRequiredSecurityLevelError {

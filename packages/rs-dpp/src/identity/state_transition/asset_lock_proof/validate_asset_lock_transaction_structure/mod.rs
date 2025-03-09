@@ -1,5 +1,5 @@
+use crate::errors::ProtocolError;
 use crate::validation::ConsensusValidationResult;
-use crate::ProtocolError;
 use dashcore::{Transaction, TxOut};
 use platform_version::version::PlatformVersion;
 

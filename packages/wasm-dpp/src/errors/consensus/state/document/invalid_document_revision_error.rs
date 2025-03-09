@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::prelude::Revision;
 
 use wasm_bindgen::prelude::*;

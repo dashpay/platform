@@ -8,7 +8,7 @@
 //! and unlocking dash on the payment chain.
 //!
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use integer_encoding::VarInt;
 use std::convert::TryFrom;
 
@@ -16,9 +16,11 @@ use std::convert::TryFrom;
 pub type Duffs = u64;
 
 /// Credits type
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type Credits = u64;
 
 /// Token Amount type
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type TokenAmount = u64;
 
 /// Signed Token Amount type
@@ -29,6 +31,7 @@ pub type SumTokenAmount = i128;
 
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type SignedCredits = i64;
 
 /// Maximum value of credits

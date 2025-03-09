@@ -1,5 +1,5 @@
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
-use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 
 impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
     fn from(value: IdentityUpdateTransitionV0) -> Self {

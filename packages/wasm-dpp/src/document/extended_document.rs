@@ -1,10 +1,11 @@
 use dpp::document::{
     DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
-use serde_json::Value as JsonValue;
+// use serde_json::Value as JsonValue;
 
+use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::{Identifier, Revision, TimestampMillis};
+use dpp::prelude::{Revision, TimestampMillis};
 
 use dpp::util::json_value::JsonValueExt;
 
@@ -175,7 +176,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
-        let json_value: JsonValue = self
+        let json_value: serde_json::Value = self
             .0
             .document()
             .properties()

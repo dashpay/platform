@@ -1,17 +1,14 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 
 use crate::prelude::UserFeeIncrease;
-use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransitionV0;
 
 use crate::state_transition::StateTransitionType::DataContractUpdate;
-use crate::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl StateTransitionLike for DataContractUpdateTransitionV0 {
     /// Returns ID of the created contract

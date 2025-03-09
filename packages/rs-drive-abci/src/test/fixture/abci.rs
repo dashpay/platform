@@ -3,7 +3,7 @@
 
 use crate::config::PlatformConfig;
 use dpp::version::PlatformVersion;
-use dpp::version::ProtocolVersion;
+use platform_version::version::ProtocolVersion;
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{ConsensusParams, VersionParams};

@@ -1,13 +1,14 @@
 use thiserror::Error;
 
-use crate::identity::SecurityLevel;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::SecurityLevel;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct PublicKeySecurityLevelNotMetError {
-    public_key_security_level: SecurityLevel,
-    required_security_level: SecurityLevel,
+    pub public_key_security_level: SecurityLevel,
+    pub required_security_level: SecurityLevel,
 }
 
 impl PublicKeySecurityLevelNotMetError {

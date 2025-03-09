@@ -7,9 +7,9 @@ use crate::{
     IdentityUpdateTransitionWasm, PreCalculatedOperationWasm, ReadOperationWasm,
     SignatureVerificationOperationWasm,
 };
-use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::state_transition::fee::operations::Operation;
 use dpp::state_transition::{StateTransition, StateTransitionType};
 use std::convert::TryInto;

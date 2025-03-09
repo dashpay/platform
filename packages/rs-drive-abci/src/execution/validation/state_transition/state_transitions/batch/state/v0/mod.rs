@@ -1,8 +1,8 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};

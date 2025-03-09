@@ -1,16 +1,16 @@
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::fields::property_names::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::batched_transition::DocumentTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::fields::property_names::{
     STATE_TRANSITION_PROTOCOL_VERSION, TRANSITIONS,
 };
-use crate::state_transition::documents_batch_transition::{
+use crate::state_transition::state_transitions::document::documents_batch_transition::{
     document_base_transition, document_create_transition, DocumentsBatchTransitionV0,
 };
 use crate::state_transition::{FeatureVersioned, StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use anyhow::Context;
 use ciborium::Value as CborValue;
 use std::convert::TryInto;

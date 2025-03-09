@@ -23,6 +23,7 @@ use std::fmt;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ResourceVoteChoice {
     TowardsIdentity(Identifier),
     #[default]

@@ -1,12 +1,12 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
-use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::errors::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::errors::consensus::ConsensusError;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 
 use crate::error::execution::ExecutionError;
 use dpp::version::PlatformVersion;

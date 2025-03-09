@@ -4,11 +4,11 @@ use crate::state_transition_action::identity::identity_credit_withdrawal::v0::Id
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 use crate::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionV0;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use dpp::state_transition::StateTransitionLike;
 
 impl BumpIdentityNonceActionV0 {

@@ -1,4 +1,4 @@
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use platform_version::version::PlatformVersion;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

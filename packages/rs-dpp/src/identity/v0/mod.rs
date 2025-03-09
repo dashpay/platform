@@ -12,14 +12,15 @@ use platform_value::Value;
 #[cfg(feature = "identity-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
+use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
+use crate::identity::PartialIdentity;
 use crate::prelude::Revision;
 
 #[cfg(feature = "identity-value-conversion")]
 use crate::errors::ProtocolError;
-use crate::identifier::Identifier;
 #[cfg(feature = "identity-serialization")]
 use bincode::{Decode, Encode};
+use platform_value::Identifier;
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
@@ -30,7 +31,7 @@ use bincode::{Decode, Encode};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(
@@ -50,7 +51,7 @@ impl Hash for IdentityV0 {
 
 mod public_key_serialization {
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use crate::identity::{IdentityPublicKey, KeyID};
+    use crate::identity::identity_public_key::{IdentityPublicKey, KeyID};
     use serde::ser::SerializeSeq;
     use serde::{Deserialize, Serializer};
     use std::collections::BTreeMap;

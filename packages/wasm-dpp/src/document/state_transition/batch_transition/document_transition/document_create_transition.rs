@@ -1,13 +1,13 @@
 use dpp::prelude::Revision;
 
-use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::DocumentCreateTransition;
 
 use dpp::document::INITIAL_REVISION;
 
 use wasm_bindgen::prelude::*;
-use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::state_transitions::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use dpp::state_transition::state_transitions::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
 #[wasm_bindgen(js_name=DocumentCreateTransition)]
 #[derive(Debug, Clone)]

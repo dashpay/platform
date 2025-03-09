@@ -1,4 +1,4 @@
-use crate::identity::Purpose::{
+use crate::identity::identity_public_key::Purpose::{
     AUTHENTICATION, DECRYPTION, ENCRYPTION, OWNER, SYSTEM, TRANSFER, VOTING,
 };
 use anyhow::bail;
@@ -25,6 +25,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     #[default]

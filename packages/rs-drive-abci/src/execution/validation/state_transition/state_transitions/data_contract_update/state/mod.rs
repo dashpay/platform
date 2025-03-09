@@ -8,7 +8,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;

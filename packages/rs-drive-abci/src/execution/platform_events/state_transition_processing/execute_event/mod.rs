@@ -8,7 +8,7 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;

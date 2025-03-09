@@ -1,4 +1,4 @@
-use crate::identity::{IdentityPublicKey, Purpose};
+use crate::identity::identity_public_key::{IdentityPublicKey, Purpose};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use dpp::consensus::signature::{
+use dpp::errors::consensus::signature::{
     IdentityNotFoundError, InvalidSignaturePublicKeyPurposeError,
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
     PublicKeySecurityLevelNotMetError,
@@ -13,9 +13,9 @@ use crate::execution::types::execution_operation::{RetrieveIdentityInfo, Validat
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 
-use dpp::consensus::signature::{
+use dpp::errors::consensus::signature::{
     InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
     SignatureError,
 };

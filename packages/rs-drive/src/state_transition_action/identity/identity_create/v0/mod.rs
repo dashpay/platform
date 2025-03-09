@@ -2,14 +2,14 @@
 pub mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
+use dpp::identity::{v0::IdentityV0, IdentityPublicKey, PartialIdentity};
 
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 

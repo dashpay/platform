@@ -10,14 +10,13 @@ mod version;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
-    prelude::Identifier,
     withdrawal::Pooling,
     ProtocolError,
 };
@@ -29,6 +28,7 @@ use crate::{
     serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityCreditWithdrawalTransitionV1 {
     pub identity_id: Identifier,
     pub amount: u64,

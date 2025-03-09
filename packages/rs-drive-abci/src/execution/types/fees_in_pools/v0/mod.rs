@@ -1,4 +1,4 @@
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

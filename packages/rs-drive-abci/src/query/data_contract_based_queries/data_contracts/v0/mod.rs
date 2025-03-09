@@ -13,7 +13,7 @@ use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{check_validation_result_with_data, ProtocolError};
+use dpp::{check_validation_result_with_data, errors::ProtocolError};
 
 impl<C> Platform<C> {
     pub(super) fn query_data_contracts_v0(

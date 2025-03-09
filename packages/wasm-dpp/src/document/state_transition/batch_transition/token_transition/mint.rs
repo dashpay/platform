@@ -1,8 +1,8 @@
 use crate::identifier::IdentifierWrapper;
 use crate::tokens::TokenConfigurationWasm;
 use crate::utils::WithJsError;
-use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
-use dpp::state_transition::batch_transition::TokenMintTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::batch_transition::TokenMintTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 

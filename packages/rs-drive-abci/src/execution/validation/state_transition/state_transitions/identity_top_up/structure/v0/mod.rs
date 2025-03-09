@@ -1,7 +1,7 @@
 use crate::error::Error;
 use dpp::identity::state_transition::AssetLockProved;
 
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 

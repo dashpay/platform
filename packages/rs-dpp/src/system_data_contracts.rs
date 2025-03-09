@@ -1,10 +1,10 @@
-use crate::data_contract::DataContractFactory;
-use crate::prelude::*;
-use crate::ProtocolError;
+use crate::data_contract::{DataContract, DataContractFactory};
+use crate::errors::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::accessors::v0::DataContractV0Setters;
 pub use data_contracts::*;
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 fn create_data_contract(

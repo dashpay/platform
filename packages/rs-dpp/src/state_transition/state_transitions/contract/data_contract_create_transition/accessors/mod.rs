@@ -3,7 +3,7 @@ mod v0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 use crate::prelude::IdentityNonce;
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 pub use v0::*;
 
 impl DataContractCreateTransitionAccessorsV0 for DataContractCreateTransition {

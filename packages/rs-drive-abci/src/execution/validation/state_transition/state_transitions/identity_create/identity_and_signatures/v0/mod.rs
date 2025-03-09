@@ -4,9 +4,9 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::serialization::PlatformMessageSignable;
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
 
 pub(crate) trait IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 {

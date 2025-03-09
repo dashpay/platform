@@ -2,16 +2,17 @@ use std::collections::BTreeMap;
 
 use platform_value::Value;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 
-use crate::state_transition::data_contract_update_transition::{
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::fields::*;
+use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
-use crate::state_transition::state_transitions::data_contract_update_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::PlatformVersion;
+use versioned_feature_core::FeatureVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

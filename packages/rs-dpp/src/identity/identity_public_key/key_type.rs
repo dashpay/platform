@@ -14,9 +14,9 @@ use lazy_static::lazy_static;
 
 #[cfg(feature = "bls-signatures")]
 use crate::bls_signatures::{self as bls_signatures, Bls12381G2Impl, BlsError};
+use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
-use crate::ProtocolError;
 #[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
 #[cfg(feature = "random-public-keys")]
@@ -43,6 +43,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum KeyType {
     #[default]
     ECDSA_SECP256K1 = 0,

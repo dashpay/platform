@@ -1,5 +1,5 @@
-use crate::identity::KeyID;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::identity::identity_public_key::KeyID;
+use crate::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 

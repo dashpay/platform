@@ -1,15 +1,16 @@
 #[cfg(feature = "cbor")]
-use crate::consensus::basic::decode::ProtocolVersionParsingError;
+use crate::errors::consensus::basic::decode::ProtocolVersionParsingError;
 #[cfg(feature = "cbor")]
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 #[cfg(feature = "cbor")]
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 use integer_encoding::VarInt;
-use platform_version::version::FeatureVersion;
+use versioned_feature_core::FeatureVersion;
 
 use crate::errors::ProtocolError;
 
 /// A protocol version
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type ProtocolVersion = u32;
 
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<ProtocolVersion, ProtocolError> {

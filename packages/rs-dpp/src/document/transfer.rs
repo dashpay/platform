@@ -1,6 +1,6 @@
-use crate::consensus::basic::data_contract::UnknownTransferableTypeError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::data_contract::UnknownTransferableTypeError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use derive_more::Display;
 
@@ -9,6 +9,7 @@ use derive_more::Display;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default, Display)]
 #[repr(u8)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Transferable {
     #[default]
     Never = 0,

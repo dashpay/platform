@@ -1,11 +1,12 @@
 pub mod accessors;
-mod property;
-pub use property::*;
+pub mod property;
+// pub use property::*;
+pub use property::{array::ArrayItemType, DocumentProperty, DocumentPropertyType};
 pub mod class_methods;
-mod index;
+pub mod index;
 pub mod methods;
-pub use index::*;
-mod index_level;
+pub use index::{Index, IndexProperty, OrderBy};
+pub mod index_level;
 pub use index_level::IndexLevel;
 pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
@@ -16,16 +17,16 @@ pub mod restricted_creation;
 pub mod schema;
 pub mod v0;
 
+use crate::balances::credits::Credits;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
-use crate::fee::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
-use crate::version::PlatformVersion;
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod property_names {
@@ -66,6 +67,7 @@ mod property_names {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }
@@ -76,6 +78,7 @@ pub enum DocumentTypeMutRef<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, From)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
 }
@@ -173,7 +176,7 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
 
     fn unique_id_for_document_field(
         &self,
-        index_level: &IndexLevel,
+        index_level: &index_level::IndexLevel,
         base_event: [u8; 32],
     ) -> Vec<u8> {
         match self {

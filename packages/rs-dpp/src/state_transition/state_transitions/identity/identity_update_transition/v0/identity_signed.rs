@@ -1,6 +1,6 @@
-use crate::identity::SecurityLevel::MASTER;
-use crate::identity::{KeyID, Purpose, SecurityLevel};
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::identity::identity_public_key::SecurityLevel::MASTER;
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
+use crate::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for IdentityUpdateTransitionV0 {

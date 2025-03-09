@@ -1,5 +1,5 @@
-use crate::identity::IdentityV0;
-use crate::prelude::Identity;
+use crate::identity::v0::IdentityV0;
+use crate::identity::Identity;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

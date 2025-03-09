@@ -3,6 +3,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum OrderBy {
     #[cfg_attr(feature = "index-serde-conversion", serde(rename = "asc"))]
     Asc,
@@ -10,12 +11,13 @@ pub enum OrderBy {
     Desc,
 }
 
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::errors::contract::DataContractError;
 
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use anyhow::anyhow;
 
-use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
+use crate::data_contract::document_type::index::ContestedIndexResolution::MasternodeVote;
+#[cfg(feature = "validation")]
 use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
@@ -33,6 +35,7 @@ pub mod random_index;
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedIndexResolution {
     MasternodeVote = 0,
 }
@@ -53,6 +56,7 @@ impl TryFrom<u8> for ContestedIndexResolution {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
     PositiveIntegerMatch(u128),
@@ -267,6 +271,7 @@ impl ContestedIndexFieldMatch {
 
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct ContestedIndexInformation {
     pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
     pub resolution: ContestedIndexResolution,
@@ -284,6 +289,7 @@ impl Default for ContestedIndexInformation {
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -331,6 +337,7 @@ impl Index {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,

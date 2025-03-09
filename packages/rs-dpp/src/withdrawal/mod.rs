@@ -9,6 +9,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 #[derive(
     Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode, Default,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Pooling {
     #[default]
     Never = 0,

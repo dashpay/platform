@@ -4,7 +4,7 @@ use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
 use dpp::bls_signatures::BlsError;
-use dpp::data_contract::errors::DataContractError;
+use dpp::data_contract::errors::contract::DataContractError;
 use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;

@@ -1,19 +1,20 @@
-use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
-use crate::consensus::basic::decode::DecodingError;
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::errors::consensus::basic::decode::DecodingError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::errors::json_schema_error::JsonSchemaError;
-use crate::ProtocolError;
+use crate::errors::consensus::basic::document::InvalidDocumentTypeError;
+use crate::errors::consensus::ConsensusError;
 
 // @append_only
 #[derive(
     Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DataContractError {
     #[error(transparent)]
     DecodingContractError(DecodingError),

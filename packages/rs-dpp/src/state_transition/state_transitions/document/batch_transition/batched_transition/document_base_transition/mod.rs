@@ -9,7 +9,7 @@ mod v0_methods;
     feature = "state-transition-json-conversion"
 ))]
 use crate::data_contract::DataContract;
-use crate::state_transition::batch_transition::document_base_transition::v0::{
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
 #[cfg(any(
@@ -27,8 +27,8 @@ pub use fields::*;
 use platform_value::Value;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "state-transition-json-conversion")]
-use serde_json::Value as JsonValue;
+//#[cfg(feature = "state-transition-json-conversion")]
+//use serde_json::Value as JsonValue;
 #[cfg(feature = "state-transition-value-conversion")]
 use std::collections::BTreeMap;
 
@@ -37,6 +37,7 @@ use std::collections::BTreeMap;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DocumentBaseTransition {
     #[display("V0({})", "_0")]
     V0(DocumentBaseTransitionV0),
@@ -51,7 +52,7 @@ impl Default for DocumentBaseTransition {
 impl DocumentTransitionObjectLike for DocumentBaseTransition {
     #[cfg(feature = "state-transition-json-conversion")]
     fn from_json_object(
-        json_str: JsonValue,
+        json_str: serde_json::Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
@@ -95,7 +96,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 
     #[cfg(feature = "state-transition-json-conversion")]
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<serde_json::Value, ProtocolError> {
         self.to_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)

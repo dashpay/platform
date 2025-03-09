@@ -9,6 +9,7 @@ use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 #[derive(Debug, strum::Display, derive_more::TryInto)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum StateTransitionProofResult {
     VerifiedDataContract(DataContract),
     VerifiedIdentity(Identity),

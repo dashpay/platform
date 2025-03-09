@@ -1,12 +1,15 @@
-use crate::identity::contract_bounds::ContractBounds;
+use crate::errors::ProtocolError;
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use crate::identity::identity_public_key::Purpose::{AUTHENTICATION, OWNER, TRANSFER, VOTING};
+use crate::identity::identity_public_key::SecurityLevel::{CRITICAL, HIGH, MASTER, MEDIUM};
 use crate::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
-use crate::identity::Purpose::{AUTHENTICATION, OWNER, TRANSFER, VOTING};
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MASTER, MEDIUM};
-use crate::identity::{KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::identity::{
+    identity_public_key::{Purpose, SecurityLevel},
+    KeyCount, KeyID, KeyType,
+};
 use platform_value::BinaryData;
+use platform_version::version::PlatformVersion;
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::TryFrom;

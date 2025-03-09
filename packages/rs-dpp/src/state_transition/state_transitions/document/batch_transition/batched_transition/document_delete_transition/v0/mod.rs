@@ -1,7 +1,7 @@
 mod from_document;
 pub mod v0_methods;
 
-use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
 
 use bincode::{Decode, Encode};
 use derive_more::Display;
@@ -18,6 +18,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}", "base")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DocumentDeleteTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,

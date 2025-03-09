@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::PlatformVersion;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {

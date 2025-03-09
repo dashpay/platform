@@ -3,12 +3,12 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
-use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
-use crate::state_transition::batch_transition::TokenMintTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::TokenMintTransition;
 use crate::tokens::errors::TokenError;
 
 impl TokenBaseTransitionAccessors for TokenMintTransitionV0 {

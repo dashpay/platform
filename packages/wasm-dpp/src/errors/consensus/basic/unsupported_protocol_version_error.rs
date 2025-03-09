@@ -1,6 +1,6 @@
-use dpp::consensus::basic::UnsupportedProtocolVersionError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::UnsupportedProtocolVersionError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

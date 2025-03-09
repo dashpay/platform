@@ -6,10 +6,9 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::dashcore::OutPoint;
-use dpp::fee::Credits;
-
-use dpp::prelude::AssetLockProof;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+use dpp::balances::credits::Credits;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::state_transition::state_transitions::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;

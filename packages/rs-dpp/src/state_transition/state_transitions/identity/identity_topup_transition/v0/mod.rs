@@ -11,14 +11,14 @@ mod version;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 
-use crate::prelude::{Identifier, UserFeeIncrease};
+use crate::prelude::UserFeeIncrease;
 
 use crate::ProtocolError;
 
@@ -37,6 +37,7 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityTopUpTransitionV0 {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,

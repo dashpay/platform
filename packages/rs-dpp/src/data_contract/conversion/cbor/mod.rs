@@ -2,12 +2,13 @@ mod v0;
 
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
-use crate::prelude::DataContract;
+use crate::data_contract::DataContract;
+use crate::errors::ProtocolError;
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
 use platform_value::Identifier;
-pub use v0::*;
+use platform_version::version::PlatformVersion;
+// pub use v0::*;
+pub use v0::DataContractCborConversionMethodsV0;
 
 impl DataContractCborConversionMethodsV0 for DataContract {
     fn from_cbor_with_id(

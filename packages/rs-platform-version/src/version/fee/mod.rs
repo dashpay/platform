@@ -11,9 +11,9 @@ use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
 use bincode::{Decode, Encode};
 
-mod data_contract;
-mod hashing;
-mod processing;
+pub mod data_contract;
+pub mod hashing;
+pub mod processing;
 pub mod signature;
 pub mod state_transition_min_fees;
 pub mod storage;
@@ -25,6 +25,7 @@ pub type FeeVersionNumber = u32;
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct FeeVersion {
     pub fee_version_number: FeeVersionNumber,
     // Permille means devise by 1000

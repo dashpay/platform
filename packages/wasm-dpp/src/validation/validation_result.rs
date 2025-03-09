@@ -3,7 +3,7 @@ use crate::{
     utils::consensus_errors_from_buffers,
 };
 
-use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
+use dpp::{errors::consensus::ConsensusError, validation::ConsensusValidationResult};
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 

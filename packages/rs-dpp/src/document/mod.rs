@@ -16,17 +16,16 @@ pub mod serialization_traits;
 #[cfg(feature = "factories")]
 pub mod specialized_document_factory;
 pub mod transfer;
-mod v0;
+pub mod v0;
 
 pub use accessors::*;
-pub use v0::*;
-
 #[cfg(feature = "extended-document")]
 pub use extended_document::property_names as extended_document_property_names;
 #[cfg(feature = "extended-document")]
 pub use extended_document::ExtendedDocument;
 #[cfg(feature = "extended-document")]
 pub use extended_document::IDENTIFIER_FIELDS as EXTENDED_DOCUMENT_IDENTIFIER_FIELDS;
+pub use v0::{serialize, DocumentV0};
 
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u64 = 1;
@@ -38,9 +37,9 @@ use crate::document::document_methods::{
     DocumentIsEqualIgnoringTimestampsV0, DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use derive_more::From;
+use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "document-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -54,6 +53,7 @@ use std::fmt::Formatter;
     derive(Serialize, Deserialize),
     serde(tag = "$version")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum Document {
     #[cfg_attr(feature = "document-serde-conversion", serde(rename = "0"))]
     V0(DocumentV0),

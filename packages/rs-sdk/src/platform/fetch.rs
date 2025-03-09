@@ -13,17 +13,14 @@ use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::voting::votes::Vote;
-use dpp::{
-    block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
-    prelude::Identity,
-};
+use dpp::{block::extended_epoch_info::ExtendedEpochInfo, document::Document, identity::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
-use super::DocumentQuery;
+use super::{DocumentQuery, Identifier};
 
 /// Trait implemented by objects that can be fetched from Platform.
 ///
@@ -41,7 +38,8 @@ use super::DocumentQuery;
 /// * call [Identity::fetch()] with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, Fetch, Identity}};
+/// use dpp::identifier::Identifier;
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let sdk = Sdk::new_mock();
@@ -250,7 +248,7 @@ impl Fetch for Identity {
     type Request = IdentityRequest;
 }
 
-impl Fetch for dpp::prelude::DataContract {
+impl Fetch for dpp::data_contract::DataContract {
     type Request = platform_proto::GetDataContractRequest;
 }
 
