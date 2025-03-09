@@ -27,7 +27,7 @@ pub enum DistributionFunction {
     ///
     /// # Example
     /// - If `n = 5` tokens per block, then after 3 blocks the total emission is 15 tokens.
-    FixedAmount { n: TokenAmount },
+    FixedAmount { amount: TokenAmount },
 
     /// Emits a random number of tokens within a specified range.
     ///
@@ -515,7 +515,7 @@ pub enum DistributionFunction {
 impl fmt::Display for DistributionFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DistributionFunction::FixedAmount { n } => {
+            DistributionFunction::FixedAmount { amount: n } => {
                 write!(f, "FixedAmount: {} tokens per period", n)
             }
             DistributionFunction::Random { min, max } => {

@@ -22,18 +22,6 @@ impl RewardDistributionType {
         }
     }
 
-    /// Returns the amount of tokens distributed at each interval.
-    ///
-    /// # Returns
-    /// - `TokenAmount`: The emission amount per interval.
-    pub fn amount(&self) -> TokenAmount {
-        match self {
-            RewardDistributionType::BlockBasedDistribution { amount, .. } => *amount,
-            RewardDistributionType::TimeBasedDistribution { amount, .. } => *amount,
-            RewardDistributionType::EpochBasedDistribution { amount, .. } => *amount,
-        }
-    }
-
     /// Returns the function defining the emission behavior.
     ///
     /// # Returns

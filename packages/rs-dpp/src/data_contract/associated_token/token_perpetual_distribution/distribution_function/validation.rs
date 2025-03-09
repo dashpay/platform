@@ -15,7 +15,7 @@ impl DistributionFunction {
         start_moment: u64,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match self {
-            DistributionFunction::FixedAmount { n } => {
+            DistributionFunction::FixedAmount { amount: n } => {
                 // Validate that n is > 0 and does not exceed u32::MAX.
                 if *n == 0 || *n > u32::MAX as u64 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -886,7 +886,7 @@ mod tests {
         use super::*;
         #[test]
         fn test_fixed_amount_valid() {
-            let dist = DistributionFunction::FixedAmount { n: 100 };
+            let dist = DistributionFunction::FixedAmount { amount: 100 };
             let result = dist.validate(START_MOMENT);
             assert!(result
                 .expect("no error on test_fixed_amount_valid")
@@ -896,7 +896,7 @@ mod tests {
 
         #[test]
         fn test_fixed_amount_zero_invalid() {
-            let dist = DistributionFunction::FixedAmount { n: 0 };
+            let dist = DistributionFunction::FixedAmount { amount: 0 };
             let result = dist.validate(START_MOMENT);
             assert!(result
                 .expect("no error on test_fixed_amount_zero_invalid")
@@ -906,7 +906,9 @@ mod tests {
 
         #[test]
         fn test_fixed_amount_max_valid() {
-            let dist = DistributionFunction::FixedAmount { n: u32::MAX as u64 };
+            let dist = DistributionFunction::FixedAmount {
+                amount: u32::MAX as u64,
+            };
             let result = dist.validate(START_MOMENT);
             assert!(result
                 .expect("no error on test_fixed_amount_max_valid")
@@ -917,7 +919,7 @@ mod tests {
         #[test]
         fn test_fixed_amount_exceeds_max_invalid() {
             let dist = DistributionFunction::FixedAmount {
-                n: u32::MAX as u64 + 1,
+                amount: u32::MAX as u64 + 1,
             };
             let result = dist.validate(START_MOMENT);
             assert!(result

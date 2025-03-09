@@ -13,7 +13,7 @@ impl DistributionFunction {
     /// divide-by-zero, undefined operation (e.g. log of non-positive number), or overflow.
     pub fn evaluate(&self, x: u64) -> Result<TokenAmount, ProtocolError> {
         match self {
-            DistributionFunction::FixedAmount { n } => {
+            DistributionFunction::FixedAmount { amount: n } => {
                 // For fixed amount, simply return n.
                 Ok(*n)
             }
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_fixed_amount() {
-        let distribution = DistributionFunction::FixedAmount { n: 100 };
+        let distribution = DistributionFunction::FixedAmount { amount: 100 };
         assert_eq!(distribution.evaluate(0).unwrap(), 100);
         assert_eq!(distribution.evaluate(50).unwrap(), 100);
         assert_eq!(distribution.evaluate(1000).unwrap(), 100);

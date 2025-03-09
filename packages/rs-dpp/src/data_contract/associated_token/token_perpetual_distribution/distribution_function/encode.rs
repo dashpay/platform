@@ -9,7 +9,7 @@ impl Encode for DistributionFunction {
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
         match self {
-            DistributionFunction::FixedAmount { n } => {
+            DistributionFunction::FixedAmount { amount: n } => {
                 0u8.encode(encoder)?;
                 n.encode(encoder)?;
             }
@@ -155,7 +155,7 @@ impl Decode for DistributionFunction {
         match variant {
             0 => {
                 let n = TokenAmount::decode(decoder)?;
-                Ok(Self::FixedAmount { n })
+                Ok(Self::FixedAmount { amount: n })
             }
             1 => {
                 let min = TokenAmount::decode(decoder)?;
@@ -301,7 +301,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
         match variant {
             0 => {
                 let n = TokenAmount::borrow_decode(decoder)?;
-                Ok(Self::FixedAmount { n })
+                Ok(Self::FixedAmount { amount: n })
             }
             1 => {
                 let min = TokenAmount::borrow_decode(decoder)?;

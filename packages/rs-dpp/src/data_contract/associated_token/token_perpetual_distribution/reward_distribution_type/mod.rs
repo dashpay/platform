@@ -1,7 +1,6 @@
 mod accessors;
 mod evaluate_interval;
 
-use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use crate::prelude::{BlockHeight, BlockHeightInterval, DataContract, EpochInterval, TimestampMillis, TimestampMillisInterval};
@@ -18,7 +17,6 @@ pub enum RewardDistributionType {
     /// The start and end are included if set
     BlockBasedDistribution {
         interval: BlockHeightInterval,
-        amount: TokenAmount,
         function: DistributionFunction,
         start: Option<BlockHeight>,
         end: Option<BlockHeight>,
@@ -27,7 +25,6 @@ pub enum RewardDistributionType {
     /// The start and end are included if set
     TimeBasedDistribution {
         interval: TimestampMillisInterval,
-        amount: TokenAmount,
         function: DistributionFunction,
         start: Option<TimestampMillis>,
         end: Option<TimestampMillis>,
@@ -36,7 +33,6 @@ pub enum RewardDistributionType {
     /// The start and end are included if set
     EpochBasedDistribution {
         interval: EpochInterval,
-        amount: TokenAmount,
         function: DistributionFunction,
         start: Option<EpochIndex>,
         end: Option<EpochIndex>,
@@ -145,15 +141,14 @@ impl fmt::Display for RewardDistributionType {
         match self {
             RewardDistributionType::BlockBasedDistribution {
                 interval,
-                amount,
                 function,
                 start,
                 end,
             } => {
                 write!(
                     f,
-                    "BlockBasedDistribution: {} tokens every {} blocks using {}",
-                    amount, interval, function
+                    "BlockBasedDistribution: every {} blocks using {}",
+                    interval, function
                 )?;
                 if let Some(start) = start {
                     write!(f, ", starting at block {}", start)?;
@@ -165,15 +160,14 @@ impl fmt::Display for RewardDistributionType {
             }
             RewardDistributionType::TimeBasedDistribution {
                 interval,
-                amount,
                 function,
                 start,
                 end,
             } => {
                 write!(
                     f,
-                    "TimeBasedDistribution: {} tokens every {} milliseconds using {}",
-                    amount, interval, function
+                    "TimeBasedDistribution: every {} milliseconds using {}",
+                    interval, function
                 )?;
                 if let Some(start) = start {
                     write!(f, ", starting at timestamp {}", start)?;
@@ -185,15 +179,14 @@ impl fmt::Display for RewardDistributionType {
             }
             RewardDistributionType::EpochBasedDistribution {
                 interval,
-                amount,
                 function,
                 start,
                 end,
             } => {
                 write!(
                     f,
-                    "EpochBasedDistribution: {} tokens every {} epochs using {}",
-                    amount, interval, function
+                    "EpochBasedDistribution: every {} epochs using {}",
+                    interval, function
                 )?;
                 if let Some(start) = start {
                     write!(f, ", starting at epoch {}", start)?;
