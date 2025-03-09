@@ -14,7 +14,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier

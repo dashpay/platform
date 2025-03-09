@@ -31,7 +31,7 @@ dpp = { path = "../rs-dpp", features = [
   #  "extended-document",
   "core-types-serialization",
 ], default-features = false }
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-value = { path = "../rs-platform-value" }
