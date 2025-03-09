@@ -20,24 +20,6 @@ use std::{
     time::SystemTime,
 };
 
-/// Decode type `D` from the given reader with the given `Config`. The reader can be any type that implements `std::io::Read`, e.g. `std::fs::File`.
-///
-/// See the [config] module for more information about config options.
-///
-/// [config]: config/index.html
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-#[allow(dead_code)]
-#[deprecated(note = "This function is marked as unused.")]
-#[allow(deprecated)]
-pub fn platform_versioned_decode_from_std_read<D: Decode, C: Config, R: std::io::Read>(
-    src: &mut R,
-    config: C,
-) -> Result<D, DecodeError> {
-    let reader = IoReader::new(src);
-    let mut decoder = DecoderImpl::<_, C>::new(reader, config);
-    D::decode(&mut decoder)
-}
-
 pub(crate) struct IoReader<R> {
     reader: R,
 }
