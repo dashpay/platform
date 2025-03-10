@@ -15,7 +15,10 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
-use dapi_grpc::platform::v0::{get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_group_actions_request, get_group_info_request, get_group_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
+    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
+};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -36,6 +39,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
+use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -336,6 +340,98 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
+    type Request = platform::GetIdentityByNonUniquePublicKeyHashRequest;
+    type Response = platform::GetIdentityByNonUniquePublicKeyHashResponse;
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let response = response.into();
+        // Parse response to read proof and metadata
+        // note that proof in this case is different
+        // let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        use platform::get_identity_by_non_unique_public_key_hash_response::{
+            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result, Version::V0,
+        };
+
+        let (proved_response, mtd) = match response.version {
+            Some(V0(v0)) => {
+                let proof = if let V0Result::Proof(p) = v0.result.ok_or(Error::NoProofInResult)? {
+                    p
+                } else {
+                    return Err(Error::NoProofInResult);
+                };
+
+                (proof, v0.metadata.ok_or(Error::EmptyResponseMetadata)?)
+            }
+            _ => return Err(Error::EmptyResponseMetadata),
+        };
+
+        // let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (public_key_hash, after_identity) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
+                let public_key_hash =
+                    v0.public_key_hash
+                        .try_into()
+                        .map_err(|_| Error::RequestError {
+                            error: "Invalid public key hash length".to_string(),
+                        })?;
+
+                let after = v0
+                    .start_after
+                    .map(|a| {
+                        a.try_into().map_err(|_| Error::RequestError {
+                            error: "Invalid start_after length".to_string(),
+                        })
+                    })
+                    .transpose()?;
+                (public_key_hash, after)
+            }
+        };
+
+        // we need to convert some data to handle non-default proof structure for this response
+        let proof = proved_response
+            .grovedb_identity_public_key_hash_proof
+            .ok_or(Error::NoProofInResult)?;
+
+        let proof_tuple = IdentityAndNonUniquePublicKeyHashDoubleProof {
+            identity_proof: proved_response.identity_proof_bytes,
+            identity_id_public_key_hash_proof: proof.grovedb_proof.clone(),
+        };
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_identity) =
+            Drive::verify_full_identity_by_non_unique_public_key_hash(
+                &proof_tuple,
+                public_key_hash,
+                after_identity,
+                platform_version,
+            )
+            .map_err(|e| match e {
+                drive::error::Error::GroveDB(e) => Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    height: mtd.height,
+                    time_ms: mtd.time_ms,
+                    error: e.to_string(),
+                },
+                _ => e.into(),
+            })?;
+
+        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+
+        Ok((maybe_identity, mtd.clone(), proof))
     }
 }
 

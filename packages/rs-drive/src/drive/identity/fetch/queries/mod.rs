@@ -1,9 +1,7 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{
-    identity_tree_path_vec, non_unique_key_hashes_tree_path, non_unique_key_hashes_tree_path_vec,
-    unique_key_hashes_tree_path_vec, Drive,
-};
+use crate::drive::non_unique_key_hashes_tree_path_vec;
+use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
 use std::ops::RangeFull;
 
 use crate::error::Error;
@@ -102,8 +100,9 @@ impl Drive {
         let non_unique_key_hashes = non_unique_key_hashes_tree_path_vec();
         let mut query = Query::new_single_key(public_key_hash.to_vec());
         let sub_query = if let Some(after) = after {
-            Query::new_single_query_item(QueryItem::RangeFrom(after.to_vec()..))
+            Query::new_single_query_item(QueryItem::RangeAfter(after.to_vec()..))
         } else {
+            // TODO: why not limit 1?
             Query::new_range_full()
         };
         query.set_subquery(sub_query);

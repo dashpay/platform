@@ -66,7 +66,7 @@ impl Drive {
                 let Some(identity_proof) = &proof.identity_proof else {
                     return Err(Error::Proof(ProofError::IncompleteProof("identity is not in proof even though identity id is set from non unique public key hash")));
                 };
-                println!("hex {}", hex::encode(&identity_proof));
+
                 Self::verify_full_identity_by_identity_id(
                     identity_proof.as_slice(),
                     false,
