@@ -18,7 +18,7 @@ impl Drive {
     /// The `public_key_hash` should contain the hash of the public key of the user.
     ///
     /// The function first verifies the identity ID associated with the given public key hash
-    /// by calling `verify_identity_id_by_public_key_hash()`. It then uses this identity ID to verify
+    /// by calling `verify_identity_id_by_unique_public_key_hash()`. It then uses this identity ID to verify
     /// the full identity by calling `verify_full_identity_by_identity_id()`.
     ///
     /// # Returns

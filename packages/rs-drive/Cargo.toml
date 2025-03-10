@@ -85,6 +85,7 @@ name = "benchmarks"
 harness = false
 
 [features]
+
 default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
 grovedbg = ["grovedb/grovedbg"]
 fee-distribution = ["dpp/fee-distribution"]
