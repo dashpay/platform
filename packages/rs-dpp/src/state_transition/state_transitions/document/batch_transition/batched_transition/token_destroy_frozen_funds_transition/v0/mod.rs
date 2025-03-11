@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {base}, Destroyed Account Identity ID: {frozen_identity_id}")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenDestroyFrozenFundsTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]

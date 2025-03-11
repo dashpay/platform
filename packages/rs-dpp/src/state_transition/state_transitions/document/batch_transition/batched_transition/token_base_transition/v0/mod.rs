@@ -18,7 +18,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::group::GroupStateTransitionInfo;
-use crate::identifier::Identifier;
+use platform_value::Identifier;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::property_names;

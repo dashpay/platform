@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenEmergencyAction {
     #[default]
     Pause = 0,
