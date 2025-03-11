@@ -11,6 +11,7 @@ pub mod info;
 pub mod status;
 pub mod token_event;
 
+pub const MAX_TOKEN_NOTE_LEN: usize = 2048;
 pub type SharedEncryptedNote = (SenderKeyIndex, RecipientKeyIndex, Vec<u8>);
 pub type PrivateEncryptedNote = (
     RootEncryptionKeyIndex,

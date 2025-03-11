@@ -29,7 +29,7 @@ describe('IdentityFactory', () => {
     factory = new IdentityFactory(3);
 
     identity = await getIdentityFixture(instantAssetLockProof.createIdentifier());
-    identity.setBalance(0);
+    identity.setBalance(BigInt(0));
 
     fakeTime = this.sinon.useFakeTimers(new Date());
   });
@@ -179,7 +179,7 @@ describe('IdentityFactory', () => {
   describe('createChainAssetLockProof', () => {
     it('should create IdentityCreateTransition from Identity model', async () => {
       identity = await getIdentityFixture(chainAssetLockProof.createIdentifier());
-      identity.setBalance(0);
+      identity.setBalance(BigInt(0));
 
       const stateTransition = factory.createIdentityCreateTransition(
         identity,
@@ -226,7 +226,7 @@ describe('IdentityFactory', () => {
 
   describe('createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition', () => {
-      const revision = 1;
+      const revision = BigInt(1);
       const disablePublicKeys = [identity.getPublicKeyById(0)];
       const key = new IdentityPublicKeyWithWitness(1);
       key.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));

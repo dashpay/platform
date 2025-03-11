@@ -516,6 +516,110 @@
     ],
     "additionalProperties": false
   },
+  "claim": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byRecipient",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "recipientType": "asc"
+          },
+          {
+            "recipientId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byDistributionType",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "distributionType": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "recipientType": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2,
+        "description": "Recipient type: 0 = ContractOwner, 1 = Identity, 2 = EvonodesByParticipation",
+        "position": 1
+      },
+      "recipientId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "An optional identity ID for direct recipient distributions",
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": 2
+      },
+      "distributionType": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The type of distribution (0: PreProgrammed, 1: Perpetual)",
+        "position": 3
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The amount of tokens released",
+        "position": 4
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional explanation for this release",
+        "position": 5
+      }
+    },
+    "required": [
+      "tokenId",
+      "recipientType",
+      "distributionType",
+      "amount",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
   "emergencyAction": {
     "type": "object",
     "documentsMutable": false,

@@ -138,8 +138,8 @@ mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
-    use dashcore_rpc::dashcore::Network;
     use dpp::block::epoch::EpochIndex;
+    use dpp::dashcore::Network;
     use dpp::fee::Credits;
     use dpp::prelude::CoreBlockHeight;
     use drive::drive::Drive;

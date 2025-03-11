@@ -1,9 +1,10 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const DataContractHistoryEntry = require('./DataContractHistoryEntry');
 
 class GetDataContractHistoryResponse extends AbstractResponse {
   /**
-   * @param {object.<number, Buffer>} dataContractHistory
+   * @param {DataContractHistoryEntry[]} dataContractHistory
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,7 +15,7 @@ class GetDataContractHistoryResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {object.<number, Buffer>}
+   * @returns {DataContractHistoryEntry[]} array of data contract history entries
    */
   getDataContractHistory() {
     return this.dataContractHistory;
@@ -33,19 +34,12 @@ class GetDataContractHistoryResponse extends AbstractResponse {
       throw new InvalidResponseError('DataContract is not defined');
     }
 
-    const history = {};
-
-    if (dataContractHistory) {
-      const dataContractHistoryEntries = dataContractHistory.getDataContractEntriesList();
-
-      // eslint-disable-next-line no-restricted-syntax
-      for (const historyEntry of dataContractHistoryEntries) {
-        history[historyEntry.getDate()] = historyEntry.getValue();
-      }
-    }
-
     return new GetDataContractHistoryResponse(
-      history,
+      dataContractHistory ? dataContractHistory.getDataContractEntriesList()
+        .map((dataContractHistoryEntry) => new DataContractHistoryEntry(
+          BigInt(dataContractHistoryEntry.getDate()),
+          dataContractHistoryEntry.getValue(),
+        )) : null,
       metadata,
       proof,
     );

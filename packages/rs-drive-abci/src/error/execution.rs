@@ -1,5 +1,5 @@
-use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
+use dpp::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::identity::TimestampMillis;
 use dpp::version::FeatureVersion;
 use drive::error::Error as DriveError;

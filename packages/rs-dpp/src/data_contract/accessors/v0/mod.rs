@@ -2,7 +2,6 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DocumentName;
-use crate::metadata::Metadata;
 
 use platform_value::Identifier;
 use std::collections::BTreeMap;
@@ -39,12 +38,6 @@ pub trait DataContractV0Getters {
     /// Returns a mapping of document names to their corresponding document types as mutable.
     fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType>;
 
-    /// Returns optional metadata associated with the contract.
-    fn metadata(&self) -> Option<&Metadata>;
-
-    /// Returns a mutable reference to the optional metadata associated with the contract.
-    fn metadata_mut(&mut self) -> Option<&mut Metadata>;
-
     /// Returns the internal configuration for the contract.
     fn config(&self) -> &DataContractConfig;
 
@@ -63,9 +56,6 @@ pub trait DataContractV0Setters {
 
     /// Sets the identifier of the contract owner.
     fn set_owner_id(&mut self, owner_id: Identifier);
-
-    /// Sets the optional metadata associated with the contract.
-    fn set_metadata(&mut self, metadata: Option<Metadata>);
 
     /// Sets the internal configuration for the contract.
     fn set_config(&mut self, config: DataContractConfig);

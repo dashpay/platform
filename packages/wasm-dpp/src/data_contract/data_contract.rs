@@ -315,33 +315,14 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=setIdentityNonce)]
-    pub fn set_identity_nonce(&mut self, e: u64) -> Result<(), JsValue> {
-        self.identity_nonce = Some(e);
+    pub fn set_identity_nonce(&mut self, nonce: u64) -> Result<(), JsValue> {
+        self.identity_nonce = Some(nonce);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getIdentityNonce)]
     pub fn identity_nonce(&mut self) -> u64 {
         self.identity_nonce.unwrap_or_default()
-    }
-
-    #[wasm_bindgen(js_name=getMetadata)]
-    pub fn metadata(&self) -> Option<MetadataWasm> {
-        self.inner.metadata().cloned().map(Into::into)
-    }
-
-    #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
-        let metadata = if !metadata.is_falsy() {
-            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
-            Some(metadata.to_owned().into())
-        } else {
-            None
-        };
-
-        self.inner.set_metadata(metadata);
-
-        Ok(())
     }
 
     #[wasm_bindgen(js_name=toObject)]
