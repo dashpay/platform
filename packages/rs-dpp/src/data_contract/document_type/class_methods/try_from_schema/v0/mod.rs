@@ -6,7 +6,6 @@ use crate::consensus::basic::data_contract::{
 };
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
@@ -31,6 +30,9 @@ use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v1::DataContractConfigGettersV1;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
@@ -38,9 +40,7 @@ use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
 };
-use crate::data_contract::document_type::{
-    property_names, ByteArrayPropertySizes, DocumentType, StringPropertySizes,
-};
+use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
@@ -81,9 +81,7 @@ impl DocumentTypeV0 {
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
-        default_keeps_history: bool,
-        default_mutability: bool,
-        default_can_be_deleted: bool,
+        data_contact_config: &DataContractConfig,
         full_validation: bool, // we don't need to validate if loaded from state
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -168,19 +166,19 @@ impl DocumentTypeV0 {
         let documents_keep_history: bool =
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or(default_keeps_history);
+                .unwrap_or(data_contact_config.documents_keep_history_contract_default());
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
                 .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or(default_mutability);
+                .unwrap_or(data_contact_config.documents_mutable_contract_default());
 
         // Can documents of this type be deleted? (Overrides contract value)
         let documents_can_be_deleted: bool =
             Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
                 .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or(default_can_be_deleted);
+                .unwrap_or(data_contact_config.documents_can_be_deleted_contract_default());
 
         // Are documents of this type transferable?
         let documents_transferable_u8: u8 =
@@ -270,6 +268,7 @@ impl DocumentTypeV0 {
                 property_key.clone(),
                 property_value,
                 &root_schema,
+                data_contact_config,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -280,6 +279,7 @@ impl DocumentTypeV0 {
                 property_key,
                 property_value,
                 &root_schema,
+                data_contact_config,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
         }
@@ -592,6 +592,7 @@ fn insert_values(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
+    config: &DataContractConfig,
 ) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
@@ -610,58 +611,11 @@ fn insert_values(
             inner_properties = referenced_sub_schema.to_btree_ref_string_map()?
         }
 
-        let type_value = inner_properties.get_str(property_names::TYPE)?;
-
         let is_required = known_required.contains(&prefixed_property_key);
         let is_transient = known_transient.contains(&prefixed_property_key);
-        let field_type: DocumentPropertyType;
 
-        match type_value {
-            "array" => {
-                // Only handling bytearrays for v1
-                // Return an error if it is not a byte array
-                field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
-                    Some(inner_bool) => {
-                        if inner_bool {
-                            match inner_properties
-                                .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
-                            {
-                                Some("application/x.dash.dpp.identifier") => {
-                                    DocumentPropertyType::Identifier
-                                }
-                                Some(_) | None => {
-                                    DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
-                                        min_size: inner_properties
-                                            .get_optional_integer(property_names::MIN_ITEMS)?,
-                                        max_size: inner_properties
-                                            .get_optional_integer(property_names::MAX_ITEMS)?,
-                                    })
-                                }
-                            }
-                        } else {
-                            return Err(DataContractError::InvalidContractStructure(
-                                "byteArray should always be true if defined".to_string(),
-                            ));
-                        }
-                    }
-                    // TODO: Update when arrays are implemented
-                    None => {
-                        return Err(DataContractError::InvalidContractStructure(
-                            "only byte arrays are supported now".to_string(),
-                        ));
-                    }
-                };
-
-                document_properties.insert(
-                    prefixed_property_key,
-                    DocumentProperty {
-                        property_type: field_type,
-                        required: is_required,
-                        transient: is_transient,
-                    },
-                );
-            }
-            "object" => {
+        match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
+            DocumentPropertyType::Object(_) => {
                 if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
                 {
                     let properties =
@@ -686,37 +640,17 @@ fn insert_values(
                     }
                 }
             }
-
-            "string" => {
-                field_type = DocumentPropertyType::String(StringPropertySizes {
-                    min_length: inner_properties
-                        .get_optional_integer(property_names::MIN_LENGTH)?,
-                    max_length: inner_properties
-                        .get_optional_integer(property_names::MAX_LENGTH)?,
-                });
+            property_type => {
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
-                        property_type: field_type,
+                        property_type,
                         required: is_required,
                         transient: is_transient,
                     },
                 );
             }
-
-            _ => {
-                field_type = DocumentPropertyType::try_from_name(type_value)?;
-
-                document_properties.insert(
-                    prefixed_property_key,
-                    DocumentProperty {
-                        property_type: field_type,
-                        required: is_required,
-                        transient: is_transient,
-                    },
-                );
-            }
-        }
+        };
     }
 
     Ok(())
@@ -730,6 +664,7 @@ fn insert_values_nested(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
+    config: &DataContractConfig,
 ) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -739,179 +674,87 @@ fn insert_values_nested(
         inner_properties = referenced_sub_schema.to_btree_ref_string_map()?;
     }
 
-    let type_value = inner_properties.get_str(property_names::TYPE)?;
-
     let is_required = known_required.contains(&property_key);
 
     let is_transient = known_transient.contains(&property_key);
 
-    let field_type = match type_value {
-        "integer" => {
-            DocumentPropertyType::I64
-            // todo: we might want to do the following in the future (must be versioned)
-            // let minimum = inner_properties.get_optional_integer::<i64>(property_names::MINIMUM)?;
-            // let maximum = inner_properties.get_optional_integer::<i64>(property_names::MAXIMUM)?;
-            //
-            // match (minimum, maximum) {
-            //     (Some(min), Some(max)) => {
-            //         if min >= 0 {
-            //             if max <= u8::MAX as i64 {
-            //                 DocumentPropertyType::U8
-            //             } else if max <= u16::MAX as i64 {
-            //                 DocumentPropertyType::U16
-            //             } else if max <= u32::MAX as i64 {
-            //                 DocumentPropertyType::U32
-            //             } else {
-            //                 DocumentPropertyType::U64
-            //             }
-            //         } else {
-            //             if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
-            //                 DocumentPropertyType::I8
-            //             } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
-            //                 DocumentPropertyType::I16
-            //             } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
-            //                 DocumentPropertyType::I32
-            //             } else {
-            //                 DocumentPropertyType::I64
-            //             }
-            //         }
-            //     }
-            //     (Some(min), None) => {
-            //         if min >= 0 {
-            //             DocumentPropertyType::U64
-            //         } else {
-            //             DocumentPropertyType::I64
-            //         }
-            //     }
-            //     (None, Some(max)) => {
-            //         if max >= 0 {
-            //             DocumentPropertyType::U64
-            //         } else {
-            //             DocumentPropertyType::I64
-            //         }
-            //     }
-            //     (None, None) => DocumentPropertyType::I64,
-            // }
-        }
-        "number" => DocumentPropertyType::F64,
-        "string" => DocumentPropertyType::String(StringPropertySizes {
-            min_length: inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-            max_length: inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-        }),
-        "array" => {
-            // Only handling bytearrays for v1
-            // Return an error if it is not a byte array
-            match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
-                Some(inner_bool) => {
-                    if inner_bool {
-                        match inner_properties
-                            .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
-                        {
-                            Some("application/x.dash.dpp.identifier") => {
-                                DocumentPropertyType::Identifier
+    let property_type =
+        match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
+            DocumentPropertyType::Object(_) => {
+                let mut nested_properties = IndexMap::new();
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                {
+                    let properties =
+                        properties_as_value
+                            .as_map()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "properties must be a map".to_string(),
+                            ))?;
+
+                    let mut sorted_properties: Vec<_> = properties.iter().collect();
+
+                    sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
+                        let pos_1: u64 = value_1
+                            .get_integer(property_names::POSITION)
+                            .expect("expected a position");
+                        let pos_2: u64 = value_2
+                            .get_integer(property_names::POSITION)
+                            .expect("expected a position");
+                        pos_1.cmp(&pos_2)
+                    });
+
+                    // Create a new set with the prefix removed from the keys
+                    let stripped_required: BTreeSet<String> = known_required
+                        .iter()
+                        .filter_map(|key| {
+                            if key.starts_with(&property_key) && key.len() > property_key.len() {
+                                Some(key[property_key.len() + 1..].to_string())
+                            } else {
+                                None
                             }
-                            Some(_) | None => {
-                                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
-                                    min_size: inner_properties
-                                        .get_optional_integer(property_names::MIN_ITEMS)?,
-                                    max_size: inner_properties
-                                        .get_optional_integer(property_names::MAX_ITEMS)?,
-                                })
+                        })
+                        .collect();
+
+                    let stripped_transient: BTreeSet<String> = known_transient
+                        .iter()
+                        .filter_map(|key| {
+                            if key.starts_with(&property_key) && key.len() > property_key.len() {
+                                Some(key[property_key.len() + 1..].to_string())
+                            } else {
+                                None
                             }
-                        }
-                    } else {
-                        return Err(DataContractError::InvalidContractStructure(
-                            "byteArray should always be true if defined".to_string(),
-                        ));
+                        })
+                        .collect();
+
+                    for (object_property_key, object_property_value) in properties.iter() {
+                        let object_property_string = object_property_key
+                            .as_text()
+                            .ok_or(DataContractError::KeyWrongType(
+                                "property key must be a string".to_string(),
+                            ))?
+                            .to_string();
+
+                        insert_values_nested(
+                            &mut nested_properties,
+                            &stripped_required,
+                            &stripped_transient,
+                            object_property_string,
+                            object_property_value,
+                            root_schema,
+                            config,
+                        )?;
                     }
                 }
-                // TODO: Contract indices and new encoding format don't support arrays
-                //   but we still can use them as document fields with current cbor encoding
-                //   This is a temporary workaround to bring back v0.22 behavior and should be
-                //   replaced with a proper array support in future versions
-                None => DocumentPropertyType::Array(ArrayItemType::Boolean),
+
+                DocumentPropertyType::Object(nested_properties)
             }
-        }
-        "object" => {
-            let mut nested_properties = IndexMap::new();
-            if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
-                let properties =
-                    properties_as_value
-                        .as_map()
-                        .ok_or(DataContractError::ValueWrongType(
-                            "properties must be a map".to_string(),
-                        ))?;
-
-                let mut sorted_properties: Vec<_> = properties.iter().collect();
-
-                sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
-                    let pos_1: u64 = value_1
-                        .get_integer(property_names::POSITION)
-                        .expect("expected a position");
-                    let pos_2: u64 = value_2
-                        .get_integer(property_names::POSITION)
-                        .expect("expected a position");
-                    pos_1.cmp(&pos_2)
-                });
-
-                // Create a new set with the prefix removed from the keys
-                let stripped_required: BTreeSet<String> = known_required
-                    .iter()
-                    .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                let stripped_transient: BTreeSet<String> = known_transient
-                    .iter()
-                    .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                for (object_property_key, object_property_value) in properties.iter() {
-                    let object_property_string = object_property_key
-                        .as_text()
-                        .ok_or(DataContractError::KeyWrongType(
-                            "property key must be a string".to_string(),
-                        ))?
-                        .to_string();
-
-                    insert_values_nested(
-                        &mut nested_properties,
-                        &stripped_required,
-                        &stripped_transient,
-                        object_property_string,
-                        object_property_value,
-                        root_schema,
-                    )?;
-                }
-            }
-            document_properties.insert(
-                property_key,
-                DocumentProperty {
-                    property_type: DocumentPropertyType::Object(nested_properties),
-                    required: is_required,
-                    transient: is_transient,
-                },
-            );
-            return Ok(());
-        }
-        _ => DocumentPropertyType::try_from_name(type_value)?,
-    };
+            property_type => property_type,
+        };
 
     document_properties.insert(
         property_key,
         DocumentProperty {
-            property_type: field_type,
+            property_type,
             required: is_required,
             transient: is_transient,
         },
@@ -944,14 +787,15 @@ mod tests {
                 "additionalProperties": false
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let _result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
                 "valid_name-a-b-123",
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 true,
                 &mut vec![],
                 platform_version,
@@ -974,14 +818,15 @@ mod tests {
                 "additionalProperties": false
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
                 "",
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 true,
                 &mut vec![],
                 platform_version,
@@ -1015,14 +860,15 @@ mod tests {
                 "additionalProperties": false
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
                 &"a".repeat(65),
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 true,
                 &mut vec![],
                 platform_version,
@@ -1056,14 +902,15 @@ mod tests {
                 "additionalProperties": false
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
                 "invalid name",
                 schema.clone(),
                 None,
-                false,
-                false,
-                false,
+                &config,
                 true,
                 &mut vec![],
                 platform_version,
@@ -1081,14 +928,15 @@ mod tests {
                 }
             );
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
                 "invalid&name",
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 true,
                 &mut vec![],
                 platform_version,
