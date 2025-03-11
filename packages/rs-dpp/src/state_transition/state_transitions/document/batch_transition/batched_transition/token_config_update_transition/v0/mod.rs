@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {base}, change: {update_token_configuration_item}")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenConfigUpdateTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
