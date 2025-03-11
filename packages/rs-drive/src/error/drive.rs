@@ -193,7 +193,7 @@ pub enum DriveError {
     /// Error todo
     #[error("snapshot error")]
     Snapshot(String),
-    
+
     /// Data Contract not found
     #[error("data contract does not have a start moment: {0}")]
     ContractDoesNotHaveAStartMoment(Identifier),
