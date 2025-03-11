@@ -14,6 +14,26 @@ const { GetDataContractRequest } = require('@dashevo/dapi-grpc/clients/platform/
 const { contractId: tokensHistoryContractIdString } = require('@dashevo/token-history-contract/lib/systemIds');
 const bs58 = require('bs58');
 
+function keepsHistory(batchedTransition, tokenConfiguration) {
+  switch (batchedTransition.getTransitionType()) {
+    case TokenTransitionType.Burn: {
+      return tokenConfiguration.keepsHistory().keepsBurningHistory();
+    }
+    case TokenTransitionType.Mint: {
+      return tokenConfiguration.keepsHistory().keepsMintingHistory();
+    }
+    case TokenTransitionType.Transfer: {
+      return tokenConfiguration.keepsHistory().keepsTransferHistory();
+    }
+    case TokenTransitionType.Freeze:
+    case TokenTransitionType.Unfreeze: {
+      return tokenConfiguration.keepsHistory().keepsFreezingHistory();
+    }
+    default:
+      return false;
+  }
+}
+
 /**
  * @param {PlatformPromiseClient} driveClient
  * @param {DashPlatformProtocol} dpp
@@ -80,7 +100,7 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
 
           // In case if we keep history for token events we can provide better proof
           // for clients
-          if (tokenConfiguration.keepsHistory()) {
+          if (keepsHistory(batchedTransition, tokenConfiguration)) {
             const documentRequest = new DocumentRequest();
             documentRequest.setContractId(tokensHistoryContractIdBuffer);
             documentRequest.setDocumentType(batchedTransition.getHistoricalDocumentTypeName());
