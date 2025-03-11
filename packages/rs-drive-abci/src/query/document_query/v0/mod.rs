@@ -773,10 +773,10 @@ mod tests {
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
                     let mut properties = BTreeMap::new();
-                    properties.insert("status".to_string(), Value::I64(0)); // Always queued
-                    properties.insert("pooling".to_string(), Value::I64(0)); // Always 0
-                    properties.insert("coreFeePerByte".to_string(), Value::I64(1)); // Always 1
-                    properties.insert("amount".to_string(), Value::I64(1000)); // Set a minimum amount of 1000
+                    properties.insert("status".to_string(), Value::U8(0)); // Always queued
+                    properties.insert("pooling".to_string(), Value::U8(0)); // Always 0
+                    properties.insert("coreFeePerByte".to_string(), Value::U32(1)); // Always 1
+                    properties.insert("amount".to_string(), Value::U64(1000)); // Set a minimum amount of 1000
                     properties.insert("outputScript".to_string(), Value::Bytes(vec![])); // Set an empty output script
                     properties
                 },
@@ -822,7 +822,7 @@ mod tests {
                         WhereClause {
                             field: "status".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -830,7 +830,7 @@ mod tests {
                         WhereClause {
                             field: "pooling".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -838,7 +838,7 @@ mod tests {
                         WhereClause {
                             field: "coreFeePerByte".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(1),
+                            value: Value::U32(1),
                         },
                     ),
                 ]),
@@ -937,10 +937,10 @@ mod tests {
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
                     let mut properties = BTreeMap::new();
-                    properties.insert("status".to_string(), Value::I64(i as i64 % 4)); // Always queued
-                    properties.insert("pooling".to_string(), Value::I64(0)); // Always 0
-                    properties.insert("coreFeePerByte".to_string(), Value::I64(1)); // Always 1
-                    properties.insert("amount".to_string(), Value::I64(1000)); // Set a minimum amount of 1000
+                    properties.insert("status".to_string(), Value::U8(i as u8 % 4)); // Always queued
+                    properties.insert("pooling".to_string(), Value::U8(0)); // Always 0
+                    properties.insert("coreFeePerByte".to_string(), Value::U32(1)); // Always 1
+                    properties.insert("amount".to_string(), Value::U64(1000)); // Set a minimum amount of 1000
                     properties.insert("outputScript".to_string(), Value::Bytes(vec![])); // Set an empty output script
                     properties
                 },
@@ -986,7 +986,7 @@ mod tests {
                         WhereClause {
                             field: "status".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -994,7 +994,7 @@ mod tests {
                         WhereClause {
                             field: "pooling".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -1002,7 +1002,7 @@ mod tests {
                         WhereClause {
                             field: "coreFeePerByte".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(1),
+                            value: Value::U32(1),
                         },
                     ),
                 ]),
@@ -1101,10 +1101,10 @@ mod tests {
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
                     let mut properties = BTreeMap::new();
-                    properties.insert("status".to_string(), Value::I64(i as i64 % 4)); // Always queued
-                    properties.insert("pooling".to_string(), Value::I64(0)); // Always 0
-                    properties.insert("coreFeePerByte".to_string(), Value::I64(1)); // Always 1
-                    properties.insert("amount".to_string(), Value::I64(1000)); // Set a minimum amount of 1000
+                    properties.insert("status".to_string(), Value::U8(i as u8 % 4)); // Always queued
+                    properties.insert("pooling".to_string(), Value::U8(0)); // Always 0
+                    properties.insert("coreFeePerByte".to_string(), Value::U32(1)); // Always 1
+                    properties.insert("amount".to_string(), Value::U64(1000)); // Set a minimum amount of 1000
                     properties.insert("outputScript".to_string(), Value::Bytes(vec![])); // Set an empty output script
                     properties
                 },
@@ -1140,11 +1140,11 @@ mod tests {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
-                        Value::I64(0),
-                        Value::I64(1),
-                        Value::I64(2),
-                        Value::I64(3),
-                        Value::I64(4),
+                        Value::U8(0),
+                        Value::U8(1),
+                        Value::U8(2),
+                        Value::U8(3),
+                        Value::U8(4),
                     ]),
                 }),
                 range_clause: None,
@@ -1257,10 +1257,10 @@ mod tests {
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
                     let mut properties = BTreeMap::new();
-                    properties.insert("status".to_string(), Value::I64(i as i64 % 4)); // Always queued
-                    properties.insert("pooling".to_string(), Value::I64(0)); // Always 0
-                    properties.insert("coreFeePerByte".to_string(), Value::I64(1)); // Always 1
-                    properties.insert("amount".to_string(), Value::I64(1000)); // Set a minimum amount of 1000
+                    properties.insert("status".to_string(), Value::U8(i as u8 % 4)); // Always queued
+                    properties.insert("pooling".to_string(), Value::U8(0)); // Always 0
+                    properties.insert("coreFeePerByte".to_string(), Value::U32(1)); // Always 1
+                    properties.insert("amount".to_string(), Value::U64(1000)); // Set a minimum amount of 1000
                     properties.insert("outputScript".to_string(), Value::Bytes(vec![])); // Set an empty output script
                     properties
                 },
@@ -1302,11 +1302,11 @@ mod tests {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
-                        Value::I64(0),
-                        Value::I64(1),
-                        Value::I64(2),
-                        Value::I64(3),
-                        Value::I64(4),
+                        Value::U8(0),
+                        Value::U8(1),
+                        Value::U8(2),
+                        Value::U8(3),
+                        Value::U8(4),
                     ]),
                 }),
                 range_clause: None,
@@ -1428,10 +1428,10 @@ mod tests {
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
                     let mut properties = BTreeMap::new();
-                    properties.insert("status".to_string(), Value::I64(i as i64 % 4)); // Always queued
-                    properties.insert("pooling".to_string(), Value::I64(0)); // Always 0
-                    properties.insert("coreFeePerByte".to_string(), Value::I64(1)); // Always 1
-                    properties.insert("amount".to_string(), Value::I64(1000)); // Set a minimum amount of 1000
+                    properties.insert("status".to_string(), Value::U8(i as u8 % 4)); // Always queued
+                    properties.insert("pooling".to_string(), Value::U8(0)); // Always 0
+                    properties.insert("coreFeePerByte".to_string(), Value::U32(1)); // Always 1
+                    properties.insert("amount".to_string(), Value::U64(1000)); // Set a minimum amount of 1000
                     properties.insert("outputScript".to_string(), Value::Bytes(vec![])); // Set an empty output script
                     properties
                 },
@@ -1473,11 +1473,11 @@ mod tests {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
-                        Value::I64(0),
-                        Value::I64(1),
-                        Value::I64(2),
-                        Value::I64(3),
-                        Value::I64(4),
+                        Value::U8(0),
+                        Value::U8(1),
+                        Value::U8(2),
+                        Value::U8(3),
+                        Value::U8(4),
                     ]),
                 }),
                 range_clause: None,
@@ -1487,7 +1487,7 @@ mod tests {
                         WhereClause {
                             field: "pooling".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(0),
+                            value: Value::U8(0),
                         },
                     ),
                     (
@@ -1495,7 +1495,7 @@ mod tests {
                         WhereClause {
                             field: "coreFeePerByte".to_string(),
                             operator: WhereOperator::Equal,
-                            value: Value::I64(1),
+                            value: Value::U32(1),
                         },
                     ),
                 ]),

@@ -290,7 +290,7 @@ where
                 (
                     *quorum_hash,
                     VerificationQuorum {
-                        public_key: validator_set.threshold_public_key().clone(),
+                        public_key: *validator_set.threshold_public_key(),
                         index: validator_set.quorum_index(),
                     },
                 )

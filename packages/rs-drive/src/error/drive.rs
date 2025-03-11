@@ -1,5 +1,6 @@
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use dpp::fee::Credits;
+use dpp::identifier::Identifier;
 use dpp::version::FeatureVersion;
 
 /// Drive errors
@@ -192,4 +193,8 @@ pub enum DriveError {
     /// Error todo
     #[error("snapshot error")]
     Snapshot(String),
+    
+    /// Data Contract not found
+    #[error("data contract does not have a start moment: {0}")]
+    ContractDoesNotHaveAStartMoment(Identifier),
 }

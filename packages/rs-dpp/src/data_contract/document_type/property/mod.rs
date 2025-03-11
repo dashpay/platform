@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -5,12 +6,17 @@ use std::io::{BufReader, Cursor, Read};
 use crate::data_contract::errors::DataContractError;
 
 use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::config::v1::DataContractConfigGettersV1;
+use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::property_names;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
+use itertools::Itertools;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
@@ -67,6 +73,7 @@ pub enum DocumentPropertyType {
 }
 
 impl DocumentPropertyType {
+    #[deprecated = "this method is missing required information to create a type. Use TryFrom<&Value> instead."]
     pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
         match name {
             "u128" => Ok(DocumentPropertyType::U128),
@@ -2006,6 +2013,98 @@ impl DocumentPropertyType {
         let mut cursor = Cursor::new(wtr);
         cursor.read_f64::<BigEndian>().ok()
     }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::I8
+                | DocumentPropertyType::I16
+                | DocumentPropertyType::I32
+                | DocumentPropertyType::I64
+                | DocumentPropertyType::U8
+                | DocumentPropertyType::U16
+                | DocumentPropertyType::U32
+                | DocumentPropertyType::U64
+        )
+    }
+
+    pub fn try_from_value_map(
+        value_map: &BTreeMap<String, &Value>,
+        options: &DocumentPropertyTypeParsingOptions,
+    ) -> Result<Self, DataContractError> {
+        let type_value = value_map.get_str(property_names::TYPE)?;
+
+        let property_type = match type_value {
+            "integer" => {
+                if options.sized_integer_types {
+                    find_integer_type_for_subschema_value(value_map)?
+                } else {
+                    DocumentPropertyType::I64
+                }
+            }
+            "string" => DocumentPropertyType::String(StringPropertySizes {
+                min_length: value_map.get_optional_integer(property_names::MIN_LENGTH)?,
+                max_length: value_map.get_optional_integer(property_names::MAX_LENGTH)?,
+            }),
+            "array" => {
+                // Only handling bytearrays for v1
+                // Return an error if it is not a byte array
+                let Some(is_byte_array) =
+                    value_map.get_optional_bool(property_names::BYTE_ARRAY)?
+                else {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "only byte arrays are supported now".to_string(),
+                    ));
+                };
+
+                if !is_byte_array {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "byteArray should always be true if defined".to_string(),
+                    ));
+                }
+
+                match value_map.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                    Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
+                    Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                        min_size: value_map.get_optional_integer(property_names::MIN_ITEMS)?,
+                        max_size: value_map.get_optional_integer(property_names::MAX_ITEMS)?,
+                    }),
+                }
+            }
+            "object" => Self::Object(Default::default()),
+            "boolean" => DocumentPropertyType::Boolean,
+            "number" => DocumentPropertyType::F64,
+            _ => {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "unsupported property type: {}",
+                    type_value
+                )));
+            }
+        };
+
+        Ok(property_type)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DocumentPropertyTypeParsingOptions {
+    pub sized_integer_types: bool,
+}
+
+impl Default for DocumentPropertyTypeParsingOptions {
+    fn default() -> Self {
+        Self {
+            sized_integer_types: true,
+        }
+    }
+}
+
+impl From<&DataContractConfig> for DocumentPropertyTypeParsingOptions {
+    fn from(config: &DataContractConfig) -> Self {
+        Self {
+            sized_integer_types: config.sized_integer_types(),
+        }
+    }
 }
 
 fn get_field_type_matching_error(value: &Value) -> DataContractError {
@@ -2013,4 +2112,81 @@ fn get_field_type_matching_error(value: &Value) -> DataContractError {
         "document field type doesn't match \"{}\" document value",
         value
     ))
+}
+
+fn find_integer_type_for_subschema_value(
+    value: &BTreeMap<String, &Value>,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let minimum = value.get_optional_integer::<i64>(property_names::MINIMUM)?;
+    let maximum = value.get_optional_integer::<i64>(property_names::MAXIMUM)?;
+
+    let property_type = match (minimum, maximum) {
+        (Some(min), Some(max)) => find_integer_type_for_min_and_max_values(min, max),
+        (Some(min), None) => {
+            if min >= 0 {
+                DocumentPropertyType::U64
+            } else {
+                DocumentPropertyType::I64
+            }
+        }
+        (None, Some(max)) => find_unsigned_integer_type_for_max_value(max),
+        (None, None) => {
+            // If enum is defined, we can try to figure out type based on minimal and maximal values
+            let enum_type = if let Some(enum_values) =
+                value.get_optional_inner_value_array::<Vec<_>>(property_names::ENUM)?
+            {
+                match enum_values
+                    .into_iter()
+                    .filter_map(|v| v.as_integer())
+                    .minmax()
+                {
+                    itertools::MinMaxResult::MinMax(min, max) => {
+                        Some(find_integer_type_for_min_and_max_values(min, max))
+                    }
+                    itertools::MinMaxResult::OneElement(val) => {
+                        Some(find_unsigned_integer_type_for_max_value(val))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            if let Some(enum_type) = enum_type {
+                enum_type
+            } else {
+                DocumentPropertyType::I64
+            }
+        }
+    };
+
+    Ok(property_type)
+}
+
+fn find_unsigned_integer_type_for_max_value(max_value: i64) -> DocumentPropertyType {
+    if max_value <= u8::MAX as i64 {
+        DocumentPropertyType::U8
+    } else if max_value <= u16::MAX as i64 {
+        DocumentPropertyType::U16
+    } else if max_value <= u32::MAX as i64 {
+        DocumentPropertyType::U32
+    } else {
+        DocumentPropertyType::U64
+    }
+}
+
+fn find_integer_type_for_min_and_max_values(min: i64, max: i64) -> DocumentPropertyType {
+    if min >= 0 {
+        find_unsigned_integer_type_for_max_value(max)
+    } else {
+        if min >= i8::MIN as i64 && max <= i8::MAX as i64 {
+            DocumentPropertyType::I8
+        } else if min >= i16::MIN as i64 && max <= i16::MAX as i64 {
+            DocumentPropertyType::I16
+        } else if min >= i32::MIN as i64 && max <= i32::MAX as i64 {
+            DocumentPropertyType::I32
+        } else {
+            DocumentPropertyType::I64
+        }
+    }
 }

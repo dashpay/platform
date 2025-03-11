@@ -14,7 +14,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciVotingMethodVersions,
 };
 
-// Introduced in Protocol version 8 for tokens
+// Introduced in Protocol version 9 for tokens
 pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         init_chain: 0,
@@ -77,7 +77,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V6: DriveAbciMethodVersions = DriveAbciMeth
         add_distribute_storage_fee_to_epochs_operations: 0,
     },
     fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {
-        add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 0,
+        // this changes to 1 and now stores additional info about the epoch
+        add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 1, // new
         add_epoch_pool_to_proposers_payout_operations: 0,
         find_oldest_epoch_needing_payment: 0,
         fetch_reward_shares_list_for_masternode: 0,

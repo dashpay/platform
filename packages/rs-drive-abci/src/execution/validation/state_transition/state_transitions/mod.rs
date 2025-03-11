@@ -2303,6 +2303,9 @@ pub(in crate::execution) mod tests {
             Some(data_contract_id.to_buffer()),
             Some(identity_id.to_buffer()),
             Some(|data_contract: &mut DataContract| {
+                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at_block_height(Some(0));
                 if let Some(token_configuration_modification) = token_configuration_modification {
                     let token_configuration = data_contract
                         .token_configuration_mut(0)

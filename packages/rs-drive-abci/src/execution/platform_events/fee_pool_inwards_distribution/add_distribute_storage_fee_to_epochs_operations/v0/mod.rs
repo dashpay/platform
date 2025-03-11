@@ -64,6 +64,7 @@ impl<C> Platform<C> {
 
         Ok(
             storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome {
+                total_distributed_storage_fees: storage_distribution_fees,
                 leftovers,
                 refunded_epochs_count,
             },
