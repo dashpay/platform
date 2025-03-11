@@ -1,11 +1,11 @@
-use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use crate::data_contract::associated_token::token_configuration_localization::accessors::v0::TokenConfigurationLocalizationV0Getters;
+use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
-use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 
 pub const ENGLISH_ISO_639: &str = "en";
 
@@ -48,14 +48,26 @@ impl TokenConfigurationConventionV0Getters for TokenConfigurationConventionV0 {
     fn singular_form_by_language_code_or_default(&self, language_code: &str) -> &str {
         self.localizations
             .get(language_code)
-            .map(|localization| &localization.singular_form)
-            .unwrap_or_else(|| &self.localizations[ENGLISH_ISO_639].singular_form)
+            .map(|localization| localization.singular_form())
+            .unwrap_or_else(|| self.localizations[ENGLISH_ISO_639].singular_form())
     }
 
     fn plural_form_by_language_code_or_default(&self, language_code: &str) -> &str {
         self.localizations
             .get(language_code)
-            .map(|localization| &localization.plural_form)
-            .unwrap_or_else(|| &self.localizations[ENGLISH_ISO_639].plural_form)
+            .map(|localization| localization.plural_form())
+            .unwrap_or_else(|| self.localizations[ENGLISH_ISO_639].plural_form())
+    }
+
+    fn localizations(&self) -> &BTreeMap<String, TokenConfigurationLocalization> {
+        &self.localizations
+    }
+
+    fn localizations_mut(&mut self) -> &mut BTreeMap<String, TokenConfigurationLocalization> {
+        &mut self.localizations
+    }
+
+    fn decimals(&self) -> u16 {
+        self.decimals
     }
 }

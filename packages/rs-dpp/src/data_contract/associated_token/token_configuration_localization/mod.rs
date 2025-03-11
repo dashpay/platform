@@ -1,3 +1,4 @@
+use crate::data_contract::associated_token::token_configuration_localization::accessors::v0::TokenConfigurationLocalizationV0Getters;
 use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
 use bincode::Encode;
 use derive_more::From;
