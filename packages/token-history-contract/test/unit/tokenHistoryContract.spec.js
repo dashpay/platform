@@ -389,7 +389,7 @@ describe('Token History Contract', () => {
           const document = dpp.document.create(dataContract, identityId, 'emergencyAction', rawEmergencyActionDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minimum');
+          expect(error.keyword).to.equal('enum');
         });
       });
 
