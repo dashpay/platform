@@ -324,7 +324,7 @@ mod test {
     use crate::data_contract::DataContract;
     use crate::document::extended_document::v0::ExtendedDocumentV0;
 
-    use crate::prelude::Identifier;
+    use platform_value::Identifier;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::utils::*;
     use data_contracts::SystemDataContract;

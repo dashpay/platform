@@ -564,7 +564,7 @@ mod test {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::document::document_factory::DocumentFactoryV0;
     use crate::document::{Document, DocumentV0};
-    use crate::identifier::Identifier;
+    use platform_value::Identifier;
     use crate::system_data_contracts::load_system_data_contract;
 
     #[test]
