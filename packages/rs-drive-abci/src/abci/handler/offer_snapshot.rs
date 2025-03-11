@@ -7,6 +7,8 @@ use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_offer_snapshot;
 
+const SUBTREES_BATCH_SIZE: usize = 64;
+
 pub fn offer_snapshot<'a, 'db: 'a, A, C: 'db>(
     app: &'a A,
     request: proto::RequestOfferSnapshot,
@@ -43,6 +45,7 @@ where
             .grove
             .start_snapshot_syncing(
                 request_app_hash,
+                SUBTREES_BATCH_SIZE,
                 CURRENT_STATE_SYNC_VERSION,
                 &PlatformVersion::latest().drive.grove_version,
             )
@@ -85,6 +88,7 @@ where
             .grove
             .start_snapshot_syncing(
                 request_app_hash,
+                SUBTREES_BATCH_SIZE,
                 CURRENT_STATE_SYNC_VERSION,
                 &PlatformVersion::latest().drive.grove_version,
             )
