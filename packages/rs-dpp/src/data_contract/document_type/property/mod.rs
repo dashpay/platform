@@ -2036,7 +2036,7 @@ impl DocumentPropertyType {
 
         let property_type = match type_value {
             "integer" => {
-                if options.granular_integer_types {
+                if options.sized_integer_types {
                     find_integer_type_for_subschema_value(value_map)?
                 } else {
                     DocumentPropertyType::I64
@@ -2088,13 +2088,13 @@ impl DocumentPropertyType {
 
 #[derive(Debug, Clone)]
 pub struct DocumentPropertyTypeParsingOptions {
-    pub granular_integer_types: bool,
+    pub sized_integer_types: bool,
 }
 
 impl Default for DocumentPropertyTypeParsingOptions {
     fn default() -> Self {
         Self {
-            granular_integer_types: true,
+            sized_integer_types: true,
         }
     }
 }
@@ -2102,7 +2102,7 @@ impl Default for DocumentPropertyTypeParsingOptions {
 impl From<&DataContractConfig> for DocumentPropertyTypeParsingOptions {
     fn from(config: &DataContractConfig) -> Self {
         Self {
-            granular_integer_types: config.granular_integer_types(),
+            sized_integer_types: config.sized_integer_types(),
         }
     }
 }

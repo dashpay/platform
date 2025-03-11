@@ -890,9 +890,7 @@ pub fn setup_withdrawal_tests(
         None,
     );
 
-    contract
-        .config_mut()
-        .set_granular_integer_types_enabled(false);
+    contract.config_mut().set_sized_integer_types_enabled(false);
 
     add_withdrawals_to_contract(
         &drive,

@@ -226,19 +226,19 @@ impl DataContractConfigSettersV0 for DataContractConfig {
 }
 
 impl DataContractConfigGettersV1 for DataContractConfig {
-    fn granular_integer_types(&self) -> bool {
+    fn sized_integer_types(&self) -> bool {
         match self {
             DataContractConfig::V0(_) => false,
-            DataContractConfig::V1(v1) => v1.granular_integer_types,
+            DataContractConfig::V1(v1) => v1.sized_integer_types,
         }
     }
 }
 
 impl DataContractConfigSettersV1 for DataContractConfig {
-    fn set_granular_integer_types_enabled(&mut self, enable: bool) {
+    fn set_sized_integer_types_enabled(&mut self, enable: bool) {
         match self {
             DataContractConfig::V0(_) => {}
-            DataContractConfig::V1(v1) => v1.granular_integer_types = enable,
+            DataContractConfig::V1(v1) => v1.sized_integer_types = enable,
         }
     }
 }

@@ -3,7 +3,7 @@ use crate::data_contract::config::v0::{DataContractConfigGettersV0, DataContract
 use crate::data_contract::config::{
     DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
     DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
-    DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY, DEFAULT_GRANULAR_NUMERIC_TYPES,
+    DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY, DEFAULT_SIZED_INTEGER_TYPES,
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::ProtocolError;
@@ -40,20 +40,20 @@ pub struct DataContractConfigV1 {
     pub requires_identity_encryption_bounded_key: Option<StorageKeyRequirements>,
     /// Decryption key storage requirements
     pub requires_identity_decryption_bounded_key: Option<StorageKeyRequirements>,
-    /// Use granular integer Rust types for `integer` property type
-    pub granular_integer_types: bool,
+    /// Use sized integer Rust types for `integer` property type based on validation rules
+    pub sized_integer_types: bool,
 }
 
 /// Trait representing getters for `DataContractConfigV1`
 pub trait DataContractConfigGettersV1: DataContractConfigGettersV0 {
-    /// Use granular integer Rust types for `integer` property type
-    fn granular_integer_types(&self) -> bool;
+    /// Use sized integer Rust types for `integer` property type based on validation rules
+    fn sized_integer_types(&self) -> bool;
 }
 
 /// Trait representing setters for `DataContractConfigV1`
 pub trait DataContractConfigSettersV1: DataContractConfigSettersV0 {
-    /// Enable/disable granular integer Rust types for `integer` property type
-    fn set_granular_integer_types_enabled(&mut self, enable: bool);
+    /// Enable/disable sized integer Rust types for `integer` property type
+    fn set_sized_integer_types_enabled(&mut self, enable: bool);
 }
 
 impl Default for DataContractConfigV1 {
@@ -67,7 +67,7 @@ impl Default for DataContractConfigV1 {
             documents_can_be_deleted_contract_default: DEFAULT_CONTRACT_DOCUMENTS_CAN_BE_DELETED,
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
-            granular_integer_types: true,
+            sized_integer_types: true,
         }
     }
 }
@@ -138,9 +138,9 @@ impl DataContractConfigV1 {
             .map(|int| int.try_into())
             .transpose()?;
 
-        let granular_numeric_types = contract
-            .get_optional_bool(config::property::GRANULAR_NUMERIC_TYPES)?
-            .unwrap_or(DEFAULT_GRANULAR_NUMERIC_TYPES);
+        let sized_integer_types = contract
+            .get_optional_bool(config::property::SIZED_INTEGER_TYPES)?
+            .unwrap_or(DEFAULT_SIZED_INTEGER_TYPES);
 
         Ok(DataContractConfigV1 {
             can_be_deleted,
@@ -151,7 +151,7 @@ impl DataContractConfigV1 {
             documents_can_be_deleted_contract_default,
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
-            granular_integer_types: granular_numeric_types,
+            sized_integer_types,
         })
     }
 }
