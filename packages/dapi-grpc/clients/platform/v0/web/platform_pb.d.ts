@@ -8242,50 +8242,6 @@ export namespace GetGroupActionsResponse {
       }
     }
 
-    export class TransferEvent extends jspb.Message {
-      getRecipientId(): Uint8Array | string;
-      getRecipientId_asU8(): Uint8Array;
-      getRecipientId_asB64(): string;
-      setRecipientId(value: Uint8Array | string): void;
-
-      hasPublicNote(): boolean;
-      clearPublicNote(): void;
-      getPublicNote(): string;
-      setPublicNote(value: string): void;
-
-      hasSharedEncryptedNote(): boolean;
-      clearSharedEncryptedNote(): void;
-      getSharedEncryptedNote(): GetGroupActionsResponse.GetGroupActionsResponseV0.SharedEncryptedNote | undefined;
-      setSharedEncryptedNote(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.SharedEncryptedNote): void;
-
-      hasPersonalEncryptedNote(): boolean;
-      clearPersonalEncryptedNote(): void;
-      getPersonalEncryptedNote(): GetGroupActionsResponse.GetGroupActionsResponseV0.PersonalEncryptedNote | undefined;
-      setPersonalEncryptedNote(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.PersonalEncryptedNote): void;
-
-      getAmount(): number;
-      setAmount(value: number): void;
-
-      serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): TransferEvent.AsObject;
-      static toObject(includeInstance: boolean, msg: TransferEvent): TransferEvent.AsObject;
-      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: TransferEvent, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): TransferEvent;
-      static deserializeBinaryFromReader(message: TransferEvent, reader: jspb.BinaryReader): TransferEvent;
-    }
-
-    export namespace TransferEvent {
-      export type AsObject = {
-        recipientId: Uint8Array | string,
-        publicNote: string,
-        sharedEncryptedNote?: GetGroupActionsResponse.GetGroupActionsResponseV0.SharedEncryptedNote.AsObject,
-        personalEncryptedNote?: GetGroupActionsResponse.GetGroupActionsResponseV0.PersonalEncryptedNote.AsObject,
-        amount: number,
-      }
-    }
-
     export class EmergencyActionEvent extends jspb.Message {
       getActionType(): GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.ActionTypeMap[keyof GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.ActionTypeMap];
       setActionType(value: GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.ActionTypeMap[keyof GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.ActionTypeMap]): void;
@@ -8515,11 +8471,6 @@ export namespace GetGroupActionsResponse {
       getDestroyFrozenFunds(): GetGroupActionsResponse.GetGroupActionsResponseV0.DestroyFrozenFundsEvent | undefined;
       setDestroyFrozenFunds(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.DestroyFrozenFundsEvent): void;
 
-      hasTransfer(): boolean;
-      clearTransfer(): void;
-      getTransfer(): GetGroupActionsResponse.GetGroupActionsResponseV0.TransferEvent | undefined;
-      setTransfer(value?: GetGroupActionsResponse.GetGroupActionsResponseV0.TransferEvent): void;
-
       hasEmergencyAction(): boolean;
       clearEmergencyAction(): void;
       getEmergencyAction(): GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent | undefined;
@@ -8548,7 +8499,6 @@ export namespace GetGroupActionsResponse {
         freeze?: GetGroupActionsResponse.GetGroupActionsResponseV0.FreezeEvent.AsObject,
         unfreeze?: GetGroupActionsResponse.GetGroupActionsResponseV0.UnfreezeEvent.AsObject,
         destroyFrozenFunds?: GetGroupActionsResponse.GetGroupActionsResponseV0.DestroyFrozenFundsEvent.AsObject,
-        transfer?: GetGroupActionsResponse.GetGroupActionsResponseV0.TransferEvent.AsObject,
         emergencyAction?: GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.AsObject,
         tokenConfigUpdate?: GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEvent.AsObject,
       }
@@ -8560,9 +8510,8 @@ export namespace GetGroupActionsResponse {
         FREEZE = 3,
         UNFREEZE = 4,
         DESTROY_FROZEN_FUNDS = 5,
-        TRANSFER = 6,
-        EMERGENCY_ACTION = 7,
-        TOKEN_CONFIG_UPDATE = 8,
+        EMERGENCY_ACTION = 6,
+        TOKEN_CONFIG_UPDATE = 7,
       }
     }
 

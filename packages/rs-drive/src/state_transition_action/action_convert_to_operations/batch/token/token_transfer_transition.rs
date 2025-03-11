@@ -1,5 +1,6 @@
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_event::TokenEvent;
 use platform_version::version::PlatformVersion;
@@ -54,7 +55,7 @@ impl DriveHighLevelBatchOperationConverter for TokenTransferTransitionAction {
                 }));
 
                 let token_configuration = self.base().token_configuration()?;
-                if token_configuration.keeps_history() {
+                if token_configuration.keeps_history().keeps_transfer_history() {
                     let (public_note, shared_encrypted_note, private_encrypted_note) =
                         self.notes_owned();
                     ops.push(TokenOperation(TokenOperationType::TokenHistory {
