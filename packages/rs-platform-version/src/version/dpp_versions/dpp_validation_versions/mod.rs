@@ -21,6 +21,7 @@ pub struct DataContractValidationVersions {
     pub validate_not_defined_properties: FeatureVersion,
     pub validate_property_definition: FeatureVersion,
     pub validate_token_config_groups_exist: FeatureVersion,
+    pub validate_localizations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
