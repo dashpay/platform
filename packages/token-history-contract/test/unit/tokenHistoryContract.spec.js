@@ -288,13 +288,13 @@ describe('Token History Contract', () => {
       });
 
       describe('tokenId', () => {
-        it('should be 32 bytes', async () => {
-          rawUnfreezeDocument.tokenId = crypto.randomBytes(33);
+        it('should be defined', async () => {
+          delete rawUnfreezeDocument.tokenId;
           const document = dpp.document.create(dataContract, identityId, 'unfreeze', rawUnfreezeDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.instancePath).to.equal('/tokenId');
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('tokenId');
         });
       });
 
