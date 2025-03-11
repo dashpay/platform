@@ -1241,7 +1241,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.37.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=217197c796ff296f428593b391a00f9200beceac#217197c796ff296f428593b391a00f9200beceac"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f602f6a62ef346d54f8b69900a23b72491e982b8#f602f6a62ef346d54f8b69900a23b72491e982b8"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1267,12 +1267,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.37.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=217197c796ff296f428593b391a00f9200beceac#217197c796ff296f428593b391a00f9200beceac"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f602f6a62ef346d54f8b69900a23b72491e982b8#f602f6a62ef346d54f8b69900a23b72491e982b8"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.37.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=217197c796ff296f428593b391a00f9200beceac#217197c796ff296f428593b391a00f9200beceac"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f602f6a62ef346d54f8b69900a23b72491e982b8#f602f6a62ef346d54f8b69900a23b72491e982b8"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1285,7 +1285,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.37.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=217197c796ff296f428593b391a00f9200beceac#217197c796ff296f428593b391a00f9200beceac"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f602f6a62ef346d54f8b69900a23b72491e982b8#f602f6a62ef346d54f8b69900a23b72491e982b8"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1299,7 +1299,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.37.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=217197c796ff296f428593b391a00f9200beceac#217197c796ff296f428593b391a00f9200beceac"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f602f6a62ef346d54f8b69900a23b72491e982b8#f602f6a62ef346d54f8b69900a23b72491e982b8"
 dependencies = [
  "dashcore-private",
  "secp256k1",

@@ -149,12 +149,6 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             })
             .collect::<Result<Vec<abci::ValidatorUpdate>, Error>>()?;
 
-        tracing::trace!(
-            %self.quorum_hash,
-            quorum_hash_bytes = hex::encode(self.quorum_hash.to_byte_array()),
-            "update difference quorum hash"
-        );
-
         Ok(ValidatorSetUpdate {
             validator_updates,
             threshold_public_key: Some(crypto::PublicKey {
@@ -173,13 +167,6 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             threshold_public_key,
             ..
         } = self;
-
-        tracing::trace!(
-            %quorum_hash,
-            quorum_hash_bytes = hex::encode(quorum_hash.to_byte_array()),
-            "update quorum hash"
-        );
-
         ValidatorSetUpdate {
             validator_updates: validator_set
                 .iter()
@@ -227,13 +214,6 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             threshold_public_key,
             ..
         } = self;
-
-        tracing::trace!(
-            %quorum_hash,
-            quorum_hash_bytes = hex::encode(quorum_hash.to_byte_array()),
-            "owned update quorum hash"
-        );
-
         ValidatorSetUpdate {
             validator_updates: validator_set
                 .into_values()

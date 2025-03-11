@@ -5,7 +5,6 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::prelude::TimestampMillis;
@@ -271,24 +270,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        tracing::info!("fetch list quorum hash");
-
-        let list: ExtendedQuorumListResult =
-            retry!(self.inner.get_quorum_listextended_reversed(height))?;
-
-        tracing::info!(?list, "fetch list quorum hash");
-
-        for (_, quorums) in &list.quorums_by_type {
-            for (quorum_hash, _) in quorums {
-                tracing::info!(
-                    %quorum_hash,
-                    quorum_hash_bytes = hex::encode(quorum_hash.to_byte_array()),
-                    "fetch list quorum hash"
-                );
-            }
-        }
-
-        Ok(list)
+        retry!(self.inner.get_quorum_listextended_reversed(height))
     }
 
     fn get_quorum_info(
@@ -297,21 +279,9 @@ impl CoreRPCLike for DefaultCoreRPC {
         hash: &QuorumHash,
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error> {
-        tracing::info!("fetch info quorum hash");
-
-        let info: QuorumInfoResult = retry!(self.inner.get_quorum_info_reversed(
-            quorum_type,
-            hash,
-            include_secret_key_share
-        ))?;
-
-        tracing::info!(
-            %info.quorum_hash,
-            quorum_hash_bytes = hex::encode(info.quorum_hash.to_byte_array()),
-            "fetch info quorum hash"
-        );
-
-        Ok(info)
+        retry!(self
+            .inner
+            .get_quorum_info_reversed(quorum_type, hash, include_secret_key_share))
     }
 
     fn get_protx_diff_with_masternodes(
