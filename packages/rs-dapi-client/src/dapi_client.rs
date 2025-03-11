@@ -3,6 +3,7 @@
 use backon::{ConstantBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use std::fmt::{Debug, Display};
 use std::sync::atomic::AtomicUsize;
@@ -13,7 +14,7 @@ use tracing::Instrument;
 use crate::address_list::AddressListError;
 use crate::connection_pool::ConnectionPool;
 use crate::request_settings::AppliedRequestSettings;
-use crate::transport::TransportError;
+use crate::transport::{self, TransportError};
 use crate::{
     transport::{TransportClient, TransportRequest},
     AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
@@ -77,6 +78,7 @@ pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
     pool: ConnectionPool,
+    #[cfg(not(target_arch = "wasm32"))]
     /// Certificate Authority certificate to use for verifying the server's certificate.
     pub ca_certificate: Option<Certificate>,
     #[cfg(feature = "dump")]
@@ -95,6 +97,7 @@ impl DapiClient {
             pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]
             dump_dir: None,
+            #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
         }
     }
@@ -107,6 +110,7 @@ impl DapiClient {
     ///
     /// # Returns
     /// [DapiClient] with CA certificate set.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, ca_cert: Certificate) -> Self {
         self.ca_certificate = Some(ca_cert);
 
@@ -200,8 +204,9 @@ impl DapiRequestExecutor for DapiClient {
             .settings
             .override_by(R::SETTINGS_OVERRIDES)
             .override_by(settings)
-            .finalize()
-            .with_ca_certificate(self.ca_certificate.clone());
+            .finalize();
+        #[cfg(not(target_arch = "wasm32"))]
+        let applied_settings = applied_settings.with_ca_certificate(self.ca_certificate.clone());
 
         // Setup retry policy:
         let retry_settings = ConstantBuilder::default()
@@ -310,10 +315,16 @@ impl DapiRequestExecutor for DapiClient {
             }
         };
 
+        let sleeper = transport::BackonSleeper::default();
+
         // Start the routine with retry policy applied:
         // We allow let_and_return because `result` is used later if dump feature is enabled
-        let result = routine
+        let result: Result<
+            ExecutionResponse<<R as TransportRequest>::Response>,
+            ExecutionError<DapiClientError>,
+        > = routine
             .retry(retry_settings)
+            .sleep(sleeper)
             .notify(|error, duration| {
                 let retries_counter = Arc::clone(&retries_counter_arc);
                 retries_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

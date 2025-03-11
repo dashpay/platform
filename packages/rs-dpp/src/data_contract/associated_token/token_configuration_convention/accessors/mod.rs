@@ -1,4 +1,4 @@
-pub mod v0;
+mod v0;
 
 use crate::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,

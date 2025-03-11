@@ -133,17 +133,15 @@ impl ExtendedDocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, rev: Option<u32>) {
-        // TODO: js feeds Number (u32). Is casting revision to u64 safe?
+    pub fn set_revision(&mut self, rev: Option<u64>) {
         self.0
             .document_mut()
             .set_revision(rev.map(|r| r as Revision));
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> Option<u32> {
-        // TODO: js expects Number (u32). Is casting revision to u32 safe?
-        self.0.document().revision().map(|r| r as u32)
+    pub fn get_revision(&self) -> Option<u64> {
+        self.0.document().revision().map(|r| r)
     }
 
     #[wasm_bindgen(js_name=setEntropy)]

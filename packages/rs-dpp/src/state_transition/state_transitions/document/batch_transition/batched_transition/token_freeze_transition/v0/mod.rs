@@ -25,7 +25,7 @@ pub struct TokenFreezeTransitionV0 {
         feature = "state-transition-serde-conversion",
         serde(rename = "frozenIdentityId")
     )]
-    pub frozen_identity_id: Identifier,
+    pub identity_to_freeze_id: Identifier,
     /// The public note
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
@@ -37,6 +37,10 @@ pub struct TokenFreezeTransitionV0 {
 impl fmt::Display for TokenFreezeTransitionV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Format the base transition (assuming `TokenBaseTransition` implements Display)
-        write!(f, "Base: {}, Froze: {}", self.base, self.frozen_identity_id)
+        write!(
+            f,
+            "Base: {}, Froze: {}",
+            self.base, self.identity_to_freeze_id
+        )
     }
 }

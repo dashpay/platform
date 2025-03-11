@@ -1,27 +1,11 @@
+use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
-
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenConfigurationLocalizationsV0 {
-    pub should_capitalize: bool,
-    pub singular_form: String,
-    pub plural_form: String,
-}
-
-impl fmt::Display for TokenConfigurationLocalizationsV0 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Capitalized: {}, Singular: '{}', Plural: '{}'",
-            self.should_capitalize, self.singular_form, self.plural_form
-        )
-    }
-}
+use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 
 pub const ENGLISH_ISO_639: &str = "en";
 
@@ -33,7 +17,7 @@ pub struct TokenConfigurationConventionV0 {
     /// Localizations for the token name.
     /// The key must be a ISO 639 2-chars language code
     #[serde(default)]
-    pub localizations: BTreeMap<String, TokenConfigurationLocalizationsV0>,
+    pub localizations: BTreeMap<String, TokenConfigurationLocalization>,
     #[serde(default = "default_decimals")]
     pub decimals: u16,
 }

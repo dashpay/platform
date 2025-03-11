@@ -18,6 +18,10 @@ use crate::consensus::basic::data_contract::{
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
+    InvalidTokenDistributionFunctionDivideByZeroError,
+    InvalidTokenDistributionFunctionIncoherenceError,
+    InvalidTokenDistributionFunctionInvalidParameterError,
+    InvalidTokenDistributionFunctionInvalidParameterTupleError,
     NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
@@ -73,7 +77,8 @@ use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
-    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenIdError,
+    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
+    InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError,
     InvalidTokenPositionError, MissingDefaultLocalizationError, TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
@@ -430,10 +435,39 @@ pub enum BasicError {
     InvalidTokenIdError(InvalidTokenIdError),
 
     #[error(transparent)]
+    InvalidTokenAmountError(InvalidTokenAmountError),
+
+    #[error(transparent)]
     InvalidTokenPositionError(InvalidTokenPositionError),
 
     #[error(transparent)]
+    InvalidTokenConfigUpdateNoChangeError(InvalidTokenConfigUpdateNoChangeError),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionDivideByZeroError(
+        InvalidTokenDistributionFunctionDivideByZeroError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionInvalidParameterError(
+        InvalidTokenDistributionFunctionInvalidParameterError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionInvalidParameterTupleError(
+        InvalidTokenDistributionFunctionInvalidParameterTupleError,
+    ),
+
+    #[error(transparent)]
+    InvalidTokenDistributionFunctionIncoherenceError(
+        InvalidTokenDistributionFunctionIncoherenceError,
+    ),
+
+    #[error(transparent)]
     TokenTransferToOurselfError(TokenTransferToOurselfError),
+
+    #[error(transparent)]
+    InvalidTokenNoteTooBigError(InvalidTokenNoteTooBigError),
 
     #[error(transparent)]
     ContractHasNoTokensError(ContractHasNoTokensError),

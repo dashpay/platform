@@ -5,7 +5,7 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode};
 use crate::prelude::{IdentityNonce, Revision};
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -108,7 +108,15 @@ impl BatchTransitionResolversV0 for DocumentTransition {
         None
     }
 
+    fn as_transition_token_claim(&self) -> Option<&TokenClaimTransition> {
+        None
+    }
+
     fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition> {
+        None
+    }
+
+    fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition> {
         None
     }
 }
@@ -181,11 +189,11 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     fn entropy(&self) -> Option<Vec<u8>> {
         match self {
             DocumentTransition::Create(t) => Some(Vec::from(t.entropy())),
-            DocumentTransition::Replace(t) => None,
-            DocumentTransition::Delete(t) => None,
-            DocumentTransition::Transfer(t) => None,
-            DocumentTransition::UpdatePrice(t) => None,
-            DocumentTransition::Purchase(t) => None,
+            DocumentTransition::Replace(_) => None,
+            DocumentTransition::Delete(_) => None,
+            DocumentTransition::Transfer(_) => None,
+            DocumentTransition::UpdatePrice(_) => None,
+            DocumentTransition::Purchase(_) => None,
         }
     }
 

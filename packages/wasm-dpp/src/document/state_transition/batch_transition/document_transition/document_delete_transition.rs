@@ -84,7 +84,7 @@ impl DocumentDeleteTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setIdentityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) -> () {
+    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: u64) {
         let mut base = self.inner.base().clone();
 
         base.set_identity_contract_nonce(identity_contract_nonce);
