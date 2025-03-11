@@ -47,22 +47,35 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 #[cfg(feature = "state-transition-signing")]
 use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_burn_transition::TokenBurnTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_mint_transition::TokenMintTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;

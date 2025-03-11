@@ -2,7 +2,7 @@ use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::IdentityNonce;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::DocumentCreateTransitionV0;
 use crate::ProtocolError;
 use platform_version::version::protocol_version::PlatformVersion;

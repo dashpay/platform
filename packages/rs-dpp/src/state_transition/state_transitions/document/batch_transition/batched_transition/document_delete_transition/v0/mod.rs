@@ -1,7 +1,7 @@
 mod from_document;
 pub mod v0_methods;
 
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 
 use bincode::{Decode, Encode};
 use derive_more::Display;

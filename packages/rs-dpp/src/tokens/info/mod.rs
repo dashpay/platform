@@ -22,6 +22,7 @@ pub mod v0;
     PartialEq,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum IdentityTokenInfo {
     V0(IdentityTokenInfoV0),
 }

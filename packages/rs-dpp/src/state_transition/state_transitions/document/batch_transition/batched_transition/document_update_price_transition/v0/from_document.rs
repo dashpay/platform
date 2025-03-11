@@ -6,7 +6,7 @@ use crate::document::errors::DocumentError;
 use crate::balances::credits::Credits;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
 
 impl DocumentUpdatePriceTransitionV0 {

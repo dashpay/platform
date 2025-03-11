@@ -383,11 +383,11 @@ dependencies = [
 
 [[package]]
 name = "bincode_derive"
-version = "2.0.0"
+version = "2.0.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1cef5dd4a4457dd11529e743d18ba4fabbd5f20b6895f4c865cb257337dcf9f"
+checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
 dependencies = [
- "virtue 0.0.18",
+ "virtue 0.0.13",
 ]
 
 [[package]]
@@ -1486,6 +1486,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bincode",
+ "bincode_derive",
  "bs58",
  "byteorder",
  "chrono",
@@ -5844,15 +5845,15 @@ source = "git+https://github.com/dashpay/versioned-feature-core#560157096c8405a4
 
 [[package]]
 name = "virtue"
-version = "0.0.17"
+version = "0.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7302ac74a033bf17b6e609ceec0f891ca9200d502d31f02dc7908d3d98767c9d"
+checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
 
 [[package]]
 name = "virtue"
-version = "0.0.18"
+version = "0.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
+checksum = "7302ac74a033bf17b6e609ceec0f891ca9200d502d31f02dc7908d3d98767c9d"
 
 [[package]]
 name = "vsss-rs"

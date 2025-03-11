@@ -1,6 +1,6 @@
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 
 use crate::prelude::IdentityNonce;
 use platform_value::Identifier;

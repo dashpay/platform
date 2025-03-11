@@ -43,6 +43,7 @@ pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenTransition {
     #[display("TokenBurnTransition({})", "_0")]
     Burn(TokenBurnTransition),

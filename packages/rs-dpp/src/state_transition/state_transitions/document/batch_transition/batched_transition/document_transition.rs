@@ -11,7 +11,7 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;

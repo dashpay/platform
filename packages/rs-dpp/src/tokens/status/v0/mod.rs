@@ -3,6 +3,7 @@ use derive_more::From;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
 /// Token status
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenStatusV0 {
     pub paused: bool,
 }

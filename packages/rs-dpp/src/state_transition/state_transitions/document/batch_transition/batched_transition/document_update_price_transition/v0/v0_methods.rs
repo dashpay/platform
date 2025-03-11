@@ -1,7 +1,7 @@
 use crate::balances::credits::Credits;
 use crate::prelude::Revision;
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
 
 pub trait DocumentUpdatePriceTransitionV0Methods: DocumentBaseTransitionAccessors {

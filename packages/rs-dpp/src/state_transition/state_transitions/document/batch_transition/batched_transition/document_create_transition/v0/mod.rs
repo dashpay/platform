@@ -27,7 +27,7 @@ use crate::balances::credits::Credits;
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 #[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveTupleFromMapHelper;

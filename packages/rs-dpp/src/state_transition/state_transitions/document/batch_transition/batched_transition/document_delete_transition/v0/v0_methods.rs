@@ -1,5 +1,5 @@
 use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 
 impl DocumentBaseTransitionAccessors for DocumentDeleteTransitionV0 {

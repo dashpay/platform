@@ -3,6 +3,7 @@ use derive_more::From;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
 /// Token information for an identity (version 0).
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityTokenInfoV0 {
     pub frozen: bool,
 }

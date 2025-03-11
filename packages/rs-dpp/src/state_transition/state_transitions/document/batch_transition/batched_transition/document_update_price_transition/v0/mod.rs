@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::balances::credits::Credits;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 
 mod property_names {
     pub const REVISION: &str = "$revision";

@@ -3,7 +3,7 @@ use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::IdentityNonce;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;

@@ -47,6 +47,7 @@ pub const PROPERTY_ACTION: &str = "$action";
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum BatchedTransition {
     #[display("DocumentTransition({})", "_0")]
     Document(DocumentTransition),
