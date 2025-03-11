@@ -28,6 +28,10 @@ pub mod info;
 #[cfg(feature = "server")]
 pub mod mint;
 
+/// Implements minting operations for creating new tokens towards many recipients at the same time.
+#[cfg(feature = "server")]
+pub mod mint_many;
+
 /// Manages system-level operations and utilities.
 #[cfg(feature = "server")]
 pub mod system;

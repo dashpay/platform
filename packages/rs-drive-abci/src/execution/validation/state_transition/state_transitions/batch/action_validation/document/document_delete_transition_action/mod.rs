@@ -8,11 +8,11 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v0::DocumentDeleteTransitionActionStateValidationV0;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::structure_v0::DocumentDeleteTransitionActionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v0::DocumentDeleteTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 
+mod advanced_structure_v0;
 mod state_v0;
-mod structure_v0;
 
 pub trait DocumentDeleteTransitionActionValidation {
     fn validate_structure(

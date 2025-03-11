@@ -4,6 +4,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -35,7 +36,6 @@ use dpp::state_transition::batch_transition::batched_transition::document_update
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
@@ -43,6 +43,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenBalanceAbsence, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenStatus};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
@@ -323,8 +324,9 @@ impl Drive {
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
                         )?;
+                        let keeps_historical_document = token_config.keeps_history();
 
-                        if token_config.keeps_history() {
+                        let historical_query = || {
                             let query = SingleDocumentDriveQuery {
                                 contract_id: token_history_contract.id().into_buffer(),
                                 document_type_name: token_history_document_type_name,
@@ -364,9 +366,12 @@ impl Drive {
                                 return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
                             }
                             Ok((root_hash, VerifiedTokenActionWithDocument(document)))
-                        } else {
-                            match token_transition {
-                                TokenTransition::Burn(_) => {
+                        };
+                        match token_transition {
+                            TokenTransition::Burn(_) => {
+                                if keeps_historical_document.keeps_burning_history() {
+                                    historical_query()
+                                } else {
                                     let (root_hash, Some(balance)) =
                                         Drive::verify_token_balance_for_identity_id(
                                             proof,
@@ -377,11 +382,15 @@ impl Drive {
                                         )?
                                     else {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
+                                                format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
                                     };
                                     Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
                                 }
-                                TokenTransition::Mint(token_mint_transition) => {
+                            }
+                            TokenTransition::Mint(token_mint_transition) => {
+                                if keeps_historical_document.keeps_minting_history() {
+                                    historical_query()
+                                } else {
                                     let recipient_id =
                                         token_mint_transition.recipient_id(token_config)?;
                                     let (root_hash, Some(balance)) =
@@ -394,11 +403,15 @@ impl Drive {
                                         )?
                                     else {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token mint)", recipient_id))));
+                                                format!("proof did not contain token balance for identity {} expected to exist because of state transition (token mint)", recipient_id))));
                                     };
                                     Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
                                 }
-                                TokenTransition::Transfer(token_transfer_transition) => {
+                            }
+                            TokenTransition::Transfer(token_transfer_transition) => {
+                                if keeps_historical_document.keeps_transfer_history() {
+                                    historical_query()
+                                } else {
                                     let recipient_id = token_transfer_transition.recipient_id();
                                     let identity_ids =
                                         [owner_id.to_buffer(), recipient_id.to_buffer()];
@@ -414,14 +427,18 @@ impl Drive {
                                     )?;
 
                                     let balances = balances.into_iter().map(|(id, maybe_balance)| {
-                                        let balance = maybe_balance.ok_or(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token transfer)", id))))?;
-                                        Ok((id, balance))
-                                    }).collect::<Result<_, Error>>()?;
+                                            let balance = maybe_balance.ok_or(Error::Proof(ProofError::IncorrectProof(
+                                                format!("proof did not contain token balance for identity {} expected to exist because of state transition (token transfer)", id))))?;
+                                            Ok((id, balance))
+                                        }).collect::<Result<_, Error>>()?;
 
                                     Ok((root_hash, VerifiedTokenIdentitiesBalances(balances)))
                                 }
-                                TokenTransition::Freeze(token_freeze_transition) => {
+                            }
+                            TokenTransition::Freeze(token_freeze_transition) => {
+                                if keeps_historical_document.keeps_freezing_history() {
+                                    historical_query()
+                                } else {
                                     let (root_hash, Some(identity_token_info)) =
                                         Drive::verify_token_info_for_identity_id(
                                             proof,
@@ -434,18 +451,22 @@ impl Drive {
                                         )?
                                     else {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token info for identity {} expected to exist because of state transition (token freeze)", token_freeze_transition.frozen_identity_id()))));
+                                                format!("proof did not contain token info for identity {} expected to exist because of state transition (token freeze)", token_freeze_transition.frozen_identity_id()))));
                                     };
                                     if !identity_token_info.frozen() {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof contained token info saying this token was not frozen for identity {}", token_freeze_transition.frozen_identity_id()))));
+                                                format!("proof contained token info saying this token was not frozen for identity {}", token_freeze_transition.frozen_identity_id()))));
                                     }
                                     Ok((
                                         root_hash,
                                         VerifiedTokenIdentityInfo(owner_id, identity_token_info),
                                     ))
                                 }
-                                TokenTransition::Unfreeze(token_unfreeze_transition) => {
+                            }
+                            TokenTransition::Unfreeze(token_unfreeze_transition) => {
+                                if keeps_historical_document.keeps_freezing_history() {
+                                    historical_query()
+                                } else {
                                     let (root_hash, Some(identity_token_info)) =
                                         Drive::verify_token_info_for_identity_id(
                                             proof,
@@ -458,95 +479,71 @@ impl Drive {
                                         )?
                                     else {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token info for identity {} expected to exist because of state transition (token freeze)", token_unfreeze_transition.frozen_identity_id()))));
+                                                format!("proof did not contain token info for identity {} expected to exist because of state transition (token freeze)", token_unfreeze_transition.frozen_identity_id()))));
                                     };
                                     if identity_token_info.frozen() {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof contained token info saying this token was frozen for identity {} when we just unfroze it", token_unfreeze_transition.frozen_identity_id()))));
+                                                format!("proof contained token info saying this token was frozen for identity {} when we just unfroze it", token_unfreeze_transition.frozen_identity_id()))));
                                     }
                                     Ok((
                                         root_hash,
                                         VerifiedTokenIdentityInfo(owner_id, identity_token_info),
                                     ))
                                 }
-                                TokenTransition::DestroyFrozenFunds(
-                                    destroy_frozen_funds_transition,
-                                ) => {
-                                    let (root_hash, maybe_token_amount) =
-                                        Drive::verify_token_balance_for_identity_id(
-                                            proof,
-                                            token_id.into_buffer(),
-                                            destroy_frozen_funds_transition
-                                                .frozen_identity_id()
-                                                .into_buffer(),
-                                            false,
-                                            platform_version,
-                                        )?;
-                                    if maybe_token_amount != Some(0) {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof contained non-zero token balance for identity {} expected to be zero because of state transition (token destroy frozen funds)", destroy_frozen_funds_transition.frozen_identity_id()))));
-                                    };
-                                    Ok((
-                                        root_hash,
-                                        VerifiedTokenBalanceAbsence(
-                                            destroy_frozen_funds_transition.frozen_identity_id(),
-                                        ),
-                                    ))
-                                }
-                                TokenTransition::EmergencyAction(emergency_action_transition) => {
-                                    let (root_hash, Some(token_status)) =
-                                        Drive::verify_token_status(
-                                            proof,
-                                            token_id.into_buffer(),
-                                            false,
-                                            platform_version,
-                                        )?
-                                    else {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                            }
+                            TokenTransition::DestroyFrozenFunds(_) => historical_query(),
+                            TokenTransition::EmergencyAction(emergency_action_transition) => {
+                                let (root_hash, Some(token_status)) = Drive::verify_token_status(
+                                    proof,
+                                    token_id.into_buffer(),
+                                    true,
+                                    platform_version,
+                                )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
                                             "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
-                                    };
-                                    if token_status.paused()
-                                        != emergency_action_transition.emergency_action().paused()
-                                    {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                };
+                                if token_status.paused()
+                                    != emergency_action_transition.emergency_action().paused()
+                                {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
                                             format!("proof contained token status saying this token is {}paused, but we expected {}paused", if token_status.paused() {""} else {"not "}, if emergency_action_transition.emergency_action().paused() {""} else {"not "}))));
-                                    }
-                                    Ok((root_hash, VerifiedTokenStatus(token_status)))
                                 }
-                                TokenTransition::ConfigUpdate(update) => {
-                                    let (root_hash, Some(updated_contract)) =
-                                        Drive::verify_contract(
-                                            proof,
-                                            Some(contract.config().keeps_history()),
-                                            false,
-                                            false,
-                                            contract.id().into_buffer(),
-                                            platform_version,
-                                        )?
-                                    else {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                Ok((root_hash, VerifiedTokenStatus(token_status)))
+                            }
+                            TokenTransition::ConfigUpdate(update) => {
+                                let (root_hash, Some(updated_contract)) = Drive::verify_contract(
+                                    proof,
+                                    Some(contract.config().keeps_history()),
+                                    true,
+                                    false,
+                                    contract.id().into_buffer(),
+                                    platform_version,
+                                )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
                                             "proof did not contain token status expected to exist because of state transition (token emergency action)".to_string())));
-                                    };
-                                    let mut expected_config = token_config.clone();
-                                    expected_config.apply_token_configuration_item(
-                                        update.update_token_configuration_item().clone(),
-                                    );
-                                    let new_token_config = updated_contract.expected_token_configuration(
+                                };
+                                let mut expected_config = token_config.clone();
+                                expected_config.apply_token_configuration_item(
+                                    update.update_token_configuration_item().clone(),
+                                );
+                                let new_token_config = updated_contract.expected_token_configuration(
                                         token_transition.base().token_contract_position(),
                                     ).map_err(|_| {
                                         Error::Proof(ProofError::CorruptedProof("returned proof does not have a token configuration, which should not be possible".to_string()))
                                     })?;
 
-                                    if new_token_config != &expected_config {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                if new_token_config != &expected_config {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
                                             format!(
                                                 "expected token configuration does not match the token configuration from the proof: expected {}, found {}",
                                                 expected_config, new_token_config
                                             ))));
-                                    }
-                                    Ok((root_hash, VerifiedDataContract(updated_contract)))
                                 }
+                                Ok((root_hash, VerifiedDataContract(updated_contract)))
                             }
+                            TokenTransition::Claim(_) => historical_query(),
                         }
                     }
                 }

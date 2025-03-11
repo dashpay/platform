@@ -12,8 +12,7 @@
         "decimals": 8
       },
       "baseSupply": 100000,
-      "maxSupply": null,
-      "keepsHistory": true
+      "maxSupply": null
     }
   }
 }

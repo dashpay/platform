@@ -204,10 +204,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         platform.state.last_committed_block_info()
                     );
                     if *was_executed {
-                        assert_eq!(
-                            &contract.expect("expected a contract"),
-                            data_contract_update.data_contract_ref(),
-                        );
+                        assert!(contract
+                            .expect("expected a contract")
+                            .equal_ignoring_time_fields(
+                                data_contract_update.data_contract_ref(),
+                                platform_version
+                            )
+                            .expect("expected to be able to check equality"),);
                     } else if contract.is_some() {
                         //there is the possibility that the state transition was not executed and the state is equal to the previous
                         // state, aka there would have been no change anyways, we can discount that for now
@@ -268,10 +271,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             }
                             BatchedTransitionAction::TokenAction(token_transition_action) => {
                                 if token_transition_action
-                                    .base()
-                                    .token_configuration()
-                                    .expect("expected token configuration")
                                     .keeps_history()
+                                    .expect("expected no error in token action keeps history")
                                 {
                                     // if we keep history we just need to check the historical document
                                     proofs_request.documents.push(
@@ -510,10 +511,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             }
                             BatchedTransitionAction::TokenAction(token_transition_action) => {
                                 if token_transition_action
-                                    .base()
-                                    .token_configuration()
-                                    .expect("expected token configuration")
                                     .keeps_history()
+                                    .expect("expected no error in token action keeps history")
                                 {
                                     let token_id = token_transition_action.base().token_id();
                                     let document_type_name = token_transition_action
