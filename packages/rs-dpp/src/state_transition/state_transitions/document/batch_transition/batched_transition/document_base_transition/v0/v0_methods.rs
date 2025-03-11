@@ -1,4 +1,4 @@
-use crate::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 
 use crate::prelude::IdentityNonce;
 use platform_value::Identifier;

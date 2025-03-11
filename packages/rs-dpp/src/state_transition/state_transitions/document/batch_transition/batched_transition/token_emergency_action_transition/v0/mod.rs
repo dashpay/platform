@@ -1,6 +1,6 @@
 pub mod v0_methods;
 
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use bincode::{Decode, Encode};
 #[cfg(feature = "state-transition-serde-conversion")]

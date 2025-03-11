@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dpp::platform_value::Identifier;
 
 use dpp::ProtocolError;
-use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionV0;
 

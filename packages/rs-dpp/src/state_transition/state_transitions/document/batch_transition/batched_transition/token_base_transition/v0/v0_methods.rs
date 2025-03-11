@@ -1,7 +1,7 @@
 use crate::data_contract::GroupContractPosition;
 use crate::group::GroupStateTransitionInfo;
 use crate::prelude::IdentityNonce;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use crate::tokens::calculate_token_id;
 use platform_value::Identifier;
 

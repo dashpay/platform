@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 
 pub use super::super::token_base_transition::IDENTIFIER_FIELDS;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]

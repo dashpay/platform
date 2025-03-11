@@ -1,10 +1,10 @@
 use platform_value::Identifier;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::state_transition::state_transitions::document::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
-use crate::state_transition::state_transitions::document::batch_transition::TokenFreezeTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::TokenFreezeTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::TokenFreezeTransition;
 
 impl TokenBaseTransitionAccessors for TokenFreezeTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {

@@ -52,17 +52,16 @@ use dpp::state_transition::state_transitions::document::batch_transition::batche
     BatchedTransition, DocumentDeleteTransition, DocumentReplaceTransition,
     DocumentTransferTransition,
 };
-use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::{
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_create_transition::{
     DocumentCreateTransition, DocumentCreateTransitionV0,
 };
-use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::token_mint_transition::TokenMintTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::{
-    BatchTransition, BatchTransitionV0, BatchTransitionV1, TokenMintTransition,
-    TokenTransferTransition,
-};
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_mint_transition::TokenMintTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::{BatchTransition, BatchTransitionV0, BatchTransitionV1};
+use dpp::state_transition::state_transitions::document::batch_transition::token_mint_transition::TokenMintTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::token_transfer_transition::TokenTransferTransition;
 use dpp::state_transition::state_transitions::contract::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::state_transitions::contract::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::state_transitions::identity::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;

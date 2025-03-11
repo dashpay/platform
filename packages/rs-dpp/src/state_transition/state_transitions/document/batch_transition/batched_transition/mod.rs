@@ -35,6 +35,8 @@ pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_purchase_transition::DocumentPurchaseTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 pub use document_transfer_transition::DocumentTransferTransition;
+pub use token_base_transition::TokenBaseTransition;
+pub use token_burn_transition::TokenBurnTransition;
 use document_transition::DocumentTransition;
 pub use document_update_price_transition::DocumentUpdatePriceTransition;
 use platform_value::Identifier;

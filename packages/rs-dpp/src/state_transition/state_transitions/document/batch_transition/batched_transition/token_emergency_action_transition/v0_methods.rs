@@ -3,8 +3,8 @@ use crate::prelude::IdentityNonce;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
-use crate::state_transition::state_transitions::document::batch_transition::TokenEmergencyActionTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_emergency_action_transition::TokenEmergencyActionTransition;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::util::hash::hash_double;
 

@@ -2,7 +2,7 @@ use platform_value::Identifier;
 use crate::prelude::{DerivationEncryptionKeyIndex, RecipientKeyIndex, RootEncryptionKeyIndex, SenderKeyIndex};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransitionV0;
 use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 
 impl TokenBaseTransitionAccessors for TokenTransferTransitionV0 {

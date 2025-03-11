@@ -3,8 +3,8 @@ use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 
 use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionV0;

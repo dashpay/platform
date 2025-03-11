@@ -54,8 +54,8 @@ use dpp::state_transition::state_transitions::document::batch_transition::batche
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::{
     DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition,
 };
-use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::state_transitions::document::batch_transition::document_create_transition::{
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_create_transition::{
     DocumentCreateTransition, DocumentCreateTransitionV0,
 };
 use dpp::state_transition::state_transitions::document::batch_transition::{BatchTransition, BatchTransitionV0};

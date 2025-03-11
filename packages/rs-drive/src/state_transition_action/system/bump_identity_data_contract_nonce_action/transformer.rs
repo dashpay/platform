@@ -5,8 +5,8 @@ use dpp::state_transition::state_transitions::contract::data_contract_update_tra
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
-use dpp::state_transition::state_transitions::document::batch_transition::document_base_transition::DocumentBaseTransition;
-use dpp::state_transition::state_transitions::document::batch_transition::token_base_transition::TokenBaseTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
+use dpp::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
