@@ -40,11 +40,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if estimated_costs_only_with_layer_info.is_some() {
-            // Drive::add_estimation_costs_for_perpetual_distribution(
-            //     estimated_costs_only_with_layer_info,
-            //     &platform_version.drive,
-            // )?;
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_token_perpetual_distribution(
+                Some(token_id),
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
         }
         let serialized_distribution = distribution.serialize_to_bytes()?;
 
@@ -80,7 +81,6 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution("we can not insert the perpetual distribution as it already existed, this should have been validated before insertion")));
         }
 
-        // We do a `if_not_exists` just to be extra careful
         self.batch_insert(
             PathKeyElementInfo::<0>::PathKeyElement((
                 perpetual_distributions_path.clone(),

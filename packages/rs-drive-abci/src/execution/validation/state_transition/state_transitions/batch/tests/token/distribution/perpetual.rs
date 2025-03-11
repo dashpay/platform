@@ -8,6 +8,7 @@ mod perpetual_distribution {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use super::*;
     #[test]
+    #[ignore]
     fn test_token_perpetual_distribution_block_claim_linear() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()

@@ -37,11 +37,12 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations = vec![];
-        if estimated_costs_only_with_layer_info.is_some() {
-            // Drive::add_estimation_costs_for_perpetual_distribution(
-            //     estimated_costs_only_with_layer_info,
-            //     &platform_version.drive,
-            // )?;
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Drive::add_estimation_costs_for_token_perpetual_distribution(
+                Some(token_id),
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
         }
 
         // Storage flags for cleanup logic
