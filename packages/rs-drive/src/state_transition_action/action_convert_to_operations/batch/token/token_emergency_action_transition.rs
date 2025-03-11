@@ -1,5 +1,4 @@
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action::v0::GroupActionV0;
@@ -78,18 +77,15 @@ impl DriveHighLevelBatchOperationConverter for TokenEmergencyActionTransitionAct
                         status: self.emergency_action().resulting_status(platform_version)?,
                     }));
 
-                    let token_configuration = self.base().token_configuration()?;
-                    if token_configuration.keeps_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::EmergencyAction(
-                                self.emergency_action(),
-                                self.public_note_owned(),
-                            ),
-                        }));
-                    }
+                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                        token_id: self.token_id(),
+                        owner_id,
+                        nonce: identity_contract_nonce,
+                        event: TokenEvent::EmergencyAction(
+                            self.emergency_action(),
+                            self.public_note_owned(),
+                        ),
+                    }));
                 }
 
                 Ok(ops)

@@ -128,19 +128,19 @@ class Fetcher {
 
   /**
    * Fetches data contract by it's ID
-   * @param id
-   * @param startAMs
-   * @param limit
-   * @param offset
+   * @param id {Identifier}
+   * @param startAMs {bigint}
+   * @param limit {number}
+   * @param offset {number}
    */
   public async fetchDataContractHistory(
     id: Identifier,
-    startAMs: number,
+    startAMs: bigint,
     limit: number,
     offset: number,
   ): Promise<GetDataContractHistoryResponse> {
     // Define query
-    const query = async (): Promise<GetDataContractHistoryResponse> => await this
+    const query = async (): Promise<GetDataContractHistoryResponse> => this
       .dapiClient.platform.getDataContractHistory(id, startAMs, limit, offset);
 
     // Define retry attempts.

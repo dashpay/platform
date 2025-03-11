@@ -1,4 +1,4 @@
-use dashcore_rpc::dashcore::Network;
+use dpp::dashcore::Network;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -10,12 +10,12 @@ use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v0::DocumentCreateTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::structure_v0::DocumentCreateTransitionActionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v0::DocumentCreateTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 
+mod advanced_structure_v0;
 mod state_v0;
 mod state_v1;
-mod structure_v0;
 
 pub trait DocumentCreateTransitionActionValidation {
     fn validate_structure(

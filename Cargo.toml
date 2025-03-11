@@ -31,9 +31,12 @@ members = [
     "packages/wallet-utils-contract",
     "packages/token-history-contract"
 ]
+
+exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
+
 [workspace.package]
 
-rust-version = "1.83"
+rust-version = "1.85"
 
 [patch.crates-io]
 tower-service = { git = "https://github.com/QuantumExplorer/tower", branch = "fix/indexMap2OnV0413" }

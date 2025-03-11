@@ -102,6 +102,10 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenBaseSupplyError(_) => 10251,
             Self::NonContiguousContractGroupPositionsError(_) => 10252,
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
+            Self::InvalidTokenDistributionFunctionDivideByZeroError(_) => 10254,
+            Self::InvalidTokenDistributionFunctionInvalidParameterError(_) => 10254,
+            Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10255,
+            Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10256,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -141,6 +145,9 @@ impl ErrorWithCode for BasicError {
             Self::DestinationIdentityForTokenMintingNotSetError(_) => 10454,
             Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10455,
             Self::TokenTransferToOurselfError(_) => 10456,
+            Self::InvalidTokenConfigUpdateNoChangeError(_) => 10457,
+            Self::InvalidTokenAmountError(_) => 10458,
+            Self::InvalidTokenNoteTooBigError(_) => 10459,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -255,6 +262,10 @@ impl ErrorWithCode for StateError {
             Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
             Self::InvalidGroupPositionError(_) => 40160,
             Self::TokenIsPausedError(_) => 40161,
+            Self::IdentityTokenAccountAlreadyFrozenError(_) => 40162,
+            Self::TokenAlreadyPausedError(_) => 40163,
+            Self::TokenNotPausedError(_) => 40164,
+            Self::InvalidTokenClaimPropertyMismatch(_) => 40165,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
