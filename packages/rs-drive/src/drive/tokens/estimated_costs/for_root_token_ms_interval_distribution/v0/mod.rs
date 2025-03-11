@@ -19,7 +19,7 @@ impl Drive {
         times: I,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) where
-        I: IntoIterator<Item = &'a TimestampMillis> + ExactSizeIterator,
+        I: IntoIterator<Item = &'a TimestampMillis>,
     {
         // 1. Insert estimation for the generic timed distributions tree.
         estimated_costs_only_with_layer_info.insert(

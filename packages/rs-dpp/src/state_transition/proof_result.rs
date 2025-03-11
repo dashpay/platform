@@ -22,4 +22,5 @@ pub enum StateTransitionProofResult {
     VerifiedDocuments(BTreeMap<Identifier, Option<Document>>),
     VerifiedTokenActionWithDocument(Document),
     VerifiedMasternodeVote(Vote),
+    VerifiedNextDistribution(Vote),
 }

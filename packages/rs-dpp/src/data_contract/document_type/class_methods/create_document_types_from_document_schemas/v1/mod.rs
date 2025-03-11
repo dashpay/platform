@@ -1,4 +1,5 @@
 use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
@@ -14,9 +15,7 @@ impl DocumentTypeV0 {
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
-        documents_keep_history_contract_default: bool,
-        documents_mutable_contract_default: bool,
-        documents_can_be_deleted_contract_default: bool,
+        data_contact_config: &DataContractConfig,
         full_validation: bool,
         has_tokens: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
@@ -42,9 +41,7 @@ impl DocumentTypeV0 {
                     &name,
                     schema,
                     schema_defs,
-                    documents_keep_history_contract_default,
-                    documents_mutable_contract_default,
-                    documents_can_be_deleted_contract_default,
+                    data_contact_config,
                     full_validation,
                     validation_operations,
                     platform_version,
