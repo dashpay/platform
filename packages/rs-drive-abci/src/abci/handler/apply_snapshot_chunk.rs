@@ -72,7 +72,6 @@ where
         let next_chunk_ids = session
             .state_sync_info
             .apply_chunk(
-                &app.platform().drive.grove,
                 &request.chunk_id,
                 chunk,
                 1u16,
