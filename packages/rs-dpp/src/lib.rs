@@ -24,7 +24,6 @@ pub mod version;
 
 pub mod errors;
 
-pub mod schema;
 pub mod validation;
 
 #[cfg(feature = "client")]
@@ -82,6 +81,8 @@ pub mod prelude {
     pub type EpochInterval = u16;
 
     pub type BlockHeight = u64;
+
+    pub type FeeMultiplier = u64;
 
     pub type BlockHeightInterval = u64;
 

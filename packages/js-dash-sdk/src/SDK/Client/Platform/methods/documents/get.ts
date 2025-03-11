@@ -152,12 +152,12 @@ export async function get(this: Platform, typeLocator: string, opts: QueryOption
       let metadata;
       const responseMetadata = documentsResponse.getMetadata();
       if (responseMetadata) {
-        metadata = new Metadata({
-          blockHeight: responseMetadata.getHeight(),
-          coreChainLockedHeight: responseMetadata.getCoreChainLockedHeight(),
-          timeMs: responseMetadata.getTimeMs(),
-          protocolVersion: responseMetadata.getProtocolVersion(),
-        });
+        metadata = new Metadata(
+          responseMetadata.getHeight(),
+          responseMetadata.getCoreChainLockedHeight(),
+          responseMetadata.getTimeMs(),
+          responseMetadata.getProtocolVersion(),
+        );
       }
       document.setMetadata(metadata);
 

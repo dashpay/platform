@@ -1,11 +1,11 @@
-use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
     MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::prelude::TimestampMillis;
 use serde_json::Value;

@@ -7,9 +7,9 @@ use crate::platform_types::signature_verification_quorum_set::{
     ThresholdBlsPublicKey, VerificationQuorum,
 };
 use bincode::{Decode, Encode};
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::QuorumHash;
 use dpp::bls_signatures::Bls12381G2Impl;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
 
 #[derive(Debug, Clone, Encode, Decode)]

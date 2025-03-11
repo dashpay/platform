@@ -26,6 +26,10 @@ pub use executor::{
     WrapToExecutionResult,
 };
 use futures::{future::BoxFuture, FutureExt};
+#[cfg(any(target_arch = "wasm32", not(feature = "mocks")))]
+pub use http::Uri;
+#[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]
+pub use http_serde::http::Uri;
 pub use request_settings::RequestSettings;
 
 /// A DAPI request could be executed with an initialized [DapiClient].

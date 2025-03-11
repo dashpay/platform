@@ -24,7 +24,7 @@ describe('Platform', () => {
         const genesisEpoch = response.getEpochsInfo()[0];
 
         expect(genesisEpoch.number).to.equal(0);
-        expect(genesisEpoch.firstBlockHeight).to.equal(1);
+        expect(genesisEpoch.firstBlockHeight).to.equal(BigInt(1));
       });
     });
   });

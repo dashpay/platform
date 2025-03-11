@@ -42,7 +42,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -52,7 +52,6 @@ use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::V
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
-use super::token::TokenIsPausedError;
 
 #[derive(
     Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
@@ -241,6 +240,9 @@ pub enum StateError {
     TokenMintPastMaxSupplyError(TokenMintPastMaxSupplyError),
 
     #[error(transparent)]
+    InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch),
+
+    #[error(transparent)]
     NewTokensDestinationIdentityDoesNotExistError(NewTokensDestinationIdentityDoesNotExistError),
 
     #[error(transparent)]
@@ -259,6 +261,15 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenIsPausedError(TokenIsPausedError),
+
+    #[error(transparent)]
+    IdentityTokenAccountAlreadyFrozenError(IdentityTokenAccountAlreadyFrozenError),
+
+    #[error(transparent)]
+    TokenAlreadyPausedError(TokenAlreadyPausedError),
+
+    #[error(transparent)]
+    TokenNotPausedError(TokenNotPausedError),
 }
 
 impl From<StateError> for ConsensusError {
