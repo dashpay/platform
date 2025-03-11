@@ -12,6 +12,7 @@ pub use v0::TokenFreezeTransitionV0;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenFreezeTransition {
     #[display("V0({})", "_0")]
     V0(TokenFreezeTransitionV0),

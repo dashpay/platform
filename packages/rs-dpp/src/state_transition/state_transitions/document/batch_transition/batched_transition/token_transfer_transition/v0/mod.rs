@@ -27,6 +27,7 @@ mod property_names {
     "amount",
     "recipient_owner_id"
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenTransferTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,

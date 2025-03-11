@@ -58,8 +58,8 @@ use crate::state_transition::state_transitions::contract::data_contract_update_t
 use crate::state_transition::state_transitions::document::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
-pub use v0::*;
-pub use v1::*;
+pub use v0::{BatchTransitionV0, BatchTransitionV0Signable};
+pub use v1::{BatchTransitionV1, BatchTransitionV1Signable};
 
 #[derive(
     Debug,

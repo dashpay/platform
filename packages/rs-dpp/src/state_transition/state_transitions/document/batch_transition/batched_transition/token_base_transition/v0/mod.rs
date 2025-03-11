@@ -42,6 +42,7 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
     "token_id",
     "data_contract_id"
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenBaseTransitionV0 {
     #[cfg_attr(
         feature = "state-transition-serde-conversion",

@@ -11,7 +11,9 @@ pub mod info;
 pub mod status;
 pub mod token_event;
 
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type SharedEncryptedNote = (SenderKeyIndex, RecipientKeyIndex, Vec<u8>);
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type PrivateEncryptedNote = (
     RootEncryptionKeyIndex,
     DerivationEncryptionKeyIndex,

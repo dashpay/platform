@@ -39,6 +39,7 @@ impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfo {
     serde(rename_all = "camelCase")
 )]
 #[display("ID: {}, Action ID: {}", "id", "action_id")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct GroupStateTransitionInfo {
     #[cfg_attr(
         feature = "state-transition-serde-conversion",

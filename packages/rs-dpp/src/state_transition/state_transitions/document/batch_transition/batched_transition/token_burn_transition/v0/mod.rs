@@ -19,6 +19,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {base}, Amount: {burn_amount}")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenBurnTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]

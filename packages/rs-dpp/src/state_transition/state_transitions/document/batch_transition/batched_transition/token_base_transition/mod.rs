@@ -35,6 +35,7 @@ use std::collections::BTreeMap;
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenBaseTransition {
     #[display("V0({})", "_0")]
     V0(TokenBaseTransitionV0),
