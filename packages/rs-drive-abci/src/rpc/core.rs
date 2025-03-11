@@ -5,6 +5,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::prelude::TimestampMillis;
@@ -168,9 +169,9 @@ macro_rules! retry {
         }
 
         let mut last_err = None;
-        for i in 0..MAX_RETRIES {
+        let result = (0..MAX_RETRIES).find_map(|i| {
             match $action {
-                Ok(result) => return Ok(result),
+                Ok(result) => Some(Ok(result)),
                 Err(e) => {
                     match e {
                         dashcore_rpc::Error::JsonRpc(
@@ -187,16 +188,19 @@ macro_rules! retry {
                                 },
                             ),
                         ) => {
+                            // Delay before next try
                             last_err = Some(e);
                             let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
                             std::thread::sleep(Duration::from_secs(delay));
+                            None
                         }
-                        _ => return Err(e),
-                    };
+                        _ => Some(Err(e)),
+                    }
                 }
             }
-        }
-        Err(last_err.unwrap()) // Return the last error if all attempts fail
+        });
+
+        result.unwrap_or_else(|| Err(last_err.unwrap()))
     }};
 }
 
@@ -267,7 +271,24 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        retry!(self.inner.get_quorum_listextended(height))
+        tracing::info!("fetch list quorum hash");
+
+        let list: ExtendedQuorumListResult =
+            retry!(self.inner.get_quorum_listextended_reversed(height))?;
+
+        tracing::info!(?list, "fetch list quorum hash");
+
+        for (_, quorums) in &list.quorums_by_type {
+            for (quorum_hash, _) in quorums {
+                tracing::info!(
+                    %quorum_hash,
+                    quorum_hash_bytes = hex::encode(quorum_hash.to_byte_array()),
+                    "fetch list quorum hash"
+                );
+            }
+        }
+
+        Ok(list)
     }
 
     fn get_quorum_info(
@@ -276,9 +297,21 @@ impl CoreRPCLike for DefaultCoreRPC {
         hash: &QuorumHash,
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error> {
-        retry!(self
-            .inner
-            .get_quorum_info(quorum_type, hash, include_secret_key_share))
+        tracing::info!("fetch info quorum hash");
+
+        let info: QuorumInfoResult = retry!(self.inner.get_quorum_info_reversed(
+            quorum_type,
+            hash,
+            include_secret_key_share
+        ))?;
+
+        tracing::info!(
+            %info.quorum_hash,
+            quorum_hash_bytes = hex::encode(info.quorum_hash.to_byte_array()),
+            "fetch info quorum hash"
+        );
+
+        Ok(info)
     }
 
     fn get_protx_diff_with_masternodes(
