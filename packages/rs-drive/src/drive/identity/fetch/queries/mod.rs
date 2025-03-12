@@ -1,9 +1,7 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{
-    identity_tree_path_vec, non_unique_key_hashes_tree_path_vec, unique_key_hashes_tree_path_vec,
-    Drive,
-};
+use crate::drive::non_unique_key_hashes_tree_path_vec;
+use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
 use std::ops::RangeFull;
 
 use crate::error::Error;

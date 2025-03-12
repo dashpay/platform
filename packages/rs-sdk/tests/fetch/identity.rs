@@ -116,3 +116,31 @@ async fn test_identity_public_keys_all_read() {
         assert_eq!(id, pubkey.id());
     }
 }
+
+/// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fetch_identity_by_non_unique_public_keys() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let id: dpp::prelude::Identifier = cfg.existing_identity_id;
+
+    let sdk = cfg
+        .setup_api("test_fetch_identity_by_non_unique_public_keys")
+        .await;
+
+    let public_keys = IdentityPublicKey::fetch_many(&sdk, id)
+        .await
+        .expect("fetch identity public keys");
+
+    assert!(!public_keys.is_empty());
+    tracing::debug!(?public_keys, ?id, "fetched identity public keys");
+
+    // key IDs must match
+    for item in public_keys {
+        let id = item.0;
+        let pubkey = item.1.expect("public key should exist");
+
+        assert_eq!(id, pubkey.id());
+    }
+}

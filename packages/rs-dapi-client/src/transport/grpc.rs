@@ -489,3 +489,12 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_status
 );
+
+//   rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest) returns (GetIdentityByNonUniquePublicKeyHashResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityByNonUniquePublicKeyHashRequest,
+    platform_proto::GetIdentityByNonUniquePublicKeyHashResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_by_non_unique_public_key_hash
+);
