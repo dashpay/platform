@@ -1,4 +1,5 @@
-use crate::types::RetrievedObjects;
+use crate::error::MapGroveDbError;
+use crate::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -8,35 +9,8 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
-use dpp::identifier::Identifier;
-use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use std::ops::Deref;
-
-/// Information (i.e. balance frozen) about multiple tokens of one specific identity
-#[derive(Debug, Default, Clone, derive_more::From)]
-pub struct IdentityTokenInfos(
-    /// Token ID to token info
-    #[from]
-    pub RetrievedObjects<Identifier, IdentityTokenInfo>,
-);
-
-impl Deref for IdentityTokenInfos {
-    type Target = RetrievedObjects<Identifier, IdentityTokenInfo>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl FromIterator<(Identifier, Option<IdentityTokenInfo>)> for IdentityTokenInfos {
-    fn from_iter<T: IntoIterator<Item = (Identifier, Option<IdentityTokenInfo>)>>(iter: T) -> Self {
-        iter.into_iter()
-            .collect::<RetrievedObjects<Identifier, IdentityTokenInfo>>()
-            .into()
-    }
-}
 
 impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
     type Request = GetIdentityTokenInfosRequest;
@@ -91,42 +65,11 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
             false,
             platform_version,
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
-    }
-}
-
-/// Information (i.e. balance frozen) about one specific token of multiple identities
-#[derive(Debug, Default, Clone, derive_more::From)]
-pub struct IdentitiesTokenInfos(
-    /// Identity ID to token info
-    pub RetrievedObjects<Identifier, IdentityTokenInfo>,
-);
-
-impl Deref for IdentitiesTokenInfos {
-    type Target = RetrievedObjects<Identifier, IdentityTokenInfo>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl FromIterator<(Identifier, Option<IdentityTokenInfo>)> for IdentitiesTokenInfos {
-    fn from_iter<T: IntoIterator<Item = (Identifier, Option<IdentityTokenInfo>)>>(iter: T) -> Self {
-        iter.into_iter()
-            .collect::<RetrievedObjects<Identifier, IdentityTokenInfo>>()
-            .into()
     }
 }
 
@@ -181,15 +124,7 @@ impl FromProof<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfos {
             false,
             platform_version,
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 

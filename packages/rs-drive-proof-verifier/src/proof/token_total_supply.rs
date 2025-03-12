@@ -1,3 +1,4 @@
+use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -47,15 +48,7 @@ impl FromProof<GetTokenTotalSupplyRequest> for TotalSingleTokenBalance {
             false,
             platform_version,
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 

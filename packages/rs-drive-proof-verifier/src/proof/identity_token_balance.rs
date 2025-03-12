@@ -1,4 +1,5 @@
-use crate::types::RetrievedObjects;
+use crate::error::MapGroveDbError;
+use crate::types::identity_token_balance::{IdentitiesTokenBalances, IdentityTokenBalances};
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -7,36 +8,9 @@ use dapi_grpc::platform::v0::{
     GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse, Proof, ResponseMetadata,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
-use dpp::balances::credits::TokenAmount;
 use dpp::dashcore::Network;
-use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use std::ops::Deref;
-
-/// Multiple token balances of one specific identity
-#[derive(Debug, Default, Clone, derive_more::From)]
-pub struct IdentityTokenBalances(
-    /// Token ID to token balance
-    #[from]
-    pub RetrievedObjects<Identifier, TokenAmount>,
-);
-
-impl Deref for IdentityTokenBalances {
-    type Target = RetrievedObjects<Identifier, TokenAmount>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentityTokenBalances {
-    fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
-        iter.into_iter()
-            .collect::<RetrievedObjects<Identifier, TokenAmount>>()
-            .into()
-    }
-}
 
 impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
     type Request = GetIdentityTokenBalancesRequest;
@@ -89,43 +63,11 @@ impl FromProof<GetIdentityTokenBalancesRequest> for IdentityTokenBalances {
             false,
             platform_version,
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
-    }
-}
-
-/// One specific token balance of multiple identities
-#[derive(Debug, Default, Clone, derive_more::From)]
-pub struct IdentitiesTokenBalances(
-    /// Identity ID to token balance
-    #[from]
-    pub RetrievedObjects<Identifier, TokenAmount>,
-);
-
-impl Deref for IdentitiesTokenBalances {
-    type Target = RetrievedObjects<Identifier, TokenAmount>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl FromIterator<(Identifier, Option<TokenAmount>)> for IdentitiesTokenBalances {
-    fn from_iter<T: IntoIterator<Item = (Identifier, Option<TokenAmount>)>>(iter: T) -> Self {
-        iter.into_iter()
-            .collect::<RetrievedObjects<Identifier, TokenAmount>>()
-            .into()
     }
 }
 
@@ -181,15 +123,7 @@ impl FromProof<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalances {
             false,
             platform_version,
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 

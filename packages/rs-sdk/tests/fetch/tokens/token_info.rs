@@ -7,7 +7,7 @@ use dash_sdk::platform::FetchMany;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::info::IdentityTokenInfo;
-use drive_proof_verifier::tokens::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
+use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 use drive_proof_verifier::Length;
 
 /// Fetches multiple token infos of specific identity

@@ -7,7 +7,7 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesTokenInfosRequest, GetIdentityTokenInfosRequest,
 };
 use dpp::tokens::info::IdentityTokenInfo;
-pub use drive_proof_verifier::tokens::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
+use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 
 #[derive(Debug, Clone)]
 /// Query to fetch multiple token information of one specific identity

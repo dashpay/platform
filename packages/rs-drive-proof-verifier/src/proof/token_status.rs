@@ -1,4 +1,5 @@
-use crate::types::RetrievedObjects;
+use crate::error::MapGroveDbError;
+use crate::types::token_status::TokenStatuses;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -7,14 +8,8 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
-use dpp::identifier::Identifier;
-use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-
-/// Token statuses (i.e. is token paused or not)
-/// Token ID to token status
-pub type TokenStatuses = RetrievedObjects<Identifier, TokenStatus>;
 
 impl FromProof<GetTokenStatusesRequest> for TokenStatuses {
     type Request = GetTokenStatusesRequest;
@@ -53,15 +48,7 @@ impl FromProof<GetTokenStatusesRequest> for TokenStatuses {
 
         let (root_hash, result) =
             Drive::verify_token_statuses(&proof.grovedb_proof, &token_ids, false, platform_version)
-                .map_err(|e| match e {
-                    drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                        proof_bytes: proof.grovedb_proof.clone(),
-                        height: metadata.height,
-                        time_ms: metadata.time_ms,
-                        error: e.to_string(),
-                    },
-                    _ => e.into(),
-                })?;
+                .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 

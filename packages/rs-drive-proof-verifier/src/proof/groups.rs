@@ -1,4 +1,5 @@
-use crate::types::RetrievedObjects;
+use crate::error::MapGroveDbError;
+use crate::types::groups::{GroupActionSigners, GroupActions, Groups};
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
@@ -13,7 +14,7 @@ use dpp::data_contract::group::{Group, GroupMemberPower};
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
-use dpp::prelude::Identifier;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use indexmap::IndexMap;
@@ -65,24 +66,13 @@ impl FromProof<GetGroupInfoRequest> for Group {
             false,
             platform_version,
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((result, metadata, proof))
     }
 }
-
-/// Groups
-pub type Groups = RetrievedObjects<GroupContractPosition, Group>;
 
 impl FromProof<GetGroupInfosRequest> for Groups {
     type Request = GetGroupInfosRequest;
@@ -150,24 +140,13 @@ impl FromProof<GetGroupInfosRequest> for Groups {
                 (root_hash, optional_value_map)
             },
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
     }
 }
-
-/// Group actions
-pub type GroupActions = RetrievedObjects<Identifier, GroupAction>;
 
 impl FromProof<GetGroupActionsRequest> for GroupActions {
     type Request = GetGroupActionsRequest;
@@ -261,24 +240,13 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
                 (root_hash, optional_value_map)
             },
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
     }
 }
-
-/// Group action signers
-pub type GroupActionSigners = RetrievedObjects<Identifier, GroupMemberPower>;
 
 impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
     type Request = GetGroupActionSignersRequest;
@@ -350,15 +318,7 @@ impl FromProof<GetGroupActionSignersRequest> for GroupActionSigners {
                 (root_hash, optional_value_map)
             },
         )
-        .map_err(|e| match e {
-            drive::error::Error::GroveDB(e) => Error::GroveDBError {
-                proof_bytes: proof.grovedb_proof.clone(),
-                height: metadata.height,
-                time_ms: metadata.time_ms,
-                error: e.to_string(),
-            },
-            _ => e.into(),
-        })?;
+        .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 

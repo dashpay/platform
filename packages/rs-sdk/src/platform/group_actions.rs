@@ -18,7 +18,7 @@ use dpp::data_contract::GroupContractPosition;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::prelude::StartAtIncluded;
-pub use drive_proof_verifier::group_actions::{GroupActionSigners, GroupActions, Groups};
+use drive_proof_verifier::types::groups::{GroupActionSigners, GroupActions, Groups};
 
 #[derive(Debug, Clone)]
 /// Query to fetch data contract group

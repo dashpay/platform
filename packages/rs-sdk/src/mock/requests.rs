@@ -21,14 +21,15 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
-use drive_proof_verifier::group_actions::GroupActions;
-use drive_proof_verifier::tokens::identity_token_balance::{
+use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
+use drive_proof_verifier::types::groups::GroupActions;
+use drive_proof_verifier::types::identity_token_balance::{
     IdentitiesTokenBalances, IdentityTokenBalances,
 };
-use drive_proof_verifier::tokens::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
-use drive_proof_verifier::tokens::token_status::TokenStatuses;
+use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
+use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
     ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
     Voters,
