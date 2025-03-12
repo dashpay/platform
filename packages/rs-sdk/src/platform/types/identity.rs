@@ -79,8 +79,8 @@ impl Query<IdentityRequest> for PublicKeyHash {
 /// Non-unique public key hash that can be used as a [Query] to find an identity.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NonUniquePublicKeyHashQuery {
-    keyhash: [u8; 32],
-    after: Option<[u8; 32]>,
+    pub key_hash: [u8; 20],
+    pub after: Option<[u8; 32]>,
 }
 
 impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
@@ -93,7 +93,7 @@ impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
             version: Some(
                 proto::get_identity_by_non_unique_public_key_hash_request::Version::V0(
                     GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                        public_key_hash: self.keyhash.to_vec(),
+                        public_key_hash: self.key_hash.to_vec(),
                         start_after: self.after.map(|a| a.to_vec()),
                         prove,
                     },

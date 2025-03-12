@@ -190,8 +190,8 @@ impl Config {
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             let core_host = self.core_host.as_ref().unwrap_or(&self.platform_host);
-            // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
+            // Dump all traffic to disk]
+            let mut builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 core_host,
                 self.core_port,
                 &self.core_user,

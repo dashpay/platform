@@ -1,4 +1,4 @@
-use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
 use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -129,18 +129,49 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         .setup_api("test_fetch_identity_by_non_unique_public_keys")
         .await;
 
-    let public_keys = IdentityPublicKey::fetch_many(&sdk, id)
+    // First, fetch an identity to get a non-unique public key
+    let identity = Identity::fetch(&sdk, id)
         .await
-        .expect("fetch identity public keys");
+        .expect("fetch identity")
+        .expect("found identity");
 
-    assert!(!public_keys.is_empty());
-    tracing::debug!(?public_keys, ?id, "fetched identity public keys");
+    let pubkeys = identity.public_keys();
 
-    // key IDs must match
-    for item in public_keys {
-        let id = item.0;
-        let pubkey = item.1.expect("public key should exist");
+    assert_ne!(
+        pubkeys.len(),
+        0,
+        "identity must have at least one public key"
+    );
 
-        assert_eq!(id, pubkey.id());
+    for non_unique_key in pubkeys.iter() {
+        let key_hash = non_unique_key.1.public_key_hash().expect("public key hash");
+        let mut query = NonUniquePublicKeyHashQuery {
+            key_hash,
+            after: None,
+        };
+
+        // Now fetch identities by this non-unique public key hash
+        let mut count = 0;
+        while let Some(found) = Identity::fetch(&sdk, query)
+            .await
+            .expect("fetch identities by non-unique key hash")
+        {
+            count += 1;
+            tracing::debug!(
+                ?found,
+                ?key_hash,
+                ?count,
+                "fetched identities by non-unique public key hash"
+            );
+
+            query = NonUniquePublicKeyHashQuery {
+                key_hash,
+                after: Some(*found.id().as_bytes()),
+            };
+        }
+        assert_ne!(
+            count, 0,
+            "found at least one identity by non-unique public key hash"
+        );
     }
 }
