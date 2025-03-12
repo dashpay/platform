@@ -46,7 +46,7 @@ impl<C> Platform<C> {
             })),
         }?;
 
-        #[cfg(feature = "sdk-test-data")]
+        #[cfg(all(feature = "sdk-test-data", not(test)))]
         {
             let block_info = dpp::block::block_info::BlockInfo::default_with_time(genesis_time);
             self.create_sdk_test_data(&block_info, transaction, platform_version)?;

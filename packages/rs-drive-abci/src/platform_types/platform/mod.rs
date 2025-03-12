@@ -178,10 +178,10 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let config = config.unwrap_or(PlatformConfig::default_testnet());
+        let config = config.unwrap_or(PlatformConfig::default_mainnet());
 
         let default_initial_platform_version = initial_protocol_version
-            .map(|protocol_version| PlatformVersion::get(protocol_version))
+            .map(PlatformVersion::get)
             .transpose()?;
 
         let (drive, current_platform_version) = Drive::open(

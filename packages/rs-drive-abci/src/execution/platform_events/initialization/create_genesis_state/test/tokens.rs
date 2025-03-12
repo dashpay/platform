@@ -6,6 +6,7 @@ use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::config::DataContractConfig;
@@ -188,7 +189,7 @@ impl<C> Platform<C> {
             conventions_change_rules: ChangeControlRulesV0::default().into(),
             base_supply: 100000,
             max_supply: None,
-            keeps_history: true,
+            keeps_history: TokenKeepsHistoryRulesV0::default().into(),
             start_as_paused: false,
             max_supply_change_rules: ChangeControlRulesV0::default().into(),
             distribution_rules: TokenDistributionRulesV0 {
@@ -239,8 +240,13 @@ impl<C> Platform<C> {
             owner_id: IDENTITY_ID_1,
             document_types: Default::default(),
             schema_defs: Default::default(),
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
             groups,
-            metadata: None,
             tokens,
         });
 
