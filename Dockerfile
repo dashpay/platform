@@ -18,6 +18,8 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
+#   purpose in local development environment
 #
 # # sccache cache backends
 #
@@ -400,8 +402,10 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
+# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
+# This is only for testing purpose and should be used only for
+# local development environment
 ARG SDK_TEST_DATA
-
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
