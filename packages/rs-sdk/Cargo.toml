@@ -38,7 +38,7 @@ envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
 derive_more = { version = "1.0", features = ["from"] }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.16.0" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.38.0" }
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
@@ -95,7 +95,7 @@ offline-testing = ["mocks"]
 # Requires configuration of Dash Platform connectivity.
 # See [README.md] for more details.
 #
-# Without this feature enabled, tests will use test vectors from `tests/vectors/` instead of connecting to live 
+# Without this feature enabled, tests will use test vectors from `tests/vectors/` instead of connecting to live
 # Dash Platform.
 #
 # If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.

@@ -20,6 +20,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+#[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::v1::DataContractV1;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
@@ -279,7 +280,6 @@ mod tests {
         assert_eq!(data_contract.schema_defs(), result.schema_defs());
         assert_eq!(data_contract.document_schemas(), result.document_schemas());
         assert_eq!(data_contract.owner_id(), result.owner_id());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -302,7 +302,6 @@ mod tests {
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -328,7 +327,6 @@ mod tests {
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
-        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[test]

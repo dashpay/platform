@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_respo
     emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent,
     EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent,
     PersonalEncryptedNote, SharedEncryptedNote, TokenConfigUpdateEvent,
-    TokenEvent as TokenEventResponse, TransferEvent, UnfreezeEvent,
+    TokenEvent as TokenEventResponse, UnfreezeEvent,
 };
 use dapi_grpc::platform::v0::get_group_actions_response::{
     get_group_actions_response_v0, GetGroupActionsResponseV0,
@@ -181,36 +181,8 @@ impl<C> Platform<C> {
                                                 )),
                                             })
                                         }
-                                        TokenEvent::Transfer(
-                                            recipient_id,
-                                            public_note,
-                                            shared_encrypted_note,
-                                            personal_encrypted_note,
-                                            amount,
-                                        ) => {
-                                            group_action_event::EventType::TokenEvent(TokenEventResponse {
-                                                r#type: Some(token_event::Type::Transfer(TransferEvent {
-                                                    recipient_id: recipient_id.to_vec(),
-                                                    public_note,
-                                                    shared_encrypted_note: shared_encrypted_note
-                                                        .map(|(sender_key_index, recipient_key_index, note)| {
-                                                            SharedEncryptedNote {
-                                                                sender_key_index,
-                                                                recipient_key_index,
-                                                                encrypted_data: note,
-                                                            }
-                                                        }),
-                                                    personal_encrypted_note: personal_encrypted_note
-                                                        .map(|(root_encryption_key_index, derivation_encryption_key_index, note)| {
-                                                            PersonalEncryptedNote {
-                                                                root_encryption_key_index,
-                                                                derivation_encryption_key_index,
-                                                                encrypted_data: note,
-                                                            }
-                                                        }),
-                                                    amount: amount as u64,
-                                                })),
-                                            })
+                                        TokenEvent::Transfer(..) => {
+                                            return None;
                                         },
                                         TokenEvent::EmergencyAction(action, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
@@ -230,6 +202,9 @@ impl<C> Platform<C> {
                                                     public_note,
                                                 })),
                                             })
+                                        }
+                                        TokenEvent::Claim(..) => {
+                                            return None;
                                         }
                                     },
                                 },

@@ -15,7 +15,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error>
     where
-        I: IntoIterator<Item = &'a TimestampMillis> + ExactSizeIterator,
+        I: IntoIterator<Item = &'a TimestampMillis>,
     {
         match drive_version
             .methods

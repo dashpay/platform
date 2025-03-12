@@ -1,11 +1,11 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures::{
     Bls12381G2Impl, PublicKey as BlsPublicKey, PublicKey, SecretKey as BlsPrivateKey, SecretKey,
 };
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::BTreeMap;
