@@ -130,6 +130,33 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_start_after() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let negative_tests: Vec<&[u8]> = vec![&[0u8; 4], &[0u8; 20], &[0u8; 64]];
+
+        for test in negative_tests {
+            let request = GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                public_key_hash: vec![0; 20],
+                start_after: Some(test.to_vec()),
+                prove: false,
+            };
+
+            let result = platform
+                .query_identity_by_non_unique_public_key_hash_v0(request, &state, version)
+                .expect("expected query to succeed");
+
+            assert!(
+                matches!(
+                result.errors.as_slice(),
+                [QueryError::InvalidArgument(msg)] if msg == &"start_after must be 32 bytes long identity ID".to_string()),
+                "errors: {:?}",
+                result.errors,
+            );
+        }
+    }
+
+    #[test]
     fn test_identity_not_found() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
