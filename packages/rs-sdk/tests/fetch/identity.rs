@@ -135,12 +135,16 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         .expect("fetch identity")
         .expect("found identity");
 
-    let pubkeys = identity.public_keys();
+    let pubkeys: Vec<_> = identity
+        .public_keys()
+        .iter()
+        .filter(|public_key| !public_key.1.key_type().is_unique_key_type())
+        .collect();
 
     assert_ne!(
         pubkeys.len(),
         0,
-        "identity must have at least one public key"
+        "identity must have at least one non-unique public key"
     );
 
     for non_unique_key in pubkeys.iter() {

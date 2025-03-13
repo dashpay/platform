@@ -1,8 +1,6 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
@@ -110,6 +108,10 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let non_unique_key =
+            IdentityPublicKey::random_voting_key_with_rng(11, &mut rng, platform_version)?;
+
         for id in [IDENTITY_ID_1, IDENTITY_ID_2, IDENTITY_ID_3] {
             // Create identity without keys
             let mut identity = Identity::create_basic_identity(id, platform_version)?;
@@ -117,7 +119,9 @@ impl<C> Platform<C> {
             // Generate keys
             let seed = id.to_buffer()[0];
             let mut rng = StdRng::seed_from_u64(seed as u64);
-            let keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(3, &mut rng, platform_version)?;
+            let mut keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(3, &mut rng, platform_version)?;
+            // every identity has the same non-unique key
+            keys.push(non_unique_key.clone());
 
             for (key, private_key) in keys.iter() {
                 let private_key = hex::encode(private_key);
