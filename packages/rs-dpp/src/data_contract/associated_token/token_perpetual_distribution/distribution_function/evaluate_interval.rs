@@ -1,3 +1,4 @@
+use std::ops::Div;
 use crate::balances::credits::TokenAmount;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
@@ -26,8 +27,9 @@ impl DistributionFunction {
     /// - `Err(ProtocolError)` on mismatched types, zero steps, or overflow.
     pub fn evaluate_interval<F>(
         &self,
-        start_not_included: RewardDistributionMoment,
-        end_included: RewardDistributionMoment,
+        distribution_start: RewardDistributionMoment,
+        interval_start_excluded: RewardDistributionMoment,
+        interval_end_included: RewardDistributionMoment,
         step: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
     ) -> Result<TokenAmount, ProtocolError>
@@ -35,7 +37,9 @@ impl DistributionFunction {
         F: Fn(EpochIndex) -> Option<RewardRatio>,
     {
         // Ensure moments are the same type.
-        if !(start_not_included.same_type(&step) && start_not_included.same_type(&end_included)) {
+        if !(interval_start_excluded.same_type(&step)
+            && interval_start_excluded.same_type(&interval_end_included))
+        {
             return Err(ProtocolError::AddingDifferentTypes(
                 "Mismatched RewardDistributionMoment types".into(),
             ));
@@ -47,29 +51,39 @@ impl DistributionFunction {
             ));
         }
 
-        if end_included <= start_not_included {
-            return Ok(0);
-        }
-
-        let first_point = (start_not_included + step)?;
-
-        if end_included < first_point {
+        if interval_start_excluded >= interval_end_included {
             return Ok(0);
         }
 
         // Optimization for FixedAmount
-        if let DistributionFunction::FixedAmount { amount: fixed_amount } = self {
-            let steps_count = first_point.steps_till(&end_included, &step)?;
+        if let DistributionFunction::FixedAmount {
+            amount: fixed_amount,
+        } = self
+        {
+            let steps_count =
+                interval_start_excluded.steps_till(&interval_end_included, &step, false, true)?;
             return fixed_amount.checked_mul(steps_count).ok_or_else(|| {
                 ProtocolError::Overflow("Overflow in FixedAmount evaluation".into())
             });
         }
 
-        let mut total: u64 = 0;
-        let mut current_point = first_point;
+        // Let's say you have a step 10 going from 10 to 20, the first index would be 2
+        // If we are at 10
+        let first_step = ((interval_start_excluded / step)? + 1)?;
+        let last_step = (interval_end_included / step)?;
 
-        while current_point <= end_included {
-            let base_amount = self.evaluate(current_point.to_u64())?;
+        if first_step > last_step {
+            return Ok(0);
+        }
+
+        let distribution_start_step = distribution_start.div(step)?;
+
+        let mut total: u64 = 0;
+        let mut current_point = first_step;
+
+        while current_point <= last_step {
+            let base_amount =
+                self.evaluate(distribution_start_step.to_u64(), current_point.to_u64())?;
 
             let amount = if let (
                 RewardDistributionMoment::EpochBasedMoment(epoch_index),
@@ -86,19 +100,20 @@ impl DistributionFunction {
                             )
                         })?
                 } else {
-                    return Err(ProtocolError::MissingEpochInfo(format!("missing epoch info for epoch {}", epoch_index)));
+                    return Err(ProtocolError::MissingEpochInfo(format!(
+                        "missing epoch info for epoch {}",
+                        epoch_index
+                    )));
                 }
             } else {
                 base_amount
             };
 
-            total = total.checked_add(amount).ok_or_else(|| {
-                ProtocolError::Overflow(
-                    "Overflow in token interval evaluation"
-                )
-            })?;
+            total = total
+                .checked_add(amount)
+                .ok_or_else(|| ProtocolError::Overflow("Overflow in token interval evaluation"))?;
 
-            current_point = (current_point + step)?;
+            current_point = (current_point + 1)?;
         }
 
         Ok(total)

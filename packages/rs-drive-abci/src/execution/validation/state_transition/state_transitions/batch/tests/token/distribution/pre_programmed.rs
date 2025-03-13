@@ -23,8 +23,7 @@ mod pre_programmed_distribution {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -38,7 +37,11 @@ mod pre_programmed_distribution {
                     .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
                         TokenPreProgrammedDistributionV0 {
                             // At time 100 we give identity 2 445 as part of the block execution
-                            distributions: [(100, [(identity_2.id(), 445)].into()), (500000, [(identity_2.id(), 600)].into())].into(),
+                            distributions: [
+                                (100, [(identity_2.id(), 445)].into()),
+                                (500000, [(identity_2.id(), 600)].into()),
+                            ]
+                            .into(),
                         },
                     )));
             }),
@@ -65,7 +68,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -132,7 +135,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -194,8 +197,7 @@ mod pre_programmed_distribution {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -236,7 +238,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -303,7 +305,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -330,12 +332,12 @@ mod pre_programmed_distribution {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -368,8 +370,7 @@ mod pre_programmed_distribution {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -410,7 +411,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -437,12 +438,12 @@ mod pre_programmed_distribution {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -475,8 +476,7 @@ mod pre_programmed_distribution {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -490,7 +490,11 @@ mod pre_programmed_distribution {
                     .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
                         TokenPreProgrammedDistributionV0 {
                             // At time 100 we give identity 2 445 as part of the block execution
-                            distributions: [(100, [(identity_2.id(), 445)].into()), (20000000, [(identity_2.id(), 1337)].into())].into(),
+                            distributions: [
+                                (100, [(identity_2.id(), 445)].into()),
+                                (20000000, [(identity_2.id(), 1337)].into()),
+                            ]
+                            .into(),
                         },
                     )));
             }),
@@ -517,7 +521,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -584,7 +588,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -611,12 +615,12 @@ mod pre_programmed_distribution {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -649,8 +653,7 @@ mod pre_programmed_distribution {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -691,7 +694,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -718,12 +721,12 @@ mod pre_programmed_distribution {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -745,7 +748,8 @@ mod pre_programmed_distribution {
     }
 
     #[test]
-    fn test_token_pre_programmed_distribution_claim_no_pre_programmed_rewards_for_recipient_when_they_have_perpetual() {
+    fn test_token_pre_programmed_distribution_claim_no_pre_programmed_rewards_for_recipient_when_they_have_perpetual(
+    ) {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -756,8 +760,7 @@ mod pre_programmed_distribution {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -782,10 +785,10 @@ mod pre_programmed_distribution {
                             distribution_type: RewardDistributionType::BlockBasedDistribution {
                                 interval: 10,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -812,7 +815,7 @@ mod pre_programmed_distribution {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -839,12 +842,12 @@ mod pre_programmed_distribution {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive

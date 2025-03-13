@@ -1,11 +1,13 @@
-use rand::prelude::StdRng;
+use super::*;
+use crate::execution::validation::state_transition::tests::{
+    create_token_contract_with_owner_identity, setup_identity,
+};
+use crate::test::helpers::setup::TestPlatformBuilder;
 use dpp::dash_to_credits;
 use dpp::data_contract::TokenConfiguration;
 use dpp::state_transition::batch_transition::BatchTransition;
 use platform_version::version::PlatformVersion;
-use crate::execution::validation::state_transition::tests::{create_token_contract_with_owner_identity, setup_identity};
-use crate::test::helpers::setup::TestPlatformBuilder;
-use super::*;
+use rand::prelude::StdRng;
 mod perpetual_distribution_time {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
@@ -43,8 +45,6 @@ mod perpetual_distribution_time {
                                 // every 3600 seconds, meaning every hour
                                 interval: 3_600_000,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
                             distribution_recipient: TokenDistributionRecipient::ContractOwner,
                         },
@@ -74,7 +74,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -142,7 +142,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -169,13 +169,12 @@ mod perpetual_distribution_time {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
-
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -213,7 +212,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -238,7 +237,6 @@ mod perpetual_distribution_time {
                 None,
             )
             .expect("expected to process state transition");
-
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
@@ -280,8 +278,7 @@ mod perpetual_distribution_time {
         let (identity, signer, key) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-        let (identity_2, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
@@ -295,11 +292,11 @@ mod perpetual_distribution_time {
                                 // every 3600 seconds, meaning every hour
                                 interval: 3_600_000,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
                             // we give to identity 2
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -327,7 +324,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -354,12 +351,12 @@ mod perpetual_distribution_time {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -403,8 +400,7 @@ mod perpetual_distribution_time {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -421,10 +417,10 @@ mod perpetual_distribution_time {
                                 // every 3600 seconds, meaning every hour
                                 interval: 3_600_000,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -452,7 +448,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -515,8 +511,7 @@ mod perpetual_distribution_time {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -535,15 +530,15 @@ mod perpetual_distribution_time {
                                 function: DistributionFunction::Linear {
                                     a: 1, // Increase in slope y = x
                                     d: 1, // No division, simple emission
-                                    start_moment: None,
+                                    start_step: None,
                                     starting_amount: 0,
                                     min_value: None,
                                     max_value: None,
                                 },
-                                start: None,
-                                end: None,
                             },
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -572,7 +567,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -621,8 +616,8 @@ mod perpetual_distribution_time {
             .expect("expected to fetch token balance");
         // Since time is slightly over 5 hours we had 5 events x 5.
         let redemption_cycles = platform_version.system_limits.max_token_redemption_cycles;
-        let balance = redemption_cycles * (redemption_cycles +1) / 2; // Euler's theorem
-        // This works because we are adding 1 + 2 + 3 + 4 etc
+        let balance = redemption_cycles * (redemption_cycles + 1) / 2; // Euler's theorem
+                                                                       // This works because we are adding 1 + 2 + 3 + 4 etc
         assert_eq!(token_balance, Some(balance as u64));
 
         // We are only claiming for 128 more cycles
@@ -642,7 +637,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -690,12 +685,12 @@ mod perpetual_distribution_time {
             )
             .expect("expected to fetch token balance");
         let redemption_cycles = redemption_cycles * 2;
-        let balance = redemption_cycles * (redemption_cycles +1) / 2; // Euler's theorem
+        let balance = redemption_cycles * (redemption_cycles + 1) / 2; // Euler's theorem
         assert_eq!(token_balance, Some(balance as u64));
     }
 
     #[test]
-    fn test_token_perpetual_distribution_time_linear_verify_contract_start() {
+    fn test_token_perpetual_distribution_time_linear_every_hour() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -706,8 +701,7 @@ mod perpetual_distribution_time {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -726,19 +720,19 @@ mod perpetual_distribution_time {
                                 function: DistributionFunction::Linear {
                                     a: 1, // Increase in slope y = x
                                     d: 1, // No division, simple emission
-                                    start_moment: None,
+                                    start_step: None,
                                     starting_amount: 0,
                                     min_value: None,
                                     max_value: None,
                                 },
-                                start: None,
-                                end: None,
                             },
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
-            Some(10),
+            None,
             None,
             platform_version,
         );
@@ -763,7 +757,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -810,13 +804,15 @@ mod perpetual_distribution_time {
                 platform_version,
             )
             .expect("expected to fetch token balance");
-        // Since time is slightly over 5 hours we had 5 events x 5.
-        let redemption_cycles = platform_version.system_limits.max_token_redemption_cycles;
-        let balance = redemption_cycles * (redemption_cycles +1) / 2; // Euler's theorem
-        // This works because we are adding 1 + 2 + 3 + 4 etc
-        assert_eq!(token_balance, Some(balance as u64));
+        // 1 at hour 1 = 36_000
+        // 2 at hour 2 = 72_000
+        // 3 at hour 3 = 108_000
+        // 4 at hour 4 = 144_000
+        // 5 at hour 5 = 180_000
+        // Sum of 1 + 2 + 3 + 4 + 5 = 15
+        assert_eq!(token_balance, Some(15));
 
-        // We are only claiming for 128 more cycles
+        // We are claiming again shortly later, we should have nothing
         let claim_transition = BatchTransition::new_token_claim_transition(
             token_id,
             identity_2.id(),
@@ -833,7 +829,128 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
+
+        let claim_serialized_transition = claim_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![claim_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo {
+                    time_ms: 18_100_000,
+                    height: 41,
+                    core_height: 42,
+                    epoch: Epoch::new(1).unwrap(),
+                },
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity_2.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(token_balance, Some(15));
+    }
+
+    #[test]
+    fn test_token_perpetual_distribution_time_linear_verify_contract_start() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(4981);
+
+        let platform_state = platform.state.load();
+
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (identity_2, signer_2, key_2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                        TokenPerpetualDistributionV0 {
+                            distribution_type: RewardDistributionType::TimeBasedDistribution {
+                                // every hour
+                                interval: 3_600_000,
+                                function: DistributionFunction::Linear {
+                                    a: 1, // Increase in slope y = x
+                                    d: 1, // No division, simple emission
+                                    start_step: None,
+                                    starting_amount: 0,
+                                    min_value: None,
+                                    max_value: None,
+                                },
+                            },
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
+                        },
+                    )));
+            }),
+            Some(9_000_000),
+            None,
+            platform_version,
+        );
+
+        // 5 hours later
+        fast_forward_to_block(&platform, 18_000_000, 40, 42, 1, false);
+
+        // We are only claiming for 256 cycles
+        let claim_transition = BatchTransition::new_token_claim_transition(
+            token_id,
+            identity_2.id(),
+            contract.id(),
+            0,
+            TokenDistributionType::Perpetual,
+            None,
+            &key_2,
+            2,
+            0,
+            &signer_2,
+            platform_version,
+            None,
+            None,
+            None,
+        )
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -880,9 +997,80 @@ mod perpetual_distribution_time {
                 platform_version,
             )
             .expect("expected to fetch token balance");
-        let redemption_cycles = redemption_cycles * 2;
-        let balance = redemption_cycles * (redemption_cycles +1) / 2; // Euler's theorem
-        assert_eq!(token_balance, Some(balance as u64));
+        // 1 at hour 3 = 108_000
+        // 2 at hour 4 = 144_000
+        // 3 at hour 5 = 180_000
+        // Sum of 1 + 2 + 3  = 6
+        assert_eq!(token_balance, Some(6));
+
+        // We are claiming again, we should have nothing
+        let claim_transition = BatchTransition::new_token_claim_transition(
+            token_id,
+            identity_2.id(),
+            contract.id(),
+            0,
+            TokenDistributionType::Perpetual,
+            None,
+            &key_2,
+            3,
+            0,
+            &signer_2,
+            platform_version,
+            None,
+            None,
+            None,
+        )
+        .expect("expect to create documents batch transition");
+
+        let claim_serialized_transition = claim_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![claim_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo {
+                    time_ms: 18_100_000,
+                    height: 41,
+                    core_height: 42,
+                    epoch: Epoch::new(1).unwrap(),
+                },
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity_2.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(token_balance, Some(6));
     }
 
     #[test]
@@ -897,8 +1085,7 @@ mod perpetual_distribution_time {
 
         let platform_state = platform.state.load();
 
-        let (identity, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -916,16 +1103,16 @@ mod perpetual_distribution_time {
                                 interval: 1,
                                 function: DistributionFunction::Linear {
                                     a: MAX_LINEAR_SLOPE_PARAM as i64, // Strongest slope
-                                    d: 1,                     // No division
-                                    start_moment: None,
+                                    d: 1,                             // No division
+                                    start_step: None,
                                     starting_amount: MAX_DISTRIBUTION_PARAM,
                                     min_value: None,
                                     max_value: None,
                                 },
-                                start: None,
-                                end: None,
                             },
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -954,7 +1141,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -1001,8 +1188,7 @@ mod perpetual_distribution_time {
                 platform_version,
             )
             .expect("expected to fetch token balance");
-        // Since time is slightly over 5 hours we had 5 events x 5.
-        assert_eq!(token_balance, Some(100205091725260956));
+        assert_eq!(token_balance, Some(36028797021077376));
 
         // We are only claiming for 256 more cycles
         let claim_transition = BatchTransition::new_token_claim_transition(
@@ -1021,7 +1207,7 @@ mod perpetual_distribution_time {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -1068,7 +1254,6 @@ mod perpetual_distribution_time {
                 platform_version,
             )
             .expect("expected to fetch token balance");
-        // Since time is slightly over 5 hours we had 5 events x 5.
-        assert_eq!(token_balance, Some(100205091725260956));
+        assert_eq!(token_balance, Some(72057594046349056));
     }
 }

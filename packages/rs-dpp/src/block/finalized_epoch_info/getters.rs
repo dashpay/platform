@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
 use crate::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use crate::block::finalized_epoch_info::FinalizedEpochInfo;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
 use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 impl FinalizedEpochInfoGettersV0 for FinalizedEpochInfo {
     fn first_block_time(&self) -> TimestampMillis {

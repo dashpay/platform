@@ -25,15 +25,16 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations = vec![];
 
-        let perpetual_distributions_path = token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
-        
+        let perpetual_distributions_path =
+            token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id);
+
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_token_perpetual_distribution(
                 Some(token_id),
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
-            
+
             let estimated_layer_count = match current_moment {
                 RewardDistributionMoment::BlockBasedMoment(_)
                 | RewardDistributionMoment::TimeBasedMoment(_) => EstimatedLevel(0, false),

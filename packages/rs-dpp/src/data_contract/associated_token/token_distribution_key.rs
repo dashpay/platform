@@ -51,10 +51,7 @@ pub enum TokenDistributionInfo {
     /// A perpetual token distribution with moment for distribution.
     /// The moment is the beginning of the perpetual distribution cycle
     /// Includes the last and next distribution times and the resolved recipient.
-    Perpetual(
-        RewardDistributionMoment,
-        TokenDistributionResolvedRecipient
-    ),
+    Perpetual(RewardDistributionMoment, TokenDistributionResolvedRecipient),
 }
 
 impl From<TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient {

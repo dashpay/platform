@@ -5,10 +5,10 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::identifier::Identifier;
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
-use dpp::prelude::TimestampMillis;
 
 impl Drive {
     /// Fetches the last paid timestamp for a pre_programmed distribution for a given identity.
@@ -52,7 +52,9 @@ impl Drive {
         ) {
             Ok(Some(Item(value, _))) => {
                 if value.len() != 8 {
-                    return Err(Error::Drive(DriveError::CorruptedDriveState("Pre programmed last claimed time should be encoded on 8 bytes".to_string())));
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        "Pre programmed last claimed time should be encoded on 8 bytes".to_string(),
+                    )));
                 }
                 let mut array = [0u8; 8];
                 array.copy_from_slice(&value);

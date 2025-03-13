@@ -1,6 +1,6 @@
-use crate::prelude::Identifier;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::prelude::Identifier;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,7 +11,9 @@ use thiserror::Error;
 )]
 #[error(
     "Token claim error: expected claimant '{}' for token ID '{}', but received claim from '{}'",
-    expected_claimant_id, token_id, claimant_id
+    expected_claimant_id,
+    token_id,
+    claimant_id
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenClaimWrongClaimant {

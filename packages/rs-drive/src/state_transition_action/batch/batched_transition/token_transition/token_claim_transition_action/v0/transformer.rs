@@ -78,7 +78,17 @@ impl TokenClaimTransitionActionV0 {
         ),
         Error,
     > {
-        Self::try_from_borrowed_token_claim_transition_with_contract_lookup(drive, owner_id, &value, approximate_without_state_for_costs, transaction, block_info, user_fee_increase, get_data_contract, platform_version)
+        Self::try_from_borrowed_token_claim_transition_with_contract_lookup(
+            drive,
+            owner_id,
+            &value,
+            approximate_without_state_for_costs,
+            transaction,
+            block_info,
+            user_fee_increase,
+            get_data_contract,
+            platform_version,
+        )
     }
 
     /// Converts a borrowed `TokenClaimTransitionV0` into a `TokenClaimTransitionActionV0` using the provided contract lookup.
@@ -211,7 +221,7 @@ impl TokenClaimTransitionActionV0 {
 
                 // We need to find the oldest pre-programmed distribution that wasn't yet claimed
                 // for this identity
-                
+
                 let times = pre_programmed_distribution.distributions();
 
                 let mut last_paid_time_operations = vec![];
@@ -236,17 +246,20 @@ impl TokenClaimTransitionActionV0 {
 
                 fee_result.checked_add_assign(last_paid_time_fee_result)?;
 
-                let mut distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> = times
-                    .iter()
-                    .filter_map(|(timestamp, distribution)| {
-                        if timestamp > &block_info.time_ms {
-                            // Don't get the ones in the future
-                            None
-                        } else {
-                            distribution.get(&owner_id).map(|amount| (*timestamp, *amount))
-                        }
-                    })
-                    .collect();
+                let mut distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> =
+                    times
+                        .iter()
+                        .filter_map(|(timestamp, distribution)| {
+                            if timestamp > &block_info.time_ms {
+                                // Don't get the ones in the future
+                                None
+                            } else {
+                                distribution
+                                    .get(&owner_id)
+                                    .map(|amount| (*timestamp, *amount))
+                            }
+                        })
+                        .collect();
 
                 let distribution_after_last_paid: Option<(TimestampMillis, TokenAmount)> =
                     if let Some(last_paid) = last_paid_moment {
@@ -261,7 +274,7 @@ impl TokenClaimTransitionActionV0 {
                             .first_key_value()
                             .map(|(timestamp, amount)| (*timestamp, *amount))
                     };
-                
+
                 let Some((payout_time, amount)) = distribution_after_last_paid else {
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
@@ -280,8 +293,11 @@ impl TokenClaimTransitionActionV0 {
                                     InvalidTokenClaimNoCurrentRewards::new(
                                         value.base().token_id(),
                                         owner_id,
-                                        RewardDistributionMoment::TimeBasedMoment(block_info.time_ms),
-                                        last_paid_moment.map(RewardDistributionMoment::TimeBasedMoment),
+                                        RewardDistributionMoment::TimeBasedMoment(
+                                            block_info.time_ms,
+                                        ),
+                                        last_paid_moment
+                                            .map(RewardDistributionMoment::TimeBasedMoment),
                                     ),
                                 ),
                             )],
@@ -290,7 +306,10 @@ impl TokenClaimTransitionActionV0 {
                     ));
                 };
 
-                (amount, TokenDistributionInfo::PreProgrammed(payout_time, owner_id))
+                (
+                    amount,
+                    TokenDistributionInfo::PreProgrammed(payout_time, owner_id),
+                )
             }
             TokenDistributionType::Perpetual => {
                 // we need to validate that we have a perpetual distribution
@@ -324,15 +343,18 @@ impl TokenClaimTransitionActionV0 {
 
                 // Let's start by checking that we have a valid claimant
                 let wrong_claimant_error = match perpetual_distribution.distribution_recipient() {
-                    TokenDistributionRecipient::ContractOwner if base_action.data_contract_fetch_info().contract.owner_id() != owner_id => {
+                    TokenDistributionRecipient::ContractOwner
+                        if base_action.data_contract_fetch_info().contract.owner_id()
+                            != owner_id =>
+                    {
                         Some(base_action.data_contract_fetch_info().contract.owner_id())
                     }
                     TokenDistributionRecipient::Identity(identifier) if identifier != owner_id => {
                         Some(identifier)
                     }
-                    _ => None
+                    _ => None,
                 };
-                
+
                 if let Some(expected_claimant) = wrong_claimant_error {
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
@@ -374,13 +396,18 @@ impl TokenClaimTransitionActionV0 {
 
                 // if the token has never been paid then we use the token creation
 
-                let start_from_moment_for_distribution = last_paid_moment
-                    .or(perpetual_distribution
-                        .distribution_type()
-                        .contract_creation_moment(&base_action.data_contract_fetch_info().contract))
+                let contract_creation_moment = perpetual_distribution
+                    .distribution_type()
+                    .contract_creation_moment(&base_action.data_contract_fetch_info().contract)
                     .ok_or(Error::Drive(DriveError::ContractDoesNotHaveAStartMoment(
                         base_action.data_contract_fetch_info().contract.id(),
                     )))?;
+
+                let contract_creation_cycle_start = contract_creation_moment
+                    .cycle_start(perpetual_distribution.distribution_type().interval())?;
+
+                let start_from_moment_for_distribution =
+                    last_paid_moment.unwrap_or(contract_creation_cycle_start);
 
                 let last_paid_time_fee_result = Drive::calculate_fee(
                     None,
@@ -392,28 +419,48 @@ impl TokenClaimTransitionActionV0 {
                 )?;
 
                 fee_result.checked_add_assign(last_paid_time_fee_result)?;
-                
+
                 let current_cycle_moment = perpetual_distribution.current_interval(block_info);
 
                 // We need to get the max cycles allowed
                 let max_cycles = platform_version.system_limits.max_token_redemption_cycles;
-                let max_cycle_moment = perpetual_distribution.distribution_type().max_cycle_moment(start_from_moment_for_distribution, current_cycle_moment, max_cycles)?;
+                let max_cycle_moment = perpetual_distribution
+                    .distribution_type()
+                    .max_cycle_moment(
+                        start_from_moment_for_distribution,
+                        current_cycle_moment,
+                        max_cycles,
+                    )?;
 
                 let (recipient, amount) = match perpetual_distribution.distribution_recipient() {
-                    TokenDistributionRecipient::ContractOwner => {
-                        (TokenDistributionResolvedRecipient::ContractOwnerIdentity(
+                    TokenDistributionRecipient::ContractOwner => (
+                        TokenDistributionResolvedRecipient::ContractOwnerIdentity(
                             base_action.data_contract_fetch_info().contract.owner_id(),
-                        ),  perpetual_distribution
+                        ),
+                        perpetual_distribution
                             .distribution_type()
-                            .rewards_in_interval::<fn(EpochIndex) -> Option<RewardRatio>>(start_from_moment_for_distribution, max_cycle_moment, None)?)
-                    }
-                    TokenDistributionRecipient::Identity(identifier) => {
-                        (TokenDistributionResolvedRecipient::Identity(identifier),  perpetual_distribution
+                            .rewards_in_interval::<fn(EpochIndex) -> Option<RewardRatio>>(
+                                contract_creation_cycle_start,
+                                start_from_moment_for_distribution,
+                                max_cycle_moment,
+                                None,
+                            )?,
+                    ),
+                    TokenDistributionRecipient::Identity(identifier) => (
+                        TokenDistributionResolvedRecipient::Identity(identifier),
+                        perpetual_distribution
                             .distribution_type()
-                            .rewards_in_interval::<fn(EpochIndex) -> Option<RewardRatio>>(start_from_moment_for_distribution, max_cycle_moment, None)?)
-                    }
+                            .rewards_in_interval::<fn(EpochIndex) -> Option<RewardRatio>>(
+                                contract_creation_cycle_start,
+                                start_from_moment_for_distribution,
+                                max_cycle_moment,
+                                None,
+                            )?,
+                    ),
                     TokenDistributionRecipient::EvonodesByParticipation => {
-                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) = start_from_moment_for_distribution else {
+                        let RewardDistributionMoment::EpochBasedMoment(epoch_index) =
+                            start_from_moment_for_distribution
+                        else {
                             return Err(Error::Drive(DriveError::NotSupported(
                                 "evonodes by participation can only use epoch based distribution",
                             )));
@@ -432,17 +479,25 @@ impl TokenClaimTransitionActionV0 {
                         let rewards = perpetual_distribution
                             .distribution_type()
                             .rewards_in_interval(
+                                contract_creation_cycle_start,
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
                                 Some(|epoch_index| {
                                     epochs.get(&epoch_index).map(|epoch_info| RewardRatio {
-                                        numerator: epoch_info.block_proposers().get(&owner_id).copied().unwrap_or_default(),
+                                        numerator: epoch_info
+                                            .block_proposers()
+                                            .get(&owner_id)
+                                            .copied()
+                                            .unwrap_or_default(),
                                         denominator: epoch_info.total_blocks_in_epoch(),
                                     })
                                 }),
                             )?;
 
-                        (TokenDistributionResolvedRecipient::Evonode(owner_id), rewards)
+                        (
+                            TokenDistributionResolvedRecipient::Evonode(owner_id),
+                            rewards,
+                        )
                     }
                 };
 
@@ -476,10 +531,7 @@ impl TokenClaimTransitionActionV0 {
 
                 (
                     amount,
-                    TokenDistributionInfo::Perpetual(
-                        max_cycle_moment,
-                        recipient,
-                    ),
+                    TokenDistributionInfo::Perpetual(max_cycle_moment, recipient),
                 )
             }
         };

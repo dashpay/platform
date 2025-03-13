@@ -1,4 +1,11 @@
-use crate::drive::tokens::paths::{token_ms_timed_at_time_distributions_path_vec, token_ms_timed_distributions_path_vec, token_pre_programmed_at_time_distribution_path_vec, token_pre_programmed_distributions_path, token_root_pre_programmed_distributions_path, TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY};
+use crate::drive::tokens::paths::{
+    token_ms_timed_at_time_distributions_path_vec, token_ms_timed_distributions_path_vec,
+    token_pre_programmed_at_time_distribution_path_vec, token_pre_programmed_distributions_path,
+    token_root_pre_programmed_distributions_path,
+    TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -186,7 +193,9 @@ impl Drive {
 
         self.batch_insert_empty_tree(
             pre_programmed_distributions_path,
-            DriveKeyInfo::Key(vec![TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY]),
+            DriveKeyInfo::Key(vec![
+                TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+            ]),
             None, // we will never clean this part up
             batch_operations,
             &platform_version.drive,

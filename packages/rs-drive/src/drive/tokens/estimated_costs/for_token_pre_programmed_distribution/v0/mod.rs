@@ -59,11 +59,13 @@ impl Drive {
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 // At this level, expect as many children as there are time entries.
-                estimated_layer_count: ApproximateElements(times.as_ref().map(|times| times.len()).unwrap_or(128) as u32),
+                estimated_layer_count: ApproximateElements(
+                    times.as_ref().map(|times| times.len()).unwrap_or(128) as u32,
+                ),
                 estimated_layer_sizes: AllSubtrees(U64_SIZE_U8, AllSumTrees, None),
             },
         );
-        
+
         if let Some(times) = times {
             // 4. For each provided timestamp, add an estimation for the at-time sum tree.
             for time in times {

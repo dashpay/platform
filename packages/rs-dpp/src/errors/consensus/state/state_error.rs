@@ -247,7 +247,7 @@ pub enum StateError {
 
     #[error(transparent)]
     InvalidTokenClaimWrongClaimant(InvalidTokenClaimWrongClaimant),
-    
+
     #[error(transparent)]
     NewTokensDestinationIdentityDoesNotExistError(NewTokensDestinationIdentityDoesNotExistError),
 

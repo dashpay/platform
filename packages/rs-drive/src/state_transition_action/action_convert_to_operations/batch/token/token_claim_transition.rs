@@ -42,16 +42,16 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
 
                 match self.distribution_info() {
                     TokenDistributionInfo::Perpetual(
-                    _, 
+                        _,
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(identity),
                     )
                     | TokenDistributionInfo::PreProgrammed(_, identity)
                     | TokenDistributionInfo::Perpetual(
-                    _, 
+                        _,
                         TokenDistributionResolvedRecipient::Identity(identity),
                     )
                     | TokenDistributionInfo::Perpetual(
-                    _, 
+                        _,
                         TokenDistributionResolvedRecipient::Evonode(identity),
                     ) => {
                         ops.push(TokenOperation(TokenOperationType::TokenMint {

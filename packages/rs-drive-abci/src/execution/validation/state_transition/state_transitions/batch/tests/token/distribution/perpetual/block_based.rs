@@ -1,11 +1,13 @@
-use rand::prelude::StdRng;
+use super::*;
+use crate::execution::validation::state_transition::tests::{
+    create_token_contract_with_owner_identity, setup_identity,
+};
+use crate::test::helpers::setup::TestPlatformBuilder;
 use dpp::dash_to_credits;
 use dpp::data_contract::TokenConfiguration;
 use dpp::state_transition::batch_transition::BatchTransition;
 use platform_version::version::PlatformVersion;
-use crate::execution::validation::state_transition::tests::{create_token_contract_with_owner_identity, setup_identity};
-use crate::test::helpers::setup::TestPlatformBuilder;
-use super::*;
+use rand::prelude::StdRng;
 mod perpetual_distribution_block {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
@@ -42,8 +44,6 @@ mod perpetual_distribution_block {
                             distribution_type: RewardDistributionType::BlockBasedDistribution {
                                 interval: 10,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
                             distribution_recipient: TokenDistributionRecipient::ContractOwner,
                         },
@@ -72,7 +72,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -140,7 +140,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -167,13 +167,12 @@ mod perpetual_distribution_block {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                        _
-                    )]
-                );
-
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -211,7 +210,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -236,7 +235,6 @@ mod perpetual_distribution_block {
                 None,
             )
             .expect("expected to process state transition");
-
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
@@ -278,8 +276,7 @@ mod perpetual_distribution_block {
         let (identity, signer, key) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-        let (identity_2, _, _) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_2, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
@@ -292,11 +289,11 @@ mod perpetual_distribution_block {
                             distribution_type: RewardDistributionType::BlockBasedDistribution {
                                 interval: 10,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
                             // we give to identity 2
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -324,7 +321,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -351,12 +348,12 @@ mod perpetual_distribution_block {
             .expect("expected to process state transition");
 
         assert_matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
-                        _
-                    )]
-                );
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
+                _
+            )]
+        );
 
         platform
             .drive
@@ -417,10 +414,10 @@ mod perpetual_distribution_block {
                             distribution_type: RewardDistributionType::BlockBasedDistribution {
                                 interval: 10,
                                 function: DistributionFunction::FixedAmount { amount: 50 },
-                                start: None,
-                                end: None,
                             },
-                            distribution_recipient: TokenDistributionRecipient::Identity(identity_2.id()),
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
                         },
                     )));
             }),
@@ -447,7 +444,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-            .expect("expect to create documents batch transition");
+        .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()

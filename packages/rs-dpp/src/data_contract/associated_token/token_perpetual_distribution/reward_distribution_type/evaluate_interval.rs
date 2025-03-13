@@ -30,34 +30,18 @@ impl RewardDistributionType {
     ///
     pub fn rewards_in_interval<F>(
         &self,
-        start_at_moment_excluded: RewardDistributionMoment,
+        distribution_start: RewardDistributionMoment,
+        start_at_moment: RewardDistributionMoment,
         current_moment_included: RewardDistributionMoment,
         get_epoch_reward_ratio: Option<F>,
     ) -> Result<TokenAmount, ProtocolError>
     where
-        F: Fn(EpochIndex) -> Option<RewardRatio> {
-        let mut effective_start = start_at_moment_excluded;
-        let mut effective_end = current_moment_included;
-
-        if let Some(distribution_start) = self.start_at() {
-            if distribution_start > effective_start {
-                effective_start = distribution_start;
-            }
-        }
-
-        if let Some(distribution_end) = self.end_at() {
-            if distribution_end < effective_end {
-                effective_end = distribution_end;
-            }
-        }
-
-        if effective_end <= effective_start {
-            return Ok(0);
-        }
-
+        F: Fn(EpochIndex) -> Option<RewardRatio>,
+    {
         self.function().evaluate_interval(
-            effective_start,
-            effective_end,
+            distribution_start,
+            start_at_moment,
+            current_moment_included,
             self.interval(),
             get_epoch_reward_ratio,
         )

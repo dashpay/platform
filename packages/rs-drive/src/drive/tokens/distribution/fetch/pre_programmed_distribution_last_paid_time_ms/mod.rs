@@ -4,10 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::identity::TimestampMillis;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use dpp::identity::TimestampMillis;
 
 impl Drive {
     /// Fetches the last paid timestamp for a pre-programmed distribution for a given identity,
@@ -82,7 +82,8 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_pre_programmed_distribution_last_paid_time_ms_operations".to_string(),
+                method: "fetch_pre_programmed_distribution_last_paid_time_ms_operations"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -266,7 +266,7 @@ pub fn token_perpetual_distributions_identity_last_claimed_by_identity_path_vec(
         vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
         token_id.to_vec(),
         vec![TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
-        identity_id.to_vec()
+        identity_id.to_vec(),
     ]
 }
 

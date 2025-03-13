@@ -1,10 +1,16 @@
-use crate::drive::tokens::paths::{token_distributions_root_path_vec, token_ms_timed_at_time_distributions_path_vec, token_pre_programmed_distributions_identity_last_claimed_time_path, token_pre_programmed_distributions_identity_last_claimed_time_path_vec, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY};
+use crate::drive::tokens::paths::{
+    token_distributions_root_path_vec, token_ms_timed_at_time_distributions_path_vec,
+    token_pre_programmed_distributions_identity_last_claimed_time_path,
+    token_pre_programmed_distributions_identity_last_claimed_time_path_vec,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
+use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U32, U8_SIZE_U8};
 use dpp::block::block_info::BlockInfo;
@@ -17,12 +23,11 @@ use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use crate::util::object_size_info::PathKeyElementInfo;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use std::collections::HashMap;
 
 /// Marks the pre-programmed release as distributed.
 ///
@@ -62,7 +67,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let pre_programmed_distributions_path =
             token_pre_programmed_distributions_identity_last_claimed_time_path_vec(token_id);
-        
+
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_owned_path(token_distributions_root_path_vec()),
@@ -73,13 +78,15 @@ impl Drive {
                 },
             );
 
-            Drive::add_estimation_costs_for_token_pre_programmed_distribution::<std::iter::Empty<&TimestampMillis>>(
+            Drive::add_estimation_costs_for_token_pre_programmed_distribution::<
+                std::iter::Empty<&TimestampMillis>,
+            >(
                 token_id,
                 None,
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
-            
+
             Drive::add_estimation_costs_for_root_token_ms_interval_distribution(
                 [&release_time],
                 estimated_costs_only_with_layer_info,
@@ -99,7 +106,8 @@ impl Drive {
         let mut batch_operations = vec![];
 
         // Create storage flags for cleanup logic; these flags are attached to inserted elements.
-        let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(recipient_id));
+        let storage_flags =
+            StorageFlags::new_single_epoch(block_info.epoch.index, Some(recipient_id));
 
         // The pre-programmed distribution was scheduled by inserting a reference in the
         // millisecond-timed distributions tree at a key corresponding to the release time.

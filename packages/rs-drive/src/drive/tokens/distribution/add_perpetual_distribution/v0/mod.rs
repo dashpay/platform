@@ -1,4 +1,8 @@
-use crate::drive::tokens::paths::{token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec, TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY};
+use crate::drive::tokens::paths::{
+    token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec,
+    TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+    TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -82,7 +86,6 @@ impl Drive {
             batch_operations,
             &platform_version.drive,
         )?;
-
 
         Ok(())
     }

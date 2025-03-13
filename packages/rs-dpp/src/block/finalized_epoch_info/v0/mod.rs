@@ -1,11 +1,11 @@
 pub mod getters;
 
-use std::collections::BTreeMap;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Finalized Epoch information
 #[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
