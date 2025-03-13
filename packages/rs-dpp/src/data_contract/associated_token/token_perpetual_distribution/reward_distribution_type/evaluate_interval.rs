@@ -1,5 +1,4 @@
 use crate::balances::credits::TokenAmount;
-use crate::block::block_info::BlockInfo;
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
