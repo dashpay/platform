@@ -18,8 +18,8 @@
         },
         "decimals": 8
       },
-      "baseSupply": 1000000,
-      "maxSupply": 5000000,
+      "baseSupply": 10000000000,
+      "maxSupply": 50000000000,
       "transferable": true,
       "keepsHistory": false,
       "freezeRules": {
