@@ -178,7 +178,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let config = config.unwrap_or(PlatformConfig::default_mainnet());
+        let config = config.unwrap_or(PlatformConfig::default_testnet());
 
         let default_initial_platform_version = initial_protocol_version
             .map(PlatformVersion::get)

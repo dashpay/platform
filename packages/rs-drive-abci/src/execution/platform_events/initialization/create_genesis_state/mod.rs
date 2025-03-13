@@ -7,7 +7,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 mod common;
-#[cfg(feature = "sdk-test-data")]
+#[cfg(all(feature = "sdk-test-data", not(test)))]
 mod test;
 pub mod v0;
 pub mod v1;
