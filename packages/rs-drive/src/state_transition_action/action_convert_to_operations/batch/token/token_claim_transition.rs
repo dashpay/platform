@@ -59,6 +59,7 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                             identity_balance_holder_id: *identity,
                             mint_amount: self.amount(),
                             allow_first_mint: false,
+                            allow_saturation: true,
                         }));
                     }
                 }

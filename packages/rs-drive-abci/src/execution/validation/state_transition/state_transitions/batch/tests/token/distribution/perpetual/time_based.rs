@@ -1256,4 +1256,126 @@ mod perpetual_distribution_time {
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, Some(72057594046349056));
     }
+
+    #[test]
+    fn test_token_perpetual_distribution_time_linear_high_values_old_contract_should_handle_overflow(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(4981);
+
+        let platform_state = platform.state.load();
+
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (identity_2, signer_2, key_2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                        TokenPerpetualDistributionV0 {
+                            distribution_type: RewardDistributionType::TimeBasedDistribution {
+                                // every 1 millisecond
+                                interval: 1,
+                                function: DistributionFunction::Linear {
+                                    a: MAX_LINEAR_SLOPE_PARAM as i64, // Strongest slope
+                                    d: 1,                             // No division
+                                    start_step: None,
+                                    starting_amount: MAX_DISTRIBUTION_PARAM,
+                                    min_value: None,
+                                    max_value: None,
+                                },
+                            },
+                            distribution_recipient: TokenDistributionRecipient::Identity(
+                                identity_2.id(),
+                            ),
+                        },
+                    )));
+            }),
+            None,
+            None,
+            platform_version,
+        );
+
+        // 5 hours later
+        fast_forward_to_block(&platform, 18_000_000, 40, 42, 1, false);
+
+        for i in 0..256 {
+            // We are only claiming for 256 cycles
+            let claim_transition = BatchTransition::new_token_claim_transition(
+                token_id,
+                identity_2.id(),
+                contract.id(),
+                0,
+                TokenDistributionType::Perpetual,
+                None,
+                &key_2,
+                2 + i,
+                0,
+                &signer_2,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+            let claim_serialized_transition = claim_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![claim_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: 18_100_000,
+                        height: 41,
+                        core_height: 42,
+                        epoch: Epoch::new(1).unwrap(),
+                    },
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity_2.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        // This is i64::Max
+        assert_eq!(token_balance, Some(9223372036854675807));
+    }
 }

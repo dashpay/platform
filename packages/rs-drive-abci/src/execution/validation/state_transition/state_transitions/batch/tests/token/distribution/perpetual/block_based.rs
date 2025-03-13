@@ -397,8 +397,7 @@ mod perpetual_distribution_block {
 
         let platform_state = platform.state.load();
 
-        let (identity, signer, key) =
-            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));

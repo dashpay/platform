@@ -37,6 +37,9 @@ pub enum TokenOperationType {
         mint_amount: TokenAmount,
         /// Should we allow this to be the first ever mint
         allow_first_mint: bool,
+        /// Should we allow a mint to saturate the upper bounds instead of giving an error?
+        /// For example if we were to add 10 to i64::Max - 5 we would get i64::Max
+        allow_saturation: bool,
     },
     /// Mints tokens to many recipients
     TokenMintMany {
@@ -149,6 +152,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 identity_balance_holder_id,
                 mint_amount,
                 allow_first_mint,
+                allow_saturation,
             } => {
                 let token_id_bytes: [u8; 32] = token_id.to_buffer();
                 let identity_id_bytes: [u8; 32] = identity_balance_holder_id.to_buffer();
@@ -157,6 +161,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     identity_id_bytes,
                     mint_amount,
                     allow_first_mint,
+                    allow_saturation,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
