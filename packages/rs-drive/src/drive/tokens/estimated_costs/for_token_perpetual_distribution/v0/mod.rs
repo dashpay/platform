@@ -59,18 +59,6 @@ impl Drive {
                     estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
                 },
             );
-
-            // 4. Add estimation for identities' last claim subtree
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(
-                    token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id),
-                ),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: ApproximateElements(1000), // Example size, adjust as needed
-                    estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
-                },
-            );
         }
     }
 }

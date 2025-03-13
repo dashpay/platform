@@ -7,8 +7,7 @@ use dapi_grpc::platform::v0::get_group_actions_request::GetGroupActionsRequestV0
 use dapi_grpc::platform::v0::get_group_actions_response::get_group_actions_response_v0::{
     emergency_action_event, group_action_event, token_event, BurnEvent, DestroyFrozenFundsEvent,
     EmergencyActionEvent, FreezeEvent, GroupActionEntry, GroupActionEvent, GroupActions, MintEvent,
-    PersonalEncryptedNote, SharedEncryptedNote, TokenConfigUpdateEvent,
-    TokenEvent as TokenEventResponse, UnfreezeEvent,
+    TokenConfigUpdateEvent, TokenEvent as TokenEventResponse, UnfreezeEvent,
 };
 use dapi_grpc::platform::v0::get_group_actions_response::{
     get_group_actions_response_v0, GetGroupActionsResponseV0,

@@ -31,7 +31,6 @@ use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesE
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
-use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
