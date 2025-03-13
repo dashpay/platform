@@ -14,6 +14,7 @@ impl Drive {
         identity_id: [u8; 32],
         issuance_amount: u64,
         allow_first_mint: bool,
+        allow_saturation: bool,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -26,6 +27,7 @@ impl Drive {
             identity_id,
             issuance_amount,
             allow_first_mint,
+            allow_saturation,
             apply,
             transaction,
             &mut drive_operations,
@@ -50,6 +52,7 @@ impl Drive {
         identity_id: [u8; 32],
         issuance_amount: u64,
         allow_first_mint: bool,
+        allow_saturation: bool,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -63,6 +66,7 @@ impl Drive {
             identity_id,
             issuance_amount,
             allow_first_mint,
+            allow_saturation,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -83,6 +87,7 @@ impl Drive {
         identity_id: [u8; 32],
         issuance_amount: u64,
         allow_first_mint: bool,
+        allow_saturation: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -91,24 +96,30 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
+        let (add_to_supply_operations, actual_issuance_amount) = self
+            .add_to_token_total_supply_operations(
+                token_id,
+                issuance_amount,
+                allow_first_mint,
+                allow_saturation,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?;
+
+        // There is a chance that we can't add more to the supply because it would overflow, in that case we issue what can be issued if allow saturation is set to true
+
         // Update identity balance
         drive_operations.extend(self.add_to_identity_token_balance_operations(
             token_id,
             identity_id,
-            issuance_amount,
+            actual_issuance_amount,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
         )?);
 
-        drive_operations.extend(self.add_to_token_total_supply_operations(
-            token_id,
-            issuance_amount,
-            allow_first_mint,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            platform_version,
-        )?);
+        drive_operations.extend(add_to_supply_operations);
 
         Ok(drive_operations)
     }

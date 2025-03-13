@@ -129,14 +129,18 @@ impl Drive {
 
         // Update total supply
 
-        drive_operations.extend(self.add_to_token_total_supply_operations(
-            token_id.to_buffer(),
-            total_mint_amount,
-            allow_first_mint,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            platform_version,
-        )?);
+        drive_operations.extend(
+            self.add_to_token_total_supply_operations(
+                token_id.to_buffer(),
+                total_mint_amount,
+                allow_first_mint,
+                false,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?
+            .0,
+        );
 
         Ok(drive_operations)
     }

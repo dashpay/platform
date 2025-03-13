@@ -48,13 +48,10 @@ pub enum TokenDistributionInfo {
     /// Contains the scheduled timestamp and the recipient’s identifier.
     PreProgrammed(TimestampMillis, Identifier),
 
-    /// A perpetual token distribution with previous and next moments.
+    /// A perpetual token distribution with moment for distribution.
+    /// The moment is the beginning of the perpetual distribution cycle
     /// Includes the last and next distribution times and the resolved recipient.
-    Perpetual(
-        RewardDistributionMoment,
-        RewardDistributionMoment,
-        TokenDistributionResolvedRecipient,
-    ),
+    Perpetual(RewardDistributionMoment, TokenDistributionResolvedRecipient),
 }
 
 impl From<TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient {
@@ -63,7 +60,7 @@ impl From<TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient 
             TokenDistributionInfo::PreProgrammed(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::PreProgrammed(recipient)
             }
-            TokenDistributionInfo::Perpetual(_, _, recipient) => {
+            TokenDistributionInfo::Perpetual(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient)
             }
         }
@@ -76,7 +73,7 @@ impl From<&TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient
             TokenDistributionInfo::PreProgrammed(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::PreProgrammed(*recipient)
             }
-            TokenDistributionInfo::Perpetual(_, _, recipient) => {
+            TokenDistributionInfo::Perpetual(_, recipient) => {
                 TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient.clone())
             }
         }

@@ -5,6 +5,7 @@ use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, Timestam
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Finalized Epoch information
 #[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
@@ -28,7 +29,7 @@ pub struct FinalizedEpochInfoV0 {
     /// Total rewards given from core subsidy
     pub core_block_rewards: Credits,
     /// Block proposers
-    pub block_proposers: Vec<(Identifier, u64)>,
+    pub block_proposers: BTreeMap<Identifier, u64>,
     /// Fee multiplier that you would divide by 1000 to get float value
     pub fee_multiplier_permille: u64,
     /// Protocol version

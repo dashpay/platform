@@ -3,6 +3,7 @@ use crate::block::finalized_epoch_info::FinalizedEpochInfo;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
 use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 impl FinalizedEpochInfoGettersV0 for FinalizedEpochInfo {
     fn first_block_time(&self) -> TimestampMillis {
@@ -59,7 +60,7 @@ impl FinalizedEpochInfoGettersV0 for FinalizedEpochInfo {
         }
     }
 
-    fn block_proposers(&self) -> &Vec<(Identifier, u64)> {
+    fn block_proposers(&self) -> &BTreeMap<Identifier, u64> {
         match self {
             FinalizedEpochInfo::V0(v0) => v0.block_proposers(),
         }

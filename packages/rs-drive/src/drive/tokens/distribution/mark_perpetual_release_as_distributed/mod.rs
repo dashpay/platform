@@ -4,58 +4,43 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
-use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 
 impl Drive {
-    /// Marks a perpetual token release as distributed in the state tree.
+    /// Marks a perpetual token distribution as "distributed" by updating the last claimed moment for an identity.
     ///
-    /// This function updates the perpetual distribution record by:
-    /// - Removing the previous distribution moment.
-    /// - Setting the new distribution moment.
-    /// - Associating the new distribution with the correct recipient.
+    /// This function records the current distribution moment in the GroveDB tree, indicating that the recipient
+    /// identified by `owner_id` has claimed the distribution for the specified perpetual token.
+    ///
+    /// # Actions Performed
+    /// - Inserts or updates the distribution record for the recipient (`owner_id`) at the specified token's perpetual distribution path.
+    /// - If provided, updates estimated costs for storage layers involved.
     ///
     /// # Parameters
-    /// - `token_id`: The unique identifier of the token.
-    /// - `owner_id`: The unique identifier of the owner who initiated the distribution.
-    /// - `previous_moment`: The previous moment when the reward was last distributed.
-    /// - `next_moment`: The next moment when the reward should be distributed.
-    /// - `distribution_recipient`: The recipient of the distributed reward.
-    /// - `block_info`: Metadata about the current block, including epoch details.
-    /// - `estimated_costs_only_with_layer_info`: Optional storage layer information for cost estimation.
-    /// - `batch_operations`: A mutable reference to the batch operation queue.
-    /// - `transaction`: The transaction context.
-    /// - `platform_version`: The current platform version.
+    /// - `token_id`: A 32-byte identifier uniquely representing the token.
+    /// - `recipient_id`: A 32-byte identifier uniquely representing the recipient (identity) claiming the distribution.
+    /// - `current_moment`: The moment (`RewardDistributionMoment`) representing when the distribution occurred.
+    /// - `estimated_costs_only_with_layer_info`: Optional mutable reference to a hashmap for estimating storage costs. If `Some`, cost estimation is performed without executing database writes.
+    /// - `platform_version`: A reference to the current `PlatformVersion` to determine correct version-specific behavior.
     ///
     /// # Returns
-    /// - `Ok(())` if the operation succeeds.
-    /// - `Err(Error::Drive(DriveError::UnknownVersionMismatch))` if an unsupported version is encountered.
-    ///
-    /// # Behavior
-    /// - If `estimated_costs_only_with_layer_info` is `Some`, the function only estimates costs.
-    /// - The previous distribution entry is deleted from the tree.
-    /// - The new distribution entry is inserted with a reference to the corresponding recipient.
+    /// - `Ok(Vec<LowLevelDriveOperation>)`: Batch operations to perform the storage update if successful.
+    /// - `Err(Error::Drive(DriveError::UnknownVersionMismatch))`: If an unsupported `platform_version` is encountered.
     ///
     /// # Versioning
-    /// - Uses version 0 of `mark_perpetual_release_as_distributed_operations_v0` if supported.
-    /// - Returns an error if an unknown version is received.
+    /// - Currently supports version `0`. If an unknown version is specified, an error is returned.
     pub fn mark_perpetual_release_as_distributed_operations(
         &self,
         token_id: [u8; 32],
-        owner_id: [u8; 32],
-        previous_moment: RewardDistributionMoment,
-        next_moment: RewardDistributionMoment,
-        distribution_recipient: TokenDistributionRecipient,
-        block_info: &BlockInfo,
+        recipient_id: [u8; 32],
+        current_moment: RewardDistributionMoment,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version
@@ -67,13 +52,9 @@ impl Drive {
         {
             0 => self.mark_perpetual_release_as_distributed_operations_v0(
                 token_id,
-                owner_id,
-                previous_moment,
-                next_moment,
-                distribution_recipient,
-                block_info,
+                recipient_id,
+                current_moment,
                 estimated_costs_only_with_layer_info,
-                transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
