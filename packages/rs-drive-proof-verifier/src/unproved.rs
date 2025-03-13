@@ -1,4 +1,5 @@
-use crate::types::{CurrentQuorumsInfo, EvoNodeStatus};
+use crate::types::evonode_status::EvoNodeStatus;
+use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
