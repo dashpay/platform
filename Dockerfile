@@ -423,10 +423,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
+        export FEATURES_FLAG="--features=console,grovedbg"; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
-        export RUSTFLAGS="--cfg create_sdk_test_data"; \
+        mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -483,14 +483,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml && \
-        export OUT_DIRECTORY=release ; \
+        mv .cargo/config-release.toml .cargo/config.toml; \
+        export OUT_DIRECTORY=release; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
-        export OUT_DIRECTORY=debug ; \
+        export FEATURES_FLAG="--features=console,grovedbg"; \
+        export OUT_DIRECTORY=debug; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
-        export RUSTFLAGS="--cfg create_sdk_test_data"; \
+        mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
