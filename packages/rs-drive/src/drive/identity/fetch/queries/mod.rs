@@ -106,7 +106,7 @@ impl Drive {
             Query::new_range_full()
         };
         query.set_subquery(sub_query);
-        PathQuery::new(non_unique_key_hashes, SizedQuery::new(query, Some(1), None))
+        PathQuery::new(non_unique_key_hashes, SizedQuery::new(query, None, None))
     }
 
     /// The query for proving identity ids from a vector of public key hashes.

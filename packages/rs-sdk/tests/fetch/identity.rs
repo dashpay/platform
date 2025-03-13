@@ -171,7 +171,7 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         }
         assert_ne!(
             count, 0,
-            "found at least one identity by non-unique public key hash"
+            "no identities found by non-unique public key hash"
         );
     }
 }
