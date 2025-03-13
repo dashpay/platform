@@ -1,4 +1,3 @@
-use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;

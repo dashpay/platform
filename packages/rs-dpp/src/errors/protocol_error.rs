@@ -281,6 +281,9 @@ pub enum ProtocolError {
 
     #[error("invalid distribution step error: {0}")]
     InvalidDistributionStep(&'static str),
+
+    #[error("missing epoch info: {0}")]
+    MissingEpochInfo(String),
 }
 
 impl From<&str> for ProtocolError {

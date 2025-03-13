@@ -40,6 +40,67 @@ impl RewardDistributionMoment {
             RewardDistributionMoment::EpochBasedMoment(epoch) => *epoch as u64,
         }
     }
+
+    /// Calculates the number of steps from `self` to `other`, using `step` as the increment.
+    ///
+    /// This function computes how many `step` intervals are needed to go from `self`
+    /// to `other`. If `self >= other`, it returns `0` since no steps are needed.
+    ///
+    /// # Parameters
+    ///
+    /// - `other`: The target moment.
+    /// - `step`: The step interval.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(u64)`: The number of steps needed.
+    /// - `Err(ProtocolError)`: If `step` is zero or types are mismatched.
+    pub fn steps_till(&self, other: &Self, step: &Self) -> Result<u64, ProtocolError> {
+        if !self.same_type(other) || !self.same_type(step) {
+            return Err(ProtocolError::AddingDifferentTypes(
+                "Cannot compute steps between different RewardDistributionMoment types".to_string(),
+            ));
+        }
+
+        match (self, other, step) {
+            (
+                RewardDistributionMoment::BlockBasedMoment(start),
+                RewardDistributionMoment::BlockBasedMoment(end),
+                RewardDistributionMoment::BlockBasedMoment(step_size),
+            )
+            | (
+                RewardDistributionMoment::TimeBasedMoment(start),
+                RewardDistributionMoment::TimeBasedMoment(end),
+                RewardDistributionMoment::TimeBasedMoment(step_size),
+            ) => {
+                if *step_size == 0 {
+                    return Err(ProtocolError::InvalidDistributionStep(
+                        "Step value cannot be zero",
+                    ));
+                }
+                let start_index = *start / step_size;
+                let end_index = *end / step_size;
+                Ok(end_index.saturating_sub(start_index))
+            }
+            (
+                RewardDistributionMoment::EpochBasedMoment(start),
+                RewardDistributionMoment::EpochBasedMoment(end),
+                RewardDistributionMoment::EpochBasedMoment(step_size),
+            ) => {
+                if *step_size == 0 {
+                    return Err(ProtocolError::InvalidDistributionStep(
+                        "Step value cannot be zero",
+                    ));
+                }
+                let start_index = *start / step_size;
+                let end_index = *end / step_size;
+                Ok(end_index.saturating_sub(start_index) as u64)
+            }
+            _ => Err(ProtocolError::AddingDifferentTypes(
+                "Cannot compute steps with mismatched types".to_string(),
+            )),
+        }
+    }
 }
 
 impl From<RewardDistributionMoment> for u64 {

@@ -1,7 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use crate::ProtocolError;
-// adjust the import path as needed
 
 impl DistributionFunction {
     /// Evaluates the distribution function at the given period `x`.
@@ -94,8 +93,8 @@ impl DistributionFunction {
             DistributionFunction::Linear {
                 a,
                 d,
-                s,
-                b,
+                start_moment: s,
+                starting_amount,
                 min_value,
                 max_value,
             } => {
@@ -107,14 +106,39 @@ impl DistributionFunction {
                 // Check that the value at x = 0 is within bounds.
                 let s_val = s.unwrap_or(0);
 
-                let diff = x.saturating_sub(s_val) as i128;
-                let value = (((*a as i128) * diff / (*d as i128)) as i64)
-                    .checked_add(*b as i64)
-                    .ok_or(ProtocolError::Overflow(
-                        "Linear function evaluation overflow or negative",
-                    ))?;
-
-                let value = if value < 0 { 0 } else { value as u64 };
+                let diff = x.saturating_sub(s_val);
+                let value = if *d == 1 {
+                    // very common case
+                    match a.checked_mul(diff as i64) {
+                        None => {
+                            if *a < 0 {
+                                0
+                            } else {
+                                if let Some(max_value) = max_value {
+                                    *max_value
+                                } else {
+                                    return Err(ProtocolError::Overflow(
+                                        "Linear function evaluation overflow on multiplication",
+                                    ))
+                                }
+                            }
+                        }
+                        Some(mul) => {
+                            let value = mul.checked_add(*starting_amount as i64).ok_or(ProtocolError::Overflow(
+                                "Linear function evaluation overflow or negative",
+                            ))?;
+                            if value < 0 { 0 } else { value as u64 }
+                        }
+                    }
+                } else {
+                    let value = (((*a as i128) * (diff as i128) / (*d as i128)) as i64)
+                        .checked_add(*starting_amount as i64)
+                        .ok_or(ProtocolError::Overflow(
+                            "Linear function evaluation overflow or negative",
+                        ))?;
+                    if value < 0 { 0 } else { value as u64 }
+                };
+                
                 if let Some(min_value) = min_value {
                     if value < *min_value {
                         return Ok(*min_value);
@@ -570,8 +594,8 @@ mod tests {
             let distribution = DistributionFunction::Linear {
                 a: 10,
                 d: 2,
-                s: Some(0),
-                b: 50,
+                start_moment: Some(0),
+                starting_amount: 50,
                 min_value: None,
                 max_value: None,
             };
@@ -587,8 +611,8 @@ mod tests {
             let distribution = DistributionFunction::Linear {
                 a: -5,
                 d: 1,
-                s: Some(0),
-                b: 100,
+                start_moment: Some(0),
+                starting_amount: 100,
                 min_value: Some(10),
                 max_value: None,
             };
@@ -603,8 +627,8 @@ mod tests {
             let distribution = DistributionFunction::Linear {
                 a: 10,
                 d: 0, // Invalid denominator
-                s: Some(0),
-                b: 50,
+                start_moment: Some(0),
+                starting_amount: 50,
                 min_value: None,
                 max_value: None,
             };

@@ -1,5 +1,7 @@
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
+use crate::block::epoch::EpochIndex;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::ProtocolError;
@@ -8,33 +10,56 @@ impl RewardDistributionType {
     /// Computes the total rewards emitted in a given interval based on the provided distribution moments.
     ///
     /// This function determines the emission amounts within the range from `start_at_excluded` (exclusive)
-    /// up to `end_at_moment_included` (inclusive). The evaluation depends on the specific type of
+    /// up to `current_moment_included` (inclusive). The evaluation depends on the specific type of
     /// distribution (Block-Based, Time-Based, or Epoch-Based) and the associated interval.
+    /// If the distribution type has a start moment after the provided start moment, it uses the later start moment.
+    /// If the distribution type has an end moment before the provided current moment, it uses the earlier end moment.
     ///
     /// # Parameters
     ///
     /// - `start_at_moment_excluded` (`RewardDistributionMoment`):  
     ///   The last known point after which rewards should be counted (exclusive).
-    /// - `end_at_moment_included` (`RewardDistributionMoment`):  
+    /// - `current_moment_included` (`RewardDistributionMoment`):  
     ///   The latest point up to which rewards should be counted (inclusive).
+    /// - `get_epoch_reward_ratio`: Optional function providing a reward ratio for epoch-based distributions.
     ///
     /// # Returns
     ///
     /// - `Ok(TokenAmount)`: The total sum of emitted rewards in the interval.
     /// - `Err(ProtocolError)`: If any evaluation fails (e.g., overflow, invalid configuration).
     ///
-    pub fn rewards_in_interval(
+    pub fn rewards_in_interval<F>(
         &self,
         start_at_moment_excluded: RewardDistributionMoment,
-        block_info: &BlockInfo,
-    ) -> Result<TokenAmount, ProtocolError> {
-        let end_reward_moment = RewardDistributionMoment::from_block_info(block_info, self);
-        self.function().evaluate_interval_in_bounds(
-            start_at_moment_excluded,
+        current_moment_included: RewardDistributionMoment,
+        get_epoch_reward_ratio: Option<F>,
+    ) -> Result<TokenAmount, ProtocolError>
+    where
+        F: Fn(EpochIndex) -> Option<RewardRatio> {
+        let mut effective_start = start_at_moment_excluded;
+        let mut effective_end = current_moment_included;
+
+        if let Some(distribution_start) = self.start_at() {
+            if distribution_start > effective_start {
+                effective_start = distribution_start;
+            }
+        }
+
+        if let Some(distribution_end) = self.end_at() {
+            if distribution_end < effective_end {
+                effective_end = distribution_end;
+            }
+        }
+
+        if effective_end <= effective_start {
+            return Ok(0);
+        }
+
+        self.function().evaluate_interval(
+            effective_start,
+            effective_end,
             self.interval(),
-            end_reward_moment,
-            self.start(),
-            self.end(),
+            get_epoch_reward_ratio,
         )
     }
 }

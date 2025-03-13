@@ -26,7 +26,7 @@ impl Drive {
     /// - `estimated_costs_only_with_layer_info`: A mutable hashmap that holds estimated layer information.
     pub(crate) fn add_estimation_costs_for_token_pre_programmed_distribution_v0<'a, I>(
         token_id: [u8; 32],
-        times: I,
+        times: Option<I>,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) where
         I: IntoIterator<Item = &'a TimestampMillis> + ExactSizeIterator,
@@ -59,23 +59,25 @@ impl Drive {
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 // At this level, expect as many children as there are time entries.
-                estimated_layer_count: ApproximateElements(times.len() as u32),
+                estimated_layer_count: ApproximateElements(times.as_ref().map(|times| times.len()).unwrap_or(128) as u32),
                 estimated_layer_sizes: AllSubtrees(U64_SIZE_U8, AllSumTrees, None),
             },
         );
-
-        // 4. For each provided timestamp, add an estimation for the at-time sum tree.
-        for time in times {
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(
-                    token_pre_programmed_at_time_distribution_path_vec(token_id, *time),
-                ),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::SumTree,
-                    estimated_layer_count: EstimatedLevel(3, false), // probably not that many
-                    estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
-                },
-            );
+        
+        if let Some(times) = times {
+            // 4. For each provided timestamp, add an estimation for the at-time sum tree.
+            for time in times {
+                estimated_costs_only_with_layer_info.insert(
+                    KeyInfoPath::from_known_owned_path(
+                        token_pre_programmed_at_time_distribution_path_vec(token_id, *time),
+                    ),
+                    EstimatedLayerInformation {
+                        tree_type: TreeType::SumTree,
+                        estimated_layer_count: EstimatedLevel(3, false), // probably not that many
+                        estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
+                    },
+                );
+            }
         }
     }
 }

@@ -4,9 +4,7 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterError,
     InvalidTokenDistributionFunctionInvalidParameterTupleError,
 };
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
-    DistributionFunction, MAX_DISTRIBUTION_PARAM,
-};
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_LINEAR_SLOPE_PARAM};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 impl DistributionFunction {
@@ -142,8 +140,8 @@ impl DistributionFunction {
             DistributionFunction::Linear {
                 a,
                 d,
-                s,
-                b,
+                start_moment: s,
+                starting_amount: b,
                 min_value,
                 max_value,
             } => {
@@ -164,12 +162,12 @@ impl DistributionFunction {
                     ));
                 }
 
-                if *a > MAX_DISTRIBUTION_PARAM as i64 || *a < -(MAX_DISTRIBUTION_PARAM as i64) {
+                if *a > MAX_LINEAR_SLOPE_PARAM as i64 || *a < -(MAX_LINEAR_SLOPE_PARAM as i64) {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
-                            -(MAX_DISTRIBUTION_PARAM as i64),
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            -(MAX_LINEAR_SLOPE_PARAM as i64),
+                            MAX_LINEAR_SLOPE_PARAM as i64,
                             None,
                         )
                         .into(),
@@ -220,8 +218,8 @@ impl DistributionFunction {
                 let start_token_amount = DistributionFunction::Linear {
                     a: *a,
                     d: *d,
-                    s: Some(s.unwrap_or(start_moment)),
-                    b: *b,
+                    start_moment: Some(s.unwrap_or(start_moment)),
+                    starting_amount: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
@@ -1017,8 +1015,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(3800),
-                b: 100,
+                start_moment: Some(3800),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1040,8 +1038,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 0,
-                s: Some(0),
-                b: 100,
+                start_moment: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1057,8 +1055,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(MAX_DISTRIBUTION_PARAM + 1),
-                b: 100,
+                start_moment: Some(MAX_DISTRIBUTION_PARAM + 1),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1074,8 +1072,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 0, // Invalid: a cannot be zero
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_moment: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1094,8 +1092,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: a exceeds allowed range
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_moment: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1114,8 +1112,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_moment: Some(0),
+                starting_amount: 100,
                 min_value: Some(200), // Invalid: min > max
                 max_value: Some(150),
             };
@@ -1134,8 +1132,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds allowed range
-                b: 100,
+                start_moment: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: s exceeds allowed range
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1154,8 +1152,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(0),
-                b: 100,
+                start_moment: Some(0),
+                starting_amount: 100,
                 min_value: Some(50),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value exceeds max allowed range
             };
@@ -1174,8 +1172,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 1,
                 d: 10,
-                s: Some(0),
-                b: 150, // Starts at max value
+                start_moment: Some(0),
+                starting_amount: 150, // Starts at max value
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1194,8 +1192,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: -1, // Negative slope (decreasing function)
                 d: 10,
-                s: Some(0),
-                b: 50, // Starts at min value
+                start_moment: Some(0),
+                starting_amount: 50, // Starts at min value
                 min_value: Some(50),
                 max_value: Some(150),
             };
@@ -1214,8 +1212,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: -5, // Valid decreasing function
                 d: 10,
-                s: Some(START_MOMENT),
-                b: 200,
+                start_moment: Some(START_MOMENT),
+                starting_amount: 200,
                 min_value: Some(50),
                 max_value: Some(250),
             };
@@ -1244,8 +1242,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: -3,
                 d: 5,
-                s: Some(START_MOMENT),
-                b: 100,
+                start_moment: Some(START_MOMENT),
+                starting_amount: 100,
                 min_value: Some(10), // Valid min boundary
                 max_value: Some(150),
             };
@@ -1261,8 +1259,8 @@ mod tests {
             let dist = DistributionFunction::Linear {
                 a: 3,
                 d: 5,
-                s: Some(START_MOMENT),
-                b: 50,
+                start_moment: Some(START_MOMENT),
+                starting_amount: 50,
                 min_value: Some(10),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
             };

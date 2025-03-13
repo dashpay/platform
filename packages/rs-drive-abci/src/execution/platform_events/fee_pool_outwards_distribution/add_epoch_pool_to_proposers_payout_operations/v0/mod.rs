@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
@@ -32,7 +33,7 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(StorageAndProcessingPoolCredits, Vec<(Identifier, u64)>), Error> {
+    ) -> Result<(StorageAndProcessingPoolCredits, BTreeMap<Identifier, u64>), Error> {
         let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
@@ -165,7 +166,7 @@ impl<C> Platform<C> {
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
 
-        Ok((storage_and_processing_fees, proposers))
+        Ok((storage_and_processing_fees, proposers.into_iter().collect()))
     }
 }
 

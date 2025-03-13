@@ -56,11 +56,11 @@ pub const TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY: u8 = 192;
 /// Key for the perpetual distribution info.
 pub const TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY: u8 = 128;
 
-/// Key for the perpetual distribution first event.
-pub const TOKEN_PERPETUAL_DISTRIBUTIONS_FIRST_EVENT_KEY: u8 = 64;
-
 /// Key for the perpetual distribution last claim for identities key.
 pub const TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY: u8 = 192;
+
+/// Key for the perpetual distribution last claim for identities key.
+pub const TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY: u8 = 192;
 
 /// The path for the balances tree
 
@@ -211,6 +211,62 @@ pub fn token_perpetual_distributions_identity_last_claimed_time_path_vec(
         vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
         token_id.to_vec(),
         vec![TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token
+pub fn token_pre_programmed_distributions_identity_last_claimed_time_path(
+    token_id: &[u8; 32],
+) -> [&[u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DISTRIBUTIONS_KEY],
+        &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY],
+        token_id,
+        &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token as a vector
+pub fn token_pre_programmed_distributions_identity_last_claimed_time_path_vec(
+    token_id: [u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DISTRIBUTIONS_KEY],
+        vec![TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY],
+        token_id.to_vec(),
+        vec![TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token
+pub fn token_perpetual_distributions_identity_last_claimed_by_identity_path<'a>(
+    token_id: &'a [u8; 32],
+    identity_id: &'a [u8; 32],
+) -> [&'a [u8]; 6] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DISTRIBUTIONS_KEY],
+        &[TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+        token_id,
+        &[TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+        identity_id,
+    ]
+}
+
+/// The path for the token perpetual distributions tree for a token as a vector
+pub fn token_perpetual_distributions_identity_last_claimed_by_identity_path_vec(
+    token_id: [u8; 32],
+    identity_id: [u8; 32],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DISTRIBUTIONS_KEY],
+        vec![TOKEN_PERPETUAL_DISTRIBUTIONS_KEY],
+        token_id.to_vec(),
+        vec![TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY],
+        identity_id.to_vec()
     ]
 }
 

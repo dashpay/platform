@@ -41,8 +41,8 @@ impl Encode for DistributionFunction {
             DistributionFunction::Linear {
                 a,
                 d,
-                s,
-                b,
+                start_moment: s,
+                starting_amount: b,
                 min_value,
                 max_value,
             } => {
@@ -192,8 +192,8 @@ impl Decode for DistributionFunction {
                 Ok(Self::Linear {
                     a,
                     d,
-                    s,
-                    b,
+                    start_moment: s,
+                    starting_amount: b,
                     min_value,
                     max_value,
                 })
@@ -338,8 +338,8 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 Ok(Self::Linear {
                     a,
                     d,
-                    s,
-                    b,
+                    start_moment: s,
+                    starting_amount: b,
                     min_value,
                     max_value,
                 })

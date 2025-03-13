@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
@@ -38,7 +39,7 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(StorageAndProcessingPoolCredits, Vec<(Identifier, u64)>), Error> {
+    ) -> Result<(StorageAndProcessingPoolCredits, BTreeMap<Identifier, u64>), Error> {
         match platform_version
             .drive_abci
             .methods

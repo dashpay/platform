@@ -5,8 +5,7 @@ use crate::util::batch::GroveDbOpBatch;
 
 use crate::drive::system::misc_path_vec;
 use crate::drive::tokens::paths::{
-    token_distributions_root_path_vec, token_perpetual_distributions_path_vec,
-    token_root_perpetual_distributions_path_vec, token_timed_distributions_path_vec,
+    token_distributions_root_path_vec, token_timed_distributions_path_vec,
     tokens_root_path_vec, TOKEN_BALANCES_KEY, TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY,
     TOKEN_DISTRIBUTIONS_KEY, TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, TOKEN_IDENTITY_INFO_KEY,
     TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, TOKEN_PERPETUAL_DISTRIBUTIONS_KEY,
@@ -15,10 +14,8 @@ use crate::drive::tokens::paths::{
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::PathKeyInfo;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg};
 use grovedb_path::SubtreePath;
 
 impl Drive {

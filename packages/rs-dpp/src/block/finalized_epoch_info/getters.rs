@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use crate::block::finalized_epoch_info::FinalizedEpochInfo;
 use crate::fee::Credits;
@@ -59,7 +60,7 @@ impl FinalizedEpochInfoGettersV0 for FinalizedEpochInfo {
         }
     }
 
-    fn block_proposers(&self) -> &Vec<(Identifier, u64)> {
+    fn block_proposers(&self) -> &BTreeMap<Identifier, u64> {
         match self {
             FinalizedEpochInfo::V0(v0) => v0.block_proposers(),
         }

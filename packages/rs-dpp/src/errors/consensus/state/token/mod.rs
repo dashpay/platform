@@ -14,6 +14,8 @@ mod token_mint_past_max_supply_error;
 mod token_not_paused_error;
 mod token_setting_max_supply_to_less_than_current_supply_error;
 mod unauthorized_token_action_error;
+mod invalid_token_claim_no_current_rewards;
+mod invalid_token_claim_wrong_claimant;
 
 pub use identity_does_not_have_enough_token_balance_error::*;
 pub use identity_token_account_already_frozen_error::*;
@@ -31,3 +33,5 @@ pub use token_mint_past_max_supply_error::*;
 pub use token_not_paused_error::*;
 pub use token_setting_max_supply_to_less_than_current_supply_error::*;
 pub use unauthorized_token_action_error::*;
+pub use invalid_token_claim_no_current_rewards::*;
+pub use invalid_token_claim_wrong_claimant::*;

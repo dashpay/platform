@@ -1,8 +1,5 @@
 pub mod v0;
 
-use crate::data_contract::associated_token::token_configuration::accessors::v0::{
-    TokenConfigurationV0Getters, TokenConfigurationV0Setters,
-};
 use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
