@@ -144,7 +144,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
 }
 
 impl Identifier {
-    pub fn new(buffer: [u8; 32]) -> Identifier {
+    pub const fn new(buffer: [u8; 32]) -> Identifier {
         Identifier(IdentifierBytes32(buffer))
     }
 

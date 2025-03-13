@@ -107,7 +107,7 @@ async fn contested_resource_vote_states_nx_contract() {
     if let dash_sdk::error::Error::DapiClientError(e) = result {
         assert!(
             e.contains(
-                "Transport(Grpc(Status { status: InvalidArgument, message: \"contract not found error"
+                "transport error: grpc error: status: InvalidArgument, message: \"contract not found error"
             ),
             "we should get contract not found error, got: {:?}",
             e,

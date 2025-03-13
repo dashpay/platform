@@ -296,6 +296,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         },
                                     );
                                 } else {
+                                    unimplemented!(
+                                        "proofs for non historical tokens aren't implemented yet"
+                                    );
                                 }
                             }
                             BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {}

@@ -16,7 +16,7 @@ impl From<TokenMintTransition> for TokenMintTransitionWasm {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class=TokenMintTransition)]
 impl TokenMintTransitionWasm {
     #[wasm_bindgen(js_name=getRecipientId)]
     pub fn recipient_id(

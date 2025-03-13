@@ -117,4 +117,9 @@ server = [
 full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
-verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]
+verify = [
+  "grovedb/verify",
+  "grovedb-costs",
+  "dpp/state-transitions",
+  "dpp/system_contracts",
+]
