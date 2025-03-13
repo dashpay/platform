@@ -38,7 +38,7 @@ impl<C> Platform<C> {
             )
             .map(|bytes| bytes.0)
             .map_err(|_| QueryError::InvalidArgument(
-                "public key hash must be 20 bytes long".to_string()
+                "start_after must be 32 bytes long identity ID".to_string()
             ))))
         } else {
             None
