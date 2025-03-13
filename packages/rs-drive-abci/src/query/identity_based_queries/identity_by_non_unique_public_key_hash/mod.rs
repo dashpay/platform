@@ -7,7 +7,6 @@ use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request:
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
     GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
-    GetIdentityByPublicKeyHashResponse,
 };
 use dpp::version::PlatformVersion;
 
@@ -28,7 +27,8 @@ impl<C> Platform<C> {
                 ),
             ));
         };
-
+        // TODO why `identity_by_unique_public_key_hash`?
+        // Shouldn't we rename or add new field like `identity_by_non_unique_public_key_hash`?
         let feature_version_bounds = &platform_version
             .drive_abci
             .query

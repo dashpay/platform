@@ -102,10 +102,11 @@ impl Drive {
         let sub_query = if let Some(after) = after {
             Query::new_single_query_item(QueryItem::RangeAfter(after.to_vec()..))
         } else {
+            // TODO: why not limit 1?
             Query::new_range_full()
         };
         query.set_subquery(sub_query);
-        PathQuery::new(non_unique_key_hashes, SizedQuery::new(query, None, None))
+        PathQuery::new(non_unique_key_hashes, SizedQuery::new(query, Some(1), None))
     }
 
     /// The query for proving identity ids from a vector of public key hashes.
