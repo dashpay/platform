@@ -7,7 +7,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 mod common;
-#[cfg(all(feature = "sdk-test-data", not(test)))]
+#[cfg(create_sdk_test_data)]
 mod test;
 pub mod v0;
 pub mod v1;
@@ -46,7 +46,9 @@ impl<C> Platform<C> {
             })),
         }?;
 
-        #[cfg(all(feature = "sdk-test-data", not(test)))]
+        // We aren't using features here because we don't want this thing to be activated when we are running tests
+        // with --all-features flag
+        #[cfg(create_sdk_test_data)]
         {
             let block_info = dpp::block::block_info::BlockInfo::default_with_time(genesis_time);
             self.create_sdk_test_data(&block_info, transaction, platform_version)?;

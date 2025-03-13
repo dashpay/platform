@@ -114,7 +114,6 @@ mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 grovedbg = ["drive/grovedbg"]
-sdk-test-data = []
 
 [[bin]]
 name = "drive-abci"
