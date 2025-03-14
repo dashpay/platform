@@ -197,7 +197,7 @@ where
             },
             quorum_hash: [0u8; 32],
             block_id_hash: [0u8; 32],
-            proposer_pro_tx_hash: [0u8; 32],
+            proposer_pro_tx_hash: extended_block_info.proposer_pro_tx_hash,
             signature: [0u8; 96],
             round: 0,
         },
