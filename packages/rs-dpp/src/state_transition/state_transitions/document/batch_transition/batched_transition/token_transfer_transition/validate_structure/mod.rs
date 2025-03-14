@@ -1,5 +1,5 @@
-use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::v0::TokenTransferTransitionActionStructureValidationV0;
-use crate::state_transition::batch_transition::TokenTransferTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::validate_structure::v0::TokenTransferTransitionActionStructureValidationV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;

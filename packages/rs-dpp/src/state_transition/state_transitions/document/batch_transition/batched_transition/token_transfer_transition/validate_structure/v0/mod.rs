@@ -1,12 +1,12 @@
 use platform_value::Identifier;
-use crate::consensus::basic::BasicError;
-use crate::consensus::basic::token::{InvalidTokenAmountError, InvalidTokenNoteTooBigError, TokenTransferToOurselfError};
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::basic::token::{InvalidTokenAmountError, InvalidTokenNoteTooBigError, TokenTransferToOurselfError};
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
-use crate::state_transition::batch_transition::TokenTransferTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 

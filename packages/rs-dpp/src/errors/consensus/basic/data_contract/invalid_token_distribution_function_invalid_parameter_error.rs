@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -22,16 +22,17 @@ use bincode::{Decode, Encode};
     }
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenDistributionFunctionInvalidParameterError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING A NEW VERSION
 
     */
-    parameter: String,
-    min: i64,
-    max: i64,
-    not_valid: Option<i64>,
+    pub parameter: String,
+    pub min: i64,
+    pub max: i64,
+    pub not_valid: Option<i64>,
 }
 
 impl InvalidTokenDistributionFunctionInvalidParameterError {

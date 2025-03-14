@@ -1,10 +1,10 @@
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::TokenDestroyFrozenFundsTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::consensus::basic::BasicError;
-use crate::consensus::basic::token::InvalidTokenNoteTooBigError;
-use crate::consensus::ConsensusError;
-use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::basic::token::InvalidTokenNoteTooBigError;
+use crate::errors::consensus::ConsensusError;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 
 pub(super) trait TokenDestroyFrozenFundsTransitionStructureValidationV0 {

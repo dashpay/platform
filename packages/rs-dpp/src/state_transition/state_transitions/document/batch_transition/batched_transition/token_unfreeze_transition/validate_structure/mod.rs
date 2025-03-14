@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::v0::TokenUnfreezeTransitionStructureValidationV0;
-use crate::state_transition::batch_transition::TokenUnfreezeTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_unfreeze_transition::validate_structure::v0::TokenUnfreezeTransitionStructureValidationV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;

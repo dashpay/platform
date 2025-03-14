@@ -7,6 +7,7 @@ use bincode::{Encode, Decode};
 use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_burn_transition::TokenBurnTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_claim_transition::TokenClaimTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_config_update_transition::TokenConfigUpdateTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_emergency_action_transition::TokenEmergencyActionTransition;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::TokenFreezeTransition;

@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -10,6 +10,7 @@ use thiserror::Error;
 )]
 #[error("Invalid token configuration update: no changes were made")]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenConfigUpdateNoChangeError;
 
 impl InvalidTokenConfigUpdateNoChangeError {

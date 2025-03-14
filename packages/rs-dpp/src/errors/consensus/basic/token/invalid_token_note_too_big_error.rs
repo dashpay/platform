@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -15,10 +15,11 @@ use thiserror::Error;
     max_note_length
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenNoteTooBigError {
-    max_note_length: u32,
-    note_type: String,
-    note_length: u32,
+    pub max_note_length: u32,
+    pub note_type: String,
+    pub note_length: u32,
 }
 
 impl InvalidTokenNoteTooBigError {

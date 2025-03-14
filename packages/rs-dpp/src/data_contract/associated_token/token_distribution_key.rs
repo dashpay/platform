@@ -15,6 +15,7 @@ use crate::prelude::TimestampMillis;
 #[derive(
     Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default,
 )]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum TokenDistributionType {
     /// A pre-programmed distribution scheduled for a specific time.
     #[default]

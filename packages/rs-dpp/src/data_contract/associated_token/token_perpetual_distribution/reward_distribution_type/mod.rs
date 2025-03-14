@@ -2,8 +2,9 @@ mod accessors;
 mod evaluate_interval;
 
 use crate::block::epoch::EpochIndex;
+use crate::data_contract::DataContract;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-use crate::prelude::{BlockHeight, BlockHeightInterval, DataContract, EpochInterval, TimestampMillis, TimestampMillisInterval};
+use crate::prelude::{BlockHeight, BlockHeightInterval, EpochInterval, TimestampMillis, TimestampMillisInterval};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;

@@ -1226,6 +1226,7 @@ dependencies = [
  "http",
  "lru",
  "platform-value",
+ "platform-version",
  "rs-dapi-client",
  "rustls-pemfile",
  "sanitize-filename",

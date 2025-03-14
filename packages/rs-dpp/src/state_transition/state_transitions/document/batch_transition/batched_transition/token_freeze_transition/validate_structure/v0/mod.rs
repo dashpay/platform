@@ -1,8 +1,8 @@
-use crate::consensus::basic::token::InvalidTokenNoteTooBigError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
-use crate::state_transition::batch_transition::TokenFreezeTransition;
+use crate::errors::consensus::basic::token::InvalidTokenNoteTooBigError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_freeze_transition::TokenFreezeTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;

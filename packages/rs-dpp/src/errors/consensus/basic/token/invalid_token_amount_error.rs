@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,9 +14,10 @@ use thiserror::Error;
     max_token_amount
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenAmountError {
-    max_token_amount: u64,
-    token_amount: u64,
+    pub max_token_amount: u64,
+    pub token_amount: u64,
 }
 
 impl InvalidTokenAmountError {

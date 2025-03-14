@@ -1,4 +1,4 @@
-use crate::consensus::basic::token::MissingDefaultLocalizationError;
+use crate::errors::consensus::basic::token::MissingDefaultLocalizationError;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::validation::SimpleConsensusValidationResult;
 

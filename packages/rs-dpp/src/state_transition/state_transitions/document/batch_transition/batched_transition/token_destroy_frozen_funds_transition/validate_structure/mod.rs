@@ -1,7 +1,7 @@
 use platform_version::version::PlatformVersion;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::validate_structure::v0::TokenDestroyFrozenFundsTransitionStructureValidationV0;
-use crate::state_transition::batch_transition::TokenDestroyFrozenFundsTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::validate_structure::v0::TokenDestroyFrozenFundsTransitionStructureValidationV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition;
 use crate::validation::SimpleConsensusValidationResult;
 
 mod v0;

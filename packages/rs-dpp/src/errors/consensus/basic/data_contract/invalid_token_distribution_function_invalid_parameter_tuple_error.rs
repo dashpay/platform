@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -17,15 +17,16 @@ use bincode::{Decode, Encode};
     second_parameter
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenDistributionFunctionInvalidParameterTupleError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING A NEW VERSION
 
     */
-    first_parameter: String,
-    second_parameter: String,
-    relation: String, // "greater than" or "smaller than"
+    pub first_parameter: String,
+    pub second_parameter: String,
+    pub relation: String, // "greater than" or "smaller than"
 }
 
 impl InvalidTokenDistributionFunctionInvalidParameterTupleError {

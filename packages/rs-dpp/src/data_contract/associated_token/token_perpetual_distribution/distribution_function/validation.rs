@@ -1,4 +1,4 @@
-use crate::consensus::basic::data_contract::{
+use crate::errors::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionDivideByZeroError,
     InvalidTokenDistributionFunctionIncoherenceError,
     InvalidTokenDistributionFunctionInvalidParameterError,

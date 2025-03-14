@@ -1,9 +1,9 @@
-use crate::consensus::basic::BasicError;
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::ConsensusError;
 
 use bincode::{Decode, Encode};
 
@@ -12,13 +12,14 @@ use bincode::{Decode, Encode};
 )]
 #[error("Incoherent parameters in token distribution function: {}.", message)]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenDistributionFunctionIncoherenceError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING A NEW VERSION
 
     */
-    message: String,
+    pub message: String,
 }
 
 impl InvalidTokenDistributionFunctionIncoherenceError {

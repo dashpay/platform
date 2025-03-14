@@ -1,7 +1,7 @@
 use platform_version::version::PlatformVersion;
 use crate::ProtocolError;
-use crate::state_transition::batch_transition::token_config_update_transition::validate_structure::v0::TokenConfigUpdateTransitionStructureValidationV0;
-use crate::state_transition::batch_transition::TokenConfigUpdateTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_config_update_transition::validate_structure::v0::TokenConfigUpdateTransitionStructureValidationV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_config_update_transition::TokenConfigUpdateTransition;
 use crate::validation::SimpleConsensusValidationResult;
 mod v0;
 

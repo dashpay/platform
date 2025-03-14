@@ -10,6 +10,7 @@ use dpp::platform_value::Identifier;
 use dpp::prelude::CoreBlockHeight;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
+use platform_version::version::PlatformVersion;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;

@@ -19,5 +19,5 @@ pub use invalid_token_config_update_no_change_error::InvalidTokenConfigUpdateNoC
 pub use invalid_token_id_error::InvalidTokenIdError;
 pub use invalid_token_note_too_big_error::InvalidTokenNoteTooBigError;
 pub use invalid_token_position_error::InvalidTokenPositionError;
-pub use missing_default_localization::MissingDefaultLocalization;
+pub use missing_default_localization::MissingDefaultLocalizationError;
 pub use token_transfer_to_ourselves_error::TokenTransferToOurselfError;

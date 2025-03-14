@@ -1,7 +1,7 @@
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-use crate::state_transition::batch_transition::batched_transition::token_claim_transition::TokenClaimTransitionV0;
-use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_claim_transition::TokenClaimTransitionV0;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
 
 impl TokenBaseTransitionAccessors for TokenClaimTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
