@@ -23,7 +23,7 @@ pub struct InvalidTokenDistributionFunctionDivideByZeroError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING A NEW VERSION
 
     */
-    distribution_function: DistributionFunction,
+    pub distribution_function: DistributionFunction,
 }
 
 impl InvalidTokenDistributionFunctionDivideByZeroError {

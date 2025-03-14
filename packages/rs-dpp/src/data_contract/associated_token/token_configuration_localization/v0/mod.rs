@@ -6,6 +6,7 @@ use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct TokenConfigurationLocalizationV0 {
     pub should_capitalize: bool,
     pub singular_form: String,
