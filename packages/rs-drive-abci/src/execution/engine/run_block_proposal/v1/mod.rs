@@ -1,3 +1,4 @@
+use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -382,7 +383,11 @@ where
             Some(transaction),
             platform_version,
         )?;
-        self.store_last_block_info(&block_info, Some(transaction), platform_version)?;
+        let extended_block_info = ExtendedBlockInfo {
+            block_info,
+            proposer_pro_tx_hash,
+        };
+        self.store_last_block_info(&extended_block_info, Some(transaction), platform_version)?;
 
         let root_hash = self
             .drive

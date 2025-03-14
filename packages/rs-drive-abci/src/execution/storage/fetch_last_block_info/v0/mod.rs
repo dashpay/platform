@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use bincode::config;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::serialization::{
@@ -20,13 +20,13 @@ impl<C> Platform<C> {
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<BlockInfo>, Error> {
+    ) -> Result<Option<ExtendedBlockInfo>, Error> {
         drive
             .fetch_last_block_info_bytes(transaction, platform_version)
             .map_err(Error::Drive)?
             .map(|bytes| {
                 let config = config::standard().with_big_endian().with_no_limit();
-                let (block_info, _): (BlockInfo, _) = bincode::decode_from_slice(&bytes, config)
+                let (block_info, _): (ExtendedBlockInfo, _) = bincode::decode_from_slice(&bytes, config)
                     .map_err(|_| {
                         Error::Drive(drive::error::Error::Drive(CorruptedDriveState(
                             "corrupted last block_info serialisation".to_string(),

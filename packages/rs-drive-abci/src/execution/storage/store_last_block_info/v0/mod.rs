@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use bincode::config;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::serialization::{PlatformSerializable, ReducedPlatformSerializable};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -11,7 +11,7 @@ use drive::query::TransactionArg;
 impl<C> Platform<C> {
     pub(super) fn store_last_block_info_v0(
         &self,
-        block_info: &BlockInfo,
+        block_info: &ExtendedBlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {

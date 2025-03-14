@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -15,7 +15,7 @@ impl<C> Platform<C> {
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<BlockInfo>, Error> {
+    ) -> Result<Option<ExtendedBlockInfo>, Error> {
         match platform_version
             .drive_abci
             .methods

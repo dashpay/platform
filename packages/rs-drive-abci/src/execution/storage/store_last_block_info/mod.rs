@@ -3,7 +3,7 @@ mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 
@@ -11,7 +11,7 @@ impl<C> Platform<C> {
     /// Store the execution state in grovedb storage
     pub fn store_last_block_info(
         &self,
-        block_info: &BlockInfo,
+        block_info: &ExtendedBlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
