@@ -11,6 +11,7 @@ mod validation;
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum DistributionFunction {
     /// Emits a constant (fixed) number of tokens for every period.
     ///
