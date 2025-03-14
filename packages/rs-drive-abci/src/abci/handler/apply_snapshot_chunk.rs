@@ -581,7 +581,7 @@ where
                             );*/
                         let validator_set_update = new_validator_set.to_update();
                         platform_state
-                            .set_next_validator_set_quorum_hash(Some(*quorum_hash));
+                            .set_current_validator_set_quorum_hash(*quorum_hash);
                         return Ok(());
                     }
                     index = (index + 1) % oldest_quorum_index_we_can_go_to;
@@ -602,7 +602,7 @@ where
                     let validator_set_update = new_validator_set.to_update();
                     let new_quorum_hash = *quorum_hash;
                     platform_state
-                        .set_next_validator_set_quorum_hash(Some(new_quorum_hash));
+                        .set_current_validator_set_quorum_hash(new_quorum_hash);
                     return Ok(());
                 }
                 //tracing::debug!("no new quorums to choose from");
