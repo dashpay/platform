@@ -25,6 +25,7 @@ use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::document::Document;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
@@ -78,28 +79,33 @@ mod property_names {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
+    V1(&'a DocumentTypeV1),
 }
 
 #[derive(Debug)]
 pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
+    V1(&'a mut DocumentTypeV1),
 }
 
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
+    V1(DocumentTypeV1),
 }
 
 impl DocumentType {
     pub const fn as_ref(&self) -> DocumentTypeRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
+            DocumentType::V1(v1) => DocumentTypeRef::V1(v1),
         }
     }
 
     pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
+            DocumentType::V1(v1) => DocumentTypeMutRef::V1(v1),
         }
     }
 
@@ -112,6 +118,9 @@ impl DocumentType {
             DocumentType::V0(v0) => {
                 v0.prefunded_voting_balance_for_document(document, platform_version)
             }
+            DocumentType::V1(v1) => {
+                v1.prefunded_voting_balance_for_document(document, platform_version)
+            }
         }
     }
 }
@@ -120,6 +129,7 @@ impl<'a> DocumentTypeRef<'a> {
     pub fn to_owned_document_type(&self) -> DocumentType {
         match self {
             DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
+            DocumentTypeRef::V1(v1) => DocumentType::V1((*v1).to_owned()),
         }
     }
 }

@@ -11,7 +11,6 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use indexmap::IndexMap;
@@ -20,6 +19,7 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::convert::TryInto;
 
+use crate::balances::credits::TokenAmount;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(feature = "validation")]
@@ -33,19 +33,22 @@ use crate::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
-    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
-    NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
+    insert_values, insert_values_nested, MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+    MAX_INDEXED_STRING_PROPERTY_LENGTH, NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
 };
 use crate::data_contract::document_type::class_methods::{
-    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error, try_from_schema,
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
 };
+use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
+use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::data_contract::TokenContractPosition;
 use crate::identity::SecurityLevel;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
@@ -54,7 +57,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 
-impl DocumentTypeV0 {
+impl DocumentTypeV1 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
     pub(super) fn try_from_schema(
@@ -241,7 +244,7 @@ impl DocumentTypeV0 {
         for (property_key, property_value) in property_values {
             // TODO: It's very inefficient. It must be done in one iteration and flattened properties
             //  must keep a reference? We even could keep only one collection
-            try_from_schema::insert_values(
+            insert_values(
                 &mut flattened_document_properties,
                 &required_fields,
                 &transient_fields,
@@ -253,7 +256,7 @@ impl DocumentTypeV0 {
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
 
-            try_from_schema::insert_values_nested(
+            insert_values_nested(
                 &mut document_properties,
                 &required_fields,
                 &transient_fields,
@@ -538,7 +541,33 @@ impl DocumentTypeV0 {
             .map(StorageKeyRequirements::try_from)
             .transpose()?;
 
-        Ok(DocumentTypeV0 {
+        let token_costs_value = schema.get_optional_value("tokenCost")?;
+
+        let extract_cost =
+            |key: &str| -> Result<Option<(TokenContractPosition, TokenAmount)>, ProtocolError> {
+                token_costs_value
+                    .and_then(|v| v.get_optional_value(key).transpose())
+                    .transpose()?
+                    .map(|action_cost| {
+                        Ok((
+                            action_cost.get_integer::<TokenContractPosition>("tokenPosition")?,
+                            action_cost.get_integer::<TokenAmount>("amount")?,
+                        ))
+                    })
+                    .transpose()
+            };
+
+        let token_costs = TokenCostsV0 {
+            create: extract_cost("create")?,
+            replace: extract_cost("replace")?,
+            delete: extract_cost("delete")?,
+            transfer: extract_cost("transfer")?,
+            update_price: extract_cost("update_price")?,
+            purchase: extract_cost("purchase")?,
+        }
+        .into();
+
+        Ok(DocumentTypeV1 {
             name: String::from(name),
             schema,
             indices,
@@ -561,6 +590,7 @@ impl DocumentTypeV0 {
             security_level_requirement,
             #[cfg(feature = "validation")]
             json_schema_validator,
+            token_costs,
         })
     }
 }
@@ -568,6 +598,7 @@ impl DocumentTypeV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::document_type::DocumentTypeV0;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
@@ -592,7 +623,7 @@ mod tests {
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
 
-            let _result = DocumentTypeV0::try_from_schema(
+            let _result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
                 "valid_name-a-b-123",
                 schema,
@@ -623,7 +654,7 @@ mod tests {
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
 
-            let result = DocumentTypeV0::try_from_schema(
+            let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
                 "",
                 schema,
@@ -665,7 +696,7 @@ mod tests {
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
 
-            let result = DocumentTypeV0::try_from_schema(
+            let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
                 &"a".repeat(65),
                 schema,
@@ -733,7 +764,7 @@ mod tests {
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
 
-            let result = DocumentTypeV0::try_from_schema(
+            let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
                 "invalid&name",
                 schema,

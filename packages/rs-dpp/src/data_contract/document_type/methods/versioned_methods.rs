@@ -27,9 +27,7 @@ use platform_value::{Identifier, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-pub(super) trait DocumentTypeV0MethodsVersioned:
-    DocumentTypeV0Getters + DocumentTypeBasicMethods
-{
+pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBasicMethods {
     fn create_document_from_data_v0(
         &self,
         data: Value,

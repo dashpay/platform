@@ -4,12 +4,13 @@ use crate::data_contract::document_type::token_costs::accessors::{
 };
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::TokenContractPosition;
+use derive_more::From;
 
 pub(crate) mod accessors;
-mod v0;
+pub mod v0;
 
 /// The token costs for various document operations
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, From)]
 pub enum TokenCosts {
     /// Version 0 of token costs
     V0(TokenCostsV0),

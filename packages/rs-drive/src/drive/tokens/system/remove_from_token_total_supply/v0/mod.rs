@@ -5,12 +5,14 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::Element::SumItem;
-use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
+use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -97,24 +99,40 @@ impl Drive {
             )?;
         }
 
+        let direct_query_type = if estimated_costs_only_with_layer_info.is_none() {
+            DirectQueryType::StatefulDirectQuery
+        } else {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::BigSumTree,
+                query_target: QueryTargetValue(8),
+            }
+        };
+
         let path_holding_total_token_supply = total_tokens_root_supply_path();
-        let total_token_supply_in_platform = self
-            .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&path_holding_total_token_supply).into(),
-                &token_id,
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?
-            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "Total supply for Token not found in Platform",
-            )))?;
-        let new_total = total_token_supply_in_platform
-            .checked_sub(amount)
-            .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "trying to subtract an amount that would underflow total supply",
-            )))?;
+        let total_token_supply_in_platform = self.grove_get_raw_value_u64_from_encoded_var_vec(
+            (&path_holding_total_token_supply).into(),
+            &token_id,
+            direct_query_type,
+            transaction,
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+        let new_total = if estimated_costs_only_with_layer_info.is_none() {
+            let total_token_supply_in_platform = total_token_supply_in_platform.ok_or(
+                Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "Total supply for Token not found in Platform for token {}",
+                    Identifier::from(token_id)
+                ))),
+            )?;
+
+            total_token_supply_in_platform.checked_sub(amount)
+                .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                    format!("trying to subtract an amount {} from current amount {} that would underflow total supply for token {}", amount, total_token_supply_in_platform, Identifier::from(token_id)),
+                )))?
+        } else {
+            u64::MAX // This would error if we were not in estimated costs, which is what we want
+        };
+
         let path_holding_total_token_supply_vec = total_tokens_root_supply_path_vec();
         let replace_op = QualifiedGroveDbOp::replace_op(
             path_holding_total_token_supply_vec,

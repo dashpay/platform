@@ -10,10 +10,9 @@
       "canBeDeleted": false,
       "transferable": 1,
       "tokenCost": {
-        "tokenPosition": 0,
-        "create": 10,
-        "replace": 1,
-        "delete": 1
+        "create": { "tokenPosition": 0, "amount": 10 },
+        "replace": { "tokenPosition": 1, "amount": 1 },
+        "delete": { "tokenPosition": 1, "amount": 1 }
       },
       "properties": {
         "name": {

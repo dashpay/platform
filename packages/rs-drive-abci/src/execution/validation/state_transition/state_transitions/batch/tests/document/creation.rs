@@ -38,7 +38,10 @@ mod creation_tests {
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use dpp::state_transition::batch_transition::{DocumentCreateTransition, BatchTransitionV0};
     use dpp::state_transition::StateTransition;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use crate::config::PlatformConfig;
+    use crate::execution::validation::state_transition::tests::add_tokens_to_identity;
+    use crate::execution::validation::state_transition::tests::create_card_game_token_contract_with_owner_identity;
 
     #[test]
     fn test_document_creation() {
@@ -2438,5 +2441,99 @@ mod creation_tests {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document Creation on 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e:card is not allowed because of the document type's creation restriction mode Owner Only");
+    }
+
+    #[test]
+    fn test_document_creation_paid_with_a_token() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (contract_owner_id, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
+
+        let (contract, gold_token_id, _) = create_card_game_token_contract_with_owner_identity(
+            &mut platform,
+            contract_owner_id.id(),
+            platform_version,
+        );
+
+        assert_eq!(contract.tokens().len(), 2);
+
+        add_tokens_to_identity(&mut platform, gold_token_id.into(), buyer.id(), 15);
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                buyer.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
     }
 }

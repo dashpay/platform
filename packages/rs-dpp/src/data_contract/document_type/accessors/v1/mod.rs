@@ -36,7 +36,7 @@ pub trait DocumentTypeV1Getters {
     /// # Returns
     /// - `Some((TokenContractPosition, TokenAmount))` if an update price cost exists.
     /// - `None` if no cost is set for updating the price.
-    fn document_price_update_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)>;
+    fn document_update_price_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)>;
 
     /// Returns the token cost associated with document purchase, if applicable.
     ///

@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV1Getters,
+    DocumentTypeV0Getters, DocumentTypeV0Setters, DocumentTypeV1Getters,
 };
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -11,6 +11,7 @@ use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::TokenContractPosition;
 use crate::document::transfer::Transferable;
@@ -109,6 +110,17 @@ impl DocumentTypeV0Getters for DocumentTypeV1 {
     fn security_level_requirement(&self) -> SecurityLevel {
         self.security_level_requirement
     }
+
+    #[cfg(feature = "validation")]
+    fn json_schema_validator_ref(&self) -> &StatelessJsonSchemaLazyValidator {
+        &self.json_schema_validator
+    }
+}
+
+impl DocumentTypeV0Setters for DocumentTypeV1 {
+    fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
+        self.data_contract_id = data_contract_id;
+    }
 }
 
 impl DocumentTypeV1Getters for DocumentTypeV1 {
@@ -128,7 +140,7 @@ impl DocumentTypeV1Getters for DocumentTypeV1 {
         self.token_costs.document_transfer_token_cost()
     }
 
-    fn document_price_update_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_update_price_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
         self.token_costs.document_price_update_token_cost()
     }
 
