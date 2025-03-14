@@ -9,6 +9,7 @@ use crate::data_contract::associated_token::token_perpetual_distribution::reward
 use crate::ProtocolError;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub enum RewardDistributionMoment {
     /// The reward was distributed at a block height
     BlockBasedMoment(BlockHeight),

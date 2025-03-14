@@ -1,9 +1,9 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
-use crate::prelude::Identifier;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
@@ -16,10 +16,11 @@ use thiserror::Error;
     claimant_id
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenClaimWrongClaimant {
-    token_id: Identifier,
-    expected_claimant_id: Identifier,
-    claimant_id: Identifier,
+    pub token_id: Identifier,
+    pub expected_claimant_id: Identifier,
+    pub claimant_id: Identifier,
 }
 
 impl InvalidTokenClaimWrongClaimant {

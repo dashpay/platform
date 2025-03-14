@@ -1,10 +1,10 @@
-use crate::prelude::Identifier;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
@@ -18,11 +18,12 @@ use thiserror::Error;
     last_claimed_moment.as_ref().map_or("Never claimed before".to_string(), |moment| moment.to_string())
 )]
 #[platform_serialize(unversioned)]
+#[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct InvalidTokenClaimNoCurrentRewards {
-    token_id: Identifier,
-    recipient_id: Identifier,
-    current_moment: RewardDistributionMoment,
-    last_claimed_moment: Option<RewardDistributionMoment>,
+    pub token_id: Identifier,
+    pub recipient_id: Identifier,
+    pub current_moment: RewardDistributionMoment,
+    pub last_claimed_moment: Option<RewardDistributionMoment>,
 }
 
 impl InvalidTokenClaimNoCurrentRewards {
