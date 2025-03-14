@@ -173,9 +173,9 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
                 after: Some(*found.id().as_bytes()),
             };
         }
-        assert_ne!(
-            count, 0,
-            "no identities found by non-unique public key hash"
+        assert_eq!(
+            count, 3,
+            "expected exactly 3 identities with this non-unique public key"
         );
     }
 }
