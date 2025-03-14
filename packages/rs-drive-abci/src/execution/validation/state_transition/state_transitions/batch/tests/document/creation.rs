@@ -266,7 +266,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::DocumentAlreadyPresentError { .. }),
                 _
             )]
@@ -1757,7 +1757,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(
                     StateError::DocumentContestDocumentWithSameIdAlreadyPresentError { .. }
                 ),
@@ -2145,10 +2145,10 @@ mod creation_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError(consensus_error, _) = result else {
             panic!("expected a paid consensus error");
         };
-        assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
+        assert_eq!(consensus_error.to_string(), "An Identity with the id `BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW` is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
     }
 
     #[test]
@@ -2437,7 +2437,7 @@ mod creation_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError(consensus_error, _) = result else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document Creation on 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e:card is not allowed because of the document type's creation restriction mode Owner Only");
@@ -2535,5 +2535,18 @@ mod creation_tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gold_token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        
+        // He had 15, but spent 10
+        assert_eq!(token_balance, Some(5));
     }
 }
