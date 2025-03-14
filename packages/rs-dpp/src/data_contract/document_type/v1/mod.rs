@@ -10,19 +10,21 @@ use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
+use crate::data_contract::document_type::token_costs::TokenCosts;
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use platform_value::{Identifier, Value};
 
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 mod accessors;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct DocumentTypeV0 {
+pub struct DocumentTypeV1 {
     pub(in crate::data_contract) name: String,
     pub(in crate::data_contract) schema: Value,
     pub(in crate::data_contract) indices: BTreeMap<String, Index>,
@@ -61,15 +63,49 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) security_level_requirement: SecurityLevel,
     #[cfg(feature = "validation")]
     pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
+    /// The token costs associated with state transitions on this document type
+    pub(in crate::data_contract) token_costs: TokenCosts,
 }
 
-impl DocumentTypeBasicMethods for DocumentTypeV0 {}
+impl DocumentTypeBasicMethods for DocumentTypeV1 {}
 
-impl DocumentTypeV0Methods for DocumentTypeV0 {}
+impl DocumentTypeV0Methods for DocumentTypeV1 {}
 
-impl DocumentTypeV0 {
+impl DocumentTypeV1 {
     // Public method to set the data_contract_id
     pub fn set_data_contract_id(&mut self, new_id: Identifier) {
         self.data_contract_id = new_id;
+    }
+}
+
+impl From<DocumentTypeV0> for DocumentTypeV1 {
+    fn from(value: DocumentTypeV0) -> Self {
+        DocumentTypeV1 {
+            name: value.name,
+            schema: value.schema,
+            indices: value.indices,
+            index_structure: value.index_structure,
+            flattened_properties: value.flattened_properties,
+            properties: value.properties,
+            identifier_paths: value.identifier_paths,
+            binary_paths: value.binary_paths,
+            required_fields: value.required_fields,
+            transient_fields: value.transient_fields,
+            documents_keep_history: value.documents_keep_history,
+            documents_mutable: value.documents_mutable,
+            documents_can_be_deleted: value.documents_can_be_deleted,
+            documents_transferable: value.documents_transferable,
+            trade_mode: value.trade_mode,
+            creation_restriction_mode: value.creation_restriction_mode,
+            data_contract_id: value.data_contract_id,
+            requires_identity_encryption_bounded_key: value
+                .requires_identity_encryption_bounded_key,
+            requires_identity_decryption_bounded_key: value
+                .requires_identity_decryption_bounded_key,
+            security_level_requirement: value.security_level_requirement,
+            #[cfg(feature = "validation")]
+            json_schema_validator: value.json_schema_validator,
+            token_costs: TokenCosts::V0(Default::default()),
+        }
     }
 }

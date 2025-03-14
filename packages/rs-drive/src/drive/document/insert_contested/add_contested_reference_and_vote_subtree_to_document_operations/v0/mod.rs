@@ -14,7 +14,7 @@ use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElemen
 use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, U8_SIZE_U8};
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;

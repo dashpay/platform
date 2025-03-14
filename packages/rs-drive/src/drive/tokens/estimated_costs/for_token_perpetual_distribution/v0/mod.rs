@@ -1,13 +1,12 @@
 use crate::drive::tokens::paths::{
-    token_distributions_root_path_vec,
-    token_perpetual_distributions_identity_last_claimed_time_path_vec,
-    token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec,
+    token_distributions_root_path_vec, token_perpetual_distributions_path_vec,
+    token_root_perpetual_distributions_path_vec,
 };
 use crate::drive::Drive;
-use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U8_SIZE_U8};
+use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U8};
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedLayerCount::EstimatedLevel;
+use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;

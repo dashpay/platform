@@ -32,7 +32,9 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 #[cfg(feature = "validation")]
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 #[cfg(feature = "document-json-conversion")]

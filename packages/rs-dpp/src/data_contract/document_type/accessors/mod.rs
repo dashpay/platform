@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -15,6 +16,7 @@ use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
+pub use v1::*;
 
 impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {

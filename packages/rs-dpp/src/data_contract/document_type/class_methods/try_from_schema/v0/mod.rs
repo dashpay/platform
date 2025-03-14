@@ -13,7 +13,7 @@ use crate::data_contract::document_type::property::{DocumentProperty, DocumentPr
 use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use indexmap::IndexMap;
 #[cfg(feature = "validation")]
 use std::collections::HashSet;

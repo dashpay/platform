@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::process::id;
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::balances::credits::TokenAmount;
@@ -246,20 +245,19 @@ impl TokenClaimTransitionActionV0 {
 
                 fee_result.checked_add_assign(last_paid_time_fee_result)?;
 
-                let mut distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> =
-                    times
-                        .iter()
-                        .filter_map(|(timestamp, distribution)| {
-                            if timestamp > &block_info.time_ms {
-                                // Don't get the ones in the future
-                                None
-                            } else {
-                                distribution
-                                    .get(&owner_id)
-                                    .map(|amount| (*timestamp, *amount))
-                            }
-                        })
-                        .collect();
+                let distributions_in_past_for_owner: BTreeMap<TimestampMillis, TokenAmount> = times
+                    .iter()
+                    .filter_map(|(timestamp, distribution)| {
+                        if timestamp > &block_info.time_ms {
+                            // Don't get the ones in the future
+                            None
+                        } else {
+                            distribution
+                                .get(&owner_id)
+                                .map(|amount| (*timestamp, *amount))
+                        }
+                    })
+                    .collect();
 
                 let distribution_after_last_paid: Option<(TimestampMillis, TokenAmount)> =
                     if let Some(last_paid) = last_paid_moment {
