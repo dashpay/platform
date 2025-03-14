@@ -1,7 +1,10 @@
 use crate::drive::tokens::paths::{
     token_ms_timed_at_time_distributions_path_vec, token_ms_timed_distributions_path_vec,
     token_pre_programmed_at_time_distribution_path_vec, token_pre_programmed_distributions_path,
-    token_root_pre_programmed_distributions_path, TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
+    token_root_pre_programmed_distributions_path,
+    TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+    TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -131,7 +134,7 @@ impl Drive {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_token_pre_programmed_distribution(
                 token_id,
-                distribution.distributions().keys(),
+                Some(distribution.distributions().keys()),
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
@@ -187,6 +190,16 @@ impl Drive {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution("we can not insert the pre programmed distribution as it already existed, this should have been validated before insertion")));
         }
         let pre_programmed_distributions_path = token_pre_programmed_distributions_path(&token_id);
+
+        self.batch_insert_empty_tree(
+            pre_programmed_distributions_path,
+            DriveKeyInfo::Key(vec![
+                TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+            ]),
+            None, // we will never clean this part up
+            batch_operations,
+            &platform_version.drive,
+        )?;
 
         for (time, distribution) in distribution.distributions() {
             self.batch_insert_empty_sum_tree(

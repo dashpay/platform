@@ -43,7 +43,7 @@ use crate::errors::consensus::state::identity::no_transfer_key_for_core_withdraw
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use crate::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError,
-    TokenNotPausedError, InvalidTokenClaimPropertyMismatch
+    TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant
 };
 use crate::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
@@ -245,6 +245,12 @@ pub enum StateError {
 
     #[error(transparent)]
     InvalidTokenClaimPropertyMismatch(InvalidTokenClaimPropertyMismatch),
+
+    #[error(transparent)]
+    InvalidTokenClaimNoCurrentRewards(InvalidTokenClaimNoCurrentRewards),
+
+    #[error(transparent)]
+    InvalidTokenClaimWrongClaimant(InvalidTokenClaimWrongClaimant),
 
     #[error(transparent)]
     NewTokensDestinationIdentityDoesNotExistError(NewTokensDestinationIdentityDoesNotExistError),

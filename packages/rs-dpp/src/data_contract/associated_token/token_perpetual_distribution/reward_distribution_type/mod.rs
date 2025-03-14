@@ -1,10 +1,9 @@
 mod accessors;
 mod evaluate_interval;
 
-use crate::block::epoch::EpochIndex;
 use crate::data_contract::DataContract;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-use crate::prelude::{BlockHeight, BlockHeightInterval, EpochInterval, TimestampMillis, TimestampMillisInterval};
+use crate::prelude::{BlockHeightInterval, EpochInterval, TimestampMillisInterval};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -14,29 +13,30 @@ use crate::ProtocolError;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum RewardDistributionType {
-    /// An amount of tokens is emitted every n blocks
-    /// The start and end are included if set
+    /// An amount of tokens is emitted every n blocks.
+    /// The start and end are included if set.
+    /// If start is not set then it will start at the height of the block when the data contract
+    /// is registered.
     BlockBasedDistribution {
         interval: BlockHeightInterval,
         function: DistributionFunction,
-        start: Option<BlockHeight>,
-        end: Option<BlockHeight>,
     },
-    /// An amount of tokens is emitted every amount of time given
-    /// The start and end are included if set
+    /// An amount of tokens is emitted every amount of time given.
+    /// The start and end are included if set.
+    /// If start is not set then it will start at the time of the block when the data contract
+    /// is registered.
     TimeBasedDistribution {
         interval: TimestampMillisInterval,
         function: DistributionFunction,
-        start: Option<TimestampMillis>,
-        end: Option<TimestampMillis>,
     },
-    /// An amount of tokens is emitted every amount of epochs
-    /// The start and end are included if set
+    /// An amount of tokens is emitted every amount of epochs.
+    /// The start and end are included if set.
+    /// If start is not set then it will start at the epoch of the block when the data contract
+    /// is registered. A distribution would happen at the start of the following epoch, even if it
+    /// is just 1 block later.
     EpochBasedDistribution {
         interval: EpochInterval,
         function: DistributionFunction,
-        start: Option<EpochIndex>,
-        end: Option<EpochIndex>,
     },
 }
 
@@ -136,65 +136,87 @@ impl RewardDistributionType {
             }
         }
     }
+
+    /// Determines the maximum cycle moment allowed based on the last paid moment,
+    /// the current cycle moment, and the maximum allowed token redemption cycles.
+    ///
+    /// This function calculates a capped distribution moment (`RewardDistributionMoment`) by limiting
+    /// the range between the `last_paid_moment` (or start) and the `current_cycle_moment` to the
+    /// maximum allowed number of redemption cycles (`max_cycles`).
+    ///
+    /// # Arguments
+    /// - `last_paid_moment`: Optional last moment at which tokens were claimed.
+    /// - `current_cycle_moment`: The current cycle moment as of the current block.
+    /// - `max_cycles`: The maximum number of redemption cycles permitted per claim.
+    ///
+    /// # Returns
+    /// - `RewardDistributionMoment`: The maximum allowed cycle moment capped by `max_cycles`.
+    pub fn max_cycle_moment(
+        &self,
+        start_moment: RewardDistributionMoment,
+        current_cycle_moment: RewardDistributionMoment,
+        max_cycles: u32,
+    ) -> Result<RewardDistributionMoment, ProtocolError> {
+        if matches!(self.function(), DistributionFunction::FixedAmount { .. }) {
+            // This is much easier to calculate as it's always fixed, so we can have an unlimited amount of cycles
+            return Ok(current_cycle_moment);
+        }
+        let interval = self.interval();
+
+        // Calculate maximum allowed moment based on distribution type
+        match (start_moment, interval, current_cycle_moment) {
+            (
+                RewardDistributionMoment::BlockBasedMoment(start),
+                RewardDistributionMoment::BlockBasedMoment(step),
+                RewardDistributionMoment::BlockBasedMoment(current),
+            ) => Ok(RewardDistributionMoment::BlockBasedMoment(
+                (start + step.saturating_mul(max_cycles as u64)).min(current),
+            )),
+            (
+                RewardDistributionMoment::TimeBasedMoment(start),
+                RewardDistributionMoment::TimeBasedMoment(step),
+                RewardDistributionMoment::TimeBasedMoment(current),
+            ) => Ok(RewardDistributionMoment::TimeBasedMoment(
+                (start + step.saturating_mul(max_cycles as u64)).min(current),
+            )),
+            (
+                RewardDistributionMoment::EpochBasedMoment(start),
+                RewardDistributionMoment::EpochBasedMoment(step),
+                RewardDistributionMoment::EpochBasedMoment(current),
+            ) => Ok(RewardDistributionMoment::EpochBasedMoment(
+                (start + (step as u16).saturating_mul(max_cycles as u16)).min(current),
+            )),
+            _ => Err(ProtocolError::CorruptedCodeExecution(
+                "Mismatch moment types".to_string(),
+            )),
+        }
+    }
 }
 impl fmt::Display for RewardDistributionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RewardDistributionType::BlockBasedDistribution {
-                interval,
-                function,
-                start,
-                end,
-            } => {
+            RewardDistributionType::BlockBasedDistribution { interval, function } => {
                 write!(
                     f,
                     "BlockBasedDistribution: every {} blocks using {}",
                     interval, function
                 )?;
-                if let Some(start) = start {
-                    write!(f, ", starting at block {}", start)?;
-                }
-                if let Some(end) = end {
-                    write!(f, ", ending at block {}", end)?;
-                }
                 Ok(())
             }
-            RewardDistributionType::TimeBasedDistribution {
-                interval,
-                function,
-                start,
-                end,
-            } => {
+            RewardDistributionType::TimeBasedDistribution { interval, function } => {
                 write!(
                     f,
                     "TimeBasedDistribution: every {} milliseconds using {}",
                     interval, function
                 )?;
-                if let Some(start) = start {
-                    write!(f, ", starting at timestamp {}", start)?;
-                }
-                if let Some(end) = end {
-                    write!(f, ", ending at timestamp {}", end)?;
-                }
                 Ok(())
             }
-            RewardDistributionType::EpochBasedDistribution {
-                interval,
-                function,
-                start,
-                end,
-            } => {
+            RewardDistributionType::EpochBasedDistribution { interval, function } => {
                 write!(
                     f,
                     "EpochBasedDistribution: every {} epochs using {}",
                     interval, function
                 )?;
-                if let Some(start) = start {
-                    write!(f, ", starting at epoch {}", start)?;
-                }
-                if let Some(end) = end {
-                    write!(f, ", ending at epoch {}", end)?;
-                }
                 Ok(())
             }
         }

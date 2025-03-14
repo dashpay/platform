@@ -1,17 +1,22 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use crate::ProtocolError;
-// adjust the import path as needed
 
 impl DistributionFunction {
     /// Evaluates the distribution function at the given period `x`.
     ///
     /// If an optional start period (`s`) is not provided, it defaults to 0.
+    /// The contract registration step is the contract registration moment divided
+    /// by the step
     ///
     /// # Returns
     /// A `Result` with the computed token amount or a `ProtocolError` in case of a
     /// divide-by-zero, undefined operation (e.g. log of non-positive number), or overflow.
-    pub fn evaluate(&self, x: u64) -> Result<TokenAmount, ProtocolError> {
+    pub fn evaluate(
+        &self,
+        contract_registration_step: u64,
+        x: u64,
+    ) -> Result<TokenAmount, ProtocolError> {
         match self {
             DistributionFunction::FixedAmount { amount: n } => {
                 // For fixed amount, simply return n.
@@ -56,7 +61,7 @@ impl DistributionFunction {
                         "StepDecreasingAmount: denominator is 0",
                     ));
                 }
-                let s_val = s.unwrap_or(0);
+                let s_val = s.unwrap_or(contract_registration_step);
                 // Compute the number of steps passed.
                 let steps = if x > s_val {
                     (x - s_val) / (*step_count as u64)
@@ -94,8 +99,8 @@ impl DistributionFunction {
             DistributionFunction::Linear {
                 a,
                 d,
-                s,
-                b,
+                start_step,
+                starting_amount,
                 min_value,
                 max_value,
             } => {
@@ -105,16 +110,51 @@ impl DistributionFunction {
                     ));
                 }
                 // Check that the value at x = 0 is within bounds.
-                let s_val = s.unwrap_or(0);
+                let s_val = start_step.unwrap_or(contract_registration_step);
 
-                let diff = x.saturating_sub(s_val) as i128;
-                let value = (((*a as i128) * diff / (*d as i128)) as i64)
-                    .checked_add(*b as i64)
-                    .ok_or(ProtocolError::Overflow(
-                        "Linear function evaluation overflow or negative",
-                    ))?;
+                let diff = x.saturating_sub(s_val);
+                let value = if *d == 1 {
+                    // very common case
+                    match a.checked_mul(diff as i64) {
+                        None => {
+                            if *a < 0 {
+                                0
+                            } else {
+                                if let Some(max_value) = max_value {
+                                    *max_value
+                                } else {
+                                    return Err(ProtocolError::Overflow(
+                                        "Linear function evaluation overflow on multiplication",
+                                    ));
+                                }
+                            }
+                        }
+                        Some(mul) => {
+                            let value = mul.checked_add(*starting_amount as i64).ok_or(
+                                ProtocolError::Overflow(
+                                    "Linear function evaluation overflow or negative",
+                                ),
+                            )?;
+                            if value < 0 {
+                                0
+                            } else {
+                                value as u64
+                            }
+                        }
+                    }
+                } else {
+                    let value = (((*a as i128) * (diff as i128) / (*d as i128)) as i64)
+                        .checked_add(*starting_amount as i64)
+                        .ok_or(ProtocolError::Overflow(
+                            "Linear function evaluation overflow or negative",
+                        ))?;
+                    if value < 0 {
+                        0
+                    } else {
+                        value as u64
+                    }
+                };
 
-                let value = if value < 0 { 0 } else { value as u64 };
                 if let Some(min_value) = min_value {
                     if value < *min_value {
                         return Ok(*min_value);
@@ -135,7 +175,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment,
                 b,
                 min_value,
                 max_value,
@@ -150,7 +190,7 @@ impl DistributionFunction {
                         "Polynomial function: exponent denominator n is 0",
                     ));
                 }
-                let s_val = s.unwrap_or(0);
+                let s_val = start_moment.unwrap_or(contract_registration_step);
                 let exponent = (*m as f64) / (*n as f64);
                 let diff = x as i128 - s_val as i128 + *o as i128;
 
@@ -203,7 +243,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment,
                 c,
                 min_value,
                 max_value,
@@ -218,7 +258,7 @@ impl DistributionFunction {
                         "Exponential function: exponent denominator n is 0",
                     ));
                 }
-                let s_val = s.unwrap_or(0);
+                let s_val = start_moment.unwrap_or(contract_registration_step);
                 let diff = x as i128 - s_val as i128 + *o as i128;
 
                 if diff < -(u64::MAX as i128) {
@@ -271,7 +311,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment,
                 b,
                 min_value,
                 max_value,
@@ -284,7 +324,7 @@ impl DistributionFunction {
                 if *n == 0 {
                     return Err(ProtocolError::DivideByZero("Logarithmic function: n is 0"));
                 }
-                let s_val = s.unwrap_or(0);
+                let s_val = start_moment.unwrap_or(contract_registration_step);
                 let diff = x as i128 - s_val as i128 + *o as i128;
 
                 if diff <= 0 {
@@ -333,7 +373,7 @@ impl DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment,
                 b,
                 min_value,
                 max_value,
@@ -356,7 +396,7 @@ impl DistributionFunction {
                 }
 
                 // Use the provided start period or default to 0.
-                let s_val = s.unwrap_or(0);
+                let s_val = start_moment.unwrap_or(contract_registration_step);
 
                 // Compute the adjusted time difference: (x - s + o).
                 // We use i128 to prevent overflow issues.
@@ -437,9 +477,9 @@ mod tests {
     #[test]
     fn test_fixed_amount() {
         let distribution = DistributionFunction::FixedAmount { amount: 100 };
-        assert_eq!(distribution.evaluate(0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(50).unwrap(), 100);
-        assert_eq!(distribution.evaluate(1000).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 50).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 1000).unwrap(), 100);
     }
 
     #[test]
@@ -450,12 +490,12 @@ mod tests {
         steps.insert(20, 25);
 
         let distribution = DistributionFunction::Stepwise(steps);
-        assert_eq!(distribution.evaluate(0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(5).unwrap(), 100);
-        assert_eq!(distribution.evaluate(10).unwrap(), 50);
-        assert_eq!(distribution.evaluate(15).unwrap(), 50);
-        assert_eq!(distribution.evaluate(20).unwrap(), 25);
-        assert_eq!(distribution.evaluate(30).unwrap(), 25);
+        assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 5).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 10).unwrap(), 50);
+        assert_eq!(distribution.evaluate(0, 15).unwrap(), 50);
+        assert_eq!(distribution.evaluate(0, 20).unwrap(), 25);
+        assert_eq!(distribution.evaluate(0, 30).unwrap(), 25);
     }
 
     #[test]
@@ -469,12 +509,12 @@ mod tests {
             min_value: Some(10),
         };
 
-        assert_eq!(distribution.evaluate(0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(9).unwrap(), 100);
-        assert_eq!(distribution.evaluate(10).unwrap(), 50);
-        assert_eq!(distribution.evaluate(20).unwrap(), 25);
-        assert_eq!(distribution.evaluate(30).unwrap(), 12);
-        assert_eq!(distribution.evaluate(40).unwrap(), 10); // Should not go below min_value
+        assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 9).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 10).unwrap(), 50);
+        assert_eq!(distribution.evaluate(0, 20).unwrap(), 25);
+        assert_eq!(distribution.evaluate(0, 30).unwrap(), 12);
+        assert_eq!(distribution.evaluate(0, 40).unwrap(), 10); // Should not go below min_value
     }
 
     #[test]
@@ -489,7 +529,7 @@ mod tests {
         };
 
         assert!(matches!(
-            distribution.evaluate(10),
+            distribution.evaluate(0, 10),
             Err(ProtocolError::DivideByZero(_))
         ));
     }
@@ -501,7 +541,7 @@ mod tests {
             let distribution = DistributionFunction::Random { min: 10, max: 100 };
 
             for x in 0..100 {
-                let result = distribution.evaluate(x).unwrap();
+                let result = distribution.evaluate(0, x).unwrap();
                 assert!(
                     (10..=100).contains(&result),
                     "Random value {} is out of range for x = {}",
@@ -516,7 +556,7 @@ mod tests {
             let distribution = DistributionFunction::Random { min: 42, max: 42 };
 
             for x in 0..10 {
-                let result = distribution.evaluate(x).unwrap();
+                let result = distribution.evaluate(0, x).unwrap();
                 assert_eq!(
                     result, 42,
                     "Expected fixed output 42, got {} for x = {}",
@@ -529,7 +569,7 @@ mod tests {
         fn test_random_distribution_invalid_range() {
             let distribution = DistributionFunction::Random { min: 50, max: 40 };
 
-            let result = distribution.evaluate(0);
+            let result = distribution.evaluate(0, 0);
             assert!(
                 matches!(result, Err(ProtocolError::Overflow(_))),
                 "Expected ProtocolError::Overflow but got {:?}",
@@ -541,8 +581,8 @@ mod tests {
         fn test_random_distribution_deterministic_for_same_x() {
             let distribution = DistributionFunction::Random { min: 10, max: 100 };
 
-            let value1 = distribution.evaluate(42).unwrap();
-            let value2 = distribution.evaluate(42).unwrap();
+            let value1 = distribution.evaluate(0, 42).unwrap();
+            let value2 = distribution.evaluate(0, 42).unwrap();
 
             assert_eq!(
                 value1, value2,
@@ -554,8 +594,8 @@ mod tests {
         fn test_random_distribution_varies_for_different_x() {
             let distribution = DistributionFunction::Random { min: 10, max: 100 };
 
-            let value1 = distribution.evaluate(1).unwrap();
-            let value2 = distribution.evaluate(2).unwrap();
+            let value1 = distribution.evaluate(0, 1).unwrap();
+            let value2 = distribution.evaluate(0, 2).unwrap();
 
             assert_ne!(
                 value1, value2,
@@ -570,16 +610,16 @@ mod tests {
             let distribution = DistributionFunction::Linear {
                 a: 10,
                 d: 2,
-                s: Some(0),
-                b: 50,
+                start_step: Some(0),
+                starting_amount: 50,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 50);
-            assert_eq!(distribution.evaluate(2).unwrap(), 60);
-            assert_eq!(distribution.evaluate(4).unwrap(), 70);
-            assert_eq!(distribution.evaluate(6).unwrap(), 80);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 50);
+            assert_eq!(distribution.evaluate(0, 2).unwrap(), 60);
+            assert_eq!(distribution.evaluate(0, 4).unwrap(), 70);
+            assert_eq!(distribution.evaluate(0, 6).unwrap(), 80);
         }
 
         #[test]
@@ -587,15 +627,15 @@ mod tests {
             let distribution = DistributionFunction::Linear {
                 a: -5,
                 d: 1,
-                s: Some(0),
-                b: 100,
+                start_step: Some(0),
+                starting_amount: 100,
                 min_value: Some(10),
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 100);
-            assert_eq!(distribution.evaluate(10).unwrap(), 50);
-            assert_eq!(distribution.evaluate(20).unwrap(), 10); // Should not go below min_value
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
+            assert_eq!(distribution.evaluate(0, 10).unwrap(), 50);
+            assert_eq!(distribution.evaluate(0, 20).unwrap(), 10); // Should not go below min_value
         }
 
         #[test]
@@ -603,14 +643,14 @@ mod tests {
             let distribution = DistributionFunction::Linear {
                 a: 10,
                 d: 0, // Invalid denominator
-                s: Some(0),
-                b: 50,
+                start_step: Some(0),
+                starting_amount: 50,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(10),
+                distribution.evaluate(0, 10),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -625,16 +665,16 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 10);
-            assert_eq!(distribution.evaluate(2).unwrap(), 18);
-            assert_eq!(distribution.evaluate(3).unwrap(), 28);
-            assert_eq!(distribution.evaluate(4).unwrap(), 42);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 2).unwrap(), 18);
+            assert_eq!(distribution.evaluate(0, 3).unwrap(), 28);
+            assert_eq!(distribution.evaluate(0, 4).unwrap(), 42);
         }
 
         #[test]
@@ -645,13 +685,13 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: None,
                 max_value: None,
             };
 
-            let result = distribution.evaluate(1);
+            let result = distribution.evaluate(0, 1);
             assert!(
                 matches!(result, Err(ProtocolError::Overflow(_))),
                 "Expected overflow but got {:?}",
@@ -668,13 +708,13 @@ mod tests {
                 m: 3, // exponent is 3/2
                 n: 2,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 0,
                 min_value: None,
                 max_value: None,
             };
             // (4 - 0 + 0)^(3/2) = 4^(3/2) = (sqrt(4))^3 = 2^3 = 8.
-            assert_eq!(distribution.evaluate(4).unwrap(), 8);
+            assert_eq!(distribution.evaluate(0, 4).unwrap(), 8);
         }
 
         // Test: Negative coefficient a (should flip the sign)
@@ -686,13 +726,13 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 0,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = -1 * (x^2). For x = 3: -1 * (3^2) = -9.
-            assert_eq!(distribution.evaluate(3).unwrap(), 0);
+            assert_eq!(distribution.evaluate(0, 3).unwrap(), 0);
         }
 
         // Test: Non-zero shift parameter s (shifting the x coordinate)
@@ -704,16 +744,16 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 0,
-                s: Some(2),
+                start_moment: Some(2),
                 b: 10,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = 2 * ((x - 2)^2) + 10.
             // At x = 2: (0)^2 = 0, f(2) = 10.
-            assert_eq!(distribution.evaluate(2).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 2).unwrap(), 10);
             // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
-            assert_eq!(distribution.evaluate(3).unwrap(), 12);
+            assert_eq!(distribution.evaluate(0, 3).unwrap(), 12);
         }
 
         // Test: Non-zero offset o (shifting the base of the power)
@@ -725,14 +765,14 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 3,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 10,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = 2 * ((x - 0 + 3)^2) + 10.
             // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
-            assert_eq!(distribution.evaluate(1).unwrap(), 42);
+            assert_eq!(distribution.evaluate(0, 1).unwrap(), 42);
         }
 
         // Test: Constant function when m = 0 (should ignore x)
@@ -744,14 +784,14 @@ mod tests {
                 m: 0, // exponent 0 => (x-s+o)^0 = 1 (for any x where x-s+o ≠ 0)
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 3,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = 5*1 + 3 = 8 for any x.
             for x in [0, 10, 100].iter() {
-                assert_eq!(distribution.evaluate(*x).unwrap(), 8);
+                assert_eq!(distribution.evaluate(0, *x).unwrap(), 8);
             }
         }
 
@@ -764,13 +804,13 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = 3*x + 5. At x = 10, f(10) = 30 + 5 = 35.
-            assert_eq!(distribution.evaluate(10).unwrap(), 35);
+            assert_eq!(distribution.evaluate(0, 10).unwrap(), 35);
         }
 
         // Test: Cubic function (m = 3, n = 1)
@@ -782,13 +822,13 @@ mod tests {
                 m: 3,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 0,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = x^3. At x = 4, f(4) = 64.
-            assert_eq!(distribution.evaluate(4).unwrap(), 64);
+            assert_eq!(distribution.evaluate(0, 4).unwrap(), 64);
         }
 
         // Test: Combination of non-zero offset and shift
@@ -800,14 +840,14 @@ mod tests {
                 m: 2,
                 n: 1,
                 o: 2,
-                s: Some(1),
+                start_moment: Some(1),
                 b: 0,
                 min_value: None,
                 max_value: None,
             };
             // f(x) = ( (x - 1 + 2)^2 ).
             // At x = 3: (3 - 1 + 2) = 4, and 4^2 = 16.
-            assert_eq!(distribution.evaluate(3).unwrap(), 16);
+            assert_eq!(distribution.evaluate(0, 3).unwrap(), 16);
         }
     }
     mod exp {
@@ -820,14 +860,14 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 11);
-            assert!(distribution.evaluate(10).unwrap() > 20);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 11);
+            assert!(distribution.evaluate(0, 10).unwrap() > 20);
         }
 
         #[test]
@@ -838,14 +878,14 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(10),
+                distribution.evaluate(0, 10),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -858,15 +898,15 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 5,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 7);
-            assert_eq!(distribution.evaluate(5).unwrap(), 301);
-            assert_eq!(distribution.evaluate(10).unwrap(), 44057);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 7);
+            assert_eq!(distribution.evaluate(0, 5).unwrap(), 301);
+            assert_eq!(distribution.evaluate(0, 10).unwrap(), 44057);
         }
 
         #[test]
@@ -877,15 +917,15 @@ mod tests {
                 m: 1,
                 n: 10,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 0,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 0);
-            assert_eq!(distribution.evaluate(50).unwrap(), 14);
-            assert_eq!(distribution.evaluate(100).unwrap(), 2202);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 0);
+            assert_eq!(distribution.evaluate(0, 50).unwrap(), 14);
+            assert_eq!(distribution.evaluate(0, 100).unwrap(), 2202);
         }
 
         #[test]
@@ -896,17 +936,17 @@ mod tests {
                 m: 4,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 0,
                 min_value: None,
                 max_value: Some(100000000),
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 1);
-            assert_eq!(distribution.evaluate(2).unwrap(), 2980);
-            assert_eq!(distribution.evaluate(4).unwrap(), 8886110);
-            assert_eq!(distribution.evaluate(10).unwrap(), 100000000);
-            assert_eq!(distribution.evaluate(100000).unwrap(), 100000000);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 1);
+            assert_eq!(distribution.evaluate(0, 2).unwrap(), 2980);
+            assert_eq!(distribution.evaluate(0, 4).unwrap(), 8886110);
+            assert_eq!(distribution.evaluate(0, 10).unwrap(), 100000000);
+            assert_eq!(distribution.evaluate(0, 100000).unwrap(), 100000000);
         }
 
         #[test]
@@ -917,15 +957,15 @@ mod tests {
                 m: -1,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
-            assert_eq!(distribution.evaluate(5).unwrap(), 10);
-            assert_eq!(distribution.evaluate(10000).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
+            assert_eq!(distribution.evaluate(0, 5).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 10000).unwrap(), 10);
         }
 
         #[test]
@@ -936,15 +976,15 @@ mod tests {
                 m: -1,
                 n: 1,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(11),
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
-            assert_eq!(distribution.evaluate(5).unwrap(), 11);
-            assert_eq!(distribution.evaluate(100).unwrap(), 11);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
+            assert_eq!(distribution.evaluate(0, 5).unwrap(), 11);
+            assert_eq!(distribution.evaluate(0, 100).unwrap(), 11);
         }
 
         #[test]
@@ -955,19 +995,19 @@ mod tests {
                 m: 1,
                 n: 2,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 10,
                 min_value: Some(1),
                 max_value: Some(11), // Set max at the starting value
             };
 
             assert_eq!(
-                distribution.evaluate(0).unwrap(),
+                distribution.evaluate(0, 0).unwrap(),
                 11,
                 "Function should start at the max value"
             );
             assert_eq!(
-                distribution.evaluate(5).unwrap(),
+                distribution.evaluate(0, 5).unwrap(),
                 11,
                 "Function should be clamped at max value"
             );
@@ -981,13 +1021,13 @@ mod tests {
                 m: 1,
                 n: 10,
                 o: 0,
-                s: Some(0),
+                start_moment: Some(0),
                 c: 5,
                 min_value: None,
                 max_value: None,
             };
 
-            let result = distribution.evaluate(100000);
+            let result = distribution.evaluate(0, 100000);
             assert!(
                 matches!(result, Err(ProtocolError::Overflow(_))),
                 "Expected overflow but got {:?}",
@@ -1004,15 +1044,15 @@ mod tests {
                 d: 1,
                 m: 1,
                 n: 1,
-                o: 1,       // Offset ensures (x - s + o) > 0
-                s: Some(1), // Start at x=1 to avoid log(0)
+                o: 1,                  // Offset ensures (x - s + o) > 0
+                start_moment: Some(1), // Start at x=1 to avoid log(0)
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(1).unwrap(), 5);
-            assert!(distribution.evaluate(10).unwrap() > 5);
+            assert_eq!(distribution.evaluate(0, 1).unwrap(), 5);
+            assert!(distribution.evaluate(0, 10).unwrap() > 5);
         }
 
         #[test]
@@ -1023,14 +1063,14 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 1,
-                s: Some(1),
+                start_moment: Some(1),
                 b: 5,
                 min_value: Some(7),  // Minimum bound should be enforced
                 max_value: Some(20), // Maximum bound should be enforced
             };
 
-            assert_eq!(distribution.evaluate(1).unwrap(), 7); // Clamped to min_value
-            assert!(distribution.evaluate(10).unwrap() <= 20); // Should not exceed max_value
+            assert_eq!(distribution.evaluate(0, 1).unwrap(), 7); // Clamped to min_value
+            assert!(distribution.evaluate(0, 10).unwrap() <= 20); // Should not exceed max_value
         }
 
         #[test]
@@ -1041,14 +1081,14 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: -1, // Invalid offset causing log(0)
-                s: Some(1),
+                start_moment: Some(1),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(1),
+                distribution.evaluate(0, 1),
                 Err(ProtocolError::Overflow(_))
             ));
         }
@@ -1061,13 +1101,13 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 5,
-                s: Some(10),
+                start_moment: Some(10),
                 b: 10,
                 min_value: None,
                 max_value: None,
             };
 
-            let result = distribution.evaluate(100);
+            let result = distribution.evaluate(0, 100);
             assert!(result.is_ok());
             assert!(result.unwrap() > 10); // Function should increase over time
         }
@@ -1080,14 +1120,14 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 1,
-                s: Some(5),
+                start_moment: Some(5),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(10),
+                distribution.evaluate(0, 10),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1100,14 +1140,14 @@ mod tests {
                 m: 1,
                 n: 0, // Invalid: Division by zero in log denominator
                 o: 1,
-                s: Some(5),
+                start_moment: Some(5),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(10),
+                distribution.evaluate(0, 10),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1122,14 +1162,14 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
-            assert!(distribution.evaluate(1).unwrap() > distribution.evaluate(5).unwrap());
-            assert!(distribution.evaluate(5).unwrap() > distribution.evaluate(10).unwrap());
+            assert!(distribution.evaluate(0, 1).unwrap() > distribution.evaluate(0, 5).unwrap());
+            assert!(distribution.evaluate(0, 5).unwrap() > distribution.evaluate(0, 10).unwrap());
         }
 
         #[test]
@@ -1141,15 +1181,15 @@ mod tests {
                 m: 1,
                 n: 1000,
                 o: 10,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
-            let val1000 = distribution.evaluate(1000).unwrap();
-            let val2000 = distribution.evaluate(2000).unwrap();
-            let val3000 = distribution.evaluate(3000).unwrap();
+            let val1000 = distribution.evaluate(0, 1000).unwrap();
+            let val2000 = distribution.evaluate(0, 2000).unwrap();
+            let val3000 = distribution.evaluate(0, 3000).unwrap();
 
             assert!(val1000 < val2000, "Function should be increasing");
             assert!(val2000 < val3000, "Function should be increasing");
@@ -1163,13 +1203,13 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(1).unwrap(), 0); // Should be clamped to 0
+            assert_eq!(distribution.evaluate(0, 1).unwrap(), 0); // Should be clamped to 0
         }
 
         #[test]
@@ -1180,13 +1220,13 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(7),
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(1000).unwrap(), 7); // Should be clamped to min_value
+            assert_eq!(distribution.evaluate(0, 1000).unwrap(), 7); // Should be clamped to min_value
         }
 
         #[test]
@@ -1198,13 +1238,13 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: None,
                 max_value: Some(20),
             };
 
-            assert_eq!(distribution.evaluate(500).unwrap(), 20); // Should be clamped to max_value
+            assert_eq!(distribution.evaluate(0, 500).unwrap(), 20); // Should be clamped to max_value
         }
 
         #[test]
@@ -1215,14 +1255,14 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: -1,
-                s: Some(1),
+                start_moment: Some(1),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(1),
+                distribution.evaluate(0, 1),
                 Err(ProtocolError::Overflow(_))
             ));
         }
@@ -1235,14 +1275,14 @@ mod tests {
                 m: 1,
                 n: 0, // Invalid: n must not be zero
                 o: 1,
-                s: Some(5),
+                start_moment: Some(5),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(10),
+                distribution.evaluate(0, 10),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1255,14 +1295,14 @@ mod tests {
                 m: 1,
                 n: 1,
                 o: 1,
-                s: Some(5),
+                start_moment: Some(5),
                 b: 5,
                 min_value: None,
                 max_value: None,
             };
 
             assert!(matches!(
-                distribution.evaluate(10),
+                distribution.evaluate(0, 10),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1275,19 +1315,19 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(1),
                 max_value: Some(10), // Max value set at the starting point
             };
 
             assert_eq!(
-                distribution.evaluate(0).unwrap(),
+                distribution.evaluate(0, 0).unwrap(),
                 1,
                 "Function should start at the max value"
             );
             assert_eq!(
-                distribution.evaluate(200).unwrap(),
+                distribution.evaluate(0, 200).unwrap(),
                 10,
                 "Function should remain clamped at max value"
             );
@@ -1301,14 +1341,14 @@ mod tests {
                 m: 1,
                 n: 100,
                 o: 1,
-                s: Some(0),
+                start_moment: Some(0),
                 b: 5,
                 min_value: Some(3),
                 max_value: None,
             };
 
             assert_eq!(
-                distribution.evaluate(1000).unwrap(),
+                distribution.evaluate(0, 1000).unwrap(),
                 3,
                 "Function should remain clamped at min value"
             );

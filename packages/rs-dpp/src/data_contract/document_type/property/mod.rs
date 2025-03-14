@@ -16,7 +16,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use itertools::Itertools;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};

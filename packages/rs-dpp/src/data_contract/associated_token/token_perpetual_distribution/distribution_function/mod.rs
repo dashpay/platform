@@ -6,9 +6,12 @@ use std::fmt;
 mod encode;
 mod evaluate;
 mod evaluate_interval;
+pub mod reward_ratio;
 mod validation;
 
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
+
+pub const MAX_LINEAR_SLOPE_PARAM: u64 = 256;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
@@ -127,7 +130,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * (x - s) / d) + b
+    /// f(x) = (a * (x - start_moment) / d) + starting_amount
     /// ```
     ///
     /// # Parameters
@@ -234,8 +237,8 @@ pub enum DistributionFunction {
     Linear {
         a: i64,
         d: u64,
-        s: Option<u64>,
-        b: TokenAmount,
+        start_step: Option<u64>,
+        starting_amount: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
@@ -319,7 +322,7 @@ pub enum DistributionFunction {
         m: i64,
         n: u64,
         o: i64,
-        s: Option<u64>,
+        start_moment: Option<u64>,
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
@@ -378,7 +381,7 @@ pub enum DistributionFunction {
         m: i64,
         n: u64,
         o: i64,
-        s: Option<u64>,
+        start_moment: Option<u64>,
         c: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
@@ -447,7 +450,7 @@ pub enum DistributionFunction {
         m: u64,
         n: u64,
         o: i64,
-        s: Option<u64>,
+        start_moment: Option<u64>,
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
@@ -506,7 +509,7 @@ pub enum DistributionFunction {
         m: u64,
         n: u64,
         o: i64,
-        s: Option<u64>,
+        start_moment: Option<u64>,
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
@@ -561,8 +564,8 @@ impl fmt::Display for DistributionFunction {
             DistributionFunction::Linear {
                 a,
                 d,
-                s,
-                b,
+                start_step: s,
+                starting_amount: b,
                 min_value,
                 max_value,
             } => {
@@ -587,7 +590,7 @@ impl fmt::Display for DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 b,
                 min_value,
                 max_value,
@@ -613,7 +616,7 @@ impl fmt::Display for DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 c,
                 min_value,
                 max_value,
@@ -639,7 +642,7 @@ impl fmt::Display for DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 b,
                 min_value,
                 max_value,
@@ -665,7 +668,7 @@ impl fmt::Display for DistributionFunction {
                 m,
                 n,
                 o,
-                s,
+                start_moment: s,
                 b,
                 min_value,
                 max_value,

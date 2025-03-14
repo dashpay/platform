@@ -4,8 +4,8 @@ use derive_more::From;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-mod accessors;
-mod methods;
+pub mod accessors;
+pub mod methods;
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]

@@ -33,6 +33,7 @@ pub struct DriveTokenFetchMethodVersions {
     pub token_total_aggregated_identity_balances: FeatureVersion,
     pub pre_programmed_distributions: FeatureVersion,
     pub perpetual_distribution_last_paid_time: FeatureVersion,
+    pub pre_programmed_distribution_last_paid_time: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

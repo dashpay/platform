@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 
 use dpp::errors::consensus::basic::document::DataContractNotPresentError;
 use dpp::errors::consensus::basic::BasicError;

@@ -84,7 +84,7 @@ use dpp::errors::consensus::state::identity::no_transfer_key_for_core_withdrawal
 use dpp::errors::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use dpp::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch};
+use dpp::errors::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant};
 use dpp::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::errors::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -377,6 +377,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InvalidTokenClaimPropertyMismatch(e) => {
             generic_consensus_error!(InvalidTokenClaimPropertyMismatch, e).into()
+        }
+        StateError::InvalidTokenClaimNoCurrentRewards(e) => {
+            generic_consensus_error!(InvalidTokenClaimNoCurrentRewards, e).into()
+        }
+        StateError::InvalidTokenClaimWrongClaimant(e) => {
+            generic_consensus_error!(InvalidTokenClaimWrongClaimant, e).into()
         }
     }
 }

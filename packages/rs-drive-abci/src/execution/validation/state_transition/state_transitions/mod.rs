@@ -56,7 +56,7 @@ pub(in crate::execution) mod tests {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::Credits;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
     use dpp::prelude::{Identifier, IdentityNonce};
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -2292,6 +2292,7 @@ pub(in crate::execution) mod tests {
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         token_configuration_modification: Option<impl FnOnce(&mut TokenConfiguration)>,
+        contract_start_time: Option<TimestampMillis>,
         add_groups: Option<BTreeMap<GroupContractPosition, Group>>,
         platform_version: &PlatformVersion,
     ) -> (DataContract, Identifier) {
@@ -2304,7 +2305,7 @@ pub(in crate::execution) mod tests {
             Some(identity_id.to_buffer()),
             Some(|data_contract: &mut DataContract| {
                 data_contract.set_created_at_epoch(Some(0));
-                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at(Some(contract_start_time.unwrap_or_default()));
                 data_contract.set_created_at_block_height(Some(0));
                 if let Some(token_configuration_modification) = token_configuration_modification {
                     let token_configuration = data_contract

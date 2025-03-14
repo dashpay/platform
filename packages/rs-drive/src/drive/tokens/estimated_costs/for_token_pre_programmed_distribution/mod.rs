@@ -25,7 +25,7 @@ impl Drive {
     /// # Parameters
     ///
     /// - `token_id`: The 32-byte identifier for the token whose pre-programmed distribution tree is being estimated.
-    /// - `times`: A vector of timestamps (in milliseconds) for which pre-programmed distributions exist.
+    /// - `times`: An optional vector of timestamps (in milliseconds) for which pre-programmed distributions exist.
     /// - `estimated_costs_only_with_layer_info`: A mutable hashmap that maps `KeyInfoPath` to `EstimatedLayerInformation`.
     ///   This cache is used by Grovedb to track the estimated storage costs for each layer in the tree.
     /// - `drive_version`: The drive version that determines which estimation logic to use.
@@ -41,7 +41,7 @@ impl Drive {
     /// implementations are applied.
     pub(crate) fn add_estimation_costs_for_token_pre_programmed_distribution<'a, I>(
         token_id: [u8; 32],
-        times: I,
+        times: Option<I>,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error>

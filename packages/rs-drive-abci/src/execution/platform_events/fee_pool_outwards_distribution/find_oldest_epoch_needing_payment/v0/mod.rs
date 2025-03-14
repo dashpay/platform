@@ -6,8 +6,6 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::version::PlatformVersion;
 use drive::drive::credit_pools::epochs::start_block::StartBlockInfo;
-use drive::error;
-use drive::error::drive::DriveError;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C> {

@@ -1,4 +1,3 @@
-use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
@@ -31,46 +30,6 @@ impl RewardDistributionType {
             RewardDistributionType::BlockBasedDistribution { function, .. } => function,
             RewardDistributionType::TimeBasedDistribution { function, .. } => function,
             RewardDistributionType::EpochBasedDistribution { function, .. } => function,
-        }
-    }
-
-    /// Returns the optional start moment of the distribution.
-    ///
-    /// # Returns
-    /// - `Some(RewardDistributionMoment::BlockBasedMoment)`, `Some(RewardDistributionMoment::TimeBasedMoment)`,
-    ///   or `Some(RewardDistributionMoment::EpochBasedMoment)`, depending on the distribution type.
-    /// - `None` if the start moment is not set.
-    pub fn start(&self) -> Option<RewardDistributionMoment> {
-        match self {
-            RewardDistributionType::BlockBasedDistribution { start, .. } => {
-                start.map(RewardDistributionMoment::BlockBasedMoment)
-            }
-            RewardDistributionType::TimeBasedDistribution { start, .. } => {
-                start.map(RewardDistributionMoment::TimeBasedMoment)
-            }
-            RewardDistributionType::EpochBasedDistribution { start, .. } => {
-                start.map(RewardDistributionMoment::EpochBasedMoment)
-            }
-        }
-    }
-
-    /// Returns the optional end moment of the distribution.
-    ///
-    /// # Returns
-    /// - `Some(RewardDistributionMoment::BlockBasedMoment)`, `Some(RewardDistributionMoment::TimeBasedMoment)`,
-    ///   or `Some(RewardDistributionMoment::EpochBasedMoment)`, depending on the distribution type.
-    /// - `None` if the end moment is not set.
-    pub fn end(&self) -> Option<RewardDistributionMoment> {
-        match self {
-            RewardDistributionType::BlockBasedDistribution { end, .. } => {
-                end.map(RewardDistributionMoment::BlockBasedMoment)
-            }
-            RewardDistributionType::TimeBasedDistribution { end, .. } => {
-                end.map(RewardDistributionMoment::TimeBasedMoment)
-            }
-            RewardDistributionType::EpochBasedDistribution { end, .. } => {
-                end.map(RewardDistributionMoment::EpochBasedMoment)
-            }
         }
     }
 }
