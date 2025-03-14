@@ -11,7 +11,7 @@ pub mod info;
 pub mod status;
 pub mod token_event;
 
-#[cfg_attr(feature = "apple", ferment_macro::export)]
+pub const MAX_TOKEN_NOTE_LEN: usize = 2048;
 pub type SharedEncryptedNote = (SenderKeyIndex, RecipientKeyIndex, Vec<u8>);
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub type PrivateEncryptedNote = (

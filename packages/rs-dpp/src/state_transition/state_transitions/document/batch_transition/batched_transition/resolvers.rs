@@ -4,8 +4,9 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::state_transition::state_transitions::document::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::state_transitions::document::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition,
-    TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
+    TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
+    TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition,
 };
 
 impl BatchTransitionResolversV0 for BatchedTransition {
@@ -88,10 +89,24 @@ impl BatchTransitionResolversV0 for BatchedTransition {
         }
     }
 
+    fn as_transition_token_claim(&self) -> Option<&TokenClaimTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_claim(),
+        }
+    }
+
     fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition> {
         match self {
             BatchedTransition::Document(_) => None,
             BatchedTransition::Token(token) => token.as_transition_token_emergency_action(),
+        }
+    }
+
+    fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_config_update(),
         }
     }
 }
@@ -176,10 +191,24 @@ impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
         }
     }
 
+    fn as_transition_token_claim(&self) -> Option<&TokenClaimTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_claim(),
+        }
+    }
+
     fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition> {
         match self {
             BatchedTransitionRef::Document(_) => None,
             BatchedTransitionRef::Token(token) => token.as_transition_token_emergency_action(),
+        }
+    }
+
+    fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_config_update(),
         }
     }
 }

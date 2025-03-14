@@ -14,12 +14,13 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
     },
     contract_structure_version: 1, //changed
     created_data_contract_structure: 0,
-    config: 0,
+    config: 1, // changed to enable sized integer types
     methods: DataContractMethodVersions {
         validate_document: 0,
         validate_update: 0,
         schema: 0,
         validate_groups: 0,
+        equal_ignoring_time_fields: 0,
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {

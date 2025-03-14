@@ -1,3 +1,4 @@
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::errors::ProtocolError;
@@ -14,9 +15,7 @@ impl DocumentType {
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
-        default_keeps_history: bool,
-        default_mutability: bool,
-        default_can_be_deleted: bool,
+        data_contact_config: &DataContractConfig,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
@@ -33,9 +32,7 @@ impl DocumentType {
                 name,
                 schema,
                 schema_defs,
-                default_keeps_history,
-                default_mutability,
-                default_can_be_deleted,
+                data_contact_config,
                 full_validation,
                 validation_operations,
                 platform_version,
@@ -43,7 +40,7 @@ impl DocumentType {
             .map(|document_type| document_type.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "try_from_schema".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

@@ -182,6 +182,7 @@ impl ContextProvider for GrpcContextProvider {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
+        _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));

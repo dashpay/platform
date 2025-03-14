@@ -143,6 +143,7 @@ impl JsonSchemaExt for serde_json::Value {
 #[cfg(test)]
 mod test {
 
+    use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::document_type::DocumentType;
 
@@ -204,14 +205,15 @@ mod test {
 
         let platform_value = platform_value::to_value(input).unwrap();
 
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+
         let document_type = DocumentType::try_from_schema(
             Identifier::random(),
             "doc",
             platform_value,
             None,
-            false,
-            false,
-            false,
+            &config,
             false,
             &mut vec![],
             platform_version,

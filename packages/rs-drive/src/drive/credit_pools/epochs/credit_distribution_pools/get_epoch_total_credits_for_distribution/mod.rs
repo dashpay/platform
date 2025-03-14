@@ -7,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::balances::credits::Credits;
 use dpp::block::epoch::Epoch;
+use dpp::block::pool_credits::StorageAndProcessingPoolCredits;
 
 use dpp::version::PlatformVersion;
 
@@ -21,14 +22,14 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// A Result containing either the total credits for the epoch, if found,
-    /// or an Error if something goes wrong.
+    /// A Result containing either the total credits for the epoch as a StorageAndProcessingPoolCredits
+    /// if found, or an Error if something goes wrong.
     pub fn get_epoch_total_credits_for_distribution(
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Credits, Error> {
+    ) -> Result<StorageAndProcessingPoolCredits, Error> {
         match platform_version
             .drive
             .methods

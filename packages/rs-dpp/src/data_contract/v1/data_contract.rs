@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use platform_value::Identifier;
-use platform_value::Value;
-
+use crate::block::epoch::EpochIndex;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
@@ -10,7 +8,10 @@ use crate::data_contract::group::Group;
 use crate::data_contract::{
     DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
 };
-use crate::metadata::Metadata;
+use crate::identity::TimestampMillis;
+use crate::prelude::BlockHeight;
+use platform_value::Identifier;
+use platform_value::Value;
 
 /// `DataContractV1` represents a data contract in a decentralized platform.
 ///
@@ -23,25 +24,45 @@ use crate::metadata::Metadata;
 ///
 /// # Changes from `DataContractV0` to `DataContractV1`
 ///
-/// In `DataContractV1`, two significant features were introduced to enhance contract governance
-/// and support token-related operations:
+/// In `DataContractV1`, several enhancements were introduced to improve contract governance,
+/// support token-related operations, and enhance auditability and traceability of contract updates.
 ///
-/// 1. **Groups** (`groups: BTreeMap<GroupContractPosition, Group>`)
-///    - Groups allow for specific multiparty actions on the contract. Each group is defined with a
-///      set of members (`Identifier`) and their corresponding member power (`u32`).  
-///    - Groups facilitate fine-grained access control and decision-making processes by enabling
-///      required power thresholds for group actions.
-///    - This is particularly useful for contracts where multiple parties are involved in controlling
-///      or managing contract-specific features.
+/// ## 1. **Groups** (`groups: BTreeMap<GroupContractPosition, Group>`)
+/// - Groups allow for specific multiparty actions on the contract. Each group is defined with a
+///   set of members (`Identifier`) and their corresponding member power (`u32`).  
+/// - Groups facilitate fine-grained access control and decision-making processes by enabling
+///   required power thresholds for group actions.
+/// - This is particularly useful for contracts where multiple parties are involved in controlling
+///   or managing contract-specific features.
 ///
-/// 2. **Tokens** (`tokens: BTreeMap<TokenName, TokenConfiguration>`)  
-///    - Tokens introduce configurable token-related functionality within the contract, such as
-///      base supply, maximum supply, and manual minting/burning rules.  
-///    - Token configurations include change control rules, ensuring proper governance for
-///      modifying supply limits and token-related settings.
-///    - This addition enables contracts to define and manage tokens while ensuring compliance
-///      with governance rules (e.g., who can mint or burn tokens).
+/// ## 2. **Tokens** (`tokens: BTreeMap<TokenName, TokenConfiguration>`)  
+/// - Tokens introduce configurable token-related functionality within the contract, such as
+///   base supply, maximum supply, and manual minting/burning rules.  
+/// - Token configurations include change control rules, ensuring proper governance for
+///   modifying supply limits and token-related settings.
+/// - This addition enables contracts to define and manage tokens while ensuring compliance
+///   with governance rules (e.g., who can mint or burn tokens).
 ///
+/// ## 3. **Timestamps and Block Height Tracking**
+/// To improve traceability and accountability of contract creation and modifications, four
+/// new fields were added:
+///
+/// - **`created_at`** (`Option<TimestampMillis>`)  
+///   - Stores the timestamp (in milliseconds) when the contract was originally created.  
+///   - This provides an immutable record of when the contract came into existence.
+/// - **`updated_at`** (`Option<TimestampMillis>`)  
+///   - Stores the timestamp of the most recent update to the contract.  
+///   - This helps in tracking contract modifications over time.
+/// - **`created_at_block_height`** (`Option<BlockHeight>`)  
+///   - Captures the block height at which the contract was created.  
+///   - This provides an on-chain reference for the state of the contract at creation.
+/// - **`updated_at_block_height`** (`Option<BlockHeight>`)  
+///   - Captures the block height of the last contract update.  
+///   - Useful for historical analysis, rollback mechanisms, and ensuring changes are anchored
+///     to specific blockchain states.
+///
+/// These additions ensure that data contracts are not only more flexible and governed but also
+/// fully auditable in terms of when and how they evolve over time.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct DataContractV1 {
@@ -58,15 +79,24 @@ pub struct DataContractV1 {
     /// A mapping of document names to their corresponding document types.
     pub document_types: BTreeMap<DocumentName, DocumentType>,
 
-    // TODO: Move metadata from here
-    /// Optional metadata associated with the contract.
-    pub metadata: Option<Metadata>,
-
     /// Internal configuration for the contract.
     pub config: DataContractConfig,
 
     /// Shared subschemas to reuse across documents (see $defs)
     pub schema_defs: Option<BTreeMap<DefinitionName, Value>>,
+
+    /// The time in milliseconds that the contract was created.
+    pub created_at: Option<TimestampMillis>,
+    /// The time in milliseconds that the contract was last updated.
+    pub updated_at: Option<TimestampMillis>,
+    /// The block that the document was created.
+    pub created_at_block_height: Option<BlockHeight>,
+    /// The block that the contract was last updated
+    pub updated_at_block_height: Option<BlockHeight>,
+    /// The epoch at which the contract was created.
+    pub created_at_epoch: Option<EpochIndex>,
+    /// The epoch at which the contract was last updated.
+    pub updated_at_epoch: Option<EpochIndex>,
 
     /// Groups that allow for specific multiparty actions on the contract
     pub groups: BTreeMap<GroupContractPosition, Group>,

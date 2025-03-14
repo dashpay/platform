@@ -14,7 +14,9 @@ impl Drive {
         identity_id: [u8; 32],
     ) -> PathQuery {
         let balance_path = token_balances_path_vec(token_id);
-        PathQuery::new_single_key(balance_path, identity_id.to_vec())
+        let mut path_query = PathQuery::new_single_key(balance_path, identity_id.to_vec());
+        path_query.query.limit = Some(1);
+        path_query
     }
 
     /// The query getting a token balance for many identities

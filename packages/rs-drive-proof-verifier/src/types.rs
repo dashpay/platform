@@ -5,7 +5,11 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-mod evonode_status;
+pub mod evonode_status;
+pub mod groups;
+pub mod identity_token_balance;
+pub mod token_info;
+pub mod token_status;
 
 use dpp::balances::credits::Credits;
 use dpp::block::block_info::BlockInfo;
@@ -44,8 +48,6 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-
-pub use evonode_status::*;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///

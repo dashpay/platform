@@ -1,5 +1,6 @@
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use dpp::fee::Credits;
+use platform_value::Identifier;
 use versioned_feature_core::FeatureVersion;
 
 /// Drive errors
@@ -188,4 +189,8 @@ pub enum DriveError {
     /// Data Contract not found
     #[error("data contract not found: {0}")]
     DataContractNotFound(String),
+
+    /// Data Contract not found
+    #[error("data contract does not have a start moment: {0}")]
+    ContractDoesNotHaveAStartMoment(Identifier),
 }

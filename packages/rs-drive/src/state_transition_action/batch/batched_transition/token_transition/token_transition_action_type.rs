@@ -11,6 +11,7 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
             TokenTransitionAction::TransferAction(_) => TokenTransitionActionType::Transfer,
             TokenTransitionAction::FreezeAction(_) => TokenTransitionActionType::Freeze,
             TokenTransitionAction::UnfreezeAction(_) => TokenTransitionActionType::Unfreeze,
+            TokenTransitionAction::ClaimAction(_) => TokenTransitionActionType::Claim,
             TokenTransitionAction::EmergencyActionAction(_) => {
                 TokenTransitionActionType::EmergencyAction
             }

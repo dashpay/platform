@@ -1,4 +1,3 @@
-use crate::platform::transition::builder::StateTransitionBuilder;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -137,17 +136,6 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self.settings = Some(settings);
         self
     }
-}
-
-impl StateTransitionBuilder for TokenMintTransitionBuilder<'_> {
-    /// Returns the settings for the token mint transition
-    ///
-    /// # Returns
-    ///
-    /// * `Option<PutSettings>` - The settings, if any
-    fn settings(&self) -> Option<PutSettings> {
-        self.settings
-    }
 
     /// Signs the token mint transition
     ///
@@ -161,7 +149,7 @@ impl StateTransitionBuilder for TokenMintTransitionBuilder<'_> {
     /// # Returns
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
-    async fn sign(
+    pub async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
@@ -177,7 +165,7 @@ impl StateTransitionBuilder for TokenMintTransitionBuilder<'_> {
             .get_identity_contract_nonce(
                 self.issuer_id,
                 self.data_contract.id(),
-                false,
+                true,
                 self.settings,
             )
             .await?;

@@ -1,7 +1,10 @@
 use bincode::{Decode, Encode};
 use derive_more::From;
+#[cfg(feature = "fixtures-and-mocks")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
+#[cfg_attr(feature = "fixtures-and-mocks", derive(Serialize, Deserialize))]
 /// Token information for an identity (version 0).
 #[cfg_attr(feature = "apple", ferment_macro::export)]
 pub struct IdentityTokenInfoV0 {
