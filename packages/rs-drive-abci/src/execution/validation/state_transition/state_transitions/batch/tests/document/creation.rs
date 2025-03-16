@@ -2146,7 +2146,7 @@ mod creation_tests {
         let PaidConsensusError(consensus_error, _) = result else {
             panic!("expected a paid consensus error");
         };
-        assert_eq!(consensus_error.to_string(), "An Identity with the id `BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW` is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
+        assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
     }
 
     #[test]
