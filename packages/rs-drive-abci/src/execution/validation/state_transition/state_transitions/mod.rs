@@ -454,8 +454,8 @@ pub(in crate::execution) mod tests {
                 balance_to_add,
                 true,
                 false,
-                &BlockInfo::default(),
                 true,
+                &BlockInfo::default(),
                 None,
                 platform_version,
             )
@@ -2383,7 +2383,7 @@ pub(in crate::execution) mod tests {
         );
 
         let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
-        let token_id_2 = calculate_token_id(data_contract_id.as_bytes(), 0);
+        let token_id_2 = calculate_token_id(data_contract_id.as_bytes(), 1);
 
         (basic_token_contract, token_id.into(), token_id_2.into())
     }

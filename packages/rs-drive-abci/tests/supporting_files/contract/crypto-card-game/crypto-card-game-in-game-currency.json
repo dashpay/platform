@@ -6,15 +6,17 @@
   "documentSchemas": {
     "card": {
       "type": "object",
-      "documentsMutable": false,
+      "documentsMutable": true,
       "canBeDeleted": true,
       "transferable": 1,
       "tradeMode": 1,
       "tokenCost": {
         "create": { "tokenPosition": 0, "amount": 10 },
         "delete": { "tokenPosition": 1, "amount": 1 },
+        "replace": { "tokenPosition": 1, "amount": 2 },
         "transfer": { "tokenPosition": 1, "amount": 1 },
-        "update_price": { "tokenPosition": 1, "amount": 1 }
+        "update_price": { "tokenPosition": 1, "amount": 1 },
+        "purchase": { "tokenPosition": 0, "amount": 3 }
       },
       "properties": {
         "name": {
@@ -152,7 +154,6 @@
         },
         "decimals": 0
       },
-      "baseSupply": 150,
       "maxSupply": null
     },
     "1": {
@@ -169,7 +170,6 @@
         },
         "decimals": 0
       },
-      "baseSupply": 200,
       "maxSupply": null
     }
   }
