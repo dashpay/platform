@@ -31,8 +31,6 @@ impl Drive {
                 drive_operations,
                 drive_version,
             )?;
-        } else {
-            println!("it was empty!");
         }
         drive_operations.append(&mut other_operations);
         Ok(())
