@@ -8,7 +8,7 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 ciborium = { version = "0.2.2", optional = true }
 thiserror = "1.0.64"
 bs58 = "0.5.1"
