@@ -13,7 +13,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;

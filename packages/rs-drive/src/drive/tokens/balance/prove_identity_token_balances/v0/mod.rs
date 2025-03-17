@@ -74,7 +74,6 @@ mod tests {
             version: 0,
             owner_id: Default::default(),
             document_types: Default::default(),
-            metadata: None,
             config: DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
                 readonly: false,
@@ -86,6 +85,12 @@ mod tests {
                 requires_identity_decryption_bounded_key: None,
             }),
             schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
             groups: Default::default(),
             tokens: BTreeMap::from([
                 (
@@ -129,6 +134,7 @@ mod tests {
                 identity.id().to_buffer(),
                 5000,
                 true,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,
@@ -153,6 +159,7 @@ mod tests {
                 identity.id().to_buffer(),
                 10000,
                 true,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,
@@ -233,7 +240,6 @@ mod tests {
             version: 0,
             owner_id: Default::default(),
             document_types: Default::default(),
-            metadata: None,
             config: DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
                 readonly: false,
@@ -245,6 +251,12 @@ mod tests {
                 requires_identity_decryption_bounded_key: None,
             }),
             schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
             groups: Default::default(),
             tokens: BTreeMap::from([(
                 0,
@@ -315,7 +327,6 @@ mod tests {
             version: 0,
             owner_id: Default::default(),
             document_types: Default::default(),
-            metadata: None,
             config: DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
                 readonly: false,
@@ -327,6 +338,12 @@ mod tests {
                 requires_identity_decryption_bounded_key: None,
             }),
             schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
             groups: Default::default(),
             tokens: BTreeMap::from([(
                 0,

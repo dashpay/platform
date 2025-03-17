@@ -133,7 +133,7 @@ impl LowLevelDashCoreClient {
 
         let core = self.core.lock().expect("Core lock poisoned");
         let quorum_info = core
-            .get_quorum_info(json::QuorumType::from(quorum_type), &quorum_hash, None)
+            .get_quorum_info_reversed(json::QuorumType::from(quorum_type), &quorum_hash, None)
             .map_err(|e: dashcore_rpc::Error| ContextProviderError::Generic(e.to_string()))?;
         let key = quorum_info.quorum_public_key;
         let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_e| {

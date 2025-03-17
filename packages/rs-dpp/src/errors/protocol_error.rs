@@ -204,6 +204,9 @@ pub enum ProtocolError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    #[error("divide by zero error: {0}")]
+    DivideByZero(&'static str),
+
     /// Error
     #[error("missing key: {0}")]
     DesiredKeyWithTypePurposeSecurityLevelMissing(String),
@@ -271,6 +274,16 @@ pub enum ProtocolError {
 
     #[error("Signature wrong size: expected 96, got {got}")]
     BlsSignatureSizeError { got: u32 },
+
+    /// Error when trying to add two different types of `RewardDistributionMoment`.
+    #[error("Attempted to add incompatible types of RewardDistributionMoment: {0}")]
+    AddingDifferentTypes(String),
+
+    #[error("invalid distribution step error: {0}")]
+    InvalidDistributionStep(&'static str),
+
+    #[error("missing epoch info: {0}")]
+    MissingEpochInfo(String),
 }
 
 impl From<&str> for ProtocolError {

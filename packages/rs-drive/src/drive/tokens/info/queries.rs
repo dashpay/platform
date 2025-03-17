@@ -13,7 +13,9 @@ impl Drive {
         identity_id: [u8; 32],
     ) -> PathQuery {
         let info_path = token_identity_infos_path_vec(token_id);
-        PathQuery::new_single_key(info_path, identity_id.to_vec())
+        let mut path_query = PathQuery::new_single_key(info_path, identity_id.to_vec());
+        path_query.query.limit = Some(1);
+        path_query
     }
 
     /// The query getting a token info for many identities

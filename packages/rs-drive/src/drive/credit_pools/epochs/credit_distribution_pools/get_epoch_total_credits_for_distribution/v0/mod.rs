@@ -5,7 +5,7 @@ use crate::fees::get_overflow_error;
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
+use dpp::block::pool_credits::StorageAndProcessingPoolCredits;
 
 use dpp::version::PlatformVersion;
 
@@ -16,7 +16,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Credits, Error> {
+    ) -> Result<StorageAndProcessingPoolCredits, Error> {
         let storage_pool_credits = self.get_epoch_storage_credits_for_distribution(
             epoch_tree,
             transaction,
@@ -29,9 +29,15 @@ impl Drive {
             platform_version,
         )?;
 
-        storage_pool_credits
-            .checked_add(processing_pool_credits)
-            .ok_or_else(|| get_overflow_error("overflow getting total credits for distribution"))
+        Ok(StorageAndProcessingPoolCredits {
+            storage_pool_credits,
+            processing_pool_credits,
+            total_credits: storage_pool_credits
+                .checked_add(processing_pool_credits)
+                .ok_or_else(|| {
+                    get_overflow_error("overflow getting total credits for distribution")
+                })?,
+        })
     }
 }
 
@@ -77,7 +83,8 @@ mod tests {
 
         let retrieved_combined_fee = drive
             .get_epoch_total_credits_for_distribution(&epoch, Some(&transaction), platform_version)
-            .expect("should get combined fee");
+            .expect("should get combined fee")
+            .total_credits;
 
         assert_eq!(retrieved_combined_fee, processing_fee + storage_fee);
     }

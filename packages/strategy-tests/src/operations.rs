@@ -424,16 +424,13 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                             let name_str = name.to_str().expect(
                                 "Couldn't convert document type name to str in deserialization",
                             );
-                            let schema = Value::try_from(schema_json).unwrap();
                             let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
                             DocumentType::try_from_schema(
                                 owner_id,
                                 name_str,
-                                schema,
+                                schema_json,
                                 None,
-                                true,
-                                true,
-                                true,
+                                contract.config(),
                                 full_validation,
                                 &mut vec![],
                                 platform_version,

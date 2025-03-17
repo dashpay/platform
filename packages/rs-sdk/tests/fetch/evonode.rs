@@ -3,7 +3,7 @@
 use super::{common::setup_logs, config::Config};
 use dash_sdk::platform::{types::evonode::EvoNode, FetchUnproved};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
-use drive_proof_verifier::types::EvoNodeStatus;
+use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use rs_dapi_client::Address;
 use std::time::Duration;
 /// Given some existing evonode URIs, WHEN we connect to them, THEN we get status.

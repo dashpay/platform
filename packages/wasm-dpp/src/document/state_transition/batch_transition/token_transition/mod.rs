@@ -1,13 +1,15 @@
-mod burn;
-mod config;
-mod destroy;
-mod emergency_action;
-mod freeze;
-mod mint;
-mod transfer;
-mod unfreeze;
+pub mod burn;
+mod claim;
+pub mod config;
+pub mod destroy;
+pub mod emergency_action;
+pub mod freeze;
+pub mod mint;
+pub mod transfer;
+pub mod unfreeze;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
+use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destroy::TokenDestroyFrozenFundsTransitionWasm;
 use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
@@ -16,10 +18,14 @@ use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
 use crate::identifier::IdentifierWrapper;
+use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use dpp::state_transition::batch_transition::TokenMintTransition;
 use js_sys::Number;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -32,6 +38,7 @@ pub enum TokenTransitionType {
     Freeze,
     Unfreeze,
     DestroyFrozenFunds,
+    Claim,
     EmergencyAction,
     ConfigUpdate,
 }
@@ -47,6 +54,7 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::DestroyFrozenFunds(_) => TokenTransitionType::DestroyFrozenFunds,
             TokenTransition::EmergencyAction(_) => TokenTransitionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionType::ConfigUpdate,
+            TokenTransition::Claim(_) => TokenTransitionType::Claim,
         }
     }
 }
@@ -67,7 +75,7 @@ impl From<TokenTransitionWasm> for TokenTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
     #[wasm_bindgen(js_name=getTransitionType)]
     pub fn transition_type(&self) -> TokenTransitionType {
@@ -87,6 +95,27 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
         self.0.base().data_contract_id().into()
+    }
+
+    #[wasm_bindgen(js_name=getHistoricalDocumentTypeName)]
+    pub fn historical_document_type_name(&self) -> String {
+        self.0.historical_document_type_name().to_string()
+    }
+
+    #[wasm_bindgen(js_name=getHistoricalDocumentId)]
+    pub fn historical_document_id(
+        &self,
+        owner_id: IdentifierWrapper,
+        owner_nonce: IdentityNonce,
+    ) -> IdentifierWrapper {
+        self.0
+            .historical_document_id(owner_id.into(), owner_nonce)
+            .into()
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
+        self.0.base().identity_contract_nonce()
     }
 
     #[wasm_bindgen(js_name=toTransition)]
@@ -112,6 +141,7 @@ impl TokenTransitionWasm {
             TokenTransition::ConfigUpdate(config_update) => {
                 TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
             }
+            TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
         }
     }
 }

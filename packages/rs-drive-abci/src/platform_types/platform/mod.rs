@@ -14,7 +14,7 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use dashcore_rpc::dashcore::BlockHash;
+use dpp::dashcore::BlockHash;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -181,7 +181,7 @@ impl<C> Platform<C> {
         let config = config.unwrap_or(PlatformConfig::default_testnet());
 
         let default_initial_platform_version = initial_protocol_version
-            .map(|protocol_version| PlatformVersion::get(protocol_version))
+            .map(PlatformVersion::get)
             .transpose()?;
 
         let (drive, current_platform_version) = Drive::open(

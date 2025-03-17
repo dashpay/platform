@@ -3,6 +3,8 @@ use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 #[cfg(feature = "state-transition-signing")]
+use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::TokenContractPosition;
@@ -911,6 +913,64 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_config_update_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_claim_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        distribution_type: TokenDistributionType,
+        public_note: Option<String>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        config_update_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        match batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                // Create the emergency action transition for batch version 1
+                BatchTransitionV1::new_token_claim_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    distribution_type,
+                    public_note,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    batch_feature_version,
+                    config_update_feature_version,
+                    base_feature_version,
+                )
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_claim_transition".to_string(),
                 known_versions: vec![1],
                 received: version,
             }),

@@ -1,5 +1,5 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
@@ -37,6 +37,7 @@ impl DocumentCreateTransitionActionV0 {
         let base = DocumentBaseTransitionAction::try_from_base_transition_with_contract_lookup(
             base,
             get_data_contract,
+            |document_type| document_type.document_creation_token_cost(),
         )?;
 
         let document_type = base.document_type()?;
@@ -133,6 +134,7 @@ impl DocumentCreateTransitionActionV0 {
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
+                |document_type| document_type.document_creation_token_cost(),
             )?;
 
         let document_type = base.document_type()?;

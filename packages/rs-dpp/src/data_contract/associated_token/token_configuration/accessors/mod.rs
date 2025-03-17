@@ -7,6 +7,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use crate::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
+use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
@@ -42,7 +43,7 @@ impl TokenConfigurationV0Getters for TokenConfiguration {
     }
 
     /// Returns if we keep history.
-    fn keeps_history(&self) -> bool {
+    fn keeps_history(&self) -> &TokenKeepsHistoryRules {
         match self {
             TokenConfiguration::V0(v0) => v0.keeps_history(),
         }

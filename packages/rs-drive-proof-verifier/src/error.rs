@@ -1,3 +1,4 @@
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
 
 /// Errors
@@ -133,6 +134,27 @@ impl From<ProtocolError> for Error {
     fn from(error: ProtocolError) -> Self {
         Self::ProtocolError {
             error: error.to_string(),
+        }
+    }
+}
+
+pub(crate) trait MapGroveDbError<O> {
+    fn map_drive_error(self, proof: &Proof, metadata: &ResponseMetadata) -> Result<O, Error>;
+}
+
+impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
+    fn map_drive_error(self, proof: &Proof, metadata: &ResponseMetadata) -> Result<O, Error> {
+        match self {
+            Ok(o) => Ok(o),
+            Err(e) => match e {
+                drive::error::Error::GroveDB(e) => Err(Error::GroveDBError {
+                    proof_bytes: proof.grovedb_proof.clone(),
+                    height: metadata.height,
+                    time_ms: metadata.time_ms,
+                    error: e.to_string(),
+                }),
+                _ => Err(e.into()),
+            },
         }
     }
 }

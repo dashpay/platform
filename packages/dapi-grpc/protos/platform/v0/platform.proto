@@ -1677,15 +1677,6 @@ message GetGroupActionsResponse {
       bytes encrypted_data = 3; // Encrypted data
     }
 
-    // Transfer event
-    message TransferEvent {
-      bytes recipient_id = 1; // Recipient identifier
-      optional string public_note = 2; // Public note
-      optional SharedEncryptedNote shared_encrypted_note = 3; // Shared encrypted note
-      optional PersonalEncryptedNote personal_encrypted_note = 4; // Personal encrypted note
-      uint64 amount = 5; // Amount transferred
-    }
-
     // Emergency action event
     message EmergencyActionEvent {
       // Enum for emergency action types
@@ -1741,9 +1732,8 @@ message GetGroupActionsResponse {
         FreezeEvent freeze = 3;         // Freeze event details
         UnfreezeEvent unfreeze = 4;     // Unfreeze event details
         DestroyFrozenFundsEvent destroy_frozen_funds = 5; // Destroy frozen funds
-        TransferEvent transfer = 6;     // Transfer event details
-        EmergencyActionEvent emergency_action = 7; // Emergency action details
-        TokenConfigUpdateEvent  token_config_update = 8; // Token configuration update details
+        EmergencyActionEvent emergency_action = 6; // Emergency action details
+        TokenConfigUpdateEvent  token_config_update = 7; // Token configuration update details
       }
     }
 

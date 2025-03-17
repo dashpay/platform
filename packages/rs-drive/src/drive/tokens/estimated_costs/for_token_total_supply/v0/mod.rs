@@ -92,7 +92,7 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(total_tokens_root_supply_path()),
             EstimatedLayerInformation {
-                tree_type: TreeType::NormalTree,
+                tree_type: TreeType::BigSumTree,
                 estimated_layer_count: EstimatedLevel(10, false),
                 estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
             },

@@ -1,81 +1,152 @@
-use crate::balances::credits::{SignedTokenAmount, TokenAmount};
+use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use bincode::{BorrowDecode, Decode, Encode};
-use ordered_float::NotNan;
+use std::collections::BTreeMap;
 
-/// Helper function to decode a `NotNan<f64>` safely.
-fn decode_not_nan<D: bincode::de::Decoder>(
-    decoder: &mut D,
-) -> Result<NotNan<f64>, bincode::error::DecodeError> {
-    NotNan::new(f64::decode(decoder)?)
-        .map_err(|_| bincode::error::DecodeError::OtherString("Invalid float: NaN".into()))
-}
-
-// Implement Encode for DistributionFunction
 impl Encode for DistributionFunction {
     fn encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
         match self {
-            DistributionFunction::FixedAmount { n } => {
+            DistributionFunction::FixedAmount { amount: n } => {
                 0u8.encode(encoder)?;
                 n.encode(encoder)?;
             }
+            DistributionFunction::Random { min, max } => {
+                1u8.encode(encoder)?;
+                min.encode(encoder)?;
+                max.encode(encoder)?;
+            }
             DistributionFunction::StepDecreasingAmount {
                 step_count,
-                decrease_per_interval,
+                decrease_per_interval_numerator,
+                decrease_per_interval_denominator,
+                s,
                 n,
+                min_value,
             } => {
-                1u8.encode(encoder)?;
-                step_count.encode(encoder)?;
-                decrease_per_interval.into_inner().encode(encoder)?;
-                n.encode(encoder)?;
-            }
-            DistributionFunction::LinearInteger { a, b } => {
                 2u8.encode(encoder)?;
-                a.encode(encoder)?;
-                b.encode(encoder)?;
-            }
-            DistributionFunction::LinearFloat { a, b } => {
-                3u8.encode(encoder)?;
-                a.into_inner().encode(encoder)?;
-                b.encode(encoder)?;
-            }
-            DistributionFunction::PolynomialInteger { a, n, b } => {
-                4u8.encode(encoder)?;
-                a.encode(encoder)?;
+                step_count.encode(encoder)?;
+                decrease_per_interval_numerator.encode(encoder)?;
+                decrease_per_interval_denominator.encode(encoder)?;
+                s.encode(encoder)?;
                 n.encode(encoder)?;
-                b.encode(encoder)?;
-            }
-            DistributionFunction::PolynomialFloat { a, n, b } => {
-                5u8.encode(encoder)?;
-                a.into_inner().encode(encoder)?;
-                n.into_inner().encode(encoder)?;
-                b.encode(encoder)?;
-            }
-            DistributionFunction::Exponential { a, b, c } => {
-                6u8.encode(encoder)?;
-                a.into_inner().encode(encoder)?;
-                b.into_inner().encode(encoder)?;
-                c.encode(encoder)?;
-            }
-            DistributionFunction::Logarithmic { a, b, c } => {
-                7u8.encode(encoder)?;
-                a.into_inner().encode(encoder)?;
-                b.into_inner().encode(encoder)?;
-                c.encode(encoder)?;
+                min_value.encode(encoder)?;
             }
             DistributionFunction::Stepwise(steps) => {
-                8u8.encode(encoder)?;
+                3u8.encode(encoder)?;
                 steps.encode(encoder)?;
+            }
+            DistributionFunction::Linear {
+                a,
+                d,
+                start_step: s,
+                starting_amount: b,
+                min_value,
+                max_value,
+            } => {
+                4u8.encode(encoder)?;
+                a.encode(encoder)?;
+                d.encode(encoder)?;
+                s.encode(encoder)?;
+                b.encode(encoder)?;
+                min_value.encode(encoder)?;
+                max_value.encode(encoder)?;
+            }
+            DistributionFunction::Polynomial {
+                a,
+                d,
+                m,
+                n,
+                o,
+                start_moment: s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                5u8.encode(encoder)?;
+                a.encode(encoder)?;
+                d.encode(encoder)?;
+                m.encode(encoder)?;
+                n.encode(encoder)?;
+                o.encode(encoder)?;
+                s.encode(encoder)?;
+                b.encode(encoder)?;
+                min_value.encode(encoder)?;
+                max_value.encode(encoder)?;
+            }
+            DistributionFunction::Exponential {
+                a,
+                d,
+                m,
+                n,
+                o,
+                start_moment: s,
+                c,
+                min_value,
+                max_value,
+            } => {
+                6u8.encode(encoder)?;
+                a.encode(encoder)?;
+                d.encode(encoder)?;
+                m.encode(encoder)?;
+                n.encode(encoder)?;
+                o.encode(encoder)?;
+                s.encode(encoder)?;
+                c.encode(encoder)?;
+                min_value.encode(encoder)?;
+                max_value.encode(encoder)?;
+            }
+            DistributionFunction::Logarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                start_moment: s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                7u8.encode(encoder)?;
+                a.encode(encoder)?;
+                d.encode(encoder)?;
+                m.encode(encoder)?;
+                n.encode(encoder)?;
+                o.encode(encoder)?;
+                s.encode(encoder)?;
+                b.encode(encoder)?;
+                min_value.encode(encoder)?;
+                max_value.encode(encoder)?;
+            }
+            DistributionFunction::InvertedLogarithmic {
+                a,
+                d,
+                m,
+                n,
+                o,
+                start_moment: s,
+                b,
+                min_value,
+                max_value,
+            } => {
+                8u8.encode(encoder)?;
+                a.encode(encoder)?;
+                d.encode(encoder)?;
+                m.encode(encoder)?;
+                n.encode(encoder)?;
+                o.encode(encoder)?;
+                s.encode(encoder)?;
+                b.encode(encoder)?;
+                min_value.encode(encoder)?;
+                max_value.encode(encoder)?;
             }
         }
         Ok(())
     }
 }
 
-// Implement Decode for DistributionFunction
 impl Decode for DistributionFunction {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
@@ -84,55 +155,136 @@ impl Decode for DistributionFunction {
         match variant {
             0 => {
                 let n = TokenAmount::decode(decoder)?;
-                Ok(Self::FixedAmount { n })
+                Ok(Self::FixedAmount { amount: n })
             }
             1 => {
-                let step_count = u64::decode(decoder)?;
-                let decrease_per_interval = decode_not_nan(decoder)?;
-                let n = TokenAmount::decode(decoder)?;
-                Ok(Self::StepDecreasingAmount {
-                    step_count,
-                    decrease_per_interval,
-                    n,
-                })
+                let min = TokenAmount::decode(decoder)?;
+                let max = TokenAmount::decode(decoder)?;
+                Ok(Self::Random { min, max })
             }
             2 => {
-                let a = i64::decode(decoder)?;
-                let b = SignedTokenAmount::decode(decoder)?;
-                Ok(Self::LinearInteger { a, b })
+                let step_count = u32::decode(decoder)?;
+                let decrease_per_interval_numerator = u16::decode(decoder)?;
+                let decrease_per_interval_denominator = u16::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let n = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::StepDecreasingAmount {
+                    s,
+                    decrease_per_interval_numerator,
+                    decrease_per_interval_denominator,
+                    step_count,
+                    n,
+                    min_value,
+                })
             }
             3 => {
-                let a = decode_not_nan(decoder)?;
-                let b = SignedTokenAmount::decode(decoder)?;
-                Ok(Self::LinearFloat { a, b })
+                let steps = BTreeMap::<u64, TokenAmount>::decode(decoder)?;
+                Ok(Self::Stepwise(steps))
             }
             4 => {
                 let a = i64::decode(decoder)?;
-                let n = i64::decode(decoder)?;
-                let b = SignedTokenAmount::decode(decoder)?;
-                Ok(Self::PolynomialInteger { a, n, b })
+                let d = u64::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                let max_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::Linear {
+                    a,
+                    d,
+                    start_step: s,
+                    starting_amount: b,
+                    min_value,
+                    max_value,
+                })
             }
             5 => {
-                let a = decode_not_nan(decoder)?;
-                let n = decode_not_nan(decoder)?;
-                let b = SignedTokenAmount::decode(decoder)?;
-                Ok(Self::PolynomialFloat { a, n, b })
+                let a = i64::decode(decoder)?;
+                let d = u64::decode(decoder)?;
+                let m = i64::decode(decoder)?;
+                let n = u64::decode(decoder)?;
+                let o = i64::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                let max_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::Polynomial {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    b,
+                    min_value,
+                    max_value,
+                })
             }
             6 => {
-                let a = decode_not_nan(decoder)?;
-                let b = decode_not_nan(decoder)?;
-                let c = SignedTokenAmount::decode(decoder)?;
-                Ok(Self::Exponential { a, b, c })
+                let a = u64::decode(decoder)?;
+                let d = u64::decode(decoder)?;
+                let m = i64::decode(decoder)?;
+                let n = u64::decode(decoder)?;
+                let o = i64::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let c = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                let max_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::Exponential {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    c,
+                    min_value,
+                    max_value,
+                })
             }
             7 => {
-                let a = decode_not_nan(decoder)?;
-                let b = decode_not_nan(decoder)?;
-                let c = SignedTokenAmount::decode(decoder)?;
-                Ok(Self::Logarithmic { a, b, c })
+                let a = i64::decode(decoder)?;
+                let d = u64::decode(decoder)?;
+                let m = u64::decode(decoder)?;
+                let n = u64::decode(decoder)?;
+                let o = i64::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                let max_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::Logarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    b,
+                    min_value,
+                    max_value,
+                })
             }
             8 => {
-                let steps = Vec::<(u64, TokenAmount)>::decode(decoder)?;
-                Ok(Self::Stepwise(steps))
+                let a = i64::decode(decoder)?;
+                let d = u64::decode(decoder)?;
+                let m = u64::decode(decoder)?;
+                let n = u64::decode(decoder)?;
+                let o = i64::decode(decoder)?;
+                let s = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
+                let min_value = Option::<u64>::decode(decoder)?;
+                let max_value = Option::<u64>::decode(decoder)?;
+                Ok(Self::InvertedLogarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    b,
+                    min_value,
+                    max_value,
+                })
             }
             _ => Err(bincode::error::DecodeError::OtherString(
                 "Invalid variant".into(),
@@ -141,7 +293,6 @@ impl Decode for DistributionFunction {
     }
 }
 
-// Implement BorrowDecode for DistributionFunction
 impl<'de> BorrowDecode<'de> for DistributionFunction {
     fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
         decoder: &mut D,
@@ -150,55 +301,136 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
         match variant {
             0 => {
                 let n = TokenAmount::borrow_decode(decoder)?;
-                Ok(Self::FixedAmount { n })
+                Ok(Self::FixedAmount { amount: n })
             }
             1 => {
-                let step_count = u64::borrow_decode(decoder)?;
-                let decrease_per_interval = decode_not_nan(decoder)?;
-                let n = TokenAmount::borrow_decode(decoder)?;
-                Ok(Self::StepDecreasingAmount {
-                    step_count,
-                    decrease_per_interval,
-                    n,
-                })
+                let min = TokenAmount::borrow_decode(decoder)?;
+                let max = TokenAmount::borrow_decode(decoder)?;
+                Ok(Self::Random { min, max })
             }
             2 => {
-                let a = i64::borrow_decode(decoder)?;
-                let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(Self::LinearInteger { a, b })
+                let step_count = u32::borrow_decode(decoder)?;
+                let decrease_per_interval_numerator = u16::borrow_decode(decoder)?;
+                let decrease_per_interval_denominator = u16::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let n = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::StepDecreasingAmount {
+                    step_count,
+                    decrease_per_interval_numerator,
+                    decrease_per_interval_denominator,
+                    s,
+                    n,
+                    min_value,
+                })
             }
             3 => {
-                let a = decode_not_nan(decoder)?;
-                let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(Self::LinearFloat { a, b })
+                let steps = BTreeMap::<u64, TokenAmount>::borrow_decode(decoder)?;
+                Ok(Self::Stepwise(steps))
             }
             4 => {
                 let a = i64::borrow_decode(decoder)?;
-                let n = i64::borrow_decode(decoder)?;
-                let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(Self::PolynomialInteger { a, n, b })
+                let d = u64::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                let max_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::Linear {
+                    a,
+                    d,
+                    start_step: s,
+                    starting_amount: b,
+                    min_value,
+                    max_value,
+                })
             }
             5 => {
-                let a = decode_not_nan(decoder)?;
-                let n = decode_not_nan(decoder)?;
-                let b = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(Self::PolynomialFloat { a, n, b })
+                let a = i64::borrow_decode(decoder)?;
+                let d = u64::borrow_decode(decoder)?;
+                let m = i64::borrow_decode(decoder)?;
+                let n = u64::borrow_decode(decoder)?;
+                let o = i64::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                let max_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::Polynomial {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    b,
+                    min_value,
+                    max_value,
+                })
             }
             6 => {
-                let a = decode_not_nan(decoder)?;
-                let b = decode_not_nan(decoder)?;
-                let c = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(Self::Exponential { a, b, c })
+                let a = u64::borrow_decode(decoder)?;
+                let d = u64::borrow_decode(decoder)?;
+                let m = i64::borrow_decode(decoder)?;
+                let n = u64::borrow_decode(decoder)?;
+                let o = i64::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let c = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                let max_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::Exponential {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    c,
+                    min_value,
+                    max_value,
+                })
             }
             7 => {
-                let a = decode_not_nan(decoder)?;
-                let b = decode_not_nan(decoder)?;
-                let c = SignedTokenAmount::borrow_decode(decoder)?;
-                Ok(Self::Logarithmic { a, b, c })
+                let a = i64::borrow_decode(decoder)?;
+                let d = u64::borrow_decode(decoder)?;
+                let m = u64::borrow_decode(decoder)?;
+                let n = u64::borrow_decode(decoder)?;
+                let o = i64::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                let max_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::Logarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    b,
+                    min_value,
+                    max_value,
+                })
             }
             8 => {
-                let steps = Vec::<(u64, TokenAmount)>::borrow_decode(decoder)?;
-                Ok(Self::Stepwise(steps))
+                let a = i64::borrow_decode(decoder)?;
+                let d = u64::borrow_decode(decoder)?;
+                let m = u64::borrow_decode(decoder)?;
+                let n = u64::borrow_decode(decoder)?;
+                let o = i64::borrow_decode(decoder)?;
+                let s = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
+                let min_value = Option::<u64>::borrow_decode(decoder)?;
+                let max_value = Option::<u64>::borrow_decode(decoder)?;
+                Ok(Self::InvertedLogarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment: s,
+                    b,
+                    min_value,
+                    max_value,
+                })
             }
             _ => Err(bincode::error::DecodeError::OtherString(
                 "Invalid variant".into(),

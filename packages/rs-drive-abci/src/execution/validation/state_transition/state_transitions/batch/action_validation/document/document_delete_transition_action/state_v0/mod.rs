@@ -17,6 +17,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -36,11 +37,24 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        _block_info: &BlockInfo,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let validation_result = self.base().validate_state(
+            platform,
+            owner_id,
+            block_info,
+            "delete",
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
         let contract_fetch_info = self.base().data_contract_fetch_info();
 
         let contract = &contract_fetch_info.contract;

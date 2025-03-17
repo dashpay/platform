@@ -19,6 +19,7 @@ pub const DPP_VALIDATION_VERSIONS_V1: DPPValidationVersions = DPPValidationVersi
         validate_not_defined_properties: 0,
         validate_property_definition: 0,
         validate_token_config_groups_exist: 0,
+        validate_localizations: 0,
     },
     document_type: DocumentTypeValidationVersions {
         validate_update: 0,

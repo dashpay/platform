@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::ProTxHash;
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator::v0::NewValidatorIfMasternodeInState;
