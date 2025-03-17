@@ -38,12 +38,12 @@ impl Drive {
     /// * The identity ID does not correspond to a valid full identity.
     ///
     #[inline(always)]
-    pub(super) fn verify_full_identity_by_public_key_hash_v0(
+    pub(super) fn verify_full_identity_by_unique_public_key_hash_v0(
         proof: &[u8],
         public_key_hash: [u8; 20],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
-        let (root_hash, identity_id) = Self::verify_identity_id_by_public_key_hash(
+        let (root_hash, identity_id) = Self::verify_identity_id_by_unique_public_key_hash(
             proof,
             true,
             public_key_hash,

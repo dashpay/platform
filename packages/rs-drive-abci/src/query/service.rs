@@ -28,6 +28,7 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
@@ -407,6 +408,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
             "get_identity_by_public_key_hash",
+        )
+        .await
+    }
+
+    async fn get_identity_by_non_unique_public_key_hash(
+        &self,
+        request: Request<GetIdentityByNonUniquePublicKeyHashRequest>,
+    ) -> Result<Response<GetIdentityByNonUniquePublicKeyHashResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_by_non_unique_public_key_hash,
+            "get_identity_by_non_unique_public_key_hash",
         )
         .await
     }

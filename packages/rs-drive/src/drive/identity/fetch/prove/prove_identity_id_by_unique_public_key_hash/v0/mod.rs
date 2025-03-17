@@ -65,7 +65,7 @@ mod tests {
             )
             .expect("should not error when proving an identity");
 
-        let (_, proved_identity_id) = Drive::verify_identity_id_by_public_key_hash(
+        let (_, proved_identity_id) = Drive::verify_identity_id_by_unique_public_key_hash(
             proof.as_slice(),
             false,
             first_key_hash,
