@@ -37,7 +37,7 @@ impl Drive {
     /// - The number of proved key values does not match the number of public key hashes provided.
     /// - The value size of the identity ID is incorrect.
     ///
-    pub(crate) fn verify_identity_ids_by_public_key_hashes_v0<
+    pub(crate) fn verify_identity_ids_by_unique_public_key_hashes_v0<
         T: FromIterator<([u8; 20], Option<[u8; 32]>)>,
     >(
         proof: &[u8],

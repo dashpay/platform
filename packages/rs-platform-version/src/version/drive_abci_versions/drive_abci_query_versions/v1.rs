@@ -67,7 +67,7 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
-        identity_by_public_key_hash: FeatureVersionBounds {
+        identity_by_unique_public_key_hash: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

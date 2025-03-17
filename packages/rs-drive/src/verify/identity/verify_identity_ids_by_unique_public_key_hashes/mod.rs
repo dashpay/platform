@@ -36,7 +36,7 @@ impl Drive {
     /// - An unknown or unsupported platform version is provided.
     /// - Any other error as documented in the specific versioned function.
     ///
-    pub fn verify_identity_ids_by_public_key_hashes<
+    pub fn verify_identity_ids_by_unique_public_key_hashes<
         T: FromIterator<([u8; 20], Option<[u8; 32]>)>,
     >(
         proof: &[u8],
@@ -49,16 +49,16 @@ impl Drive {
             .methods
             .verify
             .identity
-            .verify_identity_ids_by_public_key_hashes
+            .verify_identity_ids_by_unique_public_key_hashes
         {
-            0 => Self::verify_identity_ids_by_public_key_hashes_v0(
+            0 => Self::verify_identity_ids_by_unique_public_key_hashes_v0(
                 proof,
                 is_proof_subset,
                 public_key_hashes,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "verify_identity_ids_by_public_key_hashes".to_string(),
+                method: "verify_identity_ids_by_unique_public_key_hashes".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

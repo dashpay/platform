@@ -33,6 +33,8 @@ service Platform {
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
+  rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest)
+      returns (GetIdentityByNonUniquePublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
       returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams(GetConsensusParamsRequest)
@@ -618,6 +620,35 @@ message GetIdentityByPublicKeyHashResponse {
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetIdentityByPublicKeyHashResponseV0 v0 = 1; }
+}
+
+message GetIdentityByNonUniquePublicKeyHashRequest {
+  message GetIdentityByNonUniquePublicKeyHashRequestV0 {
+    bytes public_key_hash = 1;
+    optional bytes start_after = 2; // Give one result after a previous result
+    bool prove = 3;
+  }
+  oneof version { GetIdentityByNonUniquePublicKeyHashRequestV0 v0 = 1; }
+}
+
+message GetIdentityByNonUniquePublicKeyHashResponse {
+  message GetIdentityByNonUniquePublicKeyHashResponseV0 {
+    message IdentityResponse {
+      optional bytes identity = 1;
+    }
+
+    message IdentityProvedResponse {
+      Proof grovedb_identity_public_key_hash_proof = 1;
+      optional bytes identity_proof_bytes = 2; // A hack, we return 2 proofs
+    }
+    oneof result {
+      IdentityResponse identity = 1;
+      IdentityProvedResponse proof = 2;
+    }
+
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+  }
+  oneof version { GetIdentityByNonUniquePublicKeyHashResponseV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultRequest {
