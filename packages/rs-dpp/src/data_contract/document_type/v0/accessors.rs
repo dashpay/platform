@@ -9,6 +9,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
