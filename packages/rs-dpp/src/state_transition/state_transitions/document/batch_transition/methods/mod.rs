@@ -2,6 +2,7 @@
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;

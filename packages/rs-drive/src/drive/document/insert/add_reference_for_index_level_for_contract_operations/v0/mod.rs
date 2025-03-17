@@ -15,7 +15,7 @@ use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElemen
 use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;

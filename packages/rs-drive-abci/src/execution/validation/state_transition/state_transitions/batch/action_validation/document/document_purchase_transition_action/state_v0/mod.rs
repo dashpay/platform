@@ -10,6 +10,7 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentPurchaseTransitionActionStateValidationV0 {
@@ -28,11 +29,24 @@ impl DocumentPurchaseTransitionActionStateValidationV0 for DocumentPurchaseTrans
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        _block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let validation_result = self.base().validate_state(
+            platform,
+            owner_id,
+            block_info,
+            "purchase",
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
         let contract_fetch_info = self.base().data_contract_fetch_info();
 
         let contract = &contract_fetch_info.contract;

@@ -15,7 +15,7 @@ use crate::prelude::Revision;
 use crate::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDeserializationMethodsV0;
 use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
