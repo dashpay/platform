@@ -379,7 +379,10 @@ mod tests {
                 .document_types_mut()
                 .get_mut("niceDocument")
                 .unwrap()
-                .as_mut_ref();
+                .as_mut_ref()
+            else {
+                panic!("expected v0")
+            };
             new_document_type.documents_mutable = false;
 
             let result = old_data_contract

@@ -27,9 +27,9 @@ use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransi
 use std::iter::Map;
 use std::slice::Iter;
 
-use crate::state_transition::batch_transition::{BatchTransitionV1, TokenClaimTransition};
+use crate::state_transition::batch_transition::BatchTransitionV1;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::batch_transition::{TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
+use crate::state_transition::batch_transition::{TokenClaimTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{
     BatchTransition, DocumentDeleteTransition,
@@ -45,6 +45,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 use crate::balances::credits::TokenAmount;
 #[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
@@ -64,6 +65,7 @@ use crate::state_transition::batch_transition::token_base_transition::v0::TokenB
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;

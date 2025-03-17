@@ -92,6 +92,7 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_transfer_transition_structure_validation: FeatureVersion,
     pub document_purchase_transition_structure_validation: FeatureVersion,
     pub document_update_price_transition_structure_validation: FeatureVersion,
+    pub document_base_transition_state_validation: FeatureVersion,
     pub document_create_transition_state_validation: FeatureVersion,
     pub document_delete_transition_state_validation: FeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,

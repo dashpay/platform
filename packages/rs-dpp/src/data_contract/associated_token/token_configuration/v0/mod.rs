@@ -23,6 +23,7 @@ pub struct TokenConfigurationV0 {
     #[serde(default = "default_change_control_rules")]
     pub conventions_change_rules: ChangeControlRules,
     /// The supply at the creation of the token
+    #[serde(default)]
     pub base_supply: TokenAmount,
     /// The maximum supply the token can ever have
     #[serde(default)]

@@ -9,7 +9,9 @@ use crate::data_contract::{DocumentName, GroupContractPosition, TokenContractPos
 use crate::block::epoch::EpochIndex;
 use crate::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV0Setters,
+};
 use crate::data_contract::group::Group;
 use crate::identity::TimestampMillis;
 use crate::prelude::BlockHeight;
@@ -113,9 +115,7 @@ impl DataContractV0Setters for DataContractV1 {
 
         self.document_types
             .iter_mut()
-            .for_each(|(_, document_type)| match document_type {
-                DocumentType::V0(v0) => v0.data_contract_id = id,
-            })
+            .for_each(|(_, document_type)| document_type.set_data_contract_id(id))
     }
 
     fn set_version(&mut self, version: u32) {

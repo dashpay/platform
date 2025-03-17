@@ -38,6 +38,7 @@ mod creation_tests {
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use dpp::state_transition::batch_transition::{DocumentCreateTransition, BatchTransitionV0};
     use dpp::state_transition::StateTransition;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use crate::config::PlatformConfig;
 
     #[test]
@@ -263,7 +264,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::DocumentAlreadyPresentError { .. }),
                 _
             )]
@@ -1754,7 +1755,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(
                     StateError::DocumentContestDocumentWithSameIdAlreadyPresentError { .. }
                 ),
@@ -2142,7 +2143,7 @@ mod creation_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError(consensus_error, _) = result else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
@@ -2434,9 +2435,257 @@ mod creation_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError(consensus_error, _) = result else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document Creation on 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e:card is not allowed because of the document type's creation restriction mode Owner Only");
+    }
+
+    #[test]
+    fn test_document_creation_paid_with_a_token() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (contract_owner_id, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
+
+        let (contract, gold_token_id, _) = create_card_game_token_contract_with_owner_identity(
+            &mut platform,
+            contract_owner_id.id(),
+            platform_version,
+        );
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(0));
+
+        assert_eq!(contract.tokens().len(), 2);
+
+        add_tokens_to_identity(&mut platform, gold_token_id.into(), buyer.id(), 15);
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(15));
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                buyer.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gold_token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // He had 15, but spent 10
+        assert_eq!(token_balance, Some(5));
+    }
+
+    #[test]
+    fn test_document_creation_not_enough_token_balance_to_create_document() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (contract_owner_id, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
+
+        let (contract, gold_token_id, _) = create_card_game_token_contract_with_owner_identity(
+            &mut platform,
+            contract_owner_id.id(),
+            platform_version,
+        );
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(0));
+
+        assert_eq!(contract.tokens().len(), 2);
+
+        // We need 10 tokens, we have 8.
+        add_tokens_to_identity(&mut platform, gold_token_id.into(), buyer.id(), 8);
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(8));
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                buyer.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError(
+                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
+                    _
+                )),
+                _
+            )]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gold_token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // We should still have 8
+        assert_eq!(token_balance, Some(8));
     }
 }
