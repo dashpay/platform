@@ -84,7 +84,7 @@ impl Drive {
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
 
-                if contract_for_serialization
+                if !contract_for_serialization
                     .eq_without_auto_fields(data_contract_create.data_contract())
                 {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after create with id {}", data_contract_create.data_contract().id()))));
