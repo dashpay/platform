@@ -12,7 +12,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
-use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 
 /// Operations on Tokens
@@ -37,6 +36,9 @@ pub enum TokenOperationType {
         mint_amount: TokenAmount,
         /// Should we allow this to be the first ever mint
         allow_first_mint: bool,
+        /// Should we allow a mint to saturate the upper bounds instead of giving an error?
+        /// For example if we were to add 10 to i64::Max - 5 we would get i64::Max
+        allow_saturation: bool,
     },
     /// Mints tokens to many recipients
     TokenMintMany {
@@ -54,24 +56,19 @@ pub enum TokenOperationType {
     TokenMarkPerpetualReleaseAsDistributed {
         /// The token id
         token_id: Identifier,
-        /// The owner of this operation, generally the person making the state transition
-        owner_id: Identifier,
-        /// The last release time, block or epoch
-        last_release_moment: RewardDistributionMoment,
-        /// The next known release time, block or epoch
-        next_release_moment: RewardDistributionMoment,
-        /// The recipient
-        recipient: TokenDistributionRecipient,
+        /// The recipient of this operation, generally the person making the claim state transition
+        recipient_id: Identifier,
+        /// The beginning of the current perpetual release cycle.
+        /// For example if we pay every 10 blocks, and we are on block 54, this would be 50.
+        cycle_start_moment: RewardDistributionMoment,
     },
     /// Marks the pre-programmed release as distributed
     /// This removes the references in the queue
     TokenMarkPreProgrammedReleaseAsDistributed {
         /// The token id
         token_id: Identifier,
-        /// The owner of this operation, generally the person making the state transition
-        owner_id: Identifier,
-        /// The identity that had their pre-programmed release set
-        identity_id: Identifier,
+        /// The recipient of this operation, generally the person making the state transition
+        recipient_id: Identifier,
         /// The last release time, block or epoch
         release_time: TimestampMillis,
     },
@@ -154,6 +151,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 identity_balance_holder_id,
                 mint_amount,
                 allow_first_mint,
+                allow_saturation,
             } => {
                 let token_id_bytes: [u8; 32] = token_id.to_buffer();
                 let identity_id_bytes: [u8; 32] = identity_balance_holder_id.to_buffer();
@@ -162,6 +160,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     identity_id_bytes,
                     mint_amount,
                     allow_first_mint,
+                    allow_saturation,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -261,35 +260,27 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
             }
             TokenOperationType::TokenMarkPerpetualReleaseAsDistributed {
                 token_id,
-                owner_id,
-                last_release_moment,
-                next_release_moment,
-                recipient,
+                recipient_id,
+                cycle_start_moment,
             } => {
                 let batch_operations = drive.mark_perpetual_release_as_distributed_operations(
                     token_id.to_buffer(),
-                    owner_id.to_buffer(),
-                    last_release_moment,
-                    next_release_moment,
-                    recipient,
-                    block_info,
+                    recipient_id.to_buffer(),
+                    cycle_start_moment,
                     estimated_costs_only_with_layer_info,
-                    transaction,
                     platform_version,
                 )?;
                 Ok(batch_operations)
             }
             TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed {
                 token_id,
-                owner_id,
-                identity_id,
+                recipient_id,
                 release_time,
             } => {
                 let batch_operations = drive
                     .mark_pre_programmed_release_as_distributed_operations(
                         token_id.to_buffer(),
-                        owner_id.to_buffer(),
-                        identity_id.to_buffer(),
+                        recipient_id.to_buffer(),
                         release_time,
                         block_info,
                         estimated_costs_only_with_layer_info,

@@ -18,6 +18,8 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
+#   purpose in local development environment
 #
 # # sccache cache backends
 #
@@ -341,7 +343,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.99 cargo-chef@0.1.67 \
+    cargo binstall wasm-bindgen-cli@0.2.100 cargo-chef@0.1.67 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
@@ -400,6 +402,11 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
+# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
+# This is only for testing purpose and should be used only for
+# local development environment
+ARG SDK_TEST_DATA
+
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 WORKDIR /platform
@@ -416,7 +423,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
+        export FEATURES_FLAG="--features=console,grovedbg"; \
+    fi && \
+    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+        mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -473,11 +483,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     set -ex; \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml && \
-        export OUT_DIRECTORY=release ; \
+        mv .cargo/config-release.toml .cargo/config.toml; \
+        export OUT_DIRECTORY=release; \
     else \
-        export FEATURES_FLAG="--features=console,grovedbg" ; \
-        export OUT_DIRECTORY=debug ; \
+        export FEATURES_FLAG="--features=console,grovedbg"; \
+        export OUT_DIRECTORY=debug; \
+    fi && \
+    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+        mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
@@ -742,6 +755,7 @@ COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
+COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

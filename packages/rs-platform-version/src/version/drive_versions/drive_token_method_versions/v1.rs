@@ -17,6 +17,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         token_total_aggregated_identity_balances: 0,
         pre_programmed_distributions: 0,
         perpetual_distribution_last_paid_time: 0,
+        pre_programmed_distribution_last_paid_time: 0,
     },
     prove: DriveTokenProveMethodVersions {
         identity_token_balance: 0,

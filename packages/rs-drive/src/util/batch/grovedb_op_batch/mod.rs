@@ -278,9 +278,6 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY => {
                         (format!("PerpetualDistributionInfo({})", tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY), None)
                     }
-                    tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_FIRST_EVENT_KEY => {
-                        (format!("PerpetualDistributionFirstEvent({})", tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_FIRST_EVENT_KEY), None)
-                    }
                     tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY => {
                         (format!("PerpetualDistributionLastClaim({})", tokens::paths::TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY), None)
                     }

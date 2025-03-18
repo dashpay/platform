@@ -1,12 +1,12 @@
 /// transformer
 pub mod transformer;
 
+use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use std::sync::Arc;
-
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
+use std::sync::Arc;
 
 use crate::drive::contract::DataContractFetchInfo;
 
@@ -21,6 +21,8 @@ pub struct DocumentBaseTransitionActionV0 {
     pub document_type_name: String,
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
+    /// Token cost with the token_id coming first
+    pub token_cost: Option<(Identifier, TokenAmount)>,
 }
 
 /// document base transition action accessors v0
@@ -47,4 +49,7 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo>;
     /// Identity contract nonce
     fn identity_contract_nonce(&self) -> IdentityNonce;
+
+    /// Token cost
+    fn token_cost(&self) -> Option<(Identifier, TokenAmount)>;
 }

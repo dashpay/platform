@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -15,7 +15,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 # Meantime if you want to update wasm-bindgen you also need to update version in:
 #  - packages/wasm-dpp/scripts/build-wasm.sh
 #  - Dockerfile
-wasm-bindgen = { version = "=0.2.99" }
+wasm-bindgen = { version = "=0.2.100" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
 thiserror = { version = "1.0.63" }
@@ -40,7 +40,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "extended-document",
     "document-value-conversion",
     "document-json-conversion",
-    "system_contracts"
+    "system_contracts",
 ] }
 itertools = { version = "0.13" }
 log = { version = "0.4.6" }

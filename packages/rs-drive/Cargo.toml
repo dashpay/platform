@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -118,4 +118,4 @@ server = [
 full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
-verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions"]
+verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions", "dpp/system_contracts"]

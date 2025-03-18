@@ -43,17 +43,14 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                 match self.distribution_info() {
                     TokenDistributionInfo::Perpetual(
                         _,
-                        _,
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(identity),
                     )
                     | TokenDistributionInfo::PreProgrammed(_, identity)
                     | TokenDistributionInfo::Perpetual(
                         _,
-                        _,
                         TokenDistributionResolvedRecipient::Identity(identity),
                     )
                     | TokenDistributionInfo::Perpetual(
-                        _,
                         _,
                         TokenDistributionResolvedRecipient::Evonode(identity),
                     ) => {
@@ -62,6 +59,7 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                             identity_balance_holder_id: *identity,
                             mint_amount: self.amount(),
                             allow_first_mint: false,
+                            allow_saturation: true,
                         }));
                     }
                 }
@@ -71,24 +69,17 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                         ops.push(TokenOperation(
                             TokenOperationType::TokenMarkPreProgrammedReleaseAsDistributed {
                                 token_id: self.token_id(),
-                                owner_id,
-                                identity_id: *recipient,
+                                recipient_id: *recipient,
                                 release_time: *release_time,
                             },
                         ));
                     }
-                    TokenDistributionInfo::Perpetual(
-                        last_release_moment,
-                        next_release_moment,
-                        _,
-                    ) => {
+                    TokenDistributionInfo::Perpetual(claim_moment, _) => {
                         ops.push(TokenOperation(
                             TokenOperationType::TokenMarkPerpetualReleaseAsDistributed {
                                 token_id: self.token_id(),
-                                owner_id,
-                                last_release_moment: *last_release_moment,
-                                next_release_moment: *next_release_moment,
-                                recipient: self.recipient(),
+                                recipient_id: owner_id,
+                                cycle_start_moment: *claim_moment,
                             },
                         ));
                     }

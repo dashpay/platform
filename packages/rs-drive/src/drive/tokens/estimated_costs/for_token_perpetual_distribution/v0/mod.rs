@@ -1,13 +1,12 @@
 use crate::drive::tokens::paths::{
-    token_distributions_root_path_vec,
-    token_perpetual_distributions_identity_last_claimed_time_path_vec,
-    token_perpetual_distributions_path_vec, token_root_perpetual_distributions_path_vec,
+    token_distributions_root_path_vec, token_perpetual_distributions_path_vec,
+    token_root_perpetual_distributions_path_vec,
 };
 use crate::drive::Drive;
-use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U8_SIZE_U8};
+use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U8};
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedLayerCount::EstimatedLevel;
+use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
@@ -57,18 +56,6 @@ impl Drive {
                     tree_type: TreeType::NormalTree,
                     estimated_layer_count: EstimatedLevel(2, false),
                     estimated_layer_sizes: AllSubtrees(U8_SIZE_U8, NoSumTrees, None),
-                },
-            );
-
-            // 4. Add estimation for identities' last claim subtree
-            estimated_costs_only_with_layer_info.insert(
-                KeyInfoPath::from_known_owned_path(
-                    token_perpetual_distributions_identity_last_claimed_time_path_vec(token_id),
-                ),
-                EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
-                    estimated_layer_count: ApproximateElements(1000), // Example size, adjust as needed
-                    estimated_layer_sizes: AllItems(DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, None),
                 },
             );
         }

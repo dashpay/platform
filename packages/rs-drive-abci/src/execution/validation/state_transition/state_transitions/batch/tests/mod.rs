@@ -23,12 +23,17 @@ use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransiti
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
 
+use crate::execution::validation::state_transition::tests::add_tokens_to_identity;
 use crate::execution::validation::state_transition::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
 use crate::test::helpers::setup::TestPlatformBuilder;
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::document::transfer::Transferable;
 use dpp::fee::fee_result::BalanceChange;
 use dpp::fee::Credits;

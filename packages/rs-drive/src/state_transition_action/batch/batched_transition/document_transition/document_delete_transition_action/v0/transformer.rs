@@ -1,6 +1,6 @@
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-
+use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
@@ -18,6 +18,7 @@ impl DocumentDeleteTransitionActionV0 {
             base: DocumentBaseTransitionAction::try_from_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
+                |document_type| document_type.document_deletion_token_cost(),
             )?,
         })
     }
@@ -32,6 +33,9 @@ impl DocumentDeleteTransitionActionV0 {
             base: DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
+                |document_type| {
+                    document_type.document_deletion_token_cost()
+                }
             )?,
         })
     }

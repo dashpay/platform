@@ -103,7 +103,7 @@ impl TokenClaimTransitionActionAccessorsV0 for TokenClaimTransitionActionV0 {
             TokenDistributionInfo::PreProgrammed(_, identifier) => {
                 TokenDistributionRecipient::Identity(*identifier)
             }
-            TokenDistributionInfo::Perpetual(_, _, resolved_recipient) => resolved_recipient.into(),
+            TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
         }
     }
 

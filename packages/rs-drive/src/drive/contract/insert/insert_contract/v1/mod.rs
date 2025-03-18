@@ -220,9 +220,7 @@ impl Drive {
             {
                 self.add_perpetual_distribution(
                     token_id.to_buffer(),
-                    contract.owner_id().to_buffer(),
                     perpetual_distribution,
-                    block_info,
                     estimated_costs_only_with_layer_info,
                     &mut batch_operations,
                     transaction,

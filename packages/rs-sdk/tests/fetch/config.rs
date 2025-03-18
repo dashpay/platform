@@ -3,7 +3,7 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dpp::platform_value::string_encoding::Encoding;
+use crate::fetch::generated_data::*;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     prelude::Identifier,
@@ -12,15 +12,6 @@ use rs_dapi_client::{Address, AddressList};
 use serde::Deserialize;
 use std::path::PathBuf;
 use zeroize::Zeroizing;
-
-/// Existing document ID
-///
-// TODO: this is copy-paste from drive-abci `packages/rs-sdk/tests/fetch/main.rs` where it's private,
-// consider defining it in `data-contracts` crate
-const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
-    215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
-    68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
-];
 
 #[derive(Debug, Deserialize)]
 /// Configuration for dash-platform-sdk.
@@ -191,7 +182,7 @@ impl Config {
         let sdk = {
             let core_host = self.core_host.as_ref().unwrap_or(&self.platform_host);
             // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let mut builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 core_host,
                 self.core_port,
                 &self.core_user,
@@ -237,15 +228,7 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        // TODO: We don't have default system identities anymore.
-        //  So now I used this manually created identity to populate test vectors.
-        //  Next time we need to do it again and update this value :(. This is terrible.
-        //  We should automate creation of identity for SDK tests when we have time.
-        Identifier::from_string(
-            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
-            Encoding::Base58,
-        )
-        .unwrap()
+        IDENTITY_ID_1
     }
 
     fn default_data_contract_id() -> Identifier {

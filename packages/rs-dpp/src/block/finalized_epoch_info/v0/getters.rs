@@ -2,6 +2,7 @@ use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
 use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 /// Trait for accessing fields of `FinalizedEpochInfoV0`.
 pub trait FinalizedEpochInfoGettersV0 {
@@ -33,7 +34,7 @@ pub trait FinalizedEpochInfoGettersV0 {
     fn core_block_rewards(&self) -> Credits;
 
     /// Returns a reference to the block proposers map.
-    fn block_proposers(&self) -> &Vec<(Identifier, u64)>;
+    fn block_proposers(&self) -> &BTreeMap<Identifier, u64>;
 
     /// Returns the fee multiplier (permille).
     fn fee_multiplier_permille(&self) -> u64;
@@ -79,7 +80,7 @@ impl FinalizedEpochInfoGettersV0 for FinalizedEpochInfoV0 {
         self.core_block_rewards
     }
 
-    fn block_proposers(&self) -> &Vec<(Identifier, u64)> {
+    fn block_proposers(&self) -> &BTreeMap<Identifier, u64> {
         &self.block_proposers
     }
 

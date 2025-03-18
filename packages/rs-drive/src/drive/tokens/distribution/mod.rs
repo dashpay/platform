@@ -12,5 +12,5 @@ mod mark_pre_programmed_release_as_distributed;
 mod prove;
 /// Token distribution queries
 pub mod queries;
-#[cfg(feature = "server")]
-mod set_perpetual_distribution_next_event_for_identity_id;
+// #[cfg(feature = "server")]
+// mod set_perpetual_distribution_next_event_for_identity_id;

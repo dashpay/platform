@@ -767,7 +767,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "toml",
 ]
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1153,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "dapi-grpc",
  "heck 0.5.0",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1308,7 +1308,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1318,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1464,7 +1464,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1474,7 +1474,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1565,7 +1565,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1621,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1843,7 +1843,7 @@ checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2745,9 +2745,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.76"
+version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6717b6b5b077764fb5966237269cb3c64edddde4b14ce42647430a78ced9e7b7"
+checksum = "1cfaf33c695fc6e08064efbc1f72ec937429614f25eef83af942d0e227c3a28f"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
@@ -2766,7 +2766,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -2942,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3547,7 +3547,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3555,7 +3555,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3565,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3584,7 +3584,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "quote",
  "syn 2.0.96",
@@ -3592,7 +3592,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3603,7 +3603,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4098,7 +4098,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "backon",
  "chrono",
@@ -4601,7 +4601,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4686,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "bincode",
  "dpp",
@@ -5052,7 +5052,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "token-history-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -5617,7 +5617,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -5642,20 +5642,21 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.99"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a474f6281d1d70c17ae7aa6a613c87fce69a127e2624002df63dcb39d6cf6396"
+checksum = "1edc8929d7499fc4e8f0be2262a241556cfc54a0bea223790e71446f2aab1ef5"
 dependencies = [
  "cfg-if",
  "once_cell",
+ "rustversion",
  "wasm-bindgen-macro",
 ]
 
 [[package]]
 name = "wasm-bindgen-backend"
-version = "0.2.99"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f89bb38646b4f81674e8f5c3fb81b562be1fd936d84320f3264486418519c79"
+checksum = "2f0a0651a5c2bc21487bde11ee802ccaf4c51935d0d3d42a6101f98161700bc6"
 dependencies = [
  "bumpalo",
  "log",
@@ -5667,9 +5668,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-futures"
-version = "0.4.49"
+version = "0.4.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38176d9b44ea84e9184eff0bc34cc167ed044f816accfe5922e54d84cf48eca2"
+checksum = "555d470ec0bc3bb57890405e5d4322cc9ea83cebb085523ced7be4144dac1e61"
 dependencies = [
  "cfg-if",
  "js-sys",
@@ -5680,9 +5681,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.99"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cc6181fd9a7492eef6fef1f33961e3695e4579b9872a6f7c83aee556666d4fe"
+checksum = "7fe63fc6d09ed3792bd0897b314f53de8e16568c2b3f7982f468c0bf9bd0b407"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -5690,9 +5691,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.99"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30d7a95b763d3c45903ed6c81f156801839e5ee968bb07e534c44df0fcd330c2"
+checksum = "8ae87ea40c9f689fc23f209965b6fb8a99ad69aeeb0231408be24920604395de"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5703,13 +5704,16 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.99"
+version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "943aab3fdaaa029a6e0271b35ea10b72b943135afe9bffca82384098ad0e06a6"
+checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
+dependencies = [
+ "unicode-ident",
+]
 
 [[package]]
 name = "wasm-dpp"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5757,9 +5761,9 @@ dependencies = [
 
 [[package]]
 name = "web-sys"
-version = "0.3.76"
+version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dd7223427d52553d3702c004d3b2fe07c148165faa56313cb00211e31c12bc"
+checksum = "33b6dd2ef9186f1f2072e409e99cd22a975331a6b3591b12c764e0e55c60d5d2"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -5958,7 +5962,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",

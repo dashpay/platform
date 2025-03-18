@@ -8,12 +8,10 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
-use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
 use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
-use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
@@ -57,6 +55,7 @@ mod token_tests {
                     &mut platform,
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
+                    None,
                     None,
                     platform_version,
                 );
@@ -146,6 +145,7 @@ mod token_tests {
                     Some(|token_configuration: &mut TokenConfiguration| {
                         token_configuration.set_max_supply(Some(1000000));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -240,6 +240,7 @@ mod token_tests {
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -328,6 +329,7 @@ mod token_tests {
                     &mut platform,
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
+                    None,
                     None,
                     platform_version,
                 );
@@ -421,6 +423,7 @@ mod token_tests {
                     identity.id(),
                     None::<fn(&mut TokenConfiguration)>,
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -509,6 +512,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_minting_allow_choosing_destination(false);
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -608,6 +612,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_minting_allow_choosing_destination(false);
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -705,6 +710,7 @@ mod token_tests {
                             .set_minting_allow_choosing_destination(false);
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -796,6 +802,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_new_tokens_destination_identity(Some(identity.id()));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -898,6 +905,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_new_tokens_destination_identity(Some(identity.id()));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -997,6 +1005,7 @@ mod token_tests {
                             .distribution_rules_mut()
                             .set_new_tokens_destination_identity(Some(identity.id()));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -1106,6 +1115,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -1208,6 +1218,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1322,6 +1333,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1432,6 +1444,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1629,6 +1642,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -1835,6 +1849,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2128,6 +2143,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2418,6 +2434,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2533,6 +2550,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2733,6 +2751,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -2863,6 +2882,7 @@ mod token_tests {
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
                 None,
+                None,
                 platform_version,
             );
 
@@ -2948,6 +2968,7 @@ mod token_tests {
                 &mut platform,
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 platform_version,
             );
@@ -3041,6 +3062,7 @@ mod token_tests {
                 &mut platform,
                 contract_owner_identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 platform_version,
             );
@@ -3161,6 +3183,7 @@ mod token_tests {
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3261,6 +3284,7 @@ mod token_tests {
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3351,6 +3375,7 @@ mod token_tests {
                 &mut platform,
                 identity.id(),
                 None::<fn(&mut TokenConfiguration)>,
+                None,
                 None,
                 platform_version,
             );
@@ -3469,6 +3494,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 Some(
                     [(
                         0,
@@ -3684,6 +3710,7 @@ mod token_tests {
                     ));
                 }),
                 None,
+                None,
                 platform_version,
             );
 
@@ -3791,6 +3818,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 platform_version,
             );
@@ -3961,6 +3989,7 @@ mod token_tests {
                         },
                     ));
                 }),
+                None,
                 None,
                 platform_version,
             );
@@ -4364,6 +4393,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -4466,6 +4496,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -4576,6 +4607,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -4733,6 +4765,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -4824,6 +4857,7 @@ mod token_tests {
                         ));
                     }),
                     None,
+                    None,
                     platform_version,
                 );
 
@@ -4914,6 +4948,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     None,
                     platform_version,
                 );
@@ -5014,6 +5049,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -5131,6 +5167,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [(
                             0,
@@ -5337,6 +5374,7 @@ mod token_tests {
                             },
                         ));
                     }),
+                    None,
                     Some(
                         [
                             (

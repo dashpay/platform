@@ -123,6 +123,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,
+                document_base_transition_state_validation: 0,
                 document_create_transition_state_validation: 1,
                 document_delete_transition_state_validation: 0,
                 document_replace_transition_state_validation: 0,

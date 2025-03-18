@@ -103,9 +103,10 @@ impl ErrorWithCode for BasicError {
             Self::NonContiguousContractGroupPositionsError(_) => 10252,
             Self::NonContiguousContractTokenPositionsError(_) => 10253,
             Self::InvalidTokenDistributionFunctionDivideByZeroError(_) => 10254,
-            Self::InvalidTokenDistributionFunctionInvalidParameterError(_) => 10254,
-            Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10255,
-            Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10256,
+            Self::InvalidTokenDistributionFunctionInvalidParameterError(_) => 10255,
+            Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10256,
+            Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10257,
+            Self::MissingDefaultLocalizationError(_) => 10258,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -232,7 +233,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractUpdatePermissionError(_) => 40003,
             Self::DataContractUpdateActionNotAllowedError(_) => 40004,
 
-            // Document Errors: 40100-40149
+            // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,
             Self::DocumentNotFoundError { .. } => 40101,
             Self::DocumentOwnerIdMismatchError { .. } => 40102,
@@ -248,24 +249,6 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
             Self::DocumentContestNotPaidForError(_) => 40114,
-
-            // Token errors: 40150-40199
-            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40150,
-            Self::UnauthorizedTokenActionError(_) => 40151,
-            Self::IdentityTokenAccountFrozenError(_) => 40152,
-            Self::IdentityTokenAccountNotFrozenError(_) => 40153,
-            Self::TokenSettingMaxSupplyToLessThanCurrentSupplyError(_) => 40154,
-            Self::TokenMintPastMaxSupplyError(_) => 40155,
-            Self::NewTokensDestinationIdentityDoesNotExistError(_) => 40156,
-            Self::NewAuthorizedActionTakerIdentityDoesNotExistError(_) => 40157,
-            Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40158,
-            Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40159,
-            Self::InvalidGroupPositionError(_) => 40160,
-            Self::TokenIsPausedError(_) => 40161,
-            Self::IdentityTokenAccountAlreadyFrozenError(_) => 40162,
-            Self::TokenAlreadyPausedError(_) => 40163,
-            Self::TokenNotPausedError(_) => 40164,
-            Self::InvalidTokenClaimPropertyMismatch(_) => 40165,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -298,9 +281,29 @@ impl ErrorWithCode for StateError {
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
             Self::PrefundedSpecializedBalanceNotFoundError(_) => 40401,
 
-            // Data trigger errors: 40500-40799
+            // Data trigger errors: 40500-40699
             #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
+
+            // Token errors: 40700-40799
+            Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40700,
+            Self::UnauthorizedTokenActionError(_) => 40701,
+            Self::IdentityTokenAccountFrozenError(_) => 40702,
+            Self::IdentityTokenAccountNotFrozenError(_) => 40703,
+            Self::TokenSettingMaxSupplyToLessThanCurrentSupplyError(_) => 40704,
+            Self::TokenMintPastMaxSupplyError(_) => 40705,
+            Self::NewTokensDestinationIdentityDoesNotExistError(_) => 40706,
+            Self::NewAuthorizedActionTakerIdentityDoesNotExistError(_) => 40707,
+            Self::NewAuthorizedActionTakerGroupDoesNotExistError(_) => 40708,
+            Self::NewAuthorizedActionTakerMainGroupNotSetError(_) => 40709,
+            Self::InvalidGroupPositionError(_) => 40710,
+            Self::TokenIsPausedError(_) => 40711,
+            Self::IdentityTokenAccountAlreadyFrozenError(_) => 40712,
+            Self::TokenAlreadyPausedError(_) => 40713,
+            Self::TokenNotPausedError(_) => 40714,
+            Self::InvalidTokenClaimPropertyMismatch(_) => 40715,
+            Self::InvalidTokenClaimNoCurrentRewards(_) => 40716,
+            Self::InvalidTokenClaimWrongClaimant(_) => 40717,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

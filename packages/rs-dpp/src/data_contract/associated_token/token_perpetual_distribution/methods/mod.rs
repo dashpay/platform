@@ -2,6 +2,7 @@ use v0::TokenPerpetualDistributionV0Methods;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use crate::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
+use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 
@@ -36,9 +37,15 @@ impl TokenPerpetualDistributionV0Accessors for TokenPerpetualDistribution {
 }
 
 impl TokenPerpetualDistributionV0Methods for TokenPerpetualDistribution {
-    fn next_interval(&self, block_info: &BlockInfo) -> u64 {
+    fn next_interval(&self, block_info: &BlockInfo) -> RewardDistributionMoment {
         match self {
             TokenPerpetualDistribution::V0(v0) => v0.next_interval(block_info),
+        }
+    }
+
+    fn current_interval(&self, block_info: &BlockInfo) -> RewardDistributionMoment {
+        match self {
+            TokenPerpetualDistribution::V0(v0) => v0.current_interval(block_info),
         }
     }
 }

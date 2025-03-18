@@ -1,11 +1,10 @@
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 
-use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation, TokenOperation};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-
 use dpp::identifier::Identifier;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -13,6 +12,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use dpp::version::PlatformVersion;
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
 use crate::error::drive::DriveError;
+use crate::util::batch::drive_op_batch::TokenOperationType;
 
 impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
@@ -35,7 +35,9 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
 
                 let identity_contract_nonce = base.identity_contract_nonce();
 
-                Ok(vec![
+                let document_deletion_token_cost = base.token_cost();
+
+                let mut ops = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: owner_id.into_buffer(),
                         contract_id: data_contract_id.into_buffer(),
@@ -50,7 +52,17 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
                             base.document_type_name_owned(),
                         ),
                     }),
-                ])
+                ];
+
+                if let Some((token_id, cost)) = document_deletion_token_cost {
+                    ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                        token_id,
+                        identity_balance_holder_id: owner_id,
+                        burn_amount: cost,
+                    }));
+                }
+
+                Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransitionAction::into_high_level_document_drive_operations"
