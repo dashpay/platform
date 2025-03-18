@@ -498,6 +498,7 @@ mod perpetual_distribution_block {
 
 #[cfg(test)]
 mod block_based_test_suite_tests {
+    use dpp::balances::credits::TokenAmount;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -510,6 +511,7 @@ mod block_based_test_suite_tests {
     use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
     use dpp::data_contract::TokenConfiguration;
     use rust_decimal::prelude::ToPrimitive;
+    use test_case::test_matrix;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 
     use super::test_suite::*;
@@ -599,6 +601,26 @@ mod block_based_test_suite_tests {
         .expect("no rewards");
     }
 
+    #[test_case::test_matrix(
+        [1,10], // step_count
+        [0,1,u16::MAX,999], // decrease_per_interval_numerator
+        [0,1,2,10,100,u16::MAX], // decrease_per_interval_denominator
+         [None,Some(1),Some(10),Some(u64::MAX)], // s
+        [0,1,100,100_000, 1_000_000, 10_000_000, 100_000_000, u64::MAX], // n
+        [None,Some(1),Some(10),Some(u64::MAX)], // min_value
+        [0,110, 100, 1000] // distribution_interval
+    )]
+    fn test_block_based_perpetual_step_decreasing_matrix(
+        step_count: u32,
+        decrease_per_interval_numerator: u16,
+        decrease_per_interval_denominator: u16,
+        s: Option<u64>,
+        n: TokenAmount,
+        min_value: Option<u64>,
+
+        distribution_interval: u64,
+    ) {
+    }
     /// Test [DistributionFunction::StepDecreasingAmount].
     #[test]
     fn test_block_based_perpetual_step_decreasing() {
@@ -747,51 +769,6 @@ mod block_based_test_suite_tests {
             },
         ];
 
-        // f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
-        fn expected_emission(x: u64, dist: &DistributionFunction) -> u64 {
-            let (
-                step_count,
-                decrease_per_interval_numerator,
-                decrease_per_interval_denominator,
-                s,
-                n,
-                min_value,
-            ) = match dist {
-                DistributionFunction::StepDecreasingAmount {
-                    step_count,
-                    decrease_per_interval_numerator,
-                    decrease_per_interval_denominator,
-                    s,
-                    n,
-                    min_value,
-                } => (
-                    *step_count,
-                    *decrease_per_interval_numerator,
-                    *decrease_per_interval_denominator,
-                    s.unwrap_or(1),
-                    *n,
-                    min_value.unwrap_or_default(),
-                ),
-                _ => panic!("expected StepDecreasingAmount"),
-            };
-
-            if x <= s {
-                return n;
-            }
-
-            // let's simplify it to a form like:
-            //    f(x) = N * a ^ b
-            let a = 1f64
-                - (decrease_per_interval_numerator as f64
-                    / decrease_per_interval_denominator as f64);
-            let b = (x as f64 - s as f64) as i32 / step_count as i32; // integer by purpose, we want to round down
-            let f_x = n as f64 * a.powi(b);
-
-            // println!("expected_emission({}) = {}", x, f_x);
-            // f_x.to_u64().expect("expected to convert to u64")
-            f_x.to_u64().unwrap_or(min_value).max(min_value)
-        }
-
         let mut fails = String::new();
 
         for case in test_cases {
@@ -830,7 +807,51 @@ mod block_based_test_suite_tests {
             panic!("failed tests:\n{}", fails);
         }
     }
+    // HELPER FUNCTIONS //
 
+    // f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
+    fn expected_emission(x: u64, dist: &DistributionFunction) -> u64 {
+        let (
+            step_count,
+            decrease_per_interval_numerator,
+            decrease_per_interval_denominator,
+            s,
+            n,
+            min_value,
+        ) = match dist {
+            DistributionFunction::StepDecreasingAmount {
+                step_count,
+                decrease_per_interval_numerator,
+                decrease_per_interval_denominator,
+                s,
+                n,
+                min_value,
+            } => (
+                *step_count,
+                *decrease_per_interval_numerator,
+                *decrease_per_interval_denominator,
+                s.unwrap_or(1),
+                *n,
+                min_value.unwrap_or_default(),
+            ),
+            _ => panic!("expected StepDecreasingAmount"),
+        };
+
+        if x <= s {
+            return n;
+        }
+
+        // let's simplify it to a form like:
+        //    f(x) = N * a ^ b
+        let a = 1f64
+            - (decrease_per_interval_numerator as f64 / decrease_per_interval_denominator as f64);
+        let b = (x as f64 - s as f64) as i32 / step_count as i32; // integer by purpose, we want to round down
+        let f_x = n as f64 * a.powi(b);
+
+        // println!("expected_emission({}) = {}", x, f_x);
+        // f_x.to_u64().expect("expected to convert to u64")
+        f_x.to_u64().unwrap_or(min_value).max(min_value)
+    }
     /// Check that claim results at provided heights are as expected, and that balances match expectations.
     fn check_heights(
         distribution_function: DistributionFunction,
