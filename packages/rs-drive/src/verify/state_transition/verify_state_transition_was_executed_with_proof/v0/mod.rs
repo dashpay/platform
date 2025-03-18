@@ -335,7 +335,7 @@ impl Drive {
                                 document_type_name: token_history_document_type_name,
                                 document_type_keeps_history: false,
                                 document_id: token_transition
-                                    .historical_document_id(owner_id, identity_contract_nonce)
+                                    .historical_document_id(owner_id)
                                     .to_buffer(),
                                 block_time_ms: None, //None because we want latest
                                 contested_status:
@@ -352,7 +352,6 @@ impl Drive {
                             let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
 
                             let expected_document = token_transition.build_historical_document(
-                                &token_history_contract,
                                 token_id,
                                 owner_id,
                                 identity_contract_nonce,
