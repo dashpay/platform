@@ -462,24 +462,10 @@ where
             // we should also perform a rotation if the validator set went through all quorum members
             // this means we are at the last member of the quorum
             if last_member_pro_tx_hash.as_byte_array() == &proposer_pro_tx_hash {
-                /*tracing::debug!(
-                    method = "validator_set_update_v2",
-                    "rotation: quorum finished as we hit last member {} of quorum {}. All known quorums are: [{}]. quorum rotation expected",
-                    hex::encode(proposer_pro_tx_hash),
-                        hex::encode(platform_state.current_validator_set_quorum_hash().as_byte_array()),
-                    platform_state
-                    .validator_sets()
-                    .keys()
-                    .map(hex::encode).collect::<Vec<_>>().join(" | "),
-                );*/
                 perform_rotation = true;
             }
         } else {
             // the validator set has no members, very weird, but let's just perform a rotation
-            /*tracing::debug!(
-                    method = "validator_set_update_v2",
-                    "rotation: validator set has no members",
-                );*/
             perform_rotation = true;
         }
 
@@ -497,34 +483,10 @@ where
             // 1 - We haven't changed quorums
             // 2 - The new proposer is before the old proposer
             // 3 - There are more than one quorum in the system
-            /*tracing::debug!(
-                    method = "validator_set_update_v2",
-                "rotation: quorum finished as we hit last an earlier member {} than last block proposer {} for quorum {}. All known quorums are: [{}]. quorum rotation expected",
-                hex::encode(proposer_pro_tx_hash),
-                    hex::encode(block_execution_context.block_platform_state().last_committed_block_proposer_pro_tx_hash()),
-                    hex::encode(platform_state.current_validator_set_quorum_hash().as_byte_array()),
-                block_execution_context
-                .block_platform_state()
-                .validator_sets()
-                .keys()
-                .map(hex::encode).collect::<Vec<_>>().join(" | "),
-                );
             perform_rotation = true;
-
-             */
         }
     } else {
         // we also need to perform a rotation if the validator set is being removed
-        /*tracing::debug!(
-                method = "validator_set_update_v2",
-                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected",
-                block_execution_context
-                    .block_platform_state()
-                    .validator_sets()
-                    .keys()
-                    .map(|quorum_hash| format!("{}", quorum_hash)),
-                &platform_state.current_validator_set_quorum_hash()
-            );*/
         perform_rotation = true;
     }
 
@@ -573,13 +535,6 @@ where
                         .validator_sets()
                         .get(quorum_hash)
                     {
-                        /*tracing::debug!(
-                                method = "validator_set_update_v2",
-                                "rotation: to new quorum: {} with {} members",
-                                &quorum_hash,
-                                new_validator_set.members().len()
-                            );*/
-                        let validator_set_update = new_validator_set.to_update();
                         platform_state
                             .set_current_validator_set_quorum_hash(*quorum_hash);
                         return Ok(());
@@ -594,38 +549,15 @@ where
                     .validator_sets()
                     .first()
                 {
-                    /*tracing::debug!(
-                            method = "validator_set_update_v2",
-                            "rotation: all quorums changed, rotation to new quorum: {}",
-                            &quorum_hash
-                        );*/
-                    let validator_set_update = new_validator_set.to_update();
                     let new_quorum_hash = *quorum_hash;
                     platform_state
                         .set_current_validator_set_quorum_hash(new_quorum_hash);
                     return Ok(());
                 }
-                //tracing::debug!("no new quorums to choose from");
                 Ok(())
             }
         }
     } else {
-        let current_validator_set = platform_state
-            .current_validator_set()?;
-        if current_validator_set != platform_state.current_validator_set()? {
-            // Something changed, for example the IP of a validator changed, or someone's ban status
-
-            /*tracing::debug!(
-                    method = "validator_set_update_v2",
-                    "validator set update without rotation"
-                );*/
-            Ok(())
-        } else {
-            /*tracing::debug!(
-                    method = "validator_set_update_v2",
-                    "no validator set update",
-                );*/
-            Ok(())
-        }
+        Ok(())
     }
 }
