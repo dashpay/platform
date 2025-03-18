@@ -3,7 +3,7 @@ use dpp::document::property_names::PRICE;
 use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-
+use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
@@ -24,6 +24,7 @@ impl DocumentPurchaseTransitionActionV0 {
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
+                |document_type| document_type.document_purchase_token_cost(),
             )?;
 
         let original_owner_id = original_document.owner_id();

@@ -1,4 +1,3 @@
-use crate::platform::transition::builder::StateTransitionBuilder;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -117,10 +116,7 @@ impl<'a> TokenUnfreezeTransitionBuilder<'a> {
         self.settings = Some(settings);
         self
     }
-}
 
-#[async_trait::async_trait]
-impl StateTransitionBuilder for TokenUnfreezeTransitionBuilder<'_> {
     /// Returns the settings for the token unfreeze transition
     ///
     /// # Returns
@@ -142,7 +138,7 @@ impl StateTransitionBuilder for TokenUnfreezeTransitionBuilder<'_> {
     /// # Returns
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
-    async fn sign(
+    pub async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
@@ -158,7 +154,7 @@ impl StateTransitionBuilder for TokenUnfreezeTransitionBuilder<'_> {
             .get_identity_contract_nonce(
                 self.actor_id,
                 self.data_contract.id(),
-                false,
+                true,
                 self.settings,
             )
             .await?;

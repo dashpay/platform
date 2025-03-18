@@ -1,4 +1,3 @@
-use crate::platform::transition::builder::StateTransitionBuilder;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -146,10 +145,7 @@ impl<'a> TokenEmergencyActionTransitionBuilder<'a> {
         self.settings = Some(settings);
         self
     }
-}
 
-#[async_trait::async_trait]
-impl StateTransitionBuilder for TokenEmergencyActionTransitionBuilder<'_> {
     /// Returns the settings for the token emergency action transition
     ///
     /// # Returns
@@ -171,7 +167,7 @@ impl StateTransitionBuilder for TokenEmergencyActionTransitionBuilder<'_> {
     /// # Returns
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
-    async fn sign(
+    pub async fn sign(
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
@@ -187,7 +183,7 @@ impl StateTransitionBuilder for TokenEmergencyActionTransitionBuilder<'_> {
             .get_identity_contract_nonce(
                 self.actor_id,
                 self.data_contract.id(),
-                false,
+                true,
                 self.settings,
             )
             .await?;

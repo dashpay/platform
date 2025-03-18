@@ -29,7 +29,7 @@ use crate::drive::document::paths::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;

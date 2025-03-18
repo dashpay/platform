@@ -9,4 +9,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     max_contract_group_size: 256,
+    max_token_redemption_cycles: 128,
 };

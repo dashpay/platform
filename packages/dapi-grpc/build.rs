@@ -65,7 +65,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
     //
     // Sort alphabetically to simplify maintenance.
-    const VERSIONED_REQUESTS: [&str; 35] = [
+    const VERSIONED_REQUESTS: [&str; 41] = [
         "GetContestedResourceIdentityVotesRequest",
         "GetContestedResourcesRequest",
         "GetContestedResourceVoteStateRequest",
@@ -77,6 +77,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetEpochsInfoRequest",
         "GetEvonodesProposedEpochBlocksByIdsRequest",
         "GetEvonodesProposedEpochBlocksByRangeRequest",
+        "GetGroupActionsRequest",
+        "GetGroupActionSignersRequest",
+        "GetGroupInfoRequest",
+        "GetGroupInfosRequest",
         "GetIdentitiesBalancesRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesContractKeysRequest",
@@ -100,6 +104,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetStatusRequest",
         "GetTotalCreditsInPlatformRequest",
         "GetVotePollsByEndDateRequest",
+        "GetTokenStatusesRequest",
+        "GetTokenTotalSupplyRequest",
         "WaitForStateTransitionResultRequest",
     ];
 
@@ -110,7 +116,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
     //
     // Sort alphabetically to simplify maintenance.
-    const VERSIONED_RESPONSES: [&str; 33] = [
+    const VERSIONED_RESPONSES: [&str; 39] = [
         "GetContestedResourceIdentityVotesResponse",
         "GetContestedResourcesResponse",
         "GetContestedResourceVoteStateResponse",
@@ -121,6 +127,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetDocumentsResponse",
         "GetEpochsInfoResponse",
         "GetEvonodesProposedEpochBlocksResponse",
+        "GetGroupActionsResponse",
+        "GetGroupActionSignersResponse",
+        "GetGroupInfoResponse",
+        "GetGroupInfosResponse",
         "GetIdentityBalanceAndRevisionResponse",
         "GetIdentityBalanceResponse",
         "GetIdentityByPublicKeyHashResponse",
@@ -142,6 +152,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
         "GetTotalCreditsInPlatformResponse",
+        "GetTokenStatusesResponse",
+        "GetTokenTotalSupplyResponse",
         "GetVotePollsByEndDateResponse",
         "WaitForStateTransitionResultResponse",
     ];

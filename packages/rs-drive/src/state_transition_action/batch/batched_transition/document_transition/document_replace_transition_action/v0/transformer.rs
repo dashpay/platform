@@ -2,7 +2,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::property_names;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-
+use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{BlockHeight, CoreBlockHeight};
 use dpp::ProtocolError;
@@ -34,6 +34,7 @@ impl DocumentReplaceTransitionActionV0 {
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
+                |document_type| document_type.document_replacement_token_cost(),
             )?;
         let updated_at = if base.document_type_field_is_required(property_names::UPDATED_AT)? {
             Some(block_info.time_ms)

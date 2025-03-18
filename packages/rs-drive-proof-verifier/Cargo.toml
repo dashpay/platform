@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "1.8.0"
+version = "2.0.0-dev.1"
 edition = "2021"
 rust-version.workspace = true
 
@@ -12,6 +12,7 @@ mocks = [
   "dep:platform-serialization-derive",
   "dpp/document-serde-conversion",
   "indexmap/serde",
+  "dpp/data-contract-serde-conversion",
 ]
 
 [dependencies]
@@ -19,6 +20,7 @@ mocks = [
 thiserror = { version = "1.0.63" }
 dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "platform",
+  "client",
 ] }
 
 drive = { path = "../rs-drive", default-features = false, features = [
@@ -30,7 +32,7 @@ dpp = { path = "../rs-dpp", features = [
   #  "extended-document",
   "core-types-serialization",
 ], default-features = false }
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.3.0", tag = "v1.3.0+1.3.0", features = [

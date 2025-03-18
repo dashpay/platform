@@ -3,7 +3,6 @@ pub mod asset_lock;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
-pub mod builder;
 pub mod fungible_tokens;
 pub mod purchase_document;
 pub mod put_contract;

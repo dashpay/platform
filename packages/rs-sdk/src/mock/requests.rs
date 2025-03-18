@@ -1,5 +1,10 @@
 use super::MockDashPlatformSdk;
+use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::bincode::config::standard;
+use dpp::data_contract::group::Group;
+use dpp::group::group_action::GroupAction;
+use dpp::tokens::info::IdentityTokenInfo;
+use dpp::tokens::status::TokenStatus;
 use dpp::{
     bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
@@ -16,8 +21,15 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive::grovedb::Element;
+use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
+use drive_proof_verifier::types::groups::GroupActions;
+use drive_proof_verifier::types::identity_token_balance::{
+    IdentitiesTokenBalances, IdentityTokenBalances,
+};
+use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
+use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
     ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
     Voters,
@@ -215,7 +227,7 @@ impl MockResponse for Element {
 
 impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (self.0).to_be_bytes().to_vec()
+        self.0.to_be_bytes().to_vec()
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
@@ -231,7 +243,7 @@ impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
 
 impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (self.0).to_be_bytes().to_vec()
+        self.0.to_be_bytes().to_vec()
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
@@ -273,6 +285,145 @@ impl MockResponse for ProposerBlockCounts {
     }
 }
 
+impl MockResponse for IdentityTokenBalances {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let map = RetrievedValues::mock_deserialize(sdk, buf);
+        Self(map)
+    }
+}
+
+impl MockResponse for IdentitiesTokenBalances {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let map = RetrievedValues::mock_deserialize(sdk, buf);
+        Self(map)
+    }
+}
+
+impl MockResponse for IdentityTokenInfos {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Clone and collect into vector
+        let vec: Vec<(Identifier, Option<IdentityTokenInfo>)> =
+            self.0.iter().map(|(k, v)| (*k, v.clone())).collect();
+
+        // Serialize vector
+        platform_encode_to_vec(vec, BINCODE_CONFIG, sdk.version())
+            .expect(concat!("encode ", stringify!($name)))
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // deserialize vector
+        let vec: Vec<(Identifier, Option<IdentityTokenInfo>)> =
+            platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                .expect(concat!("decode ", stringify!($name)));
+
+        Self(RetrievedValues::from_iter(vec))
+    }
+}
+
+impl MockResponse for IdentitiesTokenInfos {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Clone and collect into vector
+        let vec: Vec<(Identifier, Option<IdentityTokenInfo>)> =
+            self.0.iter().map(|(k, v)| (*k, v.clone())).collect();
+
+        // Serialize vector
+        platform_encode_to_vec(vec, BINCODE_CONFIG, sdk.version())
+            .expect(concat!("encode ", stringify!($name)))
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // deserialize vector
+        let vec: Vec<(Identifier, Option<IdentityTokenInfo>)> =
+            platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                .expect(concat!("decode ", stringify!($name)));
+
+        Self(RetrievedValues::from_iter(vec))
+    }
+}
+
+impl MockResponse for TokenStatuses {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Clone and collect into vector
+        let vec: Vec<(Identifier, Option<TokenStatus>)> =
+            self.iter().map(|(k, v)| (*k, v.clone())).collect();
+
+        // Serialize vector
+        platform_encode_to_vec(vec, BINCODE_CONFIG, sdk.version())
+            .expect(concat!("encode ", stringify!($name)))
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // deserialize vector
+        let vec: Vec<(Identifier, Option<TokenStatus>)> =
+            platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                .expect(concat!("decode ", stringify!($name)));
+
+        RetrievedValues::from_iter(vec)
+    }
+}
+
+impl MockResponse for TotalSingleTokenBalance {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode vec of data")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode vec of data")
+            .0
+    }
+}
+
+impl MockResponse for GroupActions {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Clone and collect into vector
+        let vec: Vec<(Identifier, Option<GroupAction>)> =
+            self.iter().map(|(k, v)| (*k, v.clone())).collect();
+
+        // Serialize vector
+        platform_encode_to_vec(vec, BINCODE_CONFIG, sdk.version())
+            .expect(concat!("encode ", stringify!($name)))
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // deserialize vector
+        let vec: Vec<(Identifier, Option<GroupAction>)> =
+            platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
+                .expect(concat!("decode ", stringify!($name)));
+
+        RetrievedValues::from_iter(vec)
+    }
+}
+
 impl_mock_response!(Identity);
 impl_mock_response!(IdentityPublicKey);
 impl_mock_response!(Identifier);
@@ -294,3 +445,4 @@ impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
 impl_mock_response!(EvoNodeStatus);
 impl_mock_response!(CurrentQuorumsInfo);
+impl_mock_response!(Group);

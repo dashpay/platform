@@ -22,10 +22,8 @@ use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contracts::SystemDataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::prelude::Identifier;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
@@ -204,10 +202,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         platform.state.last_committed_block_info()
                     );
                     if *was_executed {
-                        assert_eq!(
-                            &contract.expect("expected a contract"),
-                            data_contract_update.data_contract_ref(),
-                        );
+                        assert!(contract
+                            .expect("expected a contract")
+                            .equal_ignoring_time_fields(
+                                data_contract_update.data_contract_ref(),
+                                platform_version
+                            )
+                            .expect("expected to be able to check equality"),);
                     } else if contract.is_some() {
                         //there is the possibility that the state transition was not executed and the state is equal to the previous
                         // state, aka there would have been no change anyways, we can discount that for now
@@ -268,10 +269,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             }
                             BatchedTransitionAction::TokenAction(token_transition_action) => {
                                 if token_transition_action
-                                    .base()
-                                    .token_configuration()
-                                    .expect("expected token configuration")
                                     .keeps_history()
+                                    .expect("expected no error in token action keeps history")
                                 {
                                     // if we keep history we just need to check the historical document
                                     proofs_request.documents.push(
@@ -284,17 +283,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                                 .to_string(),
                                             document_type_keeps_history: false,
                                             document_id: token_transition_action
-                                                .historical_document_id(
-                                                    batch_transition.owner_id(),
-                                                    token_transition_action
-                                                        .base()
-                                                        .identity_contract_nonce(),
-                                                )
+                                                .historical_document_id(batch_transition.owner_id())
                                                 .to_vec(),
                                             document_contested_status: 0,
                                         },
                                     );
                                 } else {
+                                    unimplemented!(
+                                        "proofs for non historical tokens aren't implemented yet"
+                                    );
                                 }
                             }
                             BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {}
@@ -507,10 +504,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             }
                             BatchedTransitionAction::TokenAction(token_transition_action) => {
                                 if token_transition_action
-                                    .base()
-                                    .token_configuration()
-                                    .expect("expected token configuration")
                                     .keeps_history()
+                                    .expect("expected no error in token action keeps history")
                                 {
                                     let token_id = token_transition_action.base().token_id();
                                     let document_type_name = token_transition_action
@@ -530,12 +525,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         document_type_name,
                                         document_type_keeps_history: false,
                                         document_id: token_transition_action
-                                            .historical_document_id(
-                                                batch_transition.owner_id(),
-                                                token_transition_action
-                                                    .base()
-                                                    .identity_contract_nonce(),
-                                            )
+                                            .historical_document_id(batch_transition.owner_id())
                                             .to_buffer(),
                                         block_time_ms: None, //None because we want latest
                                         contested_status:
@@ -564,7 +554,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                                     let expected_document = token_transition_action
                                         .build_historical_document(
-                                            &token_history,
                                             token_id,
                                             batch_transition.owner_id(),
                                             token_transition_action

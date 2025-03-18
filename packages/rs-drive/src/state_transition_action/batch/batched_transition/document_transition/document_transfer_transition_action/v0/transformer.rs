@@ -3,7 +3,7 @@ use dpp::document::property_names::PRICE;
 use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-
+use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
@@ -27,6 +27,7 @@ impl DocumentTransferTransitionActionV0 {
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
+                |document_type| document_type.document_transfer_token_cost(),
             )?;
 
         let mut modified_document = original_document;

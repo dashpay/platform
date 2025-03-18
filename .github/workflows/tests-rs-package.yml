@@ -205,7 +205,7 @@ jobs:
   check_each_feature:
     name: Check each feature
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     if: ${{ inputs.check-each-feature }}
     steps:
       - name: Check out repo

@@ -9,11 +9,18 @@
       "$format_version": "0",
       "conventions": {
         "$format_version": "0",
+        "localizations": {
+          "en": {
+            "$format_version": "0",
+            "shouldCapitalize": false,
+            "pluralForm": "tests",
+            "singularForm": "test"
+          }
+        },
         "decimals": 8
       },
       "baseSupply": 100000,
-      "maxSupply": null,
-      "keepsHistory": true
+      "maxSupply": null
     }
   }
 }

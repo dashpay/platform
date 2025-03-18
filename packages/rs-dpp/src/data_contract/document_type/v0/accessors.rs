@@ -1,4 +1,6 @@
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV0Setters,
+};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
@@ -7,6 +9,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
@@ -103,5 +107,16 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn security_level_requirement(&self) -> SecurityLevel {
         self.security_level_requirement
+    }
+
+    #[cfg(feature = "validation")]
+    fn json_schema_validator_ref(&self) -> &StatelessJsonSchemaLazyValidator {
+        &self.json_schema_validator
+    }
+}
+
+impl DocumentTypeV0Setters for DocumentTypeV0 {
+    fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
+        self.data_contract_id = data_contract_id;
     }
 }

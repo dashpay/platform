@@ -9,6 +9,7 @@ use std::fmt;
 pub mod distribution_function;
 pub mod distribution_recipient;
 pub mod methods;
+pub mod reward_distribution_moment;
 pub mod reward_distribution_type;
 pub mod v0;
 

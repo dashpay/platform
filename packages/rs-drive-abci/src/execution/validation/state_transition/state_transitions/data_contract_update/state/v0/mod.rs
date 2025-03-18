@@ -1,13 +1,13 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
+use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -32,8 +32,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
@@ -41,6 +41,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
     fn transform_into_action_v0(
         &self,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion
@@ -51,20 +52,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action =
-            self.transform_into_action_v0(validation_mode, execution_context, platform_version)?;
+        let mut action = self.transform_into_action_v0(
+            block_info,
+            validation_mode,
+            execution_context,
+            platform_version,
+        )?;
 
         if !action.is_valid() {
             return Ok(action);
         }
 
-        let state_transition_action = action.data.as_ref().ok_or(Error::Execution(
+        let state_transition_action = action.data.as_mut().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "we should always have an action at this point in data contract update",
             ),
@@ -72,7 +77,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let new_data_contract = match state_transition_action {
             StateTransitionAction::DataContractUpdateAction(action) => {
-                Some(action.data_contract_ref())
+                Some(action.data_contract_mut())
             }
             _ => None,
         }
@@ -92,7 +97,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let data_contract_fetch_info = drive.get_contract_with_fetch_info_and_fee(
             new_data_contract.id().to_buffer(),
-            Some(epoch),
+            Some(&block_info.epoch),
             add_to_cache_if_pulled,
             tx,
             platform_version,
@@ -144,11 +149,16 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
+        new_data_contract.set_created_at(old_data_contract.created_at());
+        new_data_contract.set_created_at_block_height(old_data_contract.created_at_block_height());
+        new_data_contract.set_created_at_epoch(old_data_contract.created_at_epoch());
+
         Ok(action)
     }
 
     fn transform_into_action_v0(
         &self,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -157,6 +167,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
+            block_info,
             validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
@@ -266,8 +277,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     &mut execution_context,
                     None,
                     platform_version,
@@ -341,8 +352,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     &mut execution_context,
                     None,
                     platform_version,
@@ -426,8 +437,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     &mut execution_context,
                     None,
                     platform_version,
@@ -512,8 +523,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     &mut execution_context,
                     None,
                     platform_version,
@@ -581,6 +592,7 @@ mod tests {
 
             let result = transition
                 .transform_into_action_v0(
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
                     platform_version,
@@ -639,6 +651,7 @@ mod tests {
 
             let result = transition
                 .transform_into_action_v0(
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
                     platform_version,
