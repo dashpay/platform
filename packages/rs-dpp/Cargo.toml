@@ -299,3 +299,7 @@ extended-document = [
 
 factories = []
 client = ["factories", "state-transitions"]
+
+[package.metadata.cargo-machete]
+# bincode_derive is referenced here to ensure that we use correct version =2.0.0-rc.3; otherwise it gets updated to 2.0.1
+ignored = ["bincode_derive"]
