@@ -157,29 +157,7 @@ impl TokenMintTransitionActionV0 {
                 })
         }) {
             Some(identity_balance_holder_id) => identity_balance_holder_id,
-            None => {
-                let bump_action =
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
-                        &base_action,
-                        owner_id,
-                        0,
-                    );
-                let batched_action =
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                return Ok((
-                    ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
-                        vec![BasicError::DestinationIdentityForTokenMintingNotSetError(
-                            DestinationIdentityForTokenMintingNotSetError::new(
-                                base_action.token_id(),
-                            ),
-                        )
-                        .into()],
-                    ),
-                    fee_result,
-                ));
-            }
+            None => owner_id,
         };
 
         Ok((
@@ -334,29 +312,7 @@ impl TokenMintTransitionActionV0 {
                 })
         }) {
             Some(identity_balance_holder_id) => identity_balance_holder_id,
-            None => {
-                let bump_action =
-                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
-                        &base_action,
-                        owner_id,
-                        0,
-                    );
-                let batched_action =
-                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                return Ok((
-                    ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
-                        vec![BasicError::DestinationIdentityForTokenMintingNotSetError(
-                            DestinationIdentityForTokenMintingNotSetError::new(
-                                base_action.token_id(),
-                            ),
-                        )
-                        .into()],
-                    ),
-                    fee_result,
-                ));
-            }
+            None => owner_id,
         };
 
         Ok((
