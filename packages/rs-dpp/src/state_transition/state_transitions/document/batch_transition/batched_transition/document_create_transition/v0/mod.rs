@@ -20,7 +20,7 @@ use crate::{document, errors::ProtocolError};
 
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;

@@ -18,11 +18,11 @@ impl Drive {
     pub(super) fn add_to_token_total_supply_v0(
         &self,
         token_id: [u8; 32],
-        amount: u64,
+        amount: TokenAmount,
         allow_first_mint: bool,
         allow_saturation: bool,
-        block_info: &BlockInfo,
         apply: bool,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(FeeResult, TokenAmount), Error> {
@@ -31,9 +31,9 @@ impl Drive {
         let token_amount = self.add_to_token_total_supply_add_to_operations_v0(
             token_id,
             amount,
-            apply,
             allow_first_mint,
             allow_saturation,
+            apply,
             transaction,
             &mut drive_operations,
             platform_version,

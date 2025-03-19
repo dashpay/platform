@@ -1,6 +1,5 @@
 use crate::drive::tokens::paths::{
     token_distributions_root_path_vec, token_ms_timed_at_time_distributions_path_vec,
-    token_pre_programmed_distributions_identity_last_claimed_time_path,
     token_pre_programmed_distributions_identity_last_claimed_time_path_vec,
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY,
 };

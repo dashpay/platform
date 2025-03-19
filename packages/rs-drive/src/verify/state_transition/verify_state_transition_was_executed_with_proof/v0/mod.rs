@@ -83,9 +83,13 @@ impl Drive {
                 let contract_for_serialization: DataContractInSerializationFormat = contract
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
-                if &contract_for_serialization != data_contract_create.data_contract() {
+
+                if !contract_for_serialization
+                    .eq_without_auto_fields(data_contract_create.data_contract())
+                {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after create with id {}", data_contract_create.data_contract().id()))));
                 }
+
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
             StateTransition::DataContractUpdate(data_contract_update) => {
@@ -331,7 +335,7 @@ impl Drive {
                                 document_type_name: token_history_document_type_name,
                                 document_type_keeps_history: false,
                                 document_id: token_transition
-                                    .historical_document_id(owner_id, identity_contract_nonce)
+                                    .historical_document_id(owner_id)
                                     .to_buffer(),
                                 block_time_ms: None, //None because we want latest
                                 contested_status:
@@ -348,7 +352,6 @@ impl Drive {
                             let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
 
                             let expected_document = token_transition.build_historical_document(
-                                &token_history_contract,
                                 token_id,
                                 owner_id,
                                 identity_contract_nonce,

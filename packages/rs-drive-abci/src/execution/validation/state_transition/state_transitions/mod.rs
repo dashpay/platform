@@ -427,6 +427,41 @@ pub(in crate::execution) mod tests {
         (identity, signer, critical_public_key, withdrawal_public_key)
     }
 
+    pub(in crate::execution) fn add_tokens_to_identity(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        token_id: Identifier,
+        identity_id: Identifier,
+        balance_to_add: Credits,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        platform
+            .drive
+            .add_to_identity_token_balance(
+                token_id.to_buffer(),
+                identity_id.to_buffer(),
+                balance_to_add,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to add token balance to identity");
+        platform
+            .drive
+            .add_to_token_total_supply(
+                token_id.to_buffer(),
+                balance_to_add,
+                true,
+                false,
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to add to total supply");
+    }
+
     pub(in crate::execution) fn process_state_transitions(
         platform: &TempPlatform<MockCoreRPCLike>,
         state_transitions: &[StateTransition],
@@ -2324,5 +2359,32 @@ pub(in crate::execution) mod tests {
         let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
 
         (basic_token_contract, token_id.into())
+    }
+
+    pub(in crate::execution) fn create_card_game_token_contract_with_owner_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier, Identifier) {
+        let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+        let basic_token_contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency.json",
+            Some(data_contract_id.to_buffer()),
+            Some(identity_id.to_buffer()),
+            Some(|data_contract: &mut DataContract| {
+                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at_block_height(Some(0));
+            }),
+            None,
+            Some(platform_version),
+        );
+
+        let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+        let token_id_2 = calculate_token_id(data_contract_id.as_bytes(), 1);
+
+        (basic_token_contract, token_id.into(), token_id_2.into())
     }
 }

@@ -96,6 +96,37 @@ impl DataContractInSerializationFormat {
             DataContractInSerializationFormat::V1(v1) => &v1.tokens,
         }
     }
+
+    pub fn eq_without_auto_fields(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                DataContractInSerializationFormat::V0(v0_self),
+                DataContractInSerializationFormat::V0(v0_other),
+            ) => v0_self == v0_other,
+            (
+                DataContractInSerializationFormat::V1(v1_self),
+                DataContractInSerializationFormat::V1(v1_other),
+            ) => {
+                v1_self.id == v1_other.id
+                    && v1_self.config == v1_other.config
+                    && v1_self.version == v1_other.version
+                    && v1_self.owner_id == v1_other.owner_id
+                    && v1_self.schema_defs == v1_other.schema_defs
+                    && v1_self.document_schemas == v1_other.document_schemas
+                    && v1_self.groups == v1_other.groups
+                    && v1_self.tokens == v1_other.tokens
+            }
+            // Cross-version comparisons return false
+            (
+                DataContractInSerializationFormat::V0(_),
+                DataContractInSerializationFormat::V1(_),
+            )
+            | (
+                DataContractInSerializationFormat::V1(_),
+                DataContractInSerializationFormat::V0(_),
+            ) => false,
+        }
+    }
 }
 
 impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFormat {

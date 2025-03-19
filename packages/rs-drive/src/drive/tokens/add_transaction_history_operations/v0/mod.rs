@@ -32,7 +32,6 @@ impl Drive {
         let document_type = event.associated_document_type(&contract)?;
 
         let document = event.build_historical_document_owned(
-            &contract,
             token_id,
             owner_id,
             owner_nonce,

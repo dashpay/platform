@@ -168,6 +168,7 @@ mod tests {
             identity_contract_nonce: 1,
             document_type_name: "".to_string(),
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
+            token_cost: None,
         }
         .into();
 
@@ -310,6 +311,7 @@ mod tests {
                     data_contract: Arc::new(DataContractFetchInfo::withdrawals_contract_fixture(
                         platform_version.protocol_version,
                     )),
+                    token_cost: None,
                 }),
             }),
         );

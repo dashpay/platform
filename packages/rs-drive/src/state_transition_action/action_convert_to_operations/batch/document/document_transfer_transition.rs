@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
-use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation, TokenOperation};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
@@ -14,6 +14,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::drive::DriveError;
+use crate::util::batch::drive_op_batch::TokenOperationType;
 
 impl DriveHighLevelBatchOperationConverter for DocumentTransferTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
@@ -34,6 +35,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentTransferTransitionAction 
                 let document_type_name = self.base().document_type_name().clone();
                 let identity_contract_nonce = self.base().identity_contract_nonce();
                 let contract_fetch_info = self.base().data_contract_fetch_info();
+                let document_transfer_token_cost = self.base().token_cost();
                 let document = self.document_owned();
 
                 // we are transferring the document so the new storage flags should be on the new owner
@@ -45,7 +47,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentTransferTransitionAction 
                     Some(new_document_owner_id.to_buffer()),
                 );
 
-                Ok(vec![
+                let mut ops = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: owner_id.into_buffer(),
                         contract_id: data_contract_id.into_buffer(),
@@ -62,7 +64,17 @@ impl DriveHighLevelBatchOperationConverter for DocumentTransferTransitionAction 
                         contract_info: DataContractInfo::DataContractFetchInfo(contract_fetch_info),
                         document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                     }),
-                ])
+                ];
+
+                if let Some((token_id, cost)) = document_transfer_token_cost {
+                    ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                        token_id,
+                        identity_balance_holder_id: owner_id,
+                        burn_amount: cost,
+                    }));
+                }
+
+                Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method:
