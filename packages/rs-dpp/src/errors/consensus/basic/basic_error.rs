@@ -77,7 +77,7 @@ use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
-    DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
+    InvalidActionIdError, InvalidTokenAmountError,
     InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError,
     InvalidTokenPositionError, MissingDefaultLocalizationError, TokenTransferToOurselfError,
 };
@@ -477,9 +477,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidActionIdError(InvalidActionIdError),
-
-    #[error(transparent)]
-    DestinationIdentityForTokenMintingNotSetError(DestinationIdentityForTokenMintingNotSetError),
 
     #[error(transparent)]
     ChoosingTokenMintRecipientNotAllowedError(ChoosingTokenMintRecipientNotAllowedError),

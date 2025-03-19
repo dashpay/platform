@@ -2,7 +2,7 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, DestinationIdentityForTokenMintingNotSetError};
+use dpp::consensus::basic::token::ChoosingTokenMintRecipientNotAllowedError;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::TokenMintTransitionV0;
 use dpp::ProtocolError;
@@ -116,6 +116,7 @@ impl TokenMintTransitionActionV0 {
             }
         };
 
+        // First, validate that choosing recipient is allowed if a recipient is set
         if !base_action
             .token_configuration()?
             .distribution_rules()
@@ -143,6 +144,7 @@ impl TokenMintTransitionActionV0 {
             ));
         }
 
+        // If no recipient is set, use the default recipient. If no default recipient, use the minter ID
         let identity_balance_holder_id = match issued_to_identity_id.or_else(|| {
             base_action
                 .data_contract_fetch_info_ref()
@@ -271,6 +273,7 @@ impl TokenMintTransitionActionV0 {
             }
         };
 
+        // First, validate that choosing recipient is allowed if a recipient is set
         if !base_action
             .token_configuration()?
             .distribution_rules()
@@ -298,6 +301,7 @@ impl TokenMintTransitionActionV0 {
             ));
         }
 
+        // If no recipient is set, use the default recipient. If no default recipient, use the minter ID
         let identity_balance_holder_id = match issued_to_identity_id.or_else(|| {
             base_action
                 .data_contract_fetch_info_ref()

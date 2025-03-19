@@ -143,12 +143,11 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenPositionError(_) => 10451,
             Self::InvalidActionIdError(_) => 10452,
             Self::ContractHasNoTokensError(_) => 10453,
-            Self::DestinationIdentityForTokenMintingNotSetError(_) => 10454,
-            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10455,
-            Self::TokenTransferToOurselfError(_) => 10456,
-            Self::InvalidTokenConfigUpdateNoChangeError(_) => 10457,
-            Self::InvalidTokenAmountError(_) => 10458,
-            Self::InvalidTokenNoteTooBigError(_) => 10459,
+            Self::ChoosingTokenMintRecipientNotAllowedError(_) => 10454,
+            Self::TokenTransferToOurselfError(_) => 10455,
+            Self::InvalidTokenConfigUpdateNoChangeError(_) => 10456,
+            Self::InvalidTokenAmountError(_) => 10457,
+            Self::InvalidTokenNoteTooBigError(_) => 10458,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
