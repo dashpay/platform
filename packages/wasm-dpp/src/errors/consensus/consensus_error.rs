@@ -384,6 +384,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::InvalidTokenClaimWrongClaimant(e) => {
             generic_consensus_error!(InvalidTokenClaimWrongClaimant, e).into()
         }
+        StateError::PreProgrammedDistributionTimestampInPastError(e) => {
+            generic_consensus_error!(InvalidTokenClaimWrongClaimant, e).into()
+        }
     }
 }
 
