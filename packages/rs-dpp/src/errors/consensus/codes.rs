@@ -304,6 +304,7 @@ impl ErrorWithCode for StateError {
             Self::InvalidTokenClaimPropertyMismatch(_) => 40715,
             Self::InvalidTokenClaimNoCurrentRewards(_) => 40716,
             Self::InvalidTokenClaimWrongClaimant(_) => 40717,
+            Self::TokenTransferRecipientIdentityNotExistError(_) => 40718,
             Self::PreProgrammedDistributionTimestampInPastError(_) => 40719,
 
             // Group errors: 40800-40899
