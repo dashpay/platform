@@ -388,7 +388,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             generic_consensus_error!(TokenTransferRecipientIdentityNotExistError, e).into()
         }
         StateError::PreProgrammedDistributionTimestampInPastError(e) => {
-            generic_consensus_error!(InvalidTokenClaimWrongClaimant, e).into()
+            generic_consensus_error!(PreProgrammedDistributionTimestampInPastError, e).into()
         }
     }
 }
