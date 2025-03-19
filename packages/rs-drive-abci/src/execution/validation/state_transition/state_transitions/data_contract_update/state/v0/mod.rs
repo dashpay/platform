@@ -11,6 +11,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -79,11 +80,11 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 if let Some((timestamp, _)) = distribution.distributions().iter().next() {
                     if timestamp < &block_info.time_ms {
                         return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                            StateTransitionAction::BumpIdentityNonceAction(
-                                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                            StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self),
                             ),
                             vec![StateError::PreProgrammedDistributionTimestampInPastError(
-                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), position, *timestamp, block_info.time_ms),
+                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), *position, *timestamp, block_info.time_ms),
                             )
                                 .into()],
                         ));

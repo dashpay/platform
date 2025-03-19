@@ -1,5 +1,6 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::TokenContractPosition;
 use crate::identity::TimestampMillis;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -16,7 +17,7 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct PreProgrammedDistributionTimestampInPastError {
     data_contract_id: Identifier,
-    token_position: Identifier,
+    token_position: TokenContractPosition,
     pre_programmed_timestamp: TimestampMillis,
     current_timestamp: TimestampMillis,
 }
@@ -24,7 +25,7 @@ pub struct PreProgrammedDistributionTimestampInPastError {
 impl PreProgrammedDistributionTimestampInPastError {
     pub fn new(
         data_contract_id: Identifier,
-        token_position: Identifier,
+        token_position: TokenContractPosition,
         pre_programmed_timestamp: TimestampMillis,
         current_timestamp: TimestampMillis,
     ) -> Self {
@@ -36,8 +37,8 @@ impl PreProgrammedDistributionTimestampInPastError {
         }
     }
 
-    pub fn token_position(&self) -> &Identifier {
-        &self.token_position
+    pub fn token_position(&self) -> TokenContractPosition {
+        self.token_position
     }
 }
 

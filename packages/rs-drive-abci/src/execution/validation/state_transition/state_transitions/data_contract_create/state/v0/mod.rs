@@ -8,7 +8,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::methods::v0::TokenPreProgrammedDistributionV0Methods;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -77,7 +77,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                             ),
                             vec![StateError::PreProgrammedDistributionTimestampInPastError(
-                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), position, *timestamp, block_info.time_ms),
+                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), *position, *timestamp, block_info.time_ms),
                             )
                             .into()],
                         ));
