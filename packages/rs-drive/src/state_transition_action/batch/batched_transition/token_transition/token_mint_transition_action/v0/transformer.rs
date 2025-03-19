@@ -145,6 +145,7 @@ impl TokenMintTransitionActionV0 {
         }
 
         // If no recipient is set, use the default recipient. If no default recipient, use the minter ID
+        // We already validated that the minter is allowed to mint tokens
         let identity_balance_holder_id = match issued_to_identity_id.or_else(|| {
             base_action
                 .data_contract_fetch_info_ref()
@@ -302,6 +303,7 @@ impl TokenMintTransitionActionV0 {
         }
 
         // If no recipient is set, use the default recipient. If no default recipient, use the minter ID
+        // We already validated that the minter is allowed to mint tokens
         let identity_balance_holder_id = match issued_to_identity_id.or_else(|| {
             base_action
                 .data_contract_fetch_info_ref()
