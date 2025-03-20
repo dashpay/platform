@@ -497,24 +497,9 @@ mod perpetual_distribution_block {
 }
 
 #[cfg(test)]
-mod block_based_test_suite_tests {
-    use dpp::balances::credits::TokenAmount;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
-    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
-    use dpp::data_contract::TokenConfiguration;
-    use rust_decimal::prelude::ToPrimitive;
-    use test_case::test_matrix;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-
+mod block_based_perpetual_fixed_amount {
     use super::test_suite::*;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 
     // Given some token configuration,
     // When a claim is made at block 42,
@@ -522,7 +507,7 @@ mod block_based_test_suite_tests {
     #[test]
 
     fn test_block_based_perpetual_fixed_amount_50() {
-        check_heights_odd_no_current_rewards(
+        super::test_suite::check_heights_odd_no_current_rewards(
             DistributionFunction::FixedAmount { amount: 50 },
             &[41, 46, 50, 1000],
             &[100200, 100200, 100250],
@@ -581,6 +566,11 @@ mod block_based_test_suite_tests {
         )
         .expect("\nfixed amount u64::MAX should pass\n");
     }
+}
+mod block_based_perpetual_random {
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+
+    use super::test_suite::check_heights_odd_no_current_rewards;
 
     #[test]
     fn test_block_based_perpetual_random() {
@@ -600,14 +590,32 @@ mod block_based_test_suite_tests {
         )
         .expect("no rewards");
     }
+}
+mod matrix {
+    use dpp::{
+        balances::credits::TokenAmount,
+        data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction,
+    };
+    use rust_decimal::prelude::ToPrimitive;
 
+    use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::{block_based_perpetual_step_decreasing::expected_emission, test_suite::check_heights};
+
+    // #[test_case::test_matrix(
+    //     [1,10], // step_count
+    //     [0,1,u16::MAX,999], // decrease_per_interval_numerator
+    //     [0,1,2,10,100,u16::MAX], // decrease_per_interval_denominator
+    //      [None,Some(1),Some(10),Some(u64::MAX)], // s
+    //     [0,1,100,100_000, 1_000_000, 10_000_000, 100_000_000, u64::MAX], // n
+    //     [None,Some(1),Some(10),Some(u64::MAX)], // min_value
+    //     [0,110, 100, 1000] // distribution_interval
+    // )]
     #[test_case::test_matrix(
-        [1,10], // step_count
-        [0,1,u16::MAX,999], // decrease_per_interval_numerator
-        [0,1,2,10,100,u16::MAX], // decrease_per_interval_denominator
-         [None,Some(1),Some(10),Some(u64::MAX)], // s
-        [0,1,100,100_000, 1_000_000, 10_000_000, 100_000_000, u64::MAX], // n
-        [None,Some(1),Some(10),Some(u64::MAX)], // min_value
+        [0,1,10], // step_count
+        [0,1,10,u16::MAX], // decrease_per_interval_numerator
+        [1], // decrease_per_interval_denominator
+         [None], // s
+        [0,1,100000], // n
+        [None], // min_value
         [0,110, 100, 1000] // distribution_interval
     )]
     fn test_block_based_perpetual_step_decreasing_matrix(
@@ -617,200 +625,227 @@ mod block_based_test_suite_tests {
         s: Option<u64>,
         n: TokenAmount,
         min_value: Option<u64>,
-
         distribution_interval: u64,
     ) {
-    }
-    /// Test [DistributionFunction::StepDecreasingAmount].
-    #[test]
-    fn test_block_based_perpetual_step_decreasing() {
-        struct Case<'a> {
-            name: String,
-            dist_function: DistributionFunction,
-            claim_heights: &'a [u64],
-            distribution_interval: u64,
-        }
-        let claim_heights = [1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 1000, 1000000];
+        //
+        let dist = DistributionFunction::StepDecreasingAmount {
+            step_count,
+            decrease_per_interval_numerator,
+            decrease_per_interval_denominator,
+            s,
+            n,
+            min_value,
+        };
 
-        let test_cases = [
-            Case {
-                name: "claim height u64::MAX".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 1,
-                    decrease_per_interval_denominator: 1,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &[u64::MAX],
-                distribution_interval: 10,
-            },
-            Case {
-                name: "no change".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 1,
-                    decrease_per_interval_denominator: 1,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            Case {
-                name: "increase by u16::MAX".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: u16::MAX,
-                    decrease_per_interval_denominator: 1,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            Case {
-                name: "zero decrease".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 0,
-                    decrease_per_interval_denominator: 1,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            Case {
-                name: "divide by 0".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 0,
-                    decrease_per_interval_denominator: 1,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            Case {
-                name: "decrease by 10%".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 1,
-                    decrease_per_interval_denominator: 10,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            Case {
-                name: "decrease by 50%".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 1,
-                    decrease_per_interval_denominator: 2,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            Case {
-                name: "increase by 50%".to_string(),
-                dist_function: DistributionFunction::StepDecreasingAmount {
-                    step_count: 10,
-                    decrease_per_interval_numerator: 2,
-                    decrease_per_interval_denominator: 1,
-                    s: Some(1),
-                    n: 100_000,
-                    min_value: Some(1),
-                },
-                claim_heights: &claim_heights,
-                distribution_interval: 10,
-            },
-            {
-                Case {
-                    name: "decrease by 90%".to_string(),
-                    dist_function: DistributionFunction::StepDecreasingAmount {
-                        step_count: 10,
-                        decrease_per_interval_numerator: 9,
-                        decrease_per_interval_denominator: 10,
-                        s: Some(1),
-                        n: 100_000,
-                        min_value: Some(1),
-                    },
-                    claim_heights: &claim_heights,
-                    distribution_interval: 10,
-                }
-            },
-            {
-                Case {
-                    name: "decrease by 99%".to_string(),
-                    dist_function: DistributionFunction::StepDecreasingAmount {
-                        step_count: 10,
-                        decrease_per_interval_numerator: 99,
-                        decrease_per_interval_denominator: 100,
-                        s: Some(1),
-                        n: 100,
-                        min_value: Some(1),
-                    },
-                    claim_heights: &claim_heights,
-                    distribution_interval: 10,
-                }
-            },
-        ];
+        const VERY_HIGH_HEIGHT: u64 = 1_000_000;
+        let claim_heights = if distribution_interval > 0 {
+            let mut heights = (1..10)
+                .map(|i| i * distribution_interval)
+                .collect::<Vec<_>>();
+            heights.push(VERY_HIGH_HEIGHT);
 
-        let mut fails = String::new();
-
-        for case in test_cases {
-            println!("TEST CASE '{}'", case.name);
-            let dist = case.dist_function;
-            let claim_heights = case.claim_heights;
-            let expected_balances = claim_heights
-                .iter()
-                .map(|&h| {
-                    // initial balance, defined in contract js
-                    let mut expected_balance = 100_000;
-                    // loop over blocks, starting with S, with step PERPETUAL_DISTRIBUTION_INTERVAL
-                    for i in (1..=h).step_by(case.distribution_interval as usize) {
+            heights
+        } else {
+            vec![1, 2, 3, 10, 100, VERY_HIGH_HEIGHT]
+        };
+        let expected_balances = claim_heights
+            .iter()
+            .map(|&h| {
+                // initial balance, defined in contract js
+                let mut expected_balance = 100_000;
+                // loop over blocks, starting with S, with step PERPETUAL_DISTRIBUTION_INTERVAL
+                if distribution_interval > 0 {
+                    for i in (1..=h).step_by(distribution_interval as usize) {
                         expected_balance += expected_emission(i, &dist);
                     }
-                    println!("expected balance at height {}: {}", h, expected_balance);
-                    expected_balance
-                })
-                .collect::<Vec<_>>();
-            // we expect all tests to pass
-            let expect_pass = claim_heights.iter().map(|&_h| true).collect::<Vec<_>>();
+                }
+                println!("expected balance at height {}: {}", h, expected_balance);
+                expected_balance.to_u64().unwrap_or(0) // to handle tests that overflow
+            })
+            .collect::<Vec<_>>();
+        // we expect all tests to pass
+        let expect_pass = claim_heights.iter().map(|&_h| true).collect::<Vec<_>>();
 
-            if let Err(e) = check_heights(
+        if let Err(e) = check_heights(
+            dist.clone(),
+            &claim_heights,
+            &expected_balances,
+            &expect_pass,
+            None, //Some(S),
+            distribution_interval,
+        ) {
+            // print dist to stderr
+            panic!("test failed for distribution function {:?}: {}", dist, e);
+        } else {
+            println!("test passed for distribution function {:?}", dist);
+        }
+    }
+}
+
+mod block_based_perpetual_step_decreasing {
+    use dpp::balances::credits::TokenAmount;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use rust_decimal::prelude::ToPrimitive;
+    use test_case::test_case;
+    use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights;
+    use super::test_suite::with_timeout;
+
+    const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+
+    #[test_case(
+        1,// step_count
+        1,// decrease_per_interval_numerator
+        100,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        Some(1),// min_value
+      Some((1..1000).step_by(100).collect()),// claim_heights
+        1; // distribution_interval
+        "claim every 100 blocks"
+    )]
+    #[test_case(
+        1,// step_count
+        1,// decrease_per_interval_numerator
+        100,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        Some(1),// min_value
+      Some((1..1000).step_by(500).collect()),// claim_heights
+        1; // distribution_interval
+        "claim every 500 blocks"
+    )]
+    #[test_matrix(
+        1,// step_count
+        101,// decrease_per_interval_numerator
+        100,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        Some(1),// min_value
+        [Some((1..1000).step_by(100).collect()),Some((1..1000).step_by(500).collect())],// claim_heights
+        1; // distribution_interval
+        "1% increase, varying claim heights"
+    )]
+    #[test_case(
+        1,// step_count
+        1000,// decrease_per_interval_numerator
+        1,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        Some(1),// min_value
+        Some(vec![1,7]), // claim_heights
+        1; // distribution_interval
+        "1000x increase, overflow"
+    )]
+    #[test_case(
+        1,// step_count
+        1,// decrease_per_interval_numerator
+        1,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        Some(1),// min_value
+        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        1; // distribution_interval
+        "100% decrease, various min values"
+    )]
+    #[test_matrix(
+        1,// step_count
+        0,// decrease_per_interval_numerator
+        1,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        [None,Some(0),Some(1),Some(100)],// min_value
+        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        1; // distribution_interval
+        "no decrease, irrelevant min values"
+    )]
+    #[test_matrix(
+        [5,10],// step_count
+        1,// decrease_per_interval_numerator
+        2,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        None,// min_value
+        Some(vec![5,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        [1,5]; // distribution_interval
+        "1/2 decrease, changing step"
+    )]
+    #[test_matrix(
+        [1,10],// step_count
+        1,// decrease_per_interval_numerator
+        2,// decrease_per_interval_denominator
+        [None,Some(1),Some(5)],// s
+        100_000,// n
+        None,// min_value
+        Some(vec![5,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        [1,5]; // distribution_interval
+        "1/2 decrease, changing S"
+    )]
+
+    /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
+    fn run_test(
+        step_count: u32,
+        decrease_per_interval_numerator: u16,
+        decrease_per_interval_denominator: u16,
+        s: Option<u64>,
+        n: TokenAmount,
+        min_value: Option<u64>,
+        claim_heights: Option<Vec<u64>>,
+        distribution_interval: u64,
+    ) -> Result<(), String> {
+        let dist = DistributionFunction::StepDecreasingAmount {
+            step_count,
+            decrease_per_interval_numerator,
+            decrease_per_interval_denominator,
+            s,
+            n,
+            min_value,
+        };
+        let claim_heights =
+            claim_heights.unwrap_or(vec![1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 1_000_000]);
+
+        let expected_balances = claim_heights
+            .iter()
+            .map(|&h| {
+                // initial balance, defined in contract js
+                let mut expected_balance: i128 = 100_000;
+                // loop over blocks, starting with S, with step PERPETUAL_DISTRIBUTION_INTERVAL
+                for i in (1..=h).step_by(distribution_interval as usize) {
+                    expected_balance += expected_emission(i, &dist);
+                }
+                println!("expected balance at height {}: {}", h, expected_balance);
+                expected_balance.to_u64().unwrap_or_else(|| {
+                    println!("ERR: overflow in expected balance at height {}", h);
+                    0
+                }) // to handle tests that overflow
+            })
+            .collect::<Vec<_>>();
+        // we expect all tests to pass
+        let expect_pass = claim_heights.iter().map(|&_h| true).collect::<Vec<_>>();
+
+        with_timeout(TIMEOUT, move || {
+            check_heights(
                 dist,
-                claim_heights,
+                &claim_heights,
                 &expected_balances,
                 &expect_pass,
                 None, //Some(S),
-                case.distribution_interval,
-            ) {
-                fails.push_str(format!("-> Test '{}':\n{}\n", case.name, &e).as_str());
-            }
-        }
-
-        if !fails.is_empty() {
-            panic!("failed tests:\n{}", fails);
-        }
+                distribution_interval,
+            )
+        })
+        .inspect_err(|e| {
+            println!("{}", e);
+        })
     }
-    // HELPER FUNCTIONS //
 
+    // ===== HELPER FUNCTIONS ===== //
+
+    /// Calculate expected emission at provided height.
+    ///
+    /// We use [i128] to ensure we handle overflows better than the original code.
+    ///
     // f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
-    fn expected_emission(x: u64, dist: &DistributionFunction) -> u64 {
+    pub(super) fn expected_emission(x: u64, dist: &DistributionFunction) -> i128 {
+        let x = x as i128;
         let (
             step_count,
             decrease_per_interval_numerator,
@@ -827,33 +862,73 @@ mod block_based_test_suite_tests {
                 n,
                 min_value,
             } => (
-                *step_count,
-                *decrease_per_interval_numerator,
-                *decrease_per_interval_denominator,
-                s.unwrap_or(1),
-                *n,
-                min_value.unwrap_or_default(),
+                *step_count as i128,
+                *decrease_per_interval_numerator as i128,
+                *decrease_per_interval_denominator as i128,
+                s.unwrap_or_default() as i128,
+                *n as i128,
+                min_value.unwrap_or(1) as i128,
             ),
             _ => panic!("expected StepDecreasingAmount"),
         };
 
-        if x <= s {
-            return n;
+        if x < s {
+            n
+        } else {
+            // let's simplify it to a form like:
+            //    f(x) = N * a ^ b
+            let a = 1f64
+                - (decrease_per_interval_numerator as f64
+                    / decrease_per_interval_denominator as f64);
+            let b = (x - s) / step_count; // integer by purpose, we want to round down
+            let f_x = n as f64 * a.powi(b.to_i32().expect("overflow"));
+            f_x.to_i128()
+                .unwrap_or_else(|| {
+                    println!("ERR: overflow in expected_emission({})", f_x);
+                    0
+                })
+                .max(min_value)
         }
-
-        // let's simplify it to a form like:
-        //    f(x) = N * a ^ b
-        let a = 1f64
-            - (decrease_per_interval_numerator as f64 / decrease_per_interval_denominator as f64);
-        let b = (x as f64 - s as f64) as i32 / step_count as i32; // integer by purpose, we want to round down
-        let f_x = n as f64 * a.powi(b);
-
-        // println!("expected_emission({}) = {}", x, f_x);
-        // f_x.to_u64().expect("expected to convert to u64")
-        f_x.to_u64().unwrap_or(min_value).max(min_value)
     }
+}
+
+mod test_suite {
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+    use dpp::prelude::{DataContract, IdentityPublicKey};
+    use simple_signer::signer::SimpleSigner;
+
+    /// Run provided closure with timeout.
+    pub(super) fn with_timeout(
+        duration: tokio::time::Duration,
+        f: impl FnOnce() -> Result<(), String> + Send + 'static,
+    ) -> Result<(), String> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        // thread executing our code
+        let worker = rt.spawn_blocking(f);
+
+        rt.block_on(async move { tokio::time::timeout(duration, worker).await })
+            .map_err(|e| format!("timeout after {:?}", e))?
+            .map_err(|e| format!("join error: {:?}", e))?
+    }
+
     /// Check that claim results at provided heights are as expected, and that balances match expectations.
-    fn check_heights(
+    ///
+    /// Note we take i128 into expected_balances, as we want to be able to detect overflows.
+    pub(super) fn check_heights(
         distribution_function: DistributionFunction,
         claim_heights: &[u64],
         expected_balances: &[u64],
@@ -921,7 +996,7 @@ mod block_based_test_suite_tests {
     /// * `claim_heights` - heights at which claims will be made; they will see balance from previous height
     /// * `expected_balances` - expected balances after claims were made and block from `heights` was committed
     ///
-    fn check_heights_odd_no_current_rewards(
+    pub(super) fn check_heights_odd_no_current_rewards(
         distribution_function: DistributionFunction,
         claim_heights: &[u64],
         expected_balances: &[u64],
@@ -982,17 +1057,6 @@ mod block_based_test_suite_tests {
 
         suite.execute(&tests)
     }
-}
-
-mod test_suite {
-    use super::*;
-    use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
-    use crate::test::helpers::setup::TempPlatform;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-    use dpp::prelude::{DataContract, IdentityPublicKey};
-    use simple_signer::signer::SimpleSigner;
 
     pub(crate) struct TestSuite<C> {
         platform: TempPlatform<MockCoreRPCLike>,
