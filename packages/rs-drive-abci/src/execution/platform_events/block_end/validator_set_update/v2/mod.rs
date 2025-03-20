@@ -8,7 +8,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
-use crate::rpc::core::CoreRPCLike;
+use crate::rpc::core::{CoreHeight, CoreRPCLike};
 use itertools::Itertools;
 
 use crate::platform_types::validator_set::ValidatorSetExt;
@@ -37,6 +37,8 @@ where
         block_execution_context: &mut BlockExecutionContext,
     ) -> Result<Option<ValidatorSetUpdate>, Error> {
         let mut perform_rotation = false;
+
+        let last_core_height = block_execution_context.block_platform_state_mut().last_committed_core_height();
 
         if let Some(validator_set) = block_execution_context
             .block_platform_state()
@@ -168,6 +170,9 @@ where
                             block_execution_context
                                 .block_platform_state_mut()
                                 .set_next_validator_set_quorum_hash(Some(*quorum_hash));
+                            block_execution_context
+                                .block_platform_state_mut()
+                                .set_last_validator_rotation_core_height(last_core_height);
                             return Ok(Some(validator_set_update));
                         }
                         index = (index + 1) % oldest_quorum_index_we_can_go_to;
@@ -191,6 +196,9 @@ where
                         block_execution_context
                             .block_platform_state_mut()
                             .set_next_validator_set_quorum_hash(Some(new_quorum_hash));
+                        block_execution_context
+                            .block_platform_state_mut()
+                            .set_last_validator_rotation_core_height(last_core_height);
                         return Ok(Some(validator_set_update));
                     }
                     tracing::debug!("no new quorums to choose from");

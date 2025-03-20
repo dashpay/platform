@@ -4,6 +4,7 @@ use crate::fee::default_costs::EpochIndexFeeVersionsForStorage;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use platform_value::Bytes32;
+use crate::prelude::CoreBlockHeight;
 
 /// Reduced Platform State for Saving V0
 #[derive(Clone, Debug, Encode, Decode)]
@@ -18,4 +19,6 @@ pub struct ReducedPlatformStateForSavingV0 {
     pub next_validator_set_quorum_hash: Option<Bytes32>,
     /// previous Fee Versions
     pub previous_fee_versions: EpochIndexFeeVersionsForStorage,
+    /// last validator rotation core height
+    pub last_validator_rotation_core_height: CoreBlockHeight,
 }

@@ -33,6 +33,7 @@ use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
+use crate::rpc::core::CoreHeight;
 
 /// Platform state
 #[derive(Clone, Debug, From)]
@@ -461,6 +462,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn set_next_validator_set_quorum_hash(&mut self, hash: Option<QuorumHash>) {
         match self {
             PlatformState::V0(v0) => v0.set_next_validator_set_quorum_hash(hash),
+        }
+    }
+
+    fn set_last_validator_rotation_core_height(&mut self, height: CoreHeight) {
+        match self {
+            PlatformState::V0(v0) => v0.set_last_validator_rotation_core_height(height),
         }
     }
 

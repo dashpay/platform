@@ -183,6 +183,8 @@ where
     let extended_block_info = Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
         .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
     let core_height = extended_block_info.block_info.core_height;
+    let last_validator_rotation_core_height = v0.last_validator_rotation_core_height;
+    tracing::info!(core_height, last_validator_rotation_core_height, "state_sync_finalize");
 
     let last_committed_block = ExtendedBlockInfo::V0 {
         0: ExtendedBlockInfoV0 {
@@ -235,11 +237,12 @@ where
             .into_iter()
             .map(|(epoch_index, _)| (epoch_index, FeeVersion::first()))
             .collect(),
+        last_validator_rotation_core_height: v0.last_validator_rotation_core_height,
     });
 
     build_masternode_lists(app, &mut platform_state, core_height)?;
 
-    let mut extended_quorum_list = core_rpc.get_quorum_listextended(Some(core_height))?;
+    let mut extended_quorum_list = core_rpc.get_quorum_listextended(Some(last_validator_rotation_core_height))?;
 
     build_quorum_verification_set(
         app,
