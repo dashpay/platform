@@ -887,7 +887,7 @@ mod test_suite {
                 }]
             };
 
-            tests.push(TestCase {
+            tests.push(TestStep {
                 name: format!("claim at height {}", height),
                 base_height: *height - 1,
                 base_time_ms: 10_200_000_000,
@@ -956,7 +956,7 @@ mod test_suite {
                 }]
             };
 
-            tests.push(TestCase {
+            tests.push(TestStep {
                 name: format!("claim at height {}", height),
                 base_height: *height - 1,
                 base_time_ms: 10_200_000_000,
@@ -968,6 +968,7 @@ mod test_suite {
         suite.execute(&tests)
     }
 
+    /// Test engine to run tests for different token distribution functions.
     pub(crate) struct TestSuite<C> {
         platform: TempPlatform<MockCoreRPCLike>,
         platform_version: &'static PlatformVersion,
@@ -985,10 +986,11 @@ mod test_suite {
     }
 
     impl<C: FnOnce(&mut TokenConfiguration)> TestSuite<C> {
+        /// Create new test suite that will start at provided genesis time and create token contract with provided
+        /// configuration.
         pub(crate) fn new(
             genesis_time_ms: u64,
             time_between_blocks: u64,
-
             token_distribution_type: TokenDistributionType,
             token_configuration_modification: Option<C>,
         ) -> Self {
@@ -1020,6 +1022,7 @@ mod test_suite {
             }
             .with_genesis(1, genesis_time_ms)
         }
+
         /// Lazily initialize and return token contract. Also sets token id.
         fn get_contract(&mut self) -> DataContract {
             if let Some(ref contract) = self.contract {
@@ -1049,6 +1052,7 @@ mod test_suite {
 
             contract
         }
+
         /// Get token ID or create if needed.
         fn get_token_id(&mut self) -> Identifier {
             if self.token_id.is_none() {
@@ -1065,8 +1069,8 @@ mod test_suite {
             self.nonce
         }
 
-        // submit a claim transition and assert the results
-        pub(crate) fn assert_claim(&mut self, assertions: Vec<AssertionFn>) -> Result<(), String> {
+        /// Submit a claim transition and assert the results
+        pub(crate) fn claim(&mut self, assertions: Vec<AssertionFn>) -> Result<(), String> {
             let committed_block_info = self.block_info();
             let nonce = self.next_identity_nonce();
             // next block config
@@ -1133,6 +1137,7 @@ mod test_suite {
             Ok(())
         }
 
+        /// Retrieve token balance for the identity and assert it matches expected value.
         pub(crate) fn assert_balance(
             &mut self,
             expected_balance: Option<u64>,
@@ -1192,11 +1197,11 @@ mod test_suite {
             self.start_time = Some(start_time);
             self
         }
-        /// execute test cases
-        pub(super) fn execute(&mut self, tests: &[TestCase]) -> Result<(), String> {
+        /// execute test steps, one by one
+        pub(super) fn execute(&mut self, tests: &[TestStep]) -> Result<(), String> {
             let mut errors = String::new();
             for test_case in tests {
-                let result = self.execute_test_case(test_case);
+                let result = self.execute_step(test_case);
                 if let Err(e) = result {
                     errors += format!("\n--> {}: {}", test_case.name, e).as_str();
                 }
@@ -1209,7 +1214,9 @@ mod test_suite {
             }
         }
 
-        pub(super) fn execute_test_case(&mut self, test_case: &TestCase) -> Result<(), String> {
+        /// Execute a single test step. It fasts forwards to the block height of the test case,
+        /// executes the claim and checks the balance.
+        pub(super) fn execute_step(&mut self, test_case: &TestStep) -> Result<(), String> {
             let current_height = self.block_info().height;
             let current_core_height = self.block_info().core_height;
 
@@ -1229,7 +1236,7 @@ mod test_suite {
                 self.epoch_index,
                 false,
             );
-            self.assert_claim(test_case.assertions.clone())
+            self.claim(test_case.assertions.clone())
                 .map_err(|e| format!("claim failed: {}", e))?;
             self.assert_balance(Some(test_case.expected_balance))
                 .map_err(|e| format!("invalid balance: {}", e))?;
@@ -1239,7 +1246,9 @@ mod test_suite {
     }
 
     pub(crate) type AssertionFn = fn(&[StateTransitionExecutionResult]) -> Result<(), String>;
-    pub(crate) struct TestCase {
+
+    /// Individual step of a test case.
+    pub(crate) struct TestStep {
         pub(crate) name: String,
         /// height of block just before the claim
         pub(crate) base_height: u64,
