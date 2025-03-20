@@ -35,8 +35,6 @@ use dpp::version::fee::FeeVersion;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use dpp::prelude::{BlockHeight, CoreBlockHeight};
-use crate::rpc::core::CoreHeight;
 
 /// Platform state
 #[derive(Clone)]
@@ -76,9 +74,6 @@ pub struct PlatformStateV0 {
 
     /// previous Fee Versions
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
-
-    /// last validator rotation core height
-    pub last_validator_rotation_core_height: CoreBlockHeight,
 }
 
 impl Debug for PlatformStateV0 {
@@ -204,9 +199,6 @@ pub struct PlatformStateForSavingV1 {
 
     /// previous FeeVersions
     pub previous_fee_versions: EpochIndexFeeVersionsForStorage,
-
-    /// last validator rotation core height
-    pub last_validator_rotation_core_height: CoreBlockHeight,
 }
 
 impl TryFrom<PlatformStateV0> for PlatformStateForSavingV1 {
@@ -258,7 +250,6 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV1 {
                 .into_iter()
                 .map(|(epoch_index, fee_version)| (epoch_index, fee_version.fee_version_number))
                 .collect(),
-            last_validator_rotation_core_height: value.last_validator_rotation_core_height,
         })
     }
 }
@@ -282,7 +273,6 @@ impl TryFrom<PlatformStateV0> for ReducedPlatformStateForSavingV0 {
                 .into_iter()
                 .map(|(epoch_index, fee_version)| (epoch_index, fee_version.fee_version_number))
                 .collect(),
-            last_validator_rotation_core_height: value.last_validator_rotation_core_height,
         })
     }
 }
@@ -323,7 +313,6 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(epoch_index, _)| (epoch_index, FeeVersion::first()))
                 .collect(),
-            last_validator_rotation_core_height: 0,
         }
     }
 }
@@ -370,7 +359,6 @@ impl From<PlatformStateForSavingV1> for PlatformStateV0 {
                     )
                 })
                 .collect(),
-            last_validator_rotation_core_height: value.last_validator_rotation_core_height,
         }
     }
 }
@@ -404,7 +392,6 @@ impl PlatformStateV0 {
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
             previous_fee_versions: Default::default(),
-            last_validator_rotation_core_height: 0,
         };
 
         Ok(state)
@@ -617,9 +604,6 @@ pub trait PlatformStateV0Methods {
 
     /// The size of the hpmn list that are currently not banned
     fn hpmn_active_list_len(&self) -> usize;
-
-    /// Sets the last validator rotation core height
-    fn set_last_validator_rotation_core_height(&mut self, height: CoreHeight);
 }
 
 impl PlatformStateV0PrivateMethods for PlatformStateV0 {
@@ -850,11 +834,6 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Sets the next validator set quorum hash.
     fn set_next_validator_set_quorum_hash(&mut self, hash: Option<QuorumHash>) {
         self.next_validator_set_quorum_hash = hash;
-    }
-
-    /// Sets the last validator rotation core height
-    fn set_last_validator_rotation_core_height(&mut self, height: CoreHeight) {
-        self.last_validator_rotation_core_height = height;
     }
 
     /// Sets the current validator sets.
