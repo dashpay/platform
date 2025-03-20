@@ -17,7 +17,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::{TokenPerpetualDistributionV0Accessors, TokenPerpetualDistributionV0Methods};
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::methods::v0::TokenPreProgrammedDistributionV0Methods;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::TokenClaimTransitionV0;
 use dpp::ProtocolError;
