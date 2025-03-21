@@ -13,6 +13,7 @@ use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
 use crate::platform_types::validator_set::v0::ValidatorSetMethodsV0;
+use crate::platform_types::validator_set::ValidatorSetExt;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore_rpc_json::{
@@ -34,7 +35,6 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
-use crate::platform_types::validator_set::ValidatorSetExt;
 
 pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db /*+ CoreRPCLike*/>(
     app: &'a A,
@@ -180,8 +180,9 @@ where
         )));
     };
 
-    let extended_block_info = Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
-        .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
+    let extended_block_info =
+        Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
+            .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
     let core_height = extended_block_info.block_info.core_height;
 
     let last_committed_block = ExtendedBlockInfo::V0 {
@@ -261,10 +262,20 @@ where
         config.validator_set.quorum_type,
     )?;
 
-    update_validators_list(app, &mut platform_state, extended_block_info.proposer_pro_tx_hash)?;
+    update_validators_list(
+        app,
+        &mut platform_state,
+        extended_block_info.proposer_pro_tx_hash,
+    )?;
 
     let block_height = platform_state.last_committed_block_height();
     tracing::info!(block_height, platform_state = ?platform_state, "state_sync_finalize");
+
+    if let Some(next_validator_set_quorum_hash) =
+        platform_state.take_next_validator_set_quorum_hash()
+    {
+        platform_state.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
+    }
 
     let tx = drive.grove.start_transaction();
     platform.store_platform_state(&platform_state, Some(&tx), &PlatformVersion::latest())?;
@@ -475,8 +486,8 @@ where
         // This only works if Tenderdash goes through proposers properly
         if &platform_state.last_committed_quorum_hash()
             == platform_state
-            .current_validator_set_quorum_hash()
-            .as_byte_array()
+                .current_validator_set_quorum_hash()
+                .as_byte_array()
             && platform_state.last_committed_block_proposer_pro_tx_hash() > proposer_pro_tx_hash
             && platform_state.validator_sets().len() > 1
         {
@@ -531,12 +542,10 @@ where
                         .expect("expected next validator set");
 
                     // We still have it in the state
-                    if let Some(new_validator_set) = platform_state
-                        .validator_sets()
-                        .get(quorum_hash)
+                    if let Some(new_validator_set) =
+                        platform_state.validator_sets().get(quorum_hash)
                     {
-                        platform_state
-                            .set_current_validator_set_quorum_hash(*quorum_hash);
+                        platform_state.set_current_validator_set_quorum_hash(*quorum_hash);
                         return Ok(());
                     }
                     index = (index + 1) % oldest_quorum_index_we_can_go_to;
@@ -545,13 +554,11 @@ where
                     }
                 }
                 // All quorums changed
-                if let Some((quorum_hash, new_validator_set)) = platform_state
-                    .validator_sets()
-                    .first()
+                if let Some((quorum_hash, new_validator_set)) =
+                    platform_state.validator_sets().first()
                 {
                     let new_quorum_hash = *quorum_hash;
-                    platform_state
-                        .set_current_validator_set_quorum_hash(new_quorum_hash);
+                    platform_state.set_current_validator_set_quorum_hash(new_quorum_hash);
                     return Ok(());
                 }
                 Ok(())
