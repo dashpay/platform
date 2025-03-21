@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 use crate::errors::ProtocolError;
 use crate::util::hash::hash_double;
-use dashcore::OutPoint;
+use dashcore::blockdata::transaction::OutPoint;
 use platform_value::Identifier;
 
 /// Instant Asset Lock Proof is a part of Identity Create and Identity Topup

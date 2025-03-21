@@ -1,8 +1,8 @@
 use std::convert::{TryFrom, TryInto};
 
+use dashcore::blockdata::transaction::{OutPoint, Transaction, special_transaction::TransactionPayload, txin::TxIn, txout::TxOut};
 use dashcore::consensus::{deserialize, Encodable};
-use dashcore::transaction::special_transaction::TransactionPayload;
-use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
+use dashcore::ephemerealdata::instant_lock::InstantLock;
 use platform_value::{BinaryData, Value};
 
 #[cfg(feature = "validation")]
