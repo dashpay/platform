@@ -80,7 +80,6 @@ impl TokenEvent {
 
     pub fn build_historical_document_owned(
         self,
-        token_history_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -88,9 +87,9 @@ impl TokenEvent {
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         let document_id = Document::generate_document_id_v0(
-            &token_history_contract.id(),
+            &token_id,
             &owner_id,
-            self.associated_document_type_name(),
+            format!("history_{}", self.associated_document_type_name()).as_str(),
             owner_nonce.to_be_bytes().as_slice(),
         );
 

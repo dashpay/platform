@@ -14,7 +14,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier
 integer-encoding = { version = "4.0.0" }
@@ -52,13 +52,12 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", branch = "develop", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "develop", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "develop" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", branch = "develop", optional = true }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", branch = "develop" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", branch = "develop" }
-
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "f89e03e4e0ac12aa2feea5c94b38c09f4909facc", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "f89e03e4e0ac12aa2feea5c94b38c09f4909facc", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "f89e03e4e0ac12aa2feea5c94b38c09f4909facc" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "f89e03e4e0ac12aa2feea5c94b38c09f4909facc", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "f89e03e4e0ac12aa2feea5c94b38c09f4909facc" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "f89e03e4e0ac12aa2feea5c94b38c09f4909facc" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -118,4 +117,9 @@ server = [
 full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
-verify = ["grovedb/verify", "grovedb-costs", "dpp/state-transitions", "dpp/system_contracts"]
+verify = [
+  "grovedb/verify",
+  "grovedb-costs",
+  "dpp/state-transitions",
+  "dpp/system_contracts",
+]

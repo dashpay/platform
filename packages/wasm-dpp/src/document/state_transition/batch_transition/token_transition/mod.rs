@@ -103,14 +103,8 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getHistoricalDocumentId)]
-    pub fn historical_document_id(
-        &self,
-        owner_id: IdentifierWrapper,
-        owner_nonce: IdentityNonce,
-    ) -> IdentifierWrapper {
-        self.0
-            .historical_document_id(owner_id.into(), owner_nonce)
-            .into()
+    pub fn historical_document_id(&self, owner_id: IdentifierWrapper) -> IdentifierWrapper {
+        self.0.historical_document_id(owner_id.into()).into()
     }
 
     #[wasm_bindgen(js_name=getIdentityContractNonce)]

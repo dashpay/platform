@@ -128,16 +128,14 @@ impl TokenTransitionAction {
     }
 
     /// Historical document id
-    pub fn historical_document_id(
-        &self,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-    ) -> Identifier {
+    pub fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
+        let token_id = self.base().token_id();
         let name = self.historical_document_type_name();
+        let owner_nonce = self.base().identity_contract_nonce();
         Document::generate_document_id_v0(
-            &SystemDataContract::TokenHistory.id(),
+            &token_id,
             &owner_id,
-            name,
+            format!("history_{}", name).as_str(),
             owner_nonce.to_be_bytes().as_slice(),
         )
     }
@@ -145,7 +143,6 @@ impl TokenTransitionAction {
     /// Historical document id
     pub fn build_historical_document(
         &self,
-        token_historical_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -154,7 +151,6 @@ impl TokenTransitionAction {
     ) -> Result<Document, Error> {
         self.associated_token_event()
             .build_historical_document_owned(
-                token_historical_contract,
                 token_id,
                 owner_id,
                 owner_nonce,
