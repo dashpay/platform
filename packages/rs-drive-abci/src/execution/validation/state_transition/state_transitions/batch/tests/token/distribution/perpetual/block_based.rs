@@ -547,9 +547,11 @@ mod block_based_perpetual_fixed_amount {
     fn test_block_based_perpetual_fixed_amount_0() {
         check_heights(
             DistributionFunction::FixedAmount { amount: 0 },
-            &[41, 46, 50, 100000],
-            &[100000, 100000, 100000, 100000],
-            &[true, false, false, false],
+            &Claim::from_claims((
+                &[41, 46, 50, 100000],
+                &[100000, 100000, 100000, 100000],
+                &[true, false, false, false],
+            )),
             None,
             10,
         )
@@ -598,7 +600,7 @@ mod block_based_perpetual_step_decreasing {
     use rust_decimal::prelude::ToPrimitive;
     use test_case::test_case;
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights;
-    use super::test_suite::with_timeout;
+    use super::test_suite::{with_timeout, Claim};
 
     const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(1);
 
@@ -735,9 +737,7 @@ mod block_based_perpetual_step_decreasing {
         with_timeout(TIMEOUT, move || {
             check_heights(
                 dist,
-                &claim_heights,
-                &expected_balances,
-                &expect_pass,
+                &Claim::from_claims((&claim_heights, &expected_balances, &expect_pass)),
                 None, //Some(S),
                 distribution_interval,
             )
@@ -802,6 +802,144 @@ mod block_based_perpetual_step_decreasing {
     }
 }
 
+mod block_based_perpetual_stepwise {
+    use std::collections::BTreeMap;
+
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+
+    use super::test_suite::{check_heights, with_timeout, Claim};
+
+    const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+
+    #[test]
+    fn stepwise_correct() {
+        let periods = BTreeMap::from([
+            (0, 10_000),
+            (20, 20_000),
+            (45, 30_000),
+            (50, 40_000),
+            (70, 50_000),
+        ]);
+
+        let dist = DistributionFunction::Stepwise(periods);
+        let distribution_interval = 10;
+
+        // claims: height, balance, expect_pass
+        let claims = [
+            (10, 110_000, true),
+            (11, 110_000, false),
+            (20, 120_000, true),
+            (24, 120_000, false),
+            (35, 140_000, true),
+            (39, 140_000, false),
+            (46, 160_000, true),
+            (49, 160_000, false),
+            (50, 180_000, true),
+            (51, 180_000, false),
+            (70, 270_000, true),
+            (
+                1_000_000,
+                270_000 + 50_000 * (1_000_000 - 70_000) / distribution_interval,
+                true,
+            ),
+        ];
+
+        let claim_heights = claims.map(|x| x.0);
+        let expected_balances = claims.map(|x| x.1);
+        let expect_pass = claims.map(|x| x.2);
+
+        with_timeout(TIMEOUT, move || {
+            check_heights(
+                dist,
+                &claim_heights,
+                &expected_balances,
+                &expect_pass,
+                None, //Some(S),
+                distribution_interval,
+            )
+        })
+        .inspect_err(|e| {
+            println!("{}", e);
+        })
+        .expect("stepwise should pass");
+    }
+
+    // ===== HELPER FUNCTIONS ===== //
+
+    #[test]
+    fn stepwise_u64_max() {
+        let periods = BTreeMap::from([(0, u64::MAX)]);
+        let dist = DistributionFunction::Stepwise(periods);
+
+        check_heights(
+            dist,
+            &[100],
+            &[0], // doesn't matter, we expect overflow
+            &[false],
+            None, //Some(S),
+            10,
+        )
+        .inspect_err(|e| {
+            println!("{}", e);
+        })
+        .expect("stepwise should pass");
+    }
+    #[test]
+    /// We check what happens if we start distribution before the first period.
+    fn stepwise_before_first_period() {
+        let periods = BTreeMap::from([(100, 10_000)]);
+        let dist = DistributionFunction::Stepwise(periods);
+
+        // claims: height, balance, expect_pass
+        let claims = [
+            (1, 100_000, true), // IMO we should be able to claim first 100_000 here so expect_pass == true
+            (9, 100_000, false), // TODO: claim should succeed here? To transfer this 100k?
+            // (10, 0, false),
+            // (11, 0, false),
+            // (20, 0, false),
+            // (99, 0, false),
+            (100, 100_000, false),
+            (101, 110_000, true),
+            (102, 110_000, false),
+            (111, 120_000, true),
+            (200, 200_000, true),
+            (209, 200_000, false),
+        ];
+
+        check_heights(
+            dist,
+            &claims.map(|x| x.0),
+            &claims.map(|x| x.1),
+            &claims.map(|x| x.2),
+            None,
+            10,
+        )
+        .inspect_err(|e| {
+            println!("{}", e);
+        })
+        .expect("stepwise should pass");
+    }
+
+    #[test]
+    /// This test will overflow within 6 distributions
+    fn stepwise_overflow() {
+        let periods = BTreeMap::from([(10, u64::MAX / 5)]);
+        let dist = DistributionFunction::Stepwise(periods);
+
+        check_heights(
+            dist,
+            &[10, 11],
+            &[100_000], // doesn't matter, we expect overflow
+            &[false],
+            None, //Some(S),
+            10,
+        )
+        .inspect_err(|e| {
+            println!("{}", e);
+        })
+        .expect("stepwise should pass");
+    }
+}
 mod test_suite {
     use super::*;
     use crate::rpc::core::MockCoreRPCLike;
@@ -814,9 +952,10 @@ mod test_suite {
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
     use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
     use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
-    use dpp::prelude::{DataContract, IdentityPublicKey};
+    use dpp::prelude::{DataContract, IdentityPublicKey, TimestampMillis};
     use simple_signer::signer::SimpleSigner;
 
+    const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(1);
     /// Run provided closure with timeout.
     pub(super) fn with_timeout(
         duration: tokio::time::Duration,
@@ -838,19 +977,17 @@ mod test_suite {
     /// Check that claim results at provided heights are as expected, and that balances match expectations.
     ///
     /// Note we take i128 into expected_balances, as we want to be able to detect overflows.
-    pub(super) fn check_heights(
+    pub(super) fn check_heights<C: Into<Claim> + Clone>(
         distribution_function: DistributionFunction,
-        claim_heights: &[u64],
-        expected_balances: &[u64],
-        expect_pass: &[bool],
-        contract_start_height: Option<u64>,
+        claims: &[C],
+        contract_start_time: Option<TimestampMillis>,
         distribution_interval: u64,
     ) -> Result<(), String> {
         let mut suite = TestSuite::new(
             10_200_000_000,
             0,
             TokenDistributionType::Perpetual,
-            Some(|token_configuration: &mut TokenConfiguration| {
+            Some(move |token_configuration: &mut TokenConfiguration| {
                 token_configuration
                     .distribution_rules_mut()
                     .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
@@ -864,39 +1001,28 @@ mod test_suite {
                     )));
             }),
         );
-        if let Some(start) = contract_start_height {
+        if let Some(start) = contract_start_time {
             suite = suite.with_contract_start_time(start);
         }
 
         let mut tests = Vec::new();
-        for (i, height) in claim_heights.iter().enumerate() {
-            let assertions: Vec<AssertionFn> = if expect_pass[i] {
-                vec![|processing_results: &[_]| match processing_results {
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
-                    _ => Err(format!(
-                        "expected SuccessfulExecution, got {:?}",
-                        processing_results
-                    )),
-                }]
-            } else {
-                vec![|processing_results: &[_]| match processing_results {
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
-                        Err("expected error, got SuccessfulExecution".into())
-                    }
-                    _ => Ok(()),
-                }]
-            };
+
+        let final_claims = claims
+            .iter()
+            .map(|item| item.clone().into())
+            .collect::<Vec<Claim>>();
+        for item in claims {
+            let claim: Claim = item.clone().into();
 
             tests.push(TestStep {
-                name: format!("claim at height {}", height),
-                base_height: *height - 1,
+                name: format!("claim at height {}", claim.claim_height),
+                base_height: claim.claim_height - 1,
                 base_time_ms: 10_200_000_000,
-                expected_balance: expected_balances[i],
-                assertions,
+                expected_balance: claim.expected_balance,
+                claim_transition_assertions: claim.assertions(),
             });
         }
-
-        suite.execute(&tests)
+        with_timeout(TIMEOUT, move || suite.execute(&tests))
     }
     /// This test checks claims at provided heights, where every second height does not have any rewards to claim.
     ///
@@ -961,7 +1087,7 @@ mod test_suite {
                 base_height: *height - 1,
                 base_time_ms: 10_200_000_000,
                 expected_balance: expected_balances[i],
-                assertions,
+                claim_transition_assertions: assertions,
             });
         }
 
@@ -977,7 +1103,7 @@ mod test_suite {
         identity_public_key: IdentityPublicKey,
         token_id: Option<dpp::prelude::Identifier>,
         contract: Option<DataContract>,
-        start_time: Option<u64>,
+        start_time: Option<TimestampMillis>,
         token_distribution_type: TokenDistributionType,
         token_configuration_modification: Option<C>,
         epoch_index: u16,
@@ -1190,7 +1316,7 @@ mod test_suite {
 
         /// Configure custom contract start time; must be called before contract is
         /// initialized.
-        pub(super) fn with_contract_start_time(mut self, start_time: u64) -> Self {
+        pub(super) fn with_contract_start_time(mut self, start_time: TimestampMillis) -> Self {
             if self.contract.is_some() {
                 panic!("with_contract_start_time must be called before contract is initialized");
             }
@@ -1203,7 +1329,7 @@ mod test_suite {
             for test_case in tests {
                 let result = self.execute_step(test_case);
                 if let Err(e) = result {
-                    errors += format!("\n--> {}: {}", test_case.name, e).as_str();
+                    errors += format!("\n--> {}: {}\n", test_case.name, e).as_str();
                 }
             }
 
@@ -1236,7 +1362,7 @@ mod test_suite {
                 self.epoch_index,
                 false,
             );
-            self.claim(test_case.assertions.clone())
+            self.claim(test_case.claim_transition_assertions.clone())
                 .map_err(|e| format!("claim failed: {}", e))?;
             self.assert_balance(Some(test_case.expected_balance))
                 .map_err(|e| format!("invalid balance: {}", e))?;
@@ -1257,7 +1383,64 @@ mod test_suite {
         /// expected balance is a function that should return the expected balance after committing block
         /// at provided height and time
         pub(crate) expected_balance: u64,
-        /// assertion functions that will be executed on the claim
-        pub(crate) assertions: Vec<AssertionFn>,
+        /// assertion functions that must be met after executing the claim state transition
+        pub(crate) claim_transition_assertions: Vec<AssertionFn>,
+    }
+
+    impl TestStep {
+        pub(super) fn new(
+            claim_height: u64,
+            expected_balance: u64,
+            expect_claim_successful: bool,
+        ) -> Self {
+            let assertions: Vec<AssertionFn> = if expect_claim_successful {
+                vec![|processing_results: &[_]| match processing_results {
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
+                    _ => Err(format!(
+                        "expected SuccessfulExecution, got {:?}",
+                        processing_results
+                    )),
+                }]
+            } else {
+                vec![|processing_results: &[_]| match processing_results {
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
+                        Err("expected error, got SuccessfulExecution".into())
+                    }
+                    [StateTransitionExecutionResult::InternalError(e)] => {
+                        Err(format!("expected normal error, got InternalError: {}", e))
+                    }
+                    _ => Ok(()),
+                }]
+            };
+            Self {
+                name: format!("claim at height {}", claim_height),
+                base_height: claim_height - 1,
+                base_time_ms: 10_200_000_000,
+                expected_balance,
+                claim_transition_assertions: assertions,
+            }
+        }
+
+        // just a helper to faster update existing code
+        pub(super) fn from_claims(
+            (claim_heights, expected_balances, expect_pass): (&[u64], &[u64], &[bool]),
+        ) -> Vec<Self> {
+            assert_eq!(claim_heights.len(), expected_balances.len());
+            assert_eq!(claim_heights.len(), expect_pass.len());
+            claim_heights
+                .iter()
+                .zip(expected_balances.iter())
+                .zip(expect_pass.iter())
+                .map(|((&h, &balance), &expect)| Claim::new(h, balance, expect))
+                .collect()
+        }
+    }
+
+    impl From<(u64, u64, bool)> for TestStep {
+        fn from(
+            (claim_height, expected_balance, expect_claim_successful): (u64, u64, bool),
+        ) -> Self {
+            Self::new(claim_height, expected_balance, expect_claim_successful)
+        }
     }
 }
