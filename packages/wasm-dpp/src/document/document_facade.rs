@@ -1,8 +1,7 @@
-use std::rc::Rc;
-use wasm_bindgen::{prelude::*, JsValue};
-
 use crate::document::factory::DocumentFactoryWASM;
 use crate::{DataContractWasm, ExtendedDocumentWasm};
+use std::rc::Rc;
+use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::document::state_transition::batch_transition::BatchTransitionWasm;
 

@@ -114,7 +114,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
       // Should allow deleting of the withdrawal document
       await client.platform.documents.broadcast({
-        delete: [withdrawalDocument],
+        delete: [{ document: withdrawalDocument }],
       }, identity);
     });
 
@@ -216,7 +216,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
       try {
         await client.platform.documents.broadcast({
-          create: [withdrawal],
+          create: [{ document: withdrawal }],
         }, identity);
 
         expect.fail('should throw broadcast error');
@@ -260,7 +260,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
       try {
         await client.platform.documents.broadcast({
-          delete: [withdrawalDocument],
+          delete: [{ document: withdrawalDocument }],
         }, identity);
 
         expect.fail('should throw broadcast error');
@@ -283,7 +283,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
       try {
         await client.platform.documents.broadcast({
-          replace: [withdrawalDocument],
+          replace: [{ document: withdrawalDocument }],
         }, identity);
 
         expect.fail('should throw broadcast error');

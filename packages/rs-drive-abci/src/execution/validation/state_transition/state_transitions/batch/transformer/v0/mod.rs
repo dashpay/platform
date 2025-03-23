@@ -980,7 +980,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
                     document_id,
                     Some(previous_revision),
-                    transition_revision,
+                    expected_revision,
                 )),
             ))
         }

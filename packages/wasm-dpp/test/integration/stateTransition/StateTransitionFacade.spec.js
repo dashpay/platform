@@ -99,7 +99,7 @@ describe('StateTransitionFacade', () => {
 
     const documents = await getDocumentsFixture(dataContract);
     documentsBatchTransition = documentFactory.createStateTransition({
-      create: documents,
+      create: documents.map((d) => ({ document: d, params: null })),
     }, {
       [documents[0].getOwnerId().toString()]: {
         [documents[0].getDataContractId().toString()]: '0',

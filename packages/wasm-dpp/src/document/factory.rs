@@ -9,7 +9,7 @@ use crate::document::errors::InvalidActionNameError;
 use crate::document::platform_value::Bytes32;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentTransitionParams};
 
 use dpp::prelude::ExtendedDocument;
 
@@ -23,8 +23,8 @@ use crate::{
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
+use js_sys::Uint8Array;
 use std::convert::TryFrom;
-use std::str::FromStr;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -134,6 +134,7 @@ impl DocumentFactoryWASM {
                                 .unwrap()
                                 .parse::<u64>()
                                 .unwrap();
+
                             nonce_counter.insert((identity_id, contract_id), nonce);
                         });
                 });
@@ -146,7 +147,7 @@ impl DocumentFactoryWASM {
         let documents_by_action = extract_documents_by_action(documents)?;
 
         for (_, documents) in documents_by_action.iter() {
-            for document in documents.iter() {
+            for (document, _) in documents.iter() {
                 if !contract_ids_to_check.contains(&document.data_contract().id()) {
                     return Err(JsValue::from_str(
                         "Document's data contract is not in the nonce counter",
@@ -157,15 +158,26 @@ impl DocumentFactoryWASM {
 
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef, Bytes32)>,
+            Vec<(
+                Document,
+                Option<DocumentTransitionParams>,
+                DocumentTypeRef,
+                Bytes32,
+            )>,
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32)> = documents
-                    .iter()
-                    .map(|extended_document| {
+                let documents_with_refs: Vec<(
+                    Document,
+                    Option<DocumentTransitionParams>,
+                    DocumentTypeRef,
+                    Bytes32,
+                )> = documents
+                    .into_iter()
+                    .map(|(extended_document, document_params)| {
                         (
                             extended_document.document().clone(),
+                            document_params.clone(),
                             extended_document
                                 .data_contract()
                                 .document_type_for_name(extended_document.document_type_name())
@@ -275,19 +287,37 @@ impl DocumentFactoryWASM {
 //
 fn extract_documents_by_action(
     documents: &JsValue,
-) -> Result<HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>>, JsValue> {
+) -> Result<
+    HashMap<
+        DocumentTransitionActionType,
+        Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>,
+    >,
+    JsValue,
+> {
     check_actions(documents)?;
 
-    let mut documents_by_action: HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>> =
-        Default::default();
+    let mut documents_by_action: HashMap<
+        DocumentTransitionActionType,
+        Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>,
+    > = Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
     let documents_delete = extract_documents_of_action(documents, "delete").with_js_error()?;
+    let documents_transfer = extract_documents_of_action(documents, "transfer").with_js_error()?;
+    let documents_update_price =
+        extract_documents_of_action(documents, "updatePrice").with_js_error()?;
+    let documents_purchase = extract_documents_of_action(documents, "purchase").with_js_error()?;
 
     documents_by_action.insert(DocumentTransitionActionType::Create, documents_create);
     documents_by_action.insert(DocumentTransitionActionType::Replace, documents_replace);
     documents_by_action.insert(DocumentTransitionActionType::Delete, documents_delete);
+    documents_by_action.insert(DocumentTransitionActionType::Transfer, documents_transfer);
+    documents_by_action.insert(
+        DocumentTransitionActionType::UpdatePrice,
+        documents_update_price,
+    );
+    documents_by_action.insert(DocumentTransitionActionType::Purchase, documents_purchase);
 
     Ok(documents_by_action)
 }
@@ -317,21 +347,67 @@ fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
 fn extract_documents_of_action(
     documents: &JsValue,
     action: &str,
-) -> Result<Vec<ExtendedDocument>, anyhow::Error> {
-    let documents_with_action =
+) -> Result<Vec<(ExtendedDocument, Option<DocumentTransitionParams>)>, anyhow::Error> {
+    let documents_submittable_with_action =
         js_sys::Reflect::get(documents, &action.to_string().into()).unwrap_or(JsValue::NULL);
 
-    if documents_with_action.is_null() || documents_with_action.is_undefined() {
+    if documents_submittable_with_action.is_null()
+        || documents_submittable_with_action.is_undefined()
+    {
         return Ok(vec![]);
     }
 
-    let documents_array = js_sys::Array::try_from(documents_with_action)
+    let documents_submittable_array = js_sys::Array::try_from(documents_submittable_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 
-    documents_array
+    documents_submittable_array
         .iter()
-        .map(|js_document| {
-            js_document
+        .map(|js_document_submittable| {
+            let document =
+                js_sys::Reflect::get(&js_document_submittable, &"document".into()).unwrap();
+
+            let params: Option<DocumentTransitionParams> =
+                js_sys::Reflect::get(&js_document_submittable, &"params".to_string().into())
+                    .map(|js_value| {
+                        if js_value.is_undefined() || js_value.is_null() {
+                            return None;
+                        }
+
+                        let receiver_id =
+                            js_sys::Reflect::get(&js_value, &"receiver".to_string().into())
+                                .map(|js_value| {
+                                    if js_value.is_undefined() || js_value.is_null() {
+                                        return None;
+                                    }
+
+                                    let buffer = Uint8Array::new(&js_value);
+                                    let bytes = Identifier::from_vec(buffer.to_vec()).unwrap();
+
+                                    Some(bytes)
+                                })
+                                .unwrap();
+
+                        let price: Option<u64> =
+                            js_sys::Reflect::get(&js_value, &"price".to_string().into())
+                                .map(|js_value| {
+                                    if js_value.is_undefined() || js_value.is_null() {
+                                        return None;
+                                    }
+
+                                    let price = u64::try_from(JsValue::from(&js_value)).unwrap();
+
+                                    return Some(price);
+                                })
+                                .unwrap();
+
+                        Some(DocumentTransitionParams {
+                            receiver: receiver_id,
+                            price: price.map(|e| e.clone()),
+                        })
+                    })
+                    .unwrap();
+
+            document
                 .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
                 .map_err(|e| {
                     anyhow!(
@@ -340,7 +416,7 @@ fn extract_documents_of_action(
                         e
                     )
                 })
-                .map(|wasm_doc| wasm_doc.clone().into())
+                .map(|wasm_doc| (wasm_doc.clone().into(), params))
         })
         .collect()
 }
