@@ -377,9 +377,9 @@ where
         )?;
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
-
+        // HERE
         self.store_reduced_platform_state(
-            &block_execution_context.block_platform_state(),
+            block_execution_context.block_platform_state(),
             Some(transaction),
             platform_version,
         )?;

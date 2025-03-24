@@ -258,6 +258,12 @@ impl TryFrom<PlatformStateV0> for ReducedPlatformStateForSavingV0 {
     type Error = Error;
 
     fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
+        let quorums = value.validator_sets();
+        let quorum_positions = quorums
+            .into_iter()
+            .map(|(block_hash, _)| (block_hash.to_byte_array().to_vec()))
+            .collect();
+
         Ok(ReducedPlatformStateForSavingV0 {
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
@@ -273,6 +279,7 @@ impl TryFrom<PlatformStateV0> for ReducedPlatformStateForSavingV0 {
                 .into_iter()
                 .map(|(epoch_index, fee_version)| (epoch_index, fee_version.fee_version_number))
                 .collect(),
+            quorum_positions,
         })
     }
 }
@@ -310,8 +317,8 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .collect(),
             previous_fee_versions: value
                 .previous_fee_versions
-                .into_iter()
-                .map(|(epoch_index, _)| (epoch_index, FeeVersion::first()))
+                .into_keys()
+                .map(|epoch_index| (epoch_index, FeeVersion::first()))
                 .collect(),
         }
     }

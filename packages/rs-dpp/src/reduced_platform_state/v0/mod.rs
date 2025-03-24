@@ -18,4 +18,8 @@ pub struct ReducedPlatformStateForSavingV0 {
     pub next_validator_set_quorum_hash: Option<Bytes32>,
     /// previous Fee Versions
     pub previous_fee_versions: EpochIndexFeeVersionsForStorage,
+
+    /// ordered list of quorum hashes that reflect quorum positions
+    /// TODO: optimize this to not store the whole quorum hash, but only some index
+    pub quorum_positions: Vec<Vec<u8>>,
 }

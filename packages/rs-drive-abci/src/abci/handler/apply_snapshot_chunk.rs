@@ -1,4 +1,4 @@
-use crate::abci::app::{PlatformApplication, SnapshotManagerApplication, StateSyncApplication};
+use crate::abci::app::{SnapshotManagerApplication, StateSyncApplication};
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -10,24 +10,21 @@ use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
 use crate::platform_types::validator_set::v0::ValidatorSetMethodsV0;
-use crate::platform_types::validator_set::ValidatorSetExt;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumListResult, MasternodeListDiff, MasternodeType, QuorumType,
 };
-use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use dpp::core_types::validator_set::ValidatorSet as CoreValidatorSet;
-use dpp::dashcore::QuorumHash;
-use dpp::reduced_platform_state;
+use dpp::dashcore::{BlockHash, QuorumHash};
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -146,13 +143,10 @@ where
     }
 }
 
-fn reconstruct_platform_state<'a, 'db: 'a, A, C: 'db>(
-    app: &'a A,
-    app_hash: &[u8],
-) -> Result<(), Error>
+fn reconstruct_platform_state<'a, 'db: 'a, A, C>(app: &'a A, app_hash: &[u8]) -> Result<(), Error>
 where
     A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
-    C: CoreRPCLike,
+    C: CoreRPCLike + 'db,
 {
     let config = &app.platform().config;
     let platform = app.platform();
@@ -250,6 +244,7 @@ where
         app,
         &mut platform_state,
         &mut extended_quorum_list,
+        &v0.quorum_positions,
         config.validator_set.quorum_type,
     )?;
 
@@ -372,6 +367,7 @@ fn build_validators_list<'a, 'db: 'a, A, C: 'db>(
     app: &'a A,
     platform_state: &mut PlatformState,
     extended_quorum_list: &mut ExtendedQuorumListResult,
+    quorums_order: &Vec<Vec<u8>>,
     validator_set_quorum_type: QuorumType,
 ) -> Result<(), Error>
 where
@@ -392,8 +388,8 @@ where
 
     // Fetch quorum info and their keys from the RPC for new quorums
     let mut quorum_infos = validator_quorums_list
-        .into_iter()
-        .map(|(key, _)| {
+        .into_keys()
+        .map(|key| {
             let quorum_info_result =
                 app.platform()
                     .core_rpc
@@ -413,7 +409,7 @@ where
     });
 
     // Map to validator sets
-    let new_validator_sets = quorum_infos
+    let mut new_validator_sets = quorum_infos
         .into_iter()
         .map(|(quorum_hash, info_result)| {
             let validator_set = CoreValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
@@ -424,26 +420,75 @@ where
         })
         .collect::<Result<Vec<_>, Error>>()?;
 
+    let old_validator_sets = new_validator_sets.clone();
+
+    sort_quorums(&mut new_validator_sets, quorums_order);
     platform_state
         .validator_sets_mut()
-        .extend(new_validator_sets);
+        .extend(new_validator_sets.clone());
+
+    // TODO: only for testing, all that old_validator_sets should be removed when it's stable
+    let mut old_valset_indexmap: IndexMap<BlockHash, CoreValidatorSet, _> = IndexMap::new();
+    old_valset_indexmap.extend(new_validator_sets.clone());
 
     // Sort all validator sets into deterministic order by core block height of creation
-    platform_state
-        .validator_sets_mut()
-        .sort_by(|_, quorum_a, _, quorum_b| {
-            let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
-            if primary_comparison == std::cmp::Ordering::Equal {
-                quorum_b
-                    .quorum_hash()
-                    .cmp(quorum_a.quorum_hash())
-                    .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
-            } else {
-                primary_comparison
-            }
-        });
+    old_valset_indexmap.sort_by(|_, quorum_a, _, quorum_b| {
+        let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
+        if primary_comparison == std::cmp::Ordering::Equal {
+            quorum_b
+                .quorum_hash()
+                .cmp(quorum_a.quorum_hash())
+                .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
+        } else {
+            primary_comparison
+        }
+    });
+
+    if !new_validator_sets.eq(&old_validator_sets) {
+        tracing::warn!(
+            ?new_validator_sets,
+            ?old_validator_sets,
+            "Validator sets are not equal after sorting with old and new algorithm. This is unexpected and should be investigated."
+        );
+    };
+    // end of old valset check
 
     Ok(())
+}
+
+/// Ensure quorums are in the order described by `order`.
+///
+/// Modifies `quorums` in place.
+fn sort_quorums(quorums: &mut Vec<(BlockHash, CoreValidatorSet)>, order: &Vec<Vec<u8>>) {
+    let lookup_table =
+        BTreeMap::from_iter(order.into_iter().enumerate().map(|x| (x.1 as &[u8], x.0)));
+
+    quorums.sort_by(|a, b| {
+        let a_hash = a.0.to_byte_array();
+        let b_hash = b.0.to_byte_array();
+
+        let a_index = lookup_table.get(a_hash.as_slice()).unwrap_or(&usize::MAX);
+        let b_index = lookup_table.get(b_hash.as_slice()).unwrap_or(&usize::MAX);
+
+        a_index.cmp(b_index)
+    });
+    // let ordered = order
+    //     .iter()
+    //     .map(|quorum_hash| {
+    //         let (key, value) = quorums
+    //             .iter()
+    //             .find(|(hash, _)| hash.to_byte_array().as_slice() == quorum_hash)
+    //             .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+    //                 format!(
+    //                     "expected quorum {} not found in the list",
+    //                     hex::encode(quorum_hash)
+    //                 ),
+    //             )))?;
+
+    //         Result::<_, Error>::Ok((*key, value.clone()))
+    //         // key
+    //     })
+    //     .collect::<Result<_, Error>>()?;
 }
 
 fn update_validators_list<'a, 'db: 'a, A, C: 'db>(
