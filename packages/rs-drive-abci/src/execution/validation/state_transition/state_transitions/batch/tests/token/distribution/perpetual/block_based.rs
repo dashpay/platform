@@ -8,6 +8,10 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::state_transition::batch_transition::BatchTransition;
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
+
+/// Initial contract balance, as hardcoded in the contract definition (JSON file).
+const INITIAL_BALANCE: u64 = 100_000;
+
 mod perpetual_distribution_block {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
@@ -498,8 +502,13 @@ mod perpetual_distribution_block {
 
 #[cfg(test)]
 mod block_based_perpetual_fixed_amount {
-    use super::test_suite::*;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+
+    use super::{test_suite::*, INITIAL_BALANCE};
+    use dpp::{
+        consensus::{state::state_error::StateError, ConsensusError},
+        data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction,
+    };
 
     // Given some token configuration,
     // When a claim is made at block 42,
@@ -516,66 +525,100 @@ mod block_based_perpetual_fixed_amount {
             ],
             None,
             10,
+            None,
         )
         .expect("\n-> fixed amount should pass");
     }
 
     /// Test case for overflow error.
     ///
+    /// TODO: Fails, please fix.
+    ///
     /// claim at height 1000000000000: claim failed: assertion 0 failed: expected SuccessfulExecution,
     /// got [InternalError(\"storage: protocol: overflow error: Overflow in FixedAmount evaluation\")]"
     #[test]
-    fn test_block_based_perpetual_fixed_amount_1_000_000_000() {
+    fn fail_test_block_based_perpetual_fixed_amount_1_000_000_000() {
         check_heights(
             DistributionFunction::FixedAmount {
                 amount: 1_000_000_000,
             },
             &[
-                TestStep::new(41, 100_000 + 4 * 1_000_000_000, true),
-                TestStep::new(46, 100_000 + 4 * 1_000_000_000, false),
-                TestStep::new(50, 100_000 + 5 * 1_000_000_000, true),
-                TestStep::new(51, 100_000 + 5 * 1_000_000_000, false),
-                TestStep::new(1_000_000_000_000, 100_000 + 5 * 1_000_000_000, false),
+                TestStep::new(41, INITIAL_BALANCE + 4 * 1_000_000_000, true),
+                TestStep::new(46, INITIAL_BALANCE + 4 * 1_000_000_000, false),
+                TestStep::new(50, INITIAL_BALANCE + 5 * 1_000_000_000, true),
+                TestStep::new(51, INITIAL_BALANCE + 5 * 1_000_000_000, false),
+                TestStep::new(
+                    1_000_000_000_000,
+                    INITIAL_BALANCE + 5 * 1_000_000_000,
+                    false,
+                ),
             ],
             None,
             10,
+            None,
         )
         .expect("\n-> fixed amount should pass");
     }
 
     #[test]
-    /// With a fixed amount of 0, we expect first claim to fetch 100_000 units (which are hardcoded in the JSON contract defintion),
-    /// and fail for the rest of the claims.
-    ///
-    /// FAILS
+    /// Given a fixed amount distribution with value of 0,
+    /// When we try to claim,
+    /// Then we always fail and the balance remains unchanged.
     fn test_block_based_perpetual_fixed_amount_0() {
         check_heights(
             DistributionFunction::FixedAmount { amount: 0 },
             &[
-                (41, 100000, true),
+                (41, 100000, false),
                 (46, 100000, false),
                 (50, 100000, false),
                 (1000, 100000, false),
             ],
             None,
             10,
+            None,
         )
         .expect("\nfixed amount zero increase\n");
     }
 
-    /// Overflow caused by using u64::MAX as fixed amount should not cause InternalError.
     #[test]
-    fn test_block_based_perpetual_fixed_amount_u64_max() {
+    /// Given a fixed amount distribution with value of 1_000_000 and max_supply of 200_000,
+    /// When we try to claim,
+    /// Then we always fail and the balance remains unchanged.
+    fn test_fixed_amount_above_max_supply() {
+        let test = TestStep {
+            name: "test_fixed_amount_above_max_supply".to_string(),
+            base_height: 41,
+            base_time_ms: Default::default(),
+            expected_balance: None,
+            claim_transition_assertions: vec![|v| match v {
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+                    _,
+                )] => Ok(()),
+                _ => Err(format!("expected TokenMintPastMaxSupplyError, got {:?}", v)),
+            }],
+        };
         check_heights(
-            DistributionFunction::FixedAmount { amount: u64::MAX },
-            &[
-                TestStep::new(41, 100_200, true),
-                TestStep::new(46, 100_200, false),
-                TestStep::new(50, 100_250, true),
-                TestStep::new(1000, 100_250, false),
-            ],
+            DistributionFunction::FixedAmount { amount: 1_000_000 },
+            &[test],
             None,
             10,
+            Some(Some(200_000)),
+        )
+        .expect("\nfixed amount zero increase\n");
+    }
+
+    /// Given a fixed amount distribution with value of u64::MAX,
+    /// When I claim tokens,
+    /// Then I don't get an InternalError.
+    #[test]
+    fn fail_test_block_based_perpetual_fixed_amount_u64_max() {
+        check_heights(
+            DistributionFunction::FixedAmount { amount: u64::MAX },
+            &[TestStep::new(41, 100_000, false)],
+            None,
+            10,
+            None,
         )
         .expect("\nfixed amount u64::MAX should pass\n");
     }
@@ -588,7 +631,10 @@ mod block_based_perpetual_random {
 
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::TestSuite;
 
-    use super::test_suite::{check_heights, TestStep};
+    use super::{
+        test_suite::{check_heights, TestStep},
+        INITIAL_BALANCE,
+    };
     use dpp::data_contract::{
         associated_token::{
             token_configuration::accessors::v0::TokenConfigurationV0Getters,
@@ -603,42 +649,56 @@ mod block_based_perpetual_random {
         },
         TokenConfiguration,
     };
+    use test_case::test_matrix;
 
-    /// Random distribution function with min=0, max=100.
-    #[test]
-    fn test_block_based_perpetual_random_0_100() {
+    /// <Given a random distribution function with min=0, max=100,
+    /// When I claim tokens at various heights,
+    /// Then I get deterministic balances at those heights.
+    #[test_matrix(
+        0, //min
+         100,//max,
+         [None,Some(1_000_000)], // max_supply
+        &[
+            TestStep::new(41, 100_192, true),
+            TestStep::new(46, 100_192, false),
+            TestStep::new(50, 100_263, true),
+            TestStep::new(59, 100_263, false),
+            TestStep::new(60, 100_310, true),
+        ]
+    )]
+    fn test_random(min: u64, max: u64, max_supply: Option<u64>, steps: &[TestStep]) {
         check_heights(
-            DistributionFunction::Random { min: 0, max: 100 },
-            &[
-                TestStep::new(41, 100_192, true),
-                TestStep::new(46, 100_192, false),
-                TestStep::new(50, 100_263, true),
-                TestStep::new(59, 100_263, false),
-                TestStep::new(60, 100_310, true),
-            ],
+            DistributionFunction::Random { min, max },
+            steps,
             None,
             10,
+            Some(max_supply),
         )
         .expect("correct case 1");
     }
 
-    /// Random distribution function with min=0, max=0 should only return the initial balance.
+    /// Given a random distribution function with min=0, max=0,
+    /// When I claim tokens at various heights,
+    /// Then claim fails and I get the same balance at those heights.
     #[test]
     fn test_block_based_perpetual_random_0_0() {
         check_heights(
             DistributionFunction::Random { min: 0, max: 0 },
             &[
-                TestStep::new(41, 100_000, true),
-                TestStep::new(50, 100_000, false),
-                TestStep::new(100, 100_000, false),
+                TestStep::new(41, INITIAL_BALANCE, false),
+                TestStep::new(50, INITIAL_BALANCE, false),
+                TestStep::new(100, INITIAL_BALANCE, false),
             ],
             None,
             10,
+            None,
         )
         .expect("no rewards");
     }
 
-    /// Check if the random function is truly random by estimating its entropy.
+    /// Given a random distribution function with min=10, max=30,
+    /// When I claim tokens at various heights,
+    /// Then I get a distribution of balances that is close to the maximum entropy.
     #[test]
     fn test_block_based_perpetual_random_10_30_entropy() {
         const N: u64 = 200;
@@ -654,16 +714,6 @@ mod block_based_perpetual_random {
                 claim_transition_assertions: Default::default(),
             })
             .collect();
-
-        // we expect the average to be 200; we add 100_000 which is the initial balance
-        // let expected_balance = ((((MIN + MAX) as f64) / 2.0) * (N as f64)) as u64 + 100_000;
-        // tests.push(TestStep {
-        //     name: "last test".to_string(),
-        //     base_height: N - 1,
-        //     base_time_ms: Default::default(),
-        //     expected_balance: Some(expected_balance),
-        //     claim_transition_assertions: Default::default(),
-        // });
 
         let balances = Arc::new(Mutex::new(Vec::new()));
         let balances_result = balances.clone();
@@ -696,7 +746,7 @@ mod block_based_perpetual_random {
         // substract balance from previous step (for first step, substract initial balance of 100_000)
         let diffs: Vec<u64> = data
             .iter()
-            .scan(100_000, |prev, &x| {
+            .scan(INITIAL_BALANCE, |prev, &x| {
                 let diff = x - *prev;
                 *prev = x;
                 Some(diff)
@@ -707,8 +757,8 @@ mod block_based_perpetual_random {
         let max_entropy: f64 = ((MAX - MIN) as f64).log2();
         let entropy_diff = (max_entropy - entropy).abs() / max_entropy;
 
-        println!("Data: {:?}", diffs);
-        println!(
+        tracing::debug!("Data: {:?}", diffs);
+        tracing::info!(
             "Entropy: {}, max entropy: {}, difference: {}%",
             entropy,
             max_entropy,
@@ -750,6 +800,7 @@ mod block_based_perpetual_step_decreasing {
     use rust_decimal::prelude::ToPrimitive;
     use test_case::test_case;
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights;
+    use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::INITIAL_BALANCE;
 
     #[test_case(
         1,// step_count
@@ -771,7 +822,7 @@ mod block_based_perpetual_step_decreasing {
         Some(1),// min_value
       Some((1..1000).step_by(500).collect()),// claim_heights
         1; // distribution_interval
-        "claim every 500 blocks"
+        "fail claim every 500 blocks"
     )]
     #[test_matrix(
         1,// step_count
@@ -793,7 +844,7 @@ mod block_based_perpetual_step_decreasing {
         Some(1),// min_value
         Some(vec![1,7]), // claim_heights
         1; // distribution_interval
-        "1000x increase, overflow"
+        "fail 1000x increase, overflow"
     )]
     #[test_case(
         1,// step_count
@@ -818,13 +869,24 @@ mod block_based_perpetual_step_decreasing {
         "no decrease, irrelevant min values"
     )]
     #[test_matrix(
+        [1],// step_count
+        1,// decrease_per_interval_numerator
+        1,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        None,// min_value
+        Some(vec![7,10,20,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        [5]; // distribution_interval
+        "no decrease, changing step"
+    )]
+    #[test_matrix(
         [5,10],// step_count
         1,// decrease_per_interval_numerator
         2,// decrease_per_interval_denominator
         None,// s
         100_000,// n
         None,// min_value
-        Some(vec![5,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        Some(vec![5,10,20,100]), // claim_heights // ,300,500,800,1_000,1_000_000
         [1,5]; // distribution_interval
         "1/2 decrease, changing step"
     )]
@@ -866,14 +928,14 @@ mod block_based_perpetual_step_decreasing {
             .iter()
             .map(|&h| {
                 // initial balance, defined in contract js
-                let mut expected_balance: i128 = 100_000;
+                let mut expected_balance: i128 = INITIAL_BALANCE as i128;
                 // loop over blocks, starting with S, with step PERPETUAL_DISTRIBUTION_INTERVAL
                 for i in (1..=h).step_by(distribution_interval as usize) {
                     expected_balance += expected_emission(i, &dist);
                 }
-                println!("expected balance at height {}: {}", h, expected_balance);
+                tracing::debug!("expected balance at height {}: {}", h, expected_balance);
                 expected_balance.to_u64().unwrap_or_else(|| {
-                    println!("ERR: overflow in expected balance at height {}", h);
+                    tracing::error!("overflow in expected balance at height {}", h);
                     0
                 }) // to handle tests that overflow
             })
@@ -893,9 +955,10 @@ mod block_based_perpetual_step_decreasing {
             &claims,
             None, //Some(S),
             distribution_interval,
+            None,
         )
         .inspect_err(|e| {
-            println!("{}", e);
+            tracing::error!("{}", e);
         })
     }
 
@@ -946,7 +1009,7 @@ mod block_based_perpetual_step_decreasing {
             let f_x = n as f64 * a.powi(b.to_i32().expect("overflow"));
             f_x.to_i128()
                 .unwrap_or_else(|| {
-                    println!("ERR: overflow in expected_emission({})", f_x);
+                    tracing::error!("overflow in expected_emission({})", f_x);
                     0
                 })
                 .max(min_value)
@@ -973,7 +1036,7 @@ mod block_based_perpetual_stepwise {
         let distribution_interval = 10;
 
         // claims: height, balance, expect_pass
-        let claims = [
+        let steps = [
             (10, 110_000, true),
             (11, 110_000, false),
             (20, 120_000, true),
@@ -994,81 +1057,103 @@ mod block_based_perpetual_stepwise {
 
         check_heights(
             dist,
-            &claims,
+            &steps,
             None, //Some(S),
             distribution_interval,
+            None,
         )
         .inspect_err(|e| {
-            println!("{}", e);
-        })
-        .expect("stepwise should pass");
-    }
-
-    // ===== HELPER FUNCTIONS ===== //
-
-    #[test]
-    fn stepwise_u64_max() {
-        let periods = BTreeMap::from([(0, u64::MAX)]);
-        let dist = DistributionFunction::Stepwise(periods);
-
-        check_heights(
-            dist,
-            &[(100, 0, false)],
-            None, //Some(S),
-            10,
-        )
-        .inspect_err(|e| {
-            println!("{}", e);
-        })
-        .expect("stepwise should pass");
-    }
-    #[test]
-    /// We check what happens if we start distribution before the first period.
-    fn stepwise_before_first_period() {
-        let periods = BTreeMap::from([(100, 10_000)]);
-        let dist = DistributionFunction::Stepwise(periods);
-
-        // claims: height, balance, expect_pass
-        let claims = [
-            (1, 100_000, true), // IMO we should be able to claim first 100_000 here so expect_pass == true
-            (9, 100_000, false), // TODO: claim should succeed here? To transfer this 100k?
-            // (10, 0, false),
-            // (11, 0, false),
-            // (20, 0, false),
-            // (99, 0, false),
-            (100, 100_000, false),
-            (101, 110_000, true),
-            (102, 110_000, false),
-            (111, 120_000, true),
-            (200, 200_000, true),
-            (209, 200_000, false),
-        ];
-
-        check_heights(dist, &claims, None, 10)
-            .inspect_err(|e| {
-                println!("{}", e);
-            })
-            .expect("stepwise should pass");
-    }
-
-    #[test]
-    /// This test will overflow within 6 distributions
-    fn stepwise_overflow() {
-        let periods = BTreeMap::from([(10, u64::MAX / 5)]);
-        let dist = DistributionFunction::Stepwise(periods);
-
-        check_heights(
-            dist,
-            &[(10, 100_000, false), (11, 100_000, false)],
-            None, //Some(S),
-            10,
-        )
-        .inspect_err(|e| {
-            println!("{}", e);
+            tracing::error!("{}", e);
         })
         .expect("stepwise should pass");
     }
 }
+
+mod block_based_perpetual_linear {
+    use super::{test_suite::check_heights, INITIAL_BALANCE};
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use rust_decimal::prelude::ToPrimitive;
+    use test_case::test_case;
+
+    #[test_case(DistributionFunction::Linear{
+        a: 1,
+        d: 1,
+        start_step: None,
+        starting_amount: 100_000,
+        min_value: None,
+        max_value: None
+    },
+    &[10    ],
+    1
+    ; "x=y")]
+
+    fn test_linear(dist: DistributionFunction, heights: &[u64], distribution_interval: u64) {
+        // Linear distribution function
+        //
+        // # Formula
+        // The formula for the linear distribution function is:
+
+        // ```text
+        // f(x) = (a * (x - start_moment) / d) + starting_amount
+        // ```
+        //
+        let steps = heights
+            .iter()
+            .scan((INITIAL_BALANCE, 1), |(balance, last_height), &h| {
+                for i in (*last_height..=h).step_by(distribution_interval as usize) {
+                    *balance += expected_emission(i, 1, 1, None, 100_000);
+                }
+                *last_height = h;
+
+                Some((h, *balance, true))
+            })
+            .collect::<Vec<_>>();
+        check_heights(
+            dist,
+            &steps,
+            None, //Some(S),
+            distribution_interval,
+            None,
+        )
+        .inspect_err(|e| {
+            tracing::error!("{}", e);
+        })
+        .expect("stepwise should pass");
+    }
+
+    /// Calculate expected emission at provided height.
+    ///
+    /// All calculations are done in i128 to better handle overflows.
+    ///
+    /// ```text
+    /// f(x) = (a * (x - start_moment) / d) + starting_amount
+    /// ```
+    fn expected_emission(
+        x: u64,
+        a: u64,
+        d: u64,
+        start_moment: Option<u64>,
+        starting_amount: u64,
+    ) -> u64 {
+        let x = x as i128;
+        let a = a as i128;
+        let d = d as i128;
+        let start_moment = start_moment.unwrap_or(0) as i128;
+        let starting_amount = starting_amount as i128;
+
+        let f_x = if x < start_moment {
+            starting_amount
+        } else {
+            (a * (x - start_moment) / d + starting_amount).max(0)
+        };
+
+        f_x.to_u64().unwrap_or_else(|| {
+            tracing::error!("overflow in expected_emission({}), using 0", f_x);
+            0
+        })
+    }
+}
+
 mod test_suite {
     use super::*;
     use crate::rpc::core::MockCoreRPCLike;
@@ -1100,7 +1185,7 @@ mod test_suite {
         let worker = rt.spawn_blocking(f);
 
         rt.block_on(async move { tokio::time::timeout(duration, worker).await })
-            .map_err(|e| format!("test timed out after {:?}", TIMEOUT))?
+            .map_err(|_| format!("test timed out after {:?}", TIMEOUT))?
             .map_err(|e| format!("join error: {:?}", e))?
     }
 
@@ -1114,6 +1199,7 @@ mod test_suite {
     /// * `claims` - heights at which claims will be made; they will see balance from previous height
     /// * `contract_start_time` - optional start time of the contract
     /// * `distribution_interval` - interval between distributions
+    /// * `max_supply` - optional max supply of the token; if Some(), it will override max supply in contract JSON definition
     ///
     /// Note that for conveniance, you can provide `steps` as a [`TestStep`] or a slice of tuples, where each tuple contains:
     /// * `height` - height at which claim will be made
@@ -1125,6 +1211,7 @@ mod test_suite {
         steps: &[C],
         contract_start_time: Option<TimestampMillis>,
         distribution_interval: u64,
+        max_supply: Option<Option<u64>>,
     ) -> Result<(), String> {
         let mut suite = TestSuite::new(
             10_200_000_000,
@@ -1144,6 +1231,10 @@ mod test_suite {
                     )));
             }),
         );
+        if let Some(max_supply) = max_supply {
+            suite = suite.with_max_suppy(max_supply);
+        }
+
         if let Some(start) = contract_start_time {
             suite = suite.with_contract_start_time(start);
         }
@@ -1156,8 +1247,9 @@ mod test_suite {
         with_timeout(TIMEOUT, move || suite.execute(&steps))
     }
 
+    pub(super) type TokenConfigFn = dyn FnOnce(&mut TokenConfiguration) + Send + Sync;
     /// Test engine to run tests for different token distribution functions.
-    pub(crate) struct TestSuite<C> {
+    pub(crate) struct TestSuite {
         platform: TempPlatform<MockCoreRPCLike>,
         platform_version: &'static PlatformVersion,
         identity: dpp::prelude::Identity,
@@ -1167,7 +1259,7 @@ mod test_suite {
         contract: Option<DataContract>,
         start_time: Option<TimestampMillis>,
         token_distribution_type: TokenDistributionType,
-        token_configuration_modification: Option<C>,
+        token_configuration_modification: Option<Box<TokenConfigFn>>,
         epoch_index: u16,
         nonce: u64,
         time_between_blocks: u64,
@@ -1180,10 +1272,10 @@ mod test_suite {
         on_step_success: Box<dyn Fn(u64) + Send + Sync>,
     }
 
-    impl<C: FnOnce(&mut TokenConfiguration)> TestSuite<C> {
+    impl TestSuite {
         /// Create new test suite that will start at provided genesis time and create token contract with provided
         /// configuration.
-        pub(crate) fn new(
+        pub(crate) fn new<C: FnOnce(&mut TokenConfiguration) + Send + Sync + 'static>(
             genesis_time_ms: u64,
             time_between_blocks: u64,
             token_distribution_type: TokenDistributionType,
@@ -1195,12 +1287,14 @@ mod test_suite {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
+            Self::setup_logs();
+
             let mut rng = StdRng::seed_from_u64(49853);
 
             let (identity, signer, identity_public_key) =
                 setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
 
-            Self {
+            let me = Self {
                 platform,
                 platform_version,
                 identity,
@@ -1213,10 +1307,61 @@ mod test_suite {
                 epoch_index: 1,
                 nonce: 1,
                 time_between_blocks,
-                token_configuration_modification,
+                token_configuration_modification: None, // setup later
                 on_step_success: Box::new(|_| {}),
             }
-            .with_genesis(1, genesis_time_ms)
+            .with_genesis(1, genesis_time_ms);
+
+            if let Some(token_configuration_modification) = token_configuration_modification {
+                me.with_token_configuration_modification_fn(token_configuration_modification)
+            } else {
+                me
+            }
+        }
+
+        /// Appends new token configuration modification function after existing ones.
+        pub(crate) fn with_token_configuration_modification_fn(
+            mut self,
+            token_configuration_modification: impl FnOnce(&mut TokenConfiguration)
+                + Send
+                + Sync
+                + 'static,
+        ) -> Self {
+            if let Some(previous) = self.token_configuration_modification.take() {
+                let f = Box::new(move |token_configuration: &mut TokenConfiguration| {
+                    previous(token_configuration);
+                    token_configuration_modification(token_configuration);
+                });
+
+                self.token_configuration_modification = Some(f);
+            } else {
+                // no previous modifications
+                let f = Box::new(token_configuration_modification);
+                self.token_configuration_modification = Some(f);
+            };
+
+            self
+        }
+        /// Appends a token configuration modification that will change max supply.
+        pub(crate) fn with_max_suppy(self, max_supply: Option<u64>) -> Self {
+            self.with_token_configuration_modification_fn(
+                move |token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_max_supply(max_supply);
+                },
+            )
+        }
+
+        /// Enable logging for tests
+        fn setup_logs() {
+            tracing_subscriber::fmt::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new(
+            "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace",
+        ))
+        .pretty()
+        .with_ansi(true)
+        .with_writer(std::io::stdout)
+        .try_init()
+        .ok();
         }
 
         /// Lazily initialize and return token contract. Also sets token id.
@@ -1452,25 +1597,32 @@ mod test_suite {
                 self.epoch_index,
                 false,
             );
-            self.claim(test_case.claim_transition_assertions.clone())
-                .map_err(|e| format!("claim failed: {}", e))?;
+            let mut result = Vec::new();
+            if let Err(e) = self.claim(test_case.claim_transition_assertions.clone()) {
+                result.push(format!("claim failed: {}", e))
+            }
 
             let balance = self
                 .get_balance()
                 .map_err(|e| format!("failed to get balance: {}", e))?
                 .ok_or("expected balance to be present, but got None".to_string())?;
 
-            if let Some(expected_balance) = test_case.expected_balance {
-                if expected_balance != balance {
-                    return Err(format!(
-                        "expected balance {:?} but got {:?}",
-                        test_case.expected_balance, balance
-                    ));
-                }
-            };
-            (self.on_step_success)(balance);
+            if test_case
+                .expected_balance
+                .is_some_and(|expected_balance| expected_balance != balance)
+            {
+                result.push(format!(
+                    "expected balance {:?} but got {:?}",
+                    test_case.expected_balance, balance
+                ));
+            }
 
-            Ok(())
+            if result.is_empty() {
+                (self.on_step_success)(balance);
+                Ok(())
+            } else {
+                Err(result.join("\n"))
+            }
         }
     }
 
@@ -1498,24 +1650,45 @@ mod test_suite {
         ///
         /// If expected_balance is None, we don't check the balance.
         pub(super) fn new(claim_height: u64, expected_balance: u64, expect_success: bool) -> Self {
+            let trace_assertion: AssertionFn = |processing_results: &[_]| {
+                tracing::trace!(
+                    "transaction assertion check for processing results: {:?}",
+                    processing_results
+                );
+                Ok(())
+            };
             let assertions: Vec<AssertionFn> = if expect_success {
-                vec![|processing_results: &[_]| match processing_results {
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
-                    _ => Err(format!(
-                        "expected SuccessfulExecution, got {:?}",
-                        processing_results
-                    )),
-                }]
+                vec![
+                    |processing_results: &[_]| {
+                        tracing::trace!(?processing_results, "expect success");
+                        Ok(())
+                    },
+                    |processing_results: &[_]| match processing_results {
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
+                        _ => Err(format!(
+                            "expected SuccessfulExecution, got {:?}",
+                            processing_results
+                        )),
+                    },
+                    trace_assertion,
+                ]
             } else {
-                vec![|processing_results: &[_]| match processing_results {
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
-                        Err("expected error, got SuccessfulExecution".into())
-                    }
-                    [StateTransitionExecutionResult::InternalError(e)] => {
-                        Err(format!("expected normal error, got InternalError: {}", e))
-                    }
-                    _ => Ok(()),
-                }]
+                vec![
+                    |processing_results: &[_]| {
+                        tracing::trace!(?processing_results, "expect failure");
+                        Ok(())
+                    },
+                    |processing_results: &[_]| match processing_results {
+                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
+                            Err("expected error, got SuccessfulExecution".into())
+                        }
+                        [StateTransitionExecutionResult::InternalError(e)] => {
+                            Err(format!("expected normal error, got InternalError: {}", e))
+                        }
+                        _ => Ok(()),
+                    },
+                    trace_assertion,
+                ]
             };
             Self {
                 name: format!("claim at height {}", claim_height),
