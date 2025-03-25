@@ -29,6 +29,9 @@ function keepsHistory(batchedTransition, tokenConfiguration) {
     case TokenTransitionType.Unfreeze: {
       return tokenConfiguration.keepsHistory().keepsFreezingHistory();
     }
+    case TokenTransitionType.Claim:
+    case TokenTransitionType.ConfigUpdate:
+    case TokenTransitionType.EmergencyAction:
     case TokenTransitionType.DestroyFrozenFunds: {
       return true;
     }
