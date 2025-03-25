@@ -1,6 +1,4 @@
-use crate::abci::app::{
-    PlatformApplication, SnapshotFetchingApplication, SnapshotManagerApplication,
-};
+use crate::abci::app::{PlatformApplication, SnapshotManagerApplication, StateSyncApplication};
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -40,7 +38,7 @@ pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db /*+ CoreRPCLike*/>(
     request: proto::RequestApplySnapshotChunk,
 ) -> Result<proto::ResponseApplySnapshotChunk, Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
     if tracing::enabled!(tracing::Level::TRACE) {
@@ -151,7 +149,7 @@ fn reconstruct_platform_state<'a, 'db: 'a, A, C: 'db>(
     app_hash: &[u8],
 ) -> Result<(), Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
     let config = &app.platform().config;
@@ -284,7 +282,7 @@ fn build_masternode_lists<'a, 'db: 'a, A, C: 'db>(
     core_block_height: u32,
 ) -> Result<(), Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
     let mn_list_diff = app
@@ -323,7 +321,7 @@ fn build_quorum_verification_set<'a, 'db: 'a, A, C: 'db>(
     quorum_set: &mut SignatureVerificationQuorumSet,
 ) -> Result<(), Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
     let quorums_list: BTreeMap<_, _> = extended_quorum_list
@@ -375,7 +373,7 @@ fn build_validators_list<'a, 'db: 'a, A, C: 'db>(
     validator_set_quorum_type: QuorumType,
 ) -> Result<(), Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
     let validator_quorums_list: BTreeMap<_, _> = extended_quorum_list
@@ -452,7 +450,7 @@ fn update_validators_list<'a, 'db: 'a, A, C: 'db>(
     proposer_pro_tx_hash: [u8; 32],
 ) -> Result<(), Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
     let mut perform_rotation = false;

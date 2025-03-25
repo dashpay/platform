@@ -1,6 +1,6 @@
 use crate::abci::app::{
-    BlockExecutionApplication, PlatformApplication, SnapshotFetchingApplication,
-    SnapshotManagerApplication, TransactionalApplication,
+    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
+    StateSyncApplication, TransactionalApplication,
 };
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
@@ -20,7 +20,7 @@ use tenderdash_abci::proto::abci as proto;
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
-/// creating new proposal or finalizing new block.
+/// creating new proposal, finalizing new block, accept a new snapshot and process incoming chunks (state sync)
 /// 'p: 'tx, means that Platform must outlive the transaction
 pub struct ConsensusAbciApplication<'p, C> {
     /// Platform
@@ -65,7 +65,7 @@ impl<'p, C> SnapshotManagerApplication for ConsensusAbciApplication<'p, C> {
     }
 }
 
-impl<'p, C> SnapshotFetchingApplication<'p, C> for ConsensusAbciApplication<'p, C> {
+impl<'p, C> StateSyncApplication<'p, C> for ConsensusAbciApplication<'p, C> {
     fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>> {
         &self.snapshot_fetching_session
     }

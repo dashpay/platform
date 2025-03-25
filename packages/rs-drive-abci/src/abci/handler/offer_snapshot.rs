@@ -1,4 +1,4 @@
-use crate::abci::app::{SnapshotFetchingApplication, SnapshotManagerApplication};
+use crate::abci::app::{SnapshotManagerApplication, StateSyncApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -14,7 +14,7 @@ pub fn offer_snapshot<'a, 'db: 'a, A, C: 'db>(
     request: proto::RequestOfferSnapshot,
 ) -> Result<proto::ResponseOfferSnapshot, Error>
 where
-    A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
+    A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
 {
     let request_app_hash: [u8; 32] = request.app_hash.try_into().map_err(|_| {
         AbciError::StateSyncBadRequest("offer_snapshot invalid app_hash length".to_string())
@@ -74,7 +74,11 @@ where
             .ok_or(AbciError::StateSyncInternalError(
                 "offer_snapshot unable to lock session".to_string(),
             ))?;
-        if offered_snapshot.height <= session.snapshot.height {
+        tracing::warn!(
+            "[state_sync] api offer_snapshot already syncing height:{}",
+            session.snapshot.height
+        );
+        if offered_snapshot.height < session.snapshot.height {
             return Err(Error::Abci(AbciError::StateSyncBadRequest(
                 "offer_snapshot already syncing newest height".to_string(),
             )));

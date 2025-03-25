@@ -4,6 +4,8 @@ use bincode::{Decode, Encode};
 use platform_value::Bytes32;
 
 /// Reduced Platform State for Saving V0
+/// This minimal version of Platform state is written in GroveDB under the root hash.
+/// This allows a freshly new synced node to reconstruct Platform state.
 #[derive(Clone, Debug, Encode, Decode)]
 pub struct ReducedPlatformStateForSavingV0 {
     /// Current Version

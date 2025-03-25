@@ -4,16 +4,16 @@ use std::{
     pin::Pin,
 };
 
+use crate::error::Error;
 use bincode::{config, Decode, Encode};
 use dapi_grpc::tonic;
+use dpp::version::PlatformVersion;
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::replication::MultiStateSyncSession;
 use drive::grovedb::GroveDb;
 use prost::Message;
 use tenderdash_abci::proto::abci;
-use crate::error::Error;
-use dpp::version::PlatformVersion;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 

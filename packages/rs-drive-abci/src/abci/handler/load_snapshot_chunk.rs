@@ -1,11 +1,11 @@
 use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
-use bincode::{Decode, Encode};
-use drive::grovedb::GroveDb;
-use tenderdash_abci::proto::abci as proto;
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
+use bincode::{Decode, Encode};
 use dpp::version::PlatformVersion;
+use drive::grovedb::GroveDb;
+use tenderdash_abci::proto::abci as proto;
 
 pub fn load_snapshot_chunk<A, C>(
     app: &A,

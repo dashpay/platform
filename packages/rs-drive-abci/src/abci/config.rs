@@ -116,8 +116,6 @@ impl StateSyncAbciConfig {
     }
 
     fn default_checkpoints_path() -> PathBuf {
-        std::env::var("CHECKPOINTS_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/var/lib/dash-platform/data/checkpoints"))
+        PathBuf::from("/var/lib/dash-platform/data/checkpoints")
     }
 }

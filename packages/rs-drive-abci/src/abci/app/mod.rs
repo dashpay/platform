@@ -23,9 +23,9 @@ pub trait PlatformApplication<C = DefaultCoreRPC> {
     fn platform(&self) -> &Platform<C>;
 }
 
-/// Platform-based ABCI application
+/// ABCI application supporting snapshot manager
 pub trait SnapshotManagerApplication {
-    /// Returns Platform
+    /// Returns Snapshot manager
     fn snapshot_manager(&self) -> &SnapshotManager;
 }
 
@@ -48,7 +48,7 @@ pub trait BlockExecutionApplication {
 }
 
 /// Application that can maintain state sync
-pub trait SnapshotFetchingApplication<'p, C = DefaultCoreRPC> {
+pub trait StateSyncApplication<'p, C = DefaultCoreRPC> {
     /// Returns the current snapshot fetching session
     fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>>;
 
