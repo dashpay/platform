@@ -1,9 +1,9 @@
 use crate::abci::app::{SnapshotFetchingApplication, SnapshotManagerApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::snapshot::SnapshotFetchingSession;
 use dpp::version::PlatformVersion;
-use drive::grovedb::replication::CURRENT_STATE_SYNC_VERSION;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_offer_snapshot;
 
@@ -26,6 +26,9 @@ where
         "[state_sync] api offer_snapshot height:{}",
         offered_snapshot.height
     );
+
+    let platform_version = app.platform().state.load().current_platform_version()?;
+
     let mut session_write_guard = app.snapshot_fetching_session().write().map_err(|_| {
         AbciError::StateSyncInternalError(
             "offer_snapshot unable to lock session (poisoned)".to_string(),
@@ -46,8 +49,8 @@ where
             .start_snapshot_syncing(
                 request_app_hash,
                 SUBTREES_BATCH_SIZE,
-                CURRENT_STATE_SYNC_VERSION,
-                &PlatformVersion::latest().drive.grove_version,
+                platform_version.drive_abci.state_sync.protocol_version,
+                &platform_version.drive.grove_version,
             )
             .map_err(|e| {
                 AbciError::StateSyncInternalError(format!(
@@ -89,8 +92,8 @@ where
             .start_snapshot_syncing(
                 request_app_hash,
                 SUBTREES_BATCH_SIZE,
-                CURRENT_STATE_SYNC_VERSION,
-                &PlatformVersion::latest().drive.grove_version,
+                platform_version.drive_abci.state_sync.protocol_version,
+                &platform_version.drive.grove_version,
             )
             .map_err(|e| {
                 AbciError::StateSyncInternalError(format!(

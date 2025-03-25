@@ -1,11 +1,8 @@
 use crate::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
-use crate::serialization::{PlatformSerializable, ReducedPlatformDeserializable};
+use crate::serialization::ReducedPlatformDeserializable;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
-use derive_more::From;
 use platform_version::version::PlatformVersion;
-use platform_version::TryIntoPlatformVersioned;
-use serde::{Deserialize, Serialize};
 
 pub mod v0;
 

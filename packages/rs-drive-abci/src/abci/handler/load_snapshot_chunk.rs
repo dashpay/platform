@@ -100,11 +100,13 @@ impl ChunkData {
 
     // serialize ChunkData to bytes to send to Tenderdash.
     pub fn serialize(&mut self) -> Result<Vec<u8>, Error> {
-        tracing::trace!(
-            checksum = hex::encode(self.crc32),
-            size = self.size,
-            "state_sync crc32 checksum calculated"
-        );
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                checksum = hex::encode(self.crc32),
+                size = self.size,
+                "state_sync crc32 checksum calculated"
+            );
+        }
         let data: &ChunkData = self;
 
         bincode::encode_to_vec(data, bincode::config::standard()).map_err(|e| {

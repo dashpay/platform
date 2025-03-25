@@ -1,5 +1,3 @@
-use crate::block::block_info::BlockInfo;
-use crate::block::extended_block_info::ExtendedBlockInfo;
 use crate::fee::default_costs::EpochIndexFeeVersionsForStorage;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};

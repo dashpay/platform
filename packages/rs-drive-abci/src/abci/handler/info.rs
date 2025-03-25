@@ -24,11 +24,13 @@ where
 
     let block_height = platform_state.last_committed_block_height();
 
-    tracing::trace!(
-        block_height,
-        platform_state = ?platform_state,
-        "state_info"
-    );
+    if tracing::enabled!(tracing::Level::TRACE) {
+        tracing::trace!(
+            block_height,
+            platform_state = ?platform_state,
+            "state_info"
+        );
+    }
 
     let last_block_height = platform_state.last_committed_block_height() as i64;
 

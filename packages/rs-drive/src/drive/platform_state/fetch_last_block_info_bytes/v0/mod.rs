@@ -1,4 +1,4 @@
-use crate::drive::platform_state::{LAST_BLOCK_INFO_KEY, REDUCED_PLATFORM_STATE_KEY};
+use crate::drive::platform_state::LAST_BLOCK_INFO_KEY;
 use crate::drive::system::misc_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;

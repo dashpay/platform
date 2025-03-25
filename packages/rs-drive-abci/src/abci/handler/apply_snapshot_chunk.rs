@@ -44,10 +44,15 @@ where
     A: SnapshotManagerApplication + SnapshotFetchingApplication<'db, C> + 'db,
     C: CoreRPCLike,
 {
-    tracing::trace!(
-        "[state_sync] api apply_snapshot_chunk chunk_id:{}",
-        hex::encode(&request.chunk_id)
-    );
+    if tracing::enabled!(tracing::Level::TRACE) {
+        tracing::trace!(
+            "[state_sync] api apply_snapshot_chunk chunk_id:{}",
+            hex::encode(&request.chunk_id)
+        );
+    }
+
+    let platform_version = app.platform().state.load().current_platform_version()?;
+
     let mut is_state_sync_completed: bool = false;
     // Lock first the RwLock
     let mut session_write_guard = app.snapshot_fetching_session().write().map_err(|_| {
@@ -76,7 +81,7 @@ where
                 &request.chunk_id,
                 chunk,
                 1u16,
-                &PlatformVersion::latest().drive.grove_version,
+                &platform_version.drive.grove_version,
             )
             .map_err(|e| {
                 tracing::error!(
@@ -125,12 +130,7 @@ where
             .platform()
             .drive
             .grove
-            .verify_grovedb(
-                None,
-                true,
-                false,
-                &PlatformVersion::latest().drive.grove_version,
-            )
+            .verify_grovedb(None, true, false, &platform_version.drive.grove_version)
             .map_err(|e| {
                 AbciError::StateSyncInternalError(format!(
                     "apply_snapshot_chunk unable to verify grovedb: {}",
@@ -269,6 +269,7 @@ where
     )?;
 
     let block_height = platform_state.last_committed_block_height();
+
     tracing::info!(block_height, platform_state = ?platform_state, "state_sync_finalize");
 
     if let Some(next_validator_set_quorum_hash) =
