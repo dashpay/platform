@@ -195,11 +195,11 @@ where
         current_protocol_version_in_consensus: v0.current_protocol_version_in_consensus,
         next_epoch_protocol_version: v0.next_epoch_protocol_version,
         current_validator_set_quorum_hash: QuorumHash::from_byte_array(
-            v0.current_validator_set_quorum_hash.to_buffer(),
-        ),
-        next_validator_set_quorum_hash: v0
-            .next_validator_set_quorum_hash
-            .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
+            v0.next_validator_set_quorum_hash
+                .unwrap_or(v0.current_validator_set_quorum_hash)
+                .to_buffer(),
+        ), // we are at H+1 so "next" validator hash will be the current one
+        next_validator_set_quorum_hash: None, // we are at H+1 and we don't know next validators hash yet
         patched_platform_version: None,
         validator_sets: Default::default(),
         chain_lock_validating_quorums: SignatureVerificationQuorumSet::from(
@@ -257,12 +257,6 @@ where
     let block_height = platform_state.last_committed_block_height();
 
     tracing::info!(block_height, platform_state = ?platform_state, "state_sync_finalize");
-
-    if let Some(next_validator_set_quorum_hash) =
-        platform_state.take_next_validator_set_quorum_hash()
-    {
-        platform_state.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
-    }
 
     let tx = drive.grove.start_transaction();
     platform.store_platform_state(&platform_state, Some(&tx), &PlatformVersion::latest())?;
