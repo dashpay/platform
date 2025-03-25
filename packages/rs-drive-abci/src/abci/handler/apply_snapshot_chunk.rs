@@ -1,7 +1,6 @@
 use crate::abci::app::{
     PlatformApplication, SnapshotFetchingApplication, SnapshotManagerApplication,
 };
-use crate::abci::handler::load_snapshot_chunk::ChunkData;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -67,20 +66,12 @@ where
                 "apply_snapshot_chunk unable to lock session".to_string(),
             ))?;
 
-        let chunk_data = ChunkData::deserialize(&request.chunk).map_err(|e| {
-            AbciError::StateSyncInternalError(format!(
-                "apply_snapshot_chunk unable to deserialize chunk: {}",
-                e
-            ))
-        })?;
-        let chunk = chunk_data.chunk();
-
         let next_chunk_ids = session
             .state_sync_info
             .apply_chunk(
                 &request.chunk_id,
-                chunk,
-                1u16,
+                &request.chunk,
+                platform_version.drive_abci.state_sync.protocol_version,
                 &platform_version.drive.grove_version,
             )
             .map_err(|e| {

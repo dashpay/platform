@@ -12,7 +12,6 @@ use drive::grovedb::replication::MultiStateSyncSession;
 use drive::grovedb::GroveDb;
 use prost::Message;
 use tenderdash_abci::proto::abci;
-//use platform_version::version::PlatformVersion;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
 
