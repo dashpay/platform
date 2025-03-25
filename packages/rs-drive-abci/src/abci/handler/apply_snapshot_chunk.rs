@@ -170,24 +170,22 @@ where
             .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
     let core_height = extended_block_info.block_info.core_height;
 
-    let last_committed_block = ExtendedBlockInfo::V0 {
-        0: ExtendedBlockInfoV0 {
-            basic_info: extended_block_info.block_info,
-            app_hash: match app_hash.try_into() {
-                Ok(hash) => hash,
-                Err(_) => {
-                    return Err(Error::from(AbciError::StateSyncInternalError(
-                        "Invalid app_hash length".to_string(),
-                    )));
-                }
-            },
-            quorum_hash: [0u8; 32],
-            block_id_hash: [0u8; 32],
-            proposer_pro_tx_hash: extended_block_info.proposer_pro_tx_hash,
-            signature: [0u8; 96],
-            round: 0,
+    let last_committed_block = ExtendedBlockInfo::V0(ExtendedBlockInfoV0 {
+        basic_info: extended_block_info.block_info,
+        app_hash: match app_hash.try_into() {
+            Ok(hash) => hash,
+            Err(_) => {
+                return Err(Error::from(AbciError::StateSyncInternalError(
+                    "Invalid app_hash length".to_string(),
+                )));
+            }
         },
-    };
+        quorum_hash: v0.current_validator_set_quorum_hash.to_buffer(),
+        block_id_hash: [0u8; 32],
+        proposer_pro_tx_hash: extended_block_info.proposer_pro_tx_hash,
+        signature: [0u8; 96],
+        round: 0,
+    });
 
     let mut platform_state = PlatformState::V0(PlatformStateV0 {
         genesis_block_info: None,
