@@ -126,11 +126,11 @@ impl Strategy {
         self.operations
             .iter()
             .filter(|operation| match &operation.op_type {
-                OperationType::Document(document_op) => match &document_op.action {
-                    DocumentAction::DocumentActionInsertRandom(_, _) => false,
-                    DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => false,
-                    _ => true,
-                },
+                OperationType::Document(document_op) => !matches!(
+                    &document_op.action,
+                    DocumentAction::DocumentActionInsertRandom(_, _)
+                        | DocumentAction::DocumentActionInsertSpecific(_, _, _, _)
+                ),
                 _ => false,
             })
             .count() as u16
@@ -187,6 +187,8 @@ pub enum LocalDocumentQuery<'a> {
 
 #[derive(Clone, Debug, Encode, Decode)]
 struct StrategyInSerializationFormat {
+    // TODO: Use type or struct
+    #[allow(clippy::type_complexity)]
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
     pub start_identities: StartIdentities,
@@ -471,6 +473,7 @@ impl Strategy {
     /// This function is central to simulating the lifecycle of block processing and strategy execution
     /// on the Dash Platform. It encapsulates the complexity of transaction generation, identity management,
     /// and contract dynamics within a block's context.
+    #[allow(clippy::too_many_arguments)]
     pub fn state_transitions_for_block(
         &mut self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
@@ -480,7 +483,7 @@ impl Strategy {
         ) -> PartialIdentity,
         asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
-        current_identities: &mut Vec<Identity>,
+        current_identities: &mut [Identity],
         known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -519,6 +522,7 @@ impl Strategy {
             identity_state_transitions.into_iter().unzip();
 
         // Add initial contracts for contracts_with_updates on 2nd block of strategy
+        #[allow(clippy::comparison_chain)]
         if block_info.height == config.start_block_height + 1 {
             let mut contract_state_transitions = self.initial_contract_state_transitions(
                 current_identities,
@@ -620,6 +624,7 @@ impl Strategy {
     /// # Note
     /// This function plays a pivotal role in simulating realistic blockchain operations, allowing for the
     /// detailed and nuanced execution of a wide range of actions on the Dash Platform as defined by the strategy.
+    #[allow(clippy::too_many_arguments)]
     pub fn operations_based_transitions(
         &self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
@@ -1585,6 +1590,7 @@ impl Strategy {
     /// # Notes
     /// This function plays a crucial role in simulating the dynamic nature of identity management on the Dash Platform,
     /// allowing for a nuanced and detailed representation of identity-related activities within a blockchain simulation environment.
+    #[allow(clippy::too_many_arguments)]
     pub fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,

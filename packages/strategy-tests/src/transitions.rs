@@ -878,6 +878,7 @@ pub fn create_identity_credit_transfer_transition(
 /// This function may panic under the following conditions:
 /// - When unable to generate random cryptographic keys or identities.
 /// - Conversion and encoding errors related to the cryptographic data.
+#[allow(clippy::too_many_arguments)]
 pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
@@ -1034,8 +1035,7 @@ where
             let (_, pk) = ECDSA_SECP256K1
                 .random_public_and_private_key_data(rng, platform_version)
                 .unwrap();
-            let sk: [u8; 32] = pk.try_into().unwrap();
-            let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+            let secret_key = SecretKey::from_str(hex::encode(pk).as_str()).unwrap();
             let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
                 PrivateKey::new(secret_key, Network::Dash),
                 amount_range,
@@ -1045,7 +1045,7 @@ where
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
                     asset_lock_proof,
-                    &sk,
+                    &pk,
                     signer,
                     &NativeBlsModule,
                     0,

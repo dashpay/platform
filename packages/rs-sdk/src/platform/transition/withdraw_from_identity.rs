@@ -20,6 +20,7 @@ pub trait WithdrawFromIdentity {
     /// Function to withdraw credits from an identity. Returns the final identity balance.
     /// If signing_withdrawal_key_to_use is not set, we will try to use one in the signer that is
     /// available for withdrawal
+    #[allow(clippy::too_many_arguments)]
     async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
