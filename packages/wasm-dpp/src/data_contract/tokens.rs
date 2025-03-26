@@ -14,9 +14,9 @@ impl From<TokenConfiguration> for TokenConfigurationWasm {
     }
 }
 
-impl Into<TokenConfiguration> for TokenConfigurationWasm {
-    fn into(self) -> TokenConfiguration {
-        self.0
+impl From<TokenConfigurationWasm> for TokenConfiguration {
+    fn from(val: TokenConfigurationWasm) -> Self {
+        val.0
     }
 }
 
