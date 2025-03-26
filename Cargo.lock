@@ -1579,7 +1579,6 @@ dependencies = [
  "ciborium",
  "clap",
  "console-subscriber",
- "crc",
  "dapi-grpc",
  "dashcore-rpc",
  "delegate",
