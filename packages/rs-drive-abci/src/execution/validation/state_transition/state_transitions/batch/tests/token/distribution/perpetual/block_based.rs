@@ -656,8 +656,8 @@ mod block_based_perpetual_random {
     /// Then I get deterministic balances at those heights.
     #[test_matrix(
         0, //min
-         100,//max,
-         [None,Some(1_000_000)], // max_supply
+        100,//max,
+        [None,Some(1_000_000)], // max_supply
         &[
             TestStep::new(41, 100_192, true),
             TestStep::new(46, 100_192, false),
@@ -684,6 +684,24 @@ mod block_based_perpetual_random {
     fn test_block_based_perpetual_random_0_0() {
         check_heights(
             DistributionFunction::Random { min: 0, max: 0 },
+            &[
+                TestStep::new(41, INITIAL_BALANCE, false),
+                TestStep::new(50, INITIAL_BALANCE, false),
+                TestStep::new(100, INITIAL_BALANCE, false),
+            ],
+            None,
+            10,
+            None,
+        )
+        .expect("no rewards");
+    }
+    #[test]
+    fn fails_test_block_based_perpetual_random_0_max() {
+        check_heights(
+            DistributionFunction::Random {
+                min: 0,
+                max: u64::MAX,
+            },
             &[
                 TestStep::new(41, INITIAL_BALANCE, false),
                 TestStep::new(50, INITIAL_BALANCE, false),
@@ -822,18 +840,29 @@ mod block_based_perpetual_step_decreasing {
         Some(1),// min_value
       Some((1..1000).step_by(500).collect()),// claim_heights
         1; // distribution_interval
-        "fail claim every 500 blocks"
+        "fails: claim every 500 blocks"
     )]
-    #[test_matrix(
+    #[test_case(
         1,// step_count
         101,// decrease_per_interval_numerator
         100,// decrease_per_interval_denominator
         None,// s
         100_000,// n
         Some(1),// min_value
-        [Some((1..1000).step_by(100).collect()),Some((1..1000).step_by(500).collect())],// claim_heights
+        Some((1..1000).step_by(100).collect()),// claim_heights
         1; // distribution_interval
-        "1% increase, varying claim heights"
+        "1% increase, claim every 100 blocks"
+    )]
+    #[test_case(
+        1,// step_count
+        101,// decrease_per_interval_numerator
+        100,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        Some(1),// min_value
+        Some((1..1000).step_by(500).collect()),// claim_heights
+        1; // distribution_interval
+        "fails: 1% increase, claim every 500 blocks"
     )]
     #[test_case(
         1,// step_count
@@ -844,7 +873,18 @@ mod block_based_perpetual_step_decreasing {
         Some(1),// min_value
         Some(vec![1,7]), // claim_heights
         1; // distribution_interval
-        "fail 1000x increase, overflow"
+        "fails: 1000x increase, overflow"
+    )]
+    #[test_matrix(
+        1,// step_count
+        1,// decrease_per_interval_numerator
+        1,// decrease_per_interval_denominator
+        None,// s
+        100_000,// n
+        [Some(1), Some(100)],// min_value
+        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        1; // distribution_interval
+        "100% decrease, various min values"
     )]
     #[test_case(
         1,// step_count
@@ -852,10 +892,10 @@ mod block_based_perpetual_step_decreasing {
         1,// decrease_per_interval_denominator
         None,// s
         100_000,// n
-        Some(1),// min_value
+        Some(u64::MAX),// min_value
         Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
         1; // distribution_interval
-        "100% decrease, various min values"
+        "fails: full decrease, min is u64::MAX"
     )]
     #[test_matrix(
         1,// step_count
@@ -868,17 +908,43 @@ mod block_based_perpetual_step_decreasing {
         1; // distribution_interval
         "no decrease, irrelevant min values"
     )]
-    #[test_matrix(
-        [1],// step_count
+    /// Given 100% decrease with step 10, when I claim below 10th block, then the claim is successful.
+    #[test_case(
+        10,// step_count
         1,// decrease_per_interval_numerator
         1,// decrease_per_interval_denominator
         None,// s
         100_000,// n
         None,// min_value
-        Some(vec![7,10,20,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        [5]; // distribution_interval
-        "no decrease, changing step"
+        Some(vec![2,7,9]), // claim_heights // ,300,500,800,1_000,1_000_000
+        1; // distribution_interval
+        "full decrease, step 10 interval 1"
     )]
+    /// Given 100% decrease with step 10 starting at 5, when I claim below 15th block, then the claim is successful.
+    #[test_case(
+        10,// step_count
+        1,// decrease_per_interval_numerator
+        1,// decrease_per_interval_denominator
+        Some(5),// s
+        100_000,// n
+        None,// min_value
+        Some(vec![2,7,9,13,14]), // claim_heights // ,300,500,800,1_000,1_000_000
+        1; // distribution_interval
+        "full decrease, start 5 step 10 interval 1"
+    )]
+    /// Given 100% decrease with step 10 starting at 5, when I claim at height 15, there are no new coins.
+    #[test_case(
+            10,// step_count
+            1,// decrease_per_interval_numerator
+            1,// decrease_per_interval_denominator
+            Some(5),// s
+            100_000,// n
+            None,// min_value
+            Some(vec![14,15]), // claim_heights // at 14 we zero out, at 15 nothing to claim
+            1 // distribution_interval
+            => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("claim at height 15: claim failed")))
+            ;"full decrease, start 5 step 10 interval 1 err at 15"
+        )]
     #[test_matrix(
         [5,10],// step_count
         1,// decrease_per_interval_numerator
@@ -886,19 +952,19 @@ mod block_based_perpetual_step_decreasing {
         None,// s
         100_000,// n
         None,// min_value
-        Some(vec![5,10,20,100]), // claim_heights // ,300,500,800,1_000,1_000_000
+        Some(vec![5,10,18,22,100]), // claim_heights 
         [1,5]; // distribution_interval
-        "1/2 decrease, changing step"
+        "fails: 1/2 decrease, changing step"
     )]
     #[test_matrix(
-        [1,10],// step_count
-        1,// decrease_per_interval_numerator
-        2,// decrease_per_interval_denominator
+        1,// step_count
+        10,// decrease_per_interval_numerator
+        100,// decrease_per_interval_denominator
         [None,Some(1),Some(5)],// s
         100_000,// n
         None,// min_value
-        Some(vec![5,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        [1,5]; // distribution_interval
+        Some(vec![5,10,15,20]), // claim_heights // ,300,500,800,1_000,1_000_000
+        1; // distribution_interval
         "1/2 decrease, changing S"
     )]
 
@@ -941,15 +1007,13 @@ mod block_based_perpetual_step_decreasing {
             })
             .collect::<Vec<_>>();
         // we expect all tests to pass
-        let expect_pass = claim_heights.iter().map(|&_h| true).collect::<Vec<_>>();
-
         let claims = claim_heights
             .iter()
             .zip(expected_balances.iter())
-            .zip(expect_pass.iter())
-            .map(|((&h, &b), &p)| (h, b, p))
+            .map(|(&h, &b)| (h, b, true))
             .collect::<Vec<_>>();
 
+        // we return Err(()) to make result comparision easier in test_case
         check_heights(
             dist,
             &claims,
@@ -958,7 +1022,7 @@ mod block_based_perpetual_step_decreasing {
             None,
         )
         .inspect_err(|e| {
-            tracing::error!("{}", e);
+            tracing::error!(e);
         })
     }
 
@@ -1023,7 +1087,7 @@ mod block_based_perpetual_stepwise {
     use std::collections::BTreeMap;
 
     #[test]
-    fn stepwise_correct() {
+    fn fails_stepwise_correct() {
         let periods = BTreeMap::from([
             (0, 10_000),
             (20, 20_000),
@@ -1037,16 +1101,20 @@ mod block_based_perpetual_stepwise {
 
         // claims: height, balance, expect_pass
         let steps = [
+            (1, 100_000, false),
+            (9, 100_000, false),
             (10, 110_000, true),
             (11, 110_000, false),
+            (19, 110_000, false),
             (20, 120_000, true),
+            (21, 120_000, false),
             (24, 120_000, false),
-            (35, 140_000, true),
+            (35, 140_000, true), // since 20, we should get one more distribution of 20k at height 30
             (39, 140_000, false),
             (46, 160_000, true),
             (49, 160_000, false),
-            (50, 180_000, true),
-            (51, 180_000, false),
+            (51, 180_000, true),
+            (52, 180_000, false),
             (70, 270_000, true),
             (
                 1_000_000,
@@ -1070,24 +1138,93 @@ mod block_based_perpetual_stepwise {
 }
 
 mod block_based_perpetual_linear {
+    use std::i64;
+
     use super::{test_suite::check_heights, INITIAL_BALANCE};
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use rust_decimal::prelude::ToPrimitive;
-    use test_case::test_case;
+    use test_case::{test_case, test_matrix};
 
-    #[test_case(DistributionFunction::Linear{
-        a: 1,
-        d: 1,
-        start_step: None,
-        starting_amount: 100_000,
-        min_value: None,
-        max_value: None
-    },
-    &[10    ],
-    1
-    ; "x=y")]
+    #[test_matrix(
+        1,// a
+        1, // d
+        [None,Some(0)], // start_step
+        0, // starting_amount
+        [None,Some(0),Some(1)],// min_value
+        [None,Some(1000)],// max_value
+        &[(1,100_001,true),(2,100_003,true),(3,100_006,true),(10,100_055,true)], // heights
+        1 // distribution_interval
+    ; "f(x)=x")]
 
-    fn test_linear(dist: DistributionFunction, heights: &[u64], distribution_interval: u64) {
+    /// Given linear distribution with d=0,
+    /// When I create a token,
+    /// Then I get an error.
+    #[test_case(
+        1,// a
+        0, // d
+        None, // start_step
+        100_000, // starting_amount
+        None, // min_value
+        None, // max_value
+        &[(10,100_000,false)], // heights
+        1 // distribution_interval
+    ; "fails: divide by 0")]
+    /// Given linear distribution with d=MAX and starting amount of 1,
+    /// When I claim tokens,
+    /// Then I have only one success, and subsequent claims fail because the calculated distribution is lower than 1
+    #[test_case(
+        1,// a
+        u64::MAX, // d
+        None, // start_step
+        0, // starting_amount
+        Some(0), // min_value
+        None, // max_value
+        &[(1,100_000,false),(20,100_000,false)], // heights
+        1 // distribution_interval
+    ; "divide by u64::MAX")]
+    #[test_matrix(
+        [-1,-100000,i64::MIN],// a
+        1, // d
+        None, // start_step
+        0, // starting_amount
+        None, // min_value
+        None, // max_value
+        &[(1,100_000,false),(20,100_000,false)], // heights
+        1 // distribution_interval
+    ; "negative a")]
+
+    /// We expect failure when max < min
+    #[test_matrix(
+        1,// a
+        1, // d
+        None, // start_step
+        0, // starting_amount
+        Some(100), // min_value
+        [Some(0),Some(99)], // max_value
+        &[(1,100_000,false),(20,100_000,false)], // heights
+        1 // distribution_interval
+    ; "fails: max less than min")]
+    #[test_case(
+        1,// a
+        1, // d
+        None, // start_step
+        0, // starting_amount
+        Some(10), // min_value
+        Some(10), // max_value
+        &[(1,100_010,true),(2,100_020,true),(10,100_100,true)], // heights
+        1 // distribution_interval
+    ; "min eq max")]
+
+    fn test_linear(
+        a: i64,
+        d: u64,
+        start_step: Option<u64>,
+        starting_amount: u64,
+        min_value: Option<u64>,
+        max_value: Option<u64>,
+        steps: &[(u64, u64, bool)], // height, expected balance, expect pass
+        distribution_interval: u64,
+    ) {
         // Linear distribution function
         //
         // # Formula
@@ -1097,17 +1234,27 @@ mod block_based_perpetual_linear {
         // f(x) = (a * (x - start_moment) / d) + starting_amount
         // ```
         //
-        let steps = heights
-            .iter()
-            .scan((INITIAL_BALANCE, 1), |(balance, last_height), &h| {
-                for i in (*last_height..=h).step_by(distribution_interval as usize) {
-                    *balance += expected_emission(i, 1, 1, None, 100_000);
-                }
-                *last_height = h;
+        let dist = DistributionFunction::Linear {
+            a,
+            d,
+            start_step,
+            starting_amount,
+            min_value,
+            max_value,
+        };
+        // let steps = heights
+        //     .iter()
+        //     .scan((INITIAL_BALANCE, 1), |(balance, last_height), &h| {
+        //         if *last_height > start_step.unwrap_or(1) {
+        //             for i in (*last_height..=h).step_by(distribution_interval as usize) {
+        //                 *balance += expected_emission(i, a, d, start_step, starting_amount);
+        //             }
+        //         }
+        //         *last_height = h;
 
-                Some((h, *balance, true))
-            })
-            .collect::<Vec<_>>();
+        //         Some((h, *balance, true))
+        //     })
+        //     .collect::<Vec<_>>();
         check_heights(
             dist,
             &steps,
@@ -1119,38 +1266,6 @@ mod block_based_perpetual_linear {
             tracing::error!("{}", e);
         })
         .expect("stepwise should pass");
-    }
-
-    /// Calculate expected emission at provided height.
-    ///
-    /// All calculations are done in i128 to better handle overflows.
-    ///
-    /// ```text
-    /// f(x) = (a * (x - start_moment) / d) + starting_amount
-    /// ```
-    fn expected_emission(
-        x: u64,
-        a: u64,
-        d: u64,
-        start_moment: Option<u64>,
-        starting_amount: u64,
-    ) -> u64 {
-        let x = x as i128;
-        let a = a as i128;
-        let d = d as i128;
-        let start_moment = start_moment.unwrap_or(0) as i128;
-        let starting_amount = starting_amount as i128;
-
-        let f_x = if x < start_moment {
-            starting_amount
-        } else {
-            (a * (x - start_moment) / d + starting_amount).max(0)
-        };
-
-        f_x.to_u64().unwrap_or_else(|| {
-            tracing::error!("overflow in expected_emission({}), using 0", f_x);
-            0
-        })
     }
 }
 
@@ -1189,6 +1304,9 @@ mod test_suite {
             .map_err(|e| format!("join error: {:?}", e))?
     }
 
+    pub(super) fn contains<T: ToString>(a: T, text: &str) -> bool {
+        a.to_string().contains(text)
+    }
     /// Check that claim results at provided heights are as expected, and that balances match expectations.
     ///
     /// Note we take i128 into expected_balances, as we want to be able to detect overflows.
@@ -1235,9 +1353,7 @@ mod test_suite {
             suite = suite.with_max_suppy(max_supply);
         }
 
-        if let Some(start) = contract_start_time {
-            suite = suite.with_contract_start_time(start);
-        }
+        suite = suite.with_contract_start_time(contract_start_time.unwrap_or(1));
 
         let steps = steps
             .iter()
@@ -1482,7 +1598,8 @@ mod test_suite {
         pub(crate) fn get_balance(&mut self) -> Result<Option<u64>, String> {
             let token_id = self.get_token_id().to_buffer();
 
-            self.platform
+            let balance = self
+                .platform
                 .drive
                 .fetch_identity_token_balance(
                     token_id,
@@ -1490,7 +1607,10 @@ mod test_suite {
                     None,
                     self.platform_version,
                 )
-                .map_err(|e| format!("failed to fetch token balance: {}", e))
+                .map_err(|e| format!("failed to fetch token balance: {}", e));
+
+            tracing::trace!("retrieved balance: {:?}", balance);
+            balance
         }
 
         /// Retrieve token balance for the identity and assert it matches expected value.
@@ -1618,6 +1738,11 @@ mod test_suite {
             }
 
             if result.is_empty() {
+                tracing::trace!(
+                    "step successful, base height: {}, balance: {}",
+                    test_case.base_height,
+                    balance
+                );
                 (self.on_step_success)(balance);
                 Ok(())
             } else {
