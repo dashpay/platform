@@ -1618,7 +1618,7 @@ mod tests {
 
             assert_eq!(
                 total_credits_balance.total_identity_balances,
-                409997575280380
+                409997575236380
             ); // Around 4100 Dash.
 
             assert_eq!(
@@ -2334,7 +2334,7 @@ mod tests {
 
             assert_eq!(
                 total_credits_balance.total_identity_balances,
-                409997575280380
+                409997575236380
             ); // Around 4100 Dash.
 
             assert_eq!(

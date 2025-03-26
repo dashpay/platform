@@ -82,7 +82,7 @@ pub struct StateSyncAbciConfig {
 
 impl Default for StateSyncAbciConfig {
     fn default() -> Self {
-        Self::default_mainnet()
+        Self::default_local()
     }
 }
 
@@ -90,7 +90,7 @@ impl Default for StateSyncAbciConfig {
 impl StateSyncAbciConfig {
     pub fn default_local() -> Self {
         Self {
-            snapshots_enabled: true,
+            snapshots_enabled: false,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             snapshots_frequency: 5,
             max_num_snapshots: 100,
@@ -108,7 +108,7 @@ impl StateSyncAbciConfig {
 
     pub fn default_mainnet() -> Self {
         Self {
-            snapshots_enabled: true,
+            snapshots_enabled: false,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             snapshots_frequency: 5,
             max_num_snapshots: 100,
