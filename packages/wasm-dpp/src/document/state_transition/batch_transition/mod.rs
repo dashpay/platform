@@ -25,7 +25,6 @@ use crate::{
     IdentityPublicKeyWasm,
 };
 
-use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 

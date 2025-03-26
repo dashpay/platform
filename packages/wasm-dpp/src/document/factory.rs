@@ -24,7 +24,6 @@ use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
-use std::str::FromStr;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -155,6 +154,8 @@ impl DocumentFactoryWASM {
             }
         }
 
+        // TODO: use types or structs
+        #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
             Vec<(Document, DocumentTypeRef, Bytes32)>,
@@ -325,6 +326,7 @@ fn extract_documents_of_action(
         return Ok(vec![]);
     }
 
+    #[allow(clippy::unnecessary_fallible_conversions)]
     let documents_array = js_sys::Array::try_from(documents_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 

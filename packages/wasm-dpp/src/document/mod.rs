@@ -342,8 +342,8 @@ impl DocumentWasm {
     }
 }
 
-/// document's dynamic data, regardless they are identifiers or binary, they should
-/// be stored as arrays of int
+// /// document's dynamic data, regardless they are identifiers or binary, they should
+// /// be stored as arrays of int
 // pub(crate) fn document_data_to_bytes(
 //     document: &mut Document,
 //     contract: &DataContract,
