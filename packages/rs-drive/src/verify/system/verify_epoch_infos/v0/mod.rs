@@ -150,7 +150,8 @@ impl Drive {
 
                 let first_block_time = u64::from_be_bytes(first_block_time_bytes);
 
-                let first_block_height_element = inner_map.get(&KEY_START_BLOCK_HEIGHT.to_vec())?;
+                let first_block_height_element =
+                    inner_map.get(KEY_START_BLOCK_HEIGHT.as_slice())?;
 
                 let Some(Element::Item(encoded_start_block_height, _)) = first_block_height_element
                 else {
@@ -175,7 +176,7 @@ impl Drive {
                 let first_block_height = u64::from_be_bytes(first_block_height_bytes);
 
                 let first_core_block_height_element =
-                    inner_map.get(&KEY_START_BLOCK_CORE_HEIGHT.to_vec())?;
+                    inner_map.get(KEY_START_BLOCK_CORE_HEIGHT.as_slice())?;
 
                 let Some(Element::Item(encoded_start_core_block_height, _)) =
                     first_core_block_height_element

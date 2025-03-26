@@ -18,6 +18,7 @@ mod v0;
 
 impl Drive {
     /// Adds an action to the state
+    #[allow(clippy::too_many_arguments)]
     pub fn add_group_action(
         &self,
         contract_id: Identifier,
@@ -52,6 +53,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds action creation operations to drive operations
     pub fn add_group_action_add_to_operations(
         &self,
@@ -88,6 +90,7 @@ impl Drive {
             })),
         }
     }
+    #[allow(clippy::too_many_arguments)]
 
     /// The operations needed to create a new group action
     pub fn add_group_action_operations(

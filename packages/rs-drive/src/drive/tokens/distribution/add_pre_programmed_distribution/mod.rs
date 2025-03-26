@@ -139,6 +139,7 @@ impl Drive {
     ///   is encountered.
     /// - `Err(Error::Protocol(ProtocolError::Overflow))` if a distribution amount exceeds the
     ///   maximum allowed value.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_pre_programmed_distributions(
         &self,
         token_id: [u8; 32],

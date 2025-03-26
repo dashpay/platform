@@ -8,6 +8,7 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn token_transfer_v0(
         &self,
         token_id: [u8; 32],
@@ -43,6 +44,7 @@ impl Drive {
 
         Ok(fees)
     }
+    #[allow(clippy::too_many_arguments)]
 
     pub(super) fn token_transfer_add_to_operations_v0(
         &self,
@@ -77,6 +79,7 @@ impl Drive {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn token_transfer_operations_v0(
         &self,
         token_id: [u8; 32],

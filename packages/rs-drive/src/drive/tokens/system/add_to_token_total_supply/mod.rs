@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds to the token's total supply
+    #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_total_supply(
         &self,
         token_id: [u8; 32],
@@ -50,6 +51,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds the operations of adding to the token total supply
     pub fn add_to_token_total_supply_add_to_operations(
         &self,
@@ -86,6 +88,7 @@ impl Drive {
             })),
         }
     }
+    #[allow(clippy::too_many_arguments)]
 
     /// The operations needed to add to the token total supply
     pub fn add_to_token_total_supply_operations(

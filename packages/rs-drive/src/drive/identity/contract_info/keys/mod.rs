@@ -55,6 +55,7 @@ impl IdentityDataContractKeyApplyInfo {
             // ContractFamilyBased { family_keys, .. } => (BTreeMap::new(), family_keys),
         }
     }
+    #[allow(clippy::too_many_arguments)]
     fn new_from_single_key(
         key_id: KeyID,
         purpose: Purpose,

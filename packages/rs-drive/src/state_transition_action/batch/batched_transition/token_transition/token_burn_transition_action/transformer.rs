@@ -36,6 +36,7 @@ impl TokenBurnTransitionAction {
     /// # Returns
     ///
     /// * `Result<(TokenBurnTransitionAction, FeeResult), Error>` - A result containing the `TokenBurnTransitionAction` and associated fees if successful, otherwise an error.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_burn_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -88,6 +89,7 @@ impl TokenBurnTransitionAction {
     ///
     /// # Returns
     ///
+    #[allow(clippy::too_many_arguments)]
     /// * `Result<(TokenBurnTransitionAction, FeeResult), Error>` - A result containing the `TokenBurnTransitionAction` and associated fees if successful, otherwise an error.
     pub fn try_from_borrowed_token_burn_transition_with_contract_lookup(
         drive: &Drive,

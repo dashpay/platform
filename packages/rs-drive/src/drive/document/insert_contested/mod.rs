@@ -36,6 +36,8 @@ mod add_contested_indices_for_contract_operations;
 mod add_contested_reference_and_vote_subtree_to_document_operations;
 mod add_contested_vote_subtrees_for_non_identities_operations;
 
+// TODO: Disabled module add_contested_indices_for_index_level_for_contract_operations
+
 #[cfg(test)]
 mod tests {
     use std::option::Option::None;

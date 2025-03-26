@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn prove_action_infos_v0(
         &self,
         contract_id: Identifier,
@@ -30,6 +31,7 @@ impl Drive {
             platform_version,
         )
     }
+    #[allow(clippy::too_many_arguments)]
 
     pub(super) fn prove_action_infos_operations_v0(
         &self,

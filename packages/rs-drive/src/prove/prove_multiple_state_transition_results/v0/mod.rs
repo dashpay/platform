@@ -35,6 +35,7 @@ impl Drive {
     /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
     /// or an `Error` if the function fails.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn prove_multiple_state_transition_results_v0(
         &self,
         identity_queries: &[IdentityDriveQuery],

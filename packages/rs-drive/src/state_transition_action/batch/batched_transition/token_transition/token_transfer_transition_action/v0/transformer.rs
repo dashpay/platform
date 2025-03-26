@@ -36,6 +36,7 @@ impl TokenTransferTransitionActionV0 {
     /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - Returns a tuple containing the constructed
     ///   `TokenTransferTransitionActionV0` and the calculated `FeeResult` if successful, or an error if the transition cannot
     ///   be created or an issue arises with the provided state or data.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_transfer_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -117,6 +118,7 @@ impl TokenTransferTransitionActionV0 {
     /// * `Result<(TokenTransferTransitionActionV0, FeeResult), Error>` - Returns a tuple containing the constructed
     ///   `TokenTransferTransitionActionV0` and the calculated `FeeResult` if successful, or an error if the transition cannot
     ///   be created or an issue arises with the provided state or data.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_transfer_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,

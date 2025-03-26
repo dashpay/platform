@@ -137,6 +137,7 @@ impl Drive {
 
     /// Updates a contract.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_contract_element_v1(
         &self,
         contract_element: Element,
@@ -168,6 +169,7 @@ impl Drive {
     }
 
     /// Updates a contract.
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(super) fn update_contract_add_operations_v1(
         &self,
@@ -194,6 +196,7 @@ impl Drive {
         drive_operations.extend(batch_operations);
         Ok(())
     }
+    #[allow(clippy::too_many_arguments)]
 
     /// operations for updating a contract.
     fn update_contract_operations_v1(

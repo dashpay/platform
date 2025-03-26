@@ -21,6 +21,7 @@ use crate::drive::identity::contract_info::identity_contract_nonce::merge_identi
 use crate::drive::identity::contract_info::identity_contract_nonce::merge_identity_contract_nonce::MergeIdentityNonceResult::{MergeIdentityNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast, NonceTooFarInFuture, NonceTooFarInPast};
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::identity::contract_info) fn merge_identity_contract_nonce_v0(
         &self,
         identity_id: [u8; 32],
@@ -61,6 +62,7 @@ impl Drive {
         Ok(result)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Sets the revision nonce for the identity contract pair
     pub(super) fn merge_identity_contract_nonce_operations_v0(
         &self,

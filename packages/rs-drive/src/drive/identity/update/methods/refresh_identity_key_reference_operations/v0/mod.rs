@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Refreshes identity key reference operations.
+    #[allow(clippy::too_many_arguments)]
     pub fn refresh_identity_key_reference_operations_v0(
         &self,
         identity_id: [u8; 32],

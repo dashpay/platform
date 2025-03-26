@@ -15,6 +15,7 @@ mod v0;
 
 impl Drive {
     /// Adds token transaction history
+    #[allow(clippy::too_many_arguments)]
     pub fn add_token_transaction_history_operations(
         &self,
         token_id: Identifier,

@@ -310,6 +310,7 @@ impl BatchInsertApplyType {
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertApplyType::StatelessBatchInsert`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertApplyType::StatefulBatchInsert`.
     /// ```
+    #[allow(dead_code)]
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertApplyType::StatelessBatchInsert {

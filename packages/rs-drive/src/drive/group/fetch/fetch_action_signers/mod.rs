@@ -97,6 +97,7 @@ impl Drive {
     /// This method returns an `Error` if:
     /// * The platform version is unknown.
     /// * An internal issue occurs during the fetching process.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn fetch_action_signers_and_add_operations(
         &self,
         contract_id: Identifier,

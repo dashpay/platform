@@ -41,6 +41,7 @@ impl TokenBurnTransitionActionV0 {
     ///
     /// # Errors
     /// - Returns an `Error` if any error occurs while trying to create the base action or process the burn.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_burn_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -145,6 +146,7 @@ impl TokenBurnTransitionActionV0 {
     ///
     /// # Errors
     /// - Returns an `Error` if any error occurs while trying to create the base action or process the burn.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_burn_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,

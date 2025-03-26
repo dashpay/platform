@@ -45,6 +45,7 @@ impl Drive {
         Ok(group_action)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn fetch_active_action_info_and_add_operations_v0(
         &self,
         contract_id: Identifier,

@@ -82,6 +82,7 @@ impl Drive {
     ///
     /// # Errors
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn fetch_action_id_info_keep_serialized_and_add_operations(
         &self,
         contract_id: Identifier,

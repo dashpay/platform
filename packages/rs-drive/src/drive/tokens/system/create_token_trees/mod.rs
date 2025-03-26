@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds an identity by inserting a new identity subtree structure to the `Identities` subtree.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_token_trees(
         &self,
         token_id: [u8; 32],
@@ -48,6 +49,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds identity creation operations to drive operations
     pub fn create_token_trees_add_to_operations(
         &self,
@@ -84,6 +86,7 @@ impl Drive {
             })),
         }
     }
+    #[allow(clippy::too_many_arguments)]
 
     /// The operations needed to create an identity
     pub fn create_token_trees_operations(

@@ -23,6 +23,7 @@ use grovedb_epoch_based_storage_flags::StorageFlags;
 use std::collections::HashMap;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_group_action_v0(
         &self,
         contract_id: Identifier,
@@ -61,6 +62,7 @@ impl Drive {
         Ok(fees)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds group creation operations to drive operations
     pub(super) fn add_group_action_add_to_operations_v0(
         &self,
@@ -105,6 +107,7 @@ impl Drive {
     }
 
     /// The operations needed to create a group
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_group_action_operations_v0(
         &self,
         contract_id: Identifier,

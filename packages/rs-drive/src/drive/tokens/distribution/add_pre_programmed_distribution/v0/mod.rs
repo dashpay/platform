@@ -117,6 +117,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Version 0 of `add_perpetual_distribution`
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_pre_programmed_distributions_v0(
         &self,
         token_id: [u8; 32],

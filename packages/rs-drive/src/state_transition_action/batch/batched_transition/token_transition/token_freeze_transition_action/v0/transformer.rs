@@ -40,6 +40,7 @@ impl TokenFreezeTransitionActionV0 {
     ///
     /// * `Result<ConsensusValidationResult<TokenFreezeTransitionActionV0>, Error>` - Returns the constructed `TokenFreezeTransitionActionV0` if successful,
     ///   or an error if any issue arises, such as missing data or an invalid state transition.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_freeze_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -148,6 +149,7 @@ impl TokenFreezeTransitionActionV0 {
     ///   `TokenFreezeTransitionActionV0` and a `FeeResult` if successful. If an error occurs (e.g., missing data or
     ///   invalid state transition), it returns an `Error`.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_freeze_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
