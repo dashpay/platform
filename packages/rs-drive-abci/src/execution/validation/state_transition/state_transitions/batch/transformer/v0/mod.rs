@@ -650,7 +650,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
 
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         validation_result.errors,
                     ));
                 }

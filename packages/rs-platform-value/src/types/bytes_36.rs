@@ -88,7 +88,7 @@ impl<'de> Deserialize<'de> for Bytes36 {
         if deserializer.is_human_readable() {
             struct StringVisitor;
 
-            impl<'de> Visitor<'de> for StringVisitor {
+            impl Visitor<'_> for StringVisitor {
                 type Value = Bytes36;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -115,7 +115,7 @@ impl<'de> Deserialize<'de> for Bytes36 {
         } else {
             struct BytesVisitor;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
+            impl Visitor<'_> for BytesVisitor {
                 type Value = Bytes36;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

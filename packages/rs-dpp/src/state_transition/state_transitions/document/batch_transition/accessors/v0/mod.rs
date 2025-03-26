@@ -8,7 +8,7 @@ pub trait DocumentsBatchTransitionAccessorsV0 {
         Self: 'a;
 
     /// Returns an iterator over the `BatchedTransitionRef` items.
-    fn transitions_iter<'a>(&'a self) -> Self::IterType<'a>;
+    fn transitions_iter(&self) -> Self::IterType<'_>;
 
     fn transitions_len(&self) -> usize;
     fn transitions_are_empty(&self) -> bool;

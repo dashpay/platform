@@ -25,6 +25,7 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -40,6 +41,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_replacement_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -54,6 +56,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_deletion_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -68,6 +71,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_transfer_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -83,6 +87,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_update_price_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -98,6 +103,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_document_purchase_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,

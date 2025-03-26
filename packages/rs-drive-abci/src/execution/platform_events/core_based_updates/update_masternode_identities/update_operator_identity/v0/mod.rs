@@ -265,21 +265,19 @@ where
             let new_payout_address =
                 if let Some(operator_payout_address) = operator_payout_address_change {
                     operator_payout_address
+                } else if let Some((_, found_old_key)) = identity_to_enable_old_keys
+                    .iter()
+                    .find(|(_, key)| key.purpose() == Purpose::TRANSFER)
+                {
+                    Some(found_old_key.data().to_vec().try_into().map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "old payout address should be 20 bytes".to_string(),
+                        ))
+                    })?)
                 } else {
-                    if let Some((_, found_old_key)) = identity_to_enable_old_keys
-                        .iter()
-                        .find(|(_, key)| key.purpose() == Purpose::TRANSFER)
-                    {
-                        Some(found_old_key.data().to_vec().try_into().map_err(|_| {
-                            Error::Execution(ExecutionError::CorruptedDriveResponse(
-                                "old payout address should be 20 bytes".to_string(),
-                            ))
-                        })?)
-                    } else {
-                        // finally we just use the old masternode payout address
-                        // we need to use the old pub_key_operator
-                        old_masternode.state.operator_payout_address
-                    }
+                    // finally we just use the old masternode payout address
+                    // we need to use the old pub_key_operator
+                    old_masternode.state.operator_payout_address
                 };
 
             let new_platform_node_id = if let Some(platform_node_id) = platform_node_id_change {

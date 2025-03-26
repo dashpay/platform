@@ -108,7 +108,7 @@ impl TokenMintTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -133,7 +133,7 @@ impl TokenMintTransitionActionV0 {
 
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action.into(),
+                    batched_action,
                     vec![BasicError::ChoosingTokenMintRecipientNotAllowedError(
                         ChoosingTokenMintRecipientNotAllowedError::new(base_action.token_id()),
                     )
@@ -169,7 +169,7 @@ impl TokenMintTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         vec![BasicError::DestinationIdentityForTokenMintingNotSetError(
                             DestinationIdentityForTokenMintingNotSetError::new(
                                 base_action.token_id(),
@@ -285,7 +285,7 @@ impl TokenMintTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -310,7 +310,7 @@ impl TokenMintTransitionActionV0 {
 
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action.into(),
+                    batched_action,
                     vec![BasicError::ChoosingTokenMintRecipientNotAllowedError(
                         ChoosingTokenMintRecipientNotAllowedError::new(base_action.token_id()),
                     )
@@ -346,7 +346,7 @@ impl TokenMintTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         vec![BasicError::DestinationIdentityForTokenMintingNotSetError(
                             DestinationIdentityForTokenMintingNotSetError::new(
                                 base_action.token_id(),

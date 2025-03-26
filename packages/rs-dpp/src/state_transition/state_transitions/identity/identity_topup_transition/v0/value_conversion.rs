@@ -14,7 +14,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_INCREASE;
 use platform_version::version::PlatformVersion;
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransitionV0 {
+impl StateTransitionValueConvert<'_> for IdentityTopUpTransitionV0 {
     fn from_object(
         raw_object: Value,
         _platform_version: &PlatformVersion,

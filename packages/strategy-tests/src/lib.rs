@@ -1307,8 +1307,8 @@ impl Strategy {
                                     );
 
                                 let state_transition = create_identity_credit_transfer_transition(
-                                    &sender,
-                                    &recipient,
+                                    sender,
+                                    recipient,
                                     identity_nonce_counter,
                                     signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
                                     transfer_info.amount,
@@ -1326,8 +1326,7 @@ impl Strategy {
                                 let random_index_sender = rng.gen_range(0..identities_count);
 
                                 // Clone current_identities to a Vec for manipulation
-                                let mut unused_identities: Vec<_> =
-                                    current_identities.iter().cloned().collect();
+                                let mut unused_identities: Vec<_> = current_identities.to_vec();
                                 unused_identities.remove(random_index_sender); // Remove the sender
                                 let unused_identities_count = unused_identities.len();
 
@@ -1603,7 +1602,7 @@ impl Strategy {
             && self.start_identities.number_of_identities > 0
         {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                self.start_identities.number_of_identities.into(),
+                self.start_identities.number_of_identities,
                 self.start_identities.keys_per_identity.into(),
                 &self.start_identities.extra_keys,
                 amount,

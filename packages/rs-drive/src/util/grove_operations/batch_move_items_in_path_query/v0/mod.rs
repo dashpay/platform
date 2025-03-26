@@ -38,7 +38,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        if path_query.query.limit == None {
+        if path_query.query.limit.is_none() {
             return Err(Error::Drive(DriveError::NotSupported(
                 "Limits are required for path_query",
             )));

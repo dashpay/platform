@@ -203,7 +203,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
     }
 }
 
-impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
+impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
     fn contract_path(&self) -> [&[u8]; 4] {
         vote_contested_resource_active_polls_contract_tree_path(
             self.contract.as_ref().id_ref().as_slice(),

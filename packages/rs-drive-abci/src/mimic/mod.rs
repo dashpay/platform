@@ -82,7 +82,7 @@ pub struct MimicExecuteBlockOptions {
     pub independent_process_proposal_verification: bool,
 }
 
-impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
+impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
     pub fn mimic_execute_block(
@@ -149,7 +149,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             local_last_commit: None,
             misbehavior: vec![],
             height: height as i64,
-            time: Some(time.clone()),
+            time: Some(time),
             next_validators_hash: next_validators_hash.to_vec(),
             round: round as i32,
             core_chain_locked_height: core_height,

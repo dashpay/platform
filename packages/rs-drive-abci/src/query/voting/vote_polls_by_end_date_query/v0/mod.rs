@@ -192,7 +192,7 @@ impl<C> Platform<C> {
                     }
                     Err(e) => return Err(e.into()),
                 };
-                next_query_results.len() == 0
+                next_query_results.is_empty()
             } else {
                 true
             };

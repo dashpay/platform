@@ -1120,7 +1120,7 @@ mod creation_tests {
             .expect("expected to get back documents")
             .documents_owned();
 
-        assert!(documents.first().is_none());
+        assert!(documents.is_empty());
     }
 
     #[test]
@@ -1388,7 +1388,7 @@ mod creation_tests {
             .expect("expected to get back documents")
             .documents_owned();
 
-        assert!(documents.first().is_some());
+        assert!(!documents.is_empty());
     }
 
     #[test]
@@ -2472,7 +2472,7 @@ mod creation_tests {
 
         assert_eq!(contract.tokens().len(), 2);
 
-        add_tokens_to_identity(&mut platform, gold_token_id.into(), buyer.id(), 15);
+        add_tokens_to_identity(&mut platform, gold_token_id, buyer.id(), 15);
 
         let token_supply = platform
             .drive
@@ -2594,7 +2594,7 @@ mod creation_tests {
         assert_eq!(contract.tokens().len(), 2);
 
         // We need 10 tokens, we have 8.
-        add_tokens_to_identity(&mut platform, gold_token_id.into(), buyer.id(), 8);
+        add_tokens_to_identity(&mut platform, gold_token_id, buyer.id(), 8);
 
         let token_supply = platform
             .drive

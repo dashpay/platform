@@ -385,7 +385,7 @@ pub fn create_identity_update_transition_add_keys(
         .values()
         .map(|pk| pk.id())
         .max()
-        .expect("Expected a max public key id") as u32
+        .expect("Expected a max public key id")
         + keys_already_added_this_block_count
         + 1) as KeyID;
 
@@ -905,7 +905,7 @@ pub fn create_identities_state_transitions(
 
     for (i, identity) in identities.iter_mut().enumerate() {
         // TODO: deal with the case where there's more than one extra key
-        for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
+        for (purpose, security_to_key_type_map) in extra_keys.iter() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
                     let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(

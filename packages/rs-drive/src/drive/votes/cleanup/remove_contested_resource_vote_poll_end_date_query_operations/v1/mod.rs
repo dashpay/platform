@@ -59,7 +59,7 @@ impl Drive {
                 self.batch_delete(
                     time_path.as_slice().into(),
                     unique_id.as_bytes(),
-                    delete_apply_type.clone(),
+                    delete_apply_type,
                     transaction,
                     batch_operations,
                     &platform_version.drive,
@@ -92,18 +92,14 @@ impl Drive {
                         platform_version,
                     )?.len();
 
-                if total_count <= count {
-                    true
-                } else {
-                    false
-                }
+                total_count <= count
             };
 
             if should_delete_parent_time_tree {
                 self.batch_delete(
                     vote_end_date_queries_tree_path_vec().as_slice().into(),
                     encode_u64(end_date).as_slice(),
-                    delete_apply_type.clone(),
+                    delete_apply_type,
                     transaction,
                     batch_operations,
                     &platform_version.drive,

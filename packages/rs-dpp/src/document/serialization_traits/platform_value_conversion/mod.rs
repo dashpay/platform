@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 use std::collections::BTreeMap;
 
-impl<'a> DocumentPlatformValueMethodsV0<'a> for Document {
+impl DocumentPlatformValueMethodsV0<'_> for Document {
     /// Convert the document to a map value.
     fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {

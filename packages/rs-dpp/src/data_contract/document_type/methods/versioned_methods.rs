@@ -586,4 +586,4 @@ impl DocumentTypeV0MethodsVersioned for DocumentTypeV0 {}
 impl DocumentTypeV0MethodsVersioned for DocumentTypeV1 {}
 impl DocumentTypeV0MethodsVersioned for DocumentType {}
 
-impl<'a> DocumentTypeV0MethodsVersioned for DocumentTypeRef<'a> {}
+impl DocumentTypeV0MethodsVersioned for DocumentTypeRef<'_> {}

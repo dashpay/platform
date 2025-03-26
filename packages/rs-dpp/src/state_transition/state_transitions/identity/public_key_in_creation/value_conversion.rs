@@ -9,9 +9,9 @@ use platform_value::Value;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::collections::BTreeMap;
 
-impl<'a> ValueConvertible<'a> for IdentityPublicKeyInCreation {}
+impl ValueConvertible<'_> for IdentityPublicKeyInCreation {}
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityPublicKeyInCreation {
+impl StateTransitionValueConvert<'_> for IdentityPublicKeyInCreation {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             IdentityPublicKeyInCreation::V0(public_key) => {

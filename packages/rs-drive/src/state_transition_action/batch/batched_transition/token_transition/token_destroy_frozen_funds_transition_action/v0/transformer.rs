@@ -110,7 +110,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action.into(),
+                    batched_action,
                     vec![StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                         IdentityDoesNotHaveEnoughTokenBalanceError::new(
                             base.token_id(),
@@ -139,7 +139,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -247,7 +247,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
         let Some(token_amount) = maybe_token_amount else {
             let bump_action =
                 BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    &base,
+                    base,
                     owner_id,
                     user_fee_increase,
                 );
@@ -256,7 +256,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action.into(),
+                    batched_action,
                     vec![StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                         IdentityDoesNotHaveEnoughTokenBalanceError::new(
                             base.token_id(),
@@ -286,7 +286,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,

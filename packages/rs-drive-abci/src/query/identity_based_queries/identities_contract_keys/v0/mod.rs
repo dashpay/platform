@@ -631,7 +631,7 @@ mod tests {
             let identity_keys_result = result_keys
                 .iter()
                 .find(|key| key.identity_id == identity.id().to_vec());
-            assert_eq!(identity_keys_result.is_some(), true);
+            assert!(identity_keys_result.is_some());
             let identity_keys_result = identity_keys_result.unwrap();
 
             let get_expected_keys = |identity: &Identity, purpose: Purpose| {
@@ -958,7 +958,7 @@ mod tests {
                 keys_result
             };
 
-            assert_eq!(identity_keys_result.is_some(), true);
+            assert!(identity_keys_result.is_some());
 
             let identity_keys_result = identity_keys_result.unwrap();
 

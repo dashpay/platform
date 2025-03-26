@@ -389,7 +389,7 @@ pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
     pub allow_include_locked_and_abstaining_vote_tally: bool,
 }
 
-impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
+impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,

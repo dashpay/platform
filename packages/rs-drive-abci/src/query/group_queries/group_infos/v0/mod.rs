@@ -100,7 +100,7 @@ impl<C> Platform<C> {
                 .map(|(group_contract_position, group)| {
                     let members = group
                         .members()
-                        .into_iter()
+                        .iter()
                         .map(|(member_id, power)| GroupMemberEntry {
                             member_id: member_id.to_vec(),
                             power: *power,

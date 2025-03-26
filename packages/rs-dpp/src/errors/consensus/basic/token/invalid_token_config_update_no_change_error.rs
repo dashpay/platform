@@ -12,6 +12,12 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenConfigUpdateNoChangeError;
 
+impl Default for InvalidTokenConfigUpdateNoChangeError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InvalidTokenConfigUpdateNoChangeError {
     /// Creates a new `InvalidTokenConfigUpdateError`.
     pub fn new() -> Self {

@@ -177,7 +177,7 @@ impl TokenClaimTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -204,7 +204,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimPropertyMismatch(
                                     InvalidTokenClaimPropertyMismatch::new(
@@ -285,7 +285,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimNoCurrentRewards(
                                     InvalidTokenClaimNoCurrentRewards::new(
@@ -325,7 +325,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimPropertyMismatch(
                                     InvalidTokenClaimPropertyMismatch::new(
@@ -365,7 +365,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimWrongClaimant(
                                     InvalidTokenClaimWrongClaimant::new(
@@ -511,7 +511,7 @@ impl TokenClaimTransitionActionV0 {
 
                     return Ok((
                         ConsensusValidationResult::new_with_data_and_errors(
-                            batched_action.into(),
+                            batched_action,
                             vec![ConsensusError::StateError(
                                 StateError::InvalidTokenClaimNoCurrentRewards(
                                     InvalidTokenClaimNoCurrentRewards::new(

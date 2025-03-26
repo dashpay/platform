@@ -222,6 +222,8 @@ impl SpecializedDocumentFactoryV0 {
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
     ) -> Result<BatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
+        // TODO: Use struct
+        #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
             Vec<(Document, DocumentTypeRef, Bytes32)>,

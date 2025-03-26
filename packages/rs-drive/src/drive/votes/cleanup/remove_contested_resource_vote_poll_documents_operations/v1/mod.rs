@@ -56,10 +56,7 @@ impl Drive {
                                 Err(e) => return Some(Err(e.into())),
                             };
 
-                        match maybe_document_result {
-                            Some(document) => Some(Ok(document.id().to_vec())), // Assuming document.id holds the document key
-                            None => None, // Handle the case where no document is found
-                        }
+                        maybe_document_result.map(|document| Ok(document.id().to_vec()))
                     })
                     .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 

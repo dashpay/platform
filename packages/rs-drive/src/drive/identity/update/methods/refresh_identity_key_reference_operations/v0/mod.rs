@@ -96,7 +96,7 @@ impl Drive {
             // if there are contract bounds we need to insert them
             self.refresh_potential_contract_info_key_references(
                 identity_id,
-                &key,
+                key,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

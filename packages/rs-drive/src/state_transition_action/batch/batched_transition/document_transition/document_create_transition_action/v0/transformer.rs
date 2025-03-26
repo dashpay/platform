@@ -151,7 +151,7 @@ impl DocumentCreateTransitionActionV0 {
                         document_type.name()
                     )),
                 )?;
-                let index_values = index.extract_values(&data);
+                let index_values = index.extract_values(data);
 
                 let vote_poll = ContestedDocumentResourceVotePoll {
                     contract_id: base.data_contract_id(),

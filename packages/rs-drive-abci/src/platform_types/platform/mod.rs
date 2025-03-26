@@ -68,7 +68,7 @@ pub struct PlatformStateRef<'a> {
     pub config: &'a PlatformConfig,
 }
 
-impl<'a> Debug for PlatformStateRef<'a> {
+impl Debug for PlatformStateRef<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("platform_state_ref")
             .field("state", self.state)

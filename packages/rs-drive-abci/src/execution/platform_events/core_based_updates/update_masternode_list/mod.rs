@@ -115,15 +115,14 @@ mod test {
         fn adjust_path_based_on_current_dir(relative_path: &str) -> PathBuf {
             let current_dir = env::current_dir().expect("expected to get current directory");
             // Check if the current directory ends with "platform"
-            let adjusted_path = if current_dir.ends_with("platform") {
+
+            if current_dir.ends_with("platform") {
                 current_dir
                     .join("packages/rs-drive-abci")
                     .join(relative_path)
             } else {
                 current_dir.join(relative_path)
-            };
-
-            adjusted_path
+            }
         }
 
         platform

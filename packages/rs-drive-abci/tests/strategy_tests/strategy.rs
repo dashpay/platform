@@ -1846,7 +1846,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub signer: SimpleSigner,
 }
 
-impl<'a> ChainExecutionOutcome<'a> {
+impl ChainExecutionOutcome<'_> {
     pub fn current_quorum(&self) -> &TestQuorumInfo {
         self.validator_quorums
             .get::<QuorumHash>(&self.current_validator_quorum_hash)

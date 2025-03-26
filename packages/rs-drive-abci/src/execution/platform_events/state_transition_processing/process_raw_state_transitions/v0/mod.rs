@@ -85,7 +85,7 @@ where
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
             let execution_result = if proposing_state_transitions
-                && timer.map_or(false, |timer| {
+                && timer.is_some_and(|timer| {
                     timer.elapsed().as_millis()
                         > self
                             .config

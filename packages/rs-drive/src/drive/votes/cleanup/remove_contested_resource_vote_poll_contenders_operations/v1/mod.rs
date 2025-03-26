@@ -30,7 +30,7 @@ impl Drive {
     ) -> Result<(), Error> {
         for (vote_poll, _, votes) in vote_polls {
             let path = vote_poll.contenders_path(platform_version)?;
-            for (resource_vote_choice, _) in *votes {
+            for resource_vote_choice in (*votes).keys() {
                 self.batch_delete(
                     path.as_slice().into(),
                     resource_vote_choice.to_key().as_slice(),

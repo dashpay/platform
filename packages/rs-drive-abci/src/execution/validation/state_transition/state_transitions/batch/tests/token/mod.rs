@@ -3588,26 +3588,21 @@ mod token_tests {
             .expect("expect to create documents batch transition");
 
             // here we add fake info
-            match &mut token_transfer_transition {
-                StateTransition::Batch(batch) => {
-                    let first_transition = batch
-                        .first_transition_mut()
-                        .expect("expected_first_transition");
-                    match first_transition {
-                        BatchedTransitionMutRef::Token(token) => match token {
-                            TokenTransition::Transfer(transfer) => transfer
-                                .base_mut()
-                                .set_using_group_info(Some(GroupStateTransitionInfo {
-                                    group_contract_position: 0,
-                                    action_id,
-                                    action_is_proposer: true,
-                                })),
-                            _ => {}
-                        },
-                        _ => {}
+            if let StateTransition::Batch(batch) = &mut token_transfer_transition {
+                let first_transition = batch
+                    .first_transition_mut()
+                    .expect("expected_first_transition");
+                if let BatchedTransitionMutRef::Token(token) = first_transition {
+                    if let TokenTransition::Transfer(transfer) = token {
+                        transfer
+                            .base_mut()
+                            .set_using_group_info(Some(GroupStateTransitionInfo {
+                                group_contract_position: 0,
+                                action_id,
+                                action_is_proposer: true,
+                            }))
                     }
                 }
-                _ => {}
             }
 
             token_transfer_transition

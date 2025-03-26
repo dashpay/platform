@@ -143,7 +143,7 @@ impl TokenTransferTransitionActionV0 {
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 drive,
                 owner_id,
-                &base,
+                base,
                 approximate_without_state_for_costs,
                 transaction,
                 &mut drive_operations,
@@ -164,7 +164,7 @@ impl TokenTransferTransitionActionV0 {
         // Return the TokenTransferTransitionActionV0 with the relevant data
         Ok((
             TokenTransferTransitionActionV0 {
-                base: base_action.into(),
+                base: base_action,
                 amount: *amount,
                 recipient_id: *recipient_id,
                 public_note: public_note.clone(),

@@ -30,7 +30,6 @@ use crate::version::ProtocolVersion;
 pub const PROTOCOL_VERSION_4: ProtocolVersion = 4;
 
 /// This version introduces withdrawals.
-
 pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_4,
     drive: DRIVE_VERSION_V2,
