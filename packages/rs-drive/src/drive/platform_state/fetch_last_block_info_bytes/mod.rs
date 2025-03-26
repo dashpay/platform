@@ -7,7 +7,7 @@ use grovedb::TransactionArg;
 mod v0;
 
 impl Drive {
-    /// Fetches execution state from grovedb storage
+    /// Fetches last block info from grove (needed for Platform reconstruction once state sync is completed)
     pub fn fetch_last_block_info_bytes(
         &self,
         transaction: TransactionArg,

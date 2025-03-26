@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
-pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db /*+ CoreRPCLike*/>(
+pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
     app: &'a A,
     request: proto::RequestApplySnapshotChunk,
 ) -> Result<proto::ResponseApplySnapshotChunk, Error>
@@ -50,7 +50,6 @@ where
 
     let platform_version = app.platform().state.load().current_platform_version()?;
 
-    let mut is_state_sync_completed: bool = false;
     // Lock first the RwLock
     let mut session_write_guard = app.snapshot_fetching_session().write().map_err(|_| {
         AbciError::StateSyncInternalError(
@@ -83,11 +82,14 @@ where
                     e
                 ))
             })?;
-        if next_chunk_ids.is_empty() && session.state_sync_info.is_sync_completed() {
-            is_state_sync_completed = true;
+        if !next_chunk_ids.is_empty() && session.state_sync_info.is_sync_completed() {
+            Err(AbciError::StateSyncInternalError(
+                "apply_snapshot_chunk sessions is completed but next_chunk_ids is not empty"
+                    .to_string(),
+            ))?;
         }
-        tracing::debug!(is_state_sync_completed, "state_sync apply_snapshot_chunk",);
-        if !is_state_sync_completed {
+        tracing::info!("state_sync completed");
+        if !session.state_sync_info.is_sync_completed() {
             return Ok(proto::ResponseApplySnapshotChunk {
                 result: proto::response_apply_snapshot_chunk::Result::Accept.into(),
                 refetch_chunks: vec![], // TODO: Check when this is needed
