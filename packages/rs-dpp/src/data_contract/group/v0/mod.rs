@@ -153,3 +153,31 @@ impl GroupMethodsV0 for GroupV0 {
         Ok(SimpleConsensusValidationResult::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod validate {
+        use super::*;
+
+        #[test]
+        fn test_members_have_enough_power() {
+            let member1 = Identifier::random();
+            let member2 = Identifier::random();
+
+            let group = GroupV0 {
+                members: [(member1, 1), (member2, 1)].into(),
+                required_power: 1,
+            };
+
+            let platform_version = PlatformVersion::latest();
+
+            let result = group
+                .validate(platform_version)
+                .expect("group should be valid");
+
+            assert!(result.is_valid());
+        }
+    }
+}
