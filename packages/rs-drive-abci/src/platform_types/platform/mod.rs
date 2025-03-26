@@ -10,23 +10,17 @@ use crate::rpc::core::MockCoreRPCLike;
 use arc_swap::ArcSwap;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-
-use dpp::dashcore::BlockHash;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::ProtocolVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use serde_json::json;
-
-/// Platform is not versioned as it holds the main logic, we could not switch from one structure
-/// configuration of the Platform struct to another without a software upgrade
 
 // @append_only
-/// Platform
+/// Platform is not versioned as it holds the main logic, we could not switch from one structure
+/// configuration of the Platform struct to another without a software upgrade
 pub struct Platform<C> {
     /// Drive
     pub drive: Drive,

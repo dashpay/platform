@@ -319,7 +319,7 @@ where
                 if let Some(new_payout_address) = new_payout_address {
                     if let Some((key_id, found_old_key)) = identity_to_enable_old_keys
                         .iter()
-                        .find(|(_, key)| key.data().as_slice() == &new_payout_address)
+                        .find(|(_, key)| key.data().as_slice() == new_payout_address)
                     {
                         if found_old_key.is_disabled() {
                             key_ids_to_reenable.push(*key_id)
@@ -343,7 +343,7 @@ where
                 if let Some(new_platform_node_id) = new_platform_node_id {
                     if let Some((key_id, found_old_key)) = identity_to_enable_old_keys
                         .into_iter()
-                        .find(|(_, key)| key.data().as_slice() == &new_platform_node_id)
+                        .find(|(_, key)| key.data().as_slice() == new_platform_node_id)
                     {
                         if found_old_key.is_disabled() {
                             key_ids_to_reenable.push(key_id)

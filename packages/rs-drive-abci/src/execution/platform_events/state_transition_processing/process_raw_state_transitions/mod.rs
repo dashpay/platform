@@ -39,7 +39,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn process_raw_state_transitions(
         &self,
-        raw_state_transitions: &Vec<Vec<u8>>,
+        raw_state_transitions: &[Vec<u8>],
         block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,

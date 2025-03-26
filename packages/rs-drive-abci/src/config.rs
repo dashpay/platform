@@ -230,6 +230,8 @@ struct PlatformConfigIntermediate {
     pub instant_lock: InstantLockConfig,
     pub block_spacing_ms: u64,
     #[serde(default = "PlatformConfig::default_initial_protocol_version")]
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub initial_protocol_version: ProtocolVersion,
     pub db_path: PathBuf,
     #[serde(default)]

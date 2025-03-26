@@ -19,6 +19,8 @@ where
     C: CoreRPCLike,
 {
     /// Checks for ended vote polls
+    // TODO: Use type or struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::execution) fn clean_up_after_contested_resources_vote_polls_end(
         &self,
         block_info: &BlockInfo,

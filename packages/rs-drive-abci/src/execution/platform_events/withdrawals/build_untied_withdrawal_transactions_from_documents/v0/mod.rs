@@ -22,7 +22,7 @@ where
     /// Build list of Core transactions from withdrawal documents
     pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
-        documents: &mut Vec<Document>,
+        documents: &mut [Document],
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,

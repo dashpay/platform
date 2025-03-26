@@ -128,7 +128,7 @@ fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode)]
-pub(super) struct PlatformStateForSavingV0 {
+pub struct PlatformStateForSavingV0 {
     /// Information about the genesis block
     pub genesis_block_info: Option<BlockInfo>,
     /// Information about the last block
@@ -447,7 +447,7 @@ pub trait PlatformStateV0Methods {
         let mut validator_sets: Vec<&ValidatorSet> = self.validator_sets().values().collect();
 
         // Sort the validator sets by core height in descending order
-        validator_sets.sort_by(|a, b| b.core_height().cmp(&a.core_height()));
+        validator_sets.sort_by_key(|b| std::cmp::Reverse(b.core_height()));
 
         validator_sets
     }

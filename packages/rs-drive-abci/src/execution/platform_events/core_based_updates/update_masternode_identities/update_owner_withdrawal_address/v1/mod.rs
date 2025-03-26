@@ -57,7 +57,7 @@ where
             .iter()
             .filter_map(|(key_id, key)| {
                 if key.disabled_at().is_some()
-                    || key.data().as_slice() == &new_withdrawal_address
+                    || key.data().as_slice() == new_withdrawal_address
                     || key.purpose() == Purpose::OWNER
                 {
                     // We should not disable the owner key
