@@ -90,9 +90,8 @@ impl Drive {
             })),
         }
     }
-    #[allow(clippy::too_many_arguments)]
-
     /// The operations needed to create a new group action
+    #[allow(clippy::too_many_arguments)]
     pub fn add_group_action_operations(
         &self,
         contract_id: Identifier,

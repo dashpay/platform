@@ -86,9 +86,9 @@ impl Drive {
             })),
         }
     }
-    #[allow(clippy::too_many_arguments)]
 
     /// The operations needed to create an identity
+    #[allow(clippy::too_many_arguments)]
     pub fn create_token_trees_operations(
         &self,
         token_id: [u8; 32],

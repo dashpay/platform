@@ -74,9 +74,9 @@ impl Drive {
             })),
         }
     }
-    #[allow(clippy::too_many_arguments)]
 
     /// Gathers the operations needed to transfer tokens.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_transfer_operations(
         &self,
         token_id: [u8; 32],

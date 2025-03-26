@@ -78,9 +78,9 @@ impl Drive {
             })),
         }
     }
-    #[allow(clippy::too_many_arguments)]
 
     /// Gathers the operations needed to mint tokens.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_mint_operations(
         &self,
         token_id: [u8; 32],

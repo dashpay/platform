@@ -310,7 +310,9 @@ impl BatchInsertApplyType {
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertApplyType::StatelessBatchInsert`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertApplyType::StatefulBatchInsert`.
     /// ```
+    // TODO: Not using
     #[allow(dead_code)]
+    #[allow(clippy::wrong_self_convention)]
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertApplyType::StatelessBatchInsert {

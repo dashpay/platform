@@ -51,8 +51,8 @@ impl Drive {
 
         Ok((fees, token_amount))
     }
-    #[allow(clippy::too_many_arguments)]
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_to_token_total_supply_add_to_operations_v0(
         &self,
         token_id: [u8; 32],

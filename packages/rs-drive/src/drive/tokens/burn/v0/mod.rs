@@ -43,7 +43,6 @@ impl Drive {
         Ok(fees)
     }
     #[allow(clippy::too_many_arguments)]
-
     pub(super) fn token_burn_add_to_operations_v0(
         &self,
         token_id: [u8; 32],

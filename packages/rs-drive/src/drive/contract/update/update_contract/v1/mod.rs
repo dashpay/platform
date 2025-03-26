@@ -196,9 +196,9 @@ impl Drive {
         drive_operations.extend(batch_operations);
         Ok(())
     }
-    #[allow(clippy::too_many_arguments)]
 
     /// operations for updating a contract.
+    #[allow(clippy::too_many_arguments)]
     fn update_contract_operations_v1(
         &self,
         contract_element: Element,

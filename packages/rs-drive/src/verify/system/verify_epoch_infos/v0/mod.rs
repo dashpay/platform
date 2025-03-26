@@ -130,7 +130,7 @@ impl Drive {
                     Err(e) => return Some(Err(e)),
                 };
 
-                let first_block_time_element = inner_map.get(&KEY_START_TIME.to_vec())?;
+                let first_block_time_element = inner_map.get(KEY_START_TIME.as_slice())?;
 
                 let Some(Element::Item(encoded_start_time, _)) = first_block_time_element else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(

@@ -18,13 +18,14 @@ pub trait EpochProposers {
 }
 
 impl EpochProposers for Epoch {
-    /// Get the path to the proposers tree of this epoch as a fixed length path
-    fn get_proposers_path(&self) -> [&[u8]; 3] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::Pools),
-            &self.key,
-            epoch_key_constants::KEY_PROPOSERS.as_slice(),
-        ]
+    /// Get the path to this epoch as a vector
+    fn get_path_vec(&self) -> Vec<Vec<u8>> {
+        vec![vec![RootTree::Pools as u8], self.key.to_vec()]
+    }
+
+    /// Get the path to this epoch as a fixed size path
+    fn get_path(&self) -> [&[u8]; 2] {
+        [Into::<&[u8; 1]>::into(RootTree::Pools), &self.key]
     }
 
     /// Get the path to the proposers tree of this epoch as a vector
@@ -36,14 +37,13 @@ impl EpochProposers for Epoch {
         ]
     }
 
-    /// Get the path to this epoch as a fixed size path
-    fn get_path(&self) -> [&[u8]; 2] {
-        [Into::<&[u8; 1]>::into(RootTree::Pools), &self.key]
-    }
-
-    /// Get the path to this epoch as a vector
-    fn get_path_vec(&self) -> Vec<Vec<u8>> {
-        vec![vec![RootTree::Pools as u8], self.key.to_vec()]
+    /// Get the path to the proposers tree of this epoch as a fixed length path
+    fn get_proposers_path(&self) -> [&[u8]; 3] {
+        [
+            Into::<&[u8; 1]>::into(RootTree::Pools),
+            &self.key,
+            epoch_key_constants::KEY_PROPOSERS.as_slice(),
+        ]
     }
 }
 

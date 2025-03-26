@@ -88,9 +88,9 @@ impl Drive {
             })),
         }
     }
-    #[allow(clippy::too_many_arguments)]
 
     /// The operations needed to add to the token total supply
+    #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_total_supply_operations(
         &self,
         token_id: [u8; 32],

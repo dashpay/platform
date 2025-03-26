@@ -122,41 +122,33 @@ impl Drive {
         }
 
         if !token_balance_queries.is_empty() {
-            path_queries.extend(
-                token_balance_queries
-                    .iter()
-                    .filter_map(|token_balance_query| {
-                        // The path query construction can only fail if the serialization fails.
-                        // Because the serialization will pretty much never fail, we can do this.
-                        let mut path_query = token_balance_query.construct_path_query();
-                        path_query.query.limit = None;
-                        Some(path_query)
-                    }),
-            );
+            path_queries.extend(token_balance_queries.iter().map(|token_balance_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = token_balance_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
         }
 
         if !token_info_queries.is_empty() {
-            path_queries.extend(token_info_queries.iter().filter_map(|token_info_query| {
+            path_queries.extend(token_info_queries.iter().map(|token_info_query| {
                 // The path query construction can only fail if the serialization fails.
                 // Because the serialization will pretty much never fail, we can do this.
                 let mut path_query = token_info_query.construct_path_query();
                 path_query.query.limit = None;
-                Some(path_query)
+                path_query
             }));
         }
 
         if !token_status_queries.is_empty() {
-            path_queries.extend(
-                token_status_queries
-                    .iter()
-                    .filter_map(|token_status_query| {
-                        // The path query construction can only fail if the serialization fails.
-                        // Because the serialization will pretty much never fail, we can do this.
-                        let mut path_query = token_status_query.construct_path_query();
-                        path_query.query.limit = None;
-                        Some(path_query)
-                    }),
-            );
+            path_queries.extend(token_status_queries.iter().map(|token_status_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = token_status_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
         }
 
         let path_query = PathQuery::merge(

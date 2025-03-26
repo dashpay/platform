@@ -46,6 +46,8 @@ impl Drive {
     }
 
     #[allow(clippy::too_many_arguments)]
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub(super) fn fetch_active_action_info_and_add_operations_v0(
         &self,
         contract_id: Identifier,

@@ -94,8 +94,10 @@ impl Drive {
     ///
     /// # Errors
     /// - [`Error::Drive(DriveError::UnknownVersionMismatch)`]: If the method is called with an unsupported platform version.
-    #[allow(clippy::too_many_arguments)]
     /// - Any other errors propagated from the versioned implementation.
+    #[allow(clippy::too_many_arguments)]
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub(crate) fn prove_action_infos_operations(
         &self,
         contract_id: Identifier,

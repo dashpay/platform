@@ -90,8 +90,10 @@ impl Drive {
     /// - `Err(Error)`: If an error occurs, a generic error is returned.
     ///
     /// # Errors
-    #[allow(clippy::too_many_arguments)]
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
+    // TODO: Is not using
+    #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn fetch_action_infos_and_add_operations(
         &self,
         contract_id: Identifier,

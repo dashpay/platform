@@ -40,6 +40,9 @@ impl IdentityDataContractKeyApplyInfo {
             // } => contracts_owner_id.to_buffer(),
         }
     }
+
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     fn keys(
         self,
     ) -> (

@@ -44,8 +44,8 @@ impl Drive {
             })),
         }
     }
-    /// Fetches if an identity has already signed in an action with costs
 
+    /// Fetches if an identity has already signed in an action with costs
     #[allow(clippy::too_many_arguments)]
     pub fn fetch_action_id_has_signer_with_costs(
         &self,
@@ -80,8 +80,10 @@ impl Drive {
             })),
         }
     }
-    #[allow(clippy::too_many_arguments)]
 
+    #[allow(clippy::too_many_arguments)]
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub(crate) fn fetch_action_id_has_signer_and_add_operations(
         &self,
         contract_id: Identifier,
