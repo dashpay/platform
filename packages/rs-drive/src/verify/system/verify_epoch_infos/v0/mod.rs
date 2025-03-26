@@ -199,7 +199,7 @@ impl Drive {
 
                 let first_core_block_height = u32::from_be_bytes(first_core_block_height_bytes);
 
-                let fee_multiplier_element = inner_map.get(&KEY_FEE_MULTIPLIER.to_vec())?;
+                let fee_multiplier_element = inner_map.get(KEY_FEE_MULTIPLIER.as_slice())?;
 
                 let Some(Element::Item(encoded_multiplier, _)) = fee_multiplier_element else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(
@@ -219,7 +219,7 @@ impl Drive {
 
                 let fee_multiplier = u64::from_be_bytes(fee_multiplier_bytes);
 
-                let protocol_version_element = inner_map.get(&KEY_PROTOCOL_VERSION.to_vec())?;
+                let protocol_version_element = inner_map.get(KEY_PROTOCOL_VERSION.as_slice())?;
 
                 let Some(Element::Item(encoded_protocol_version, _)) = protocol_version_element
                 else {
