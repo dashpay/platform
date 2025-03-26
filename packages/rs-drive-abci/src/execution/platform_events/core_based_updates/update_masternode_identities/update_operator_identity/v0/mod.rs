@@ -31,6 +31,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_operator_identity_v0(
         &self,
         masternode_pro_tx_hash: &ProTxHash,

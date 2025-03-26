@@ -33,6 +33,7 @@ where
     ///
     /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
     /// there is a problem updating the masternode list, quorum information, or the state.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_core_info(
         &self,
         platform_state: Option<&PlatformState>,

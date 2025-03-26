@@ -82,6 +82,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 }
 
 trait BatchTransitionInternalTransformerV0 {
+    #[allow(clippy::too_many_arguments)]
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -93,6 +94,7 @@ trait BatchTransitionInternalTransformerV0 {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
+    #[allow(clippy::too_many_arguments)]
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -105,6 +107,7 @@ trait BatchTransitionInternalTransformerV0 {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
+    #[allow(clippy::too_many_arguments)]
     fn transform_token_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
@@ -117,6 +120,7 @@ trait BatchTransitionInternalTransformerV0 {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
+    #[allow(clippy::too_many_arguments)]
     /// Transfer token transition
     fn transform_token_transition_v0(
         drive: &Drive,
@@ -131,6 +135,7 @@ trait BatchTransitionInternalTransformerV0 {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
     /// The data contract can be of multiple difference versions
+    #[allow(clippy::too_many_arguments)]
     fn transform_document_transition_v0(
         drive: &Drive,
         transaction: TransactionArg,

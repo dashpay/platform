@@ -32,6 +32,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+#[allow(clippy::too_many_arguments)]
     fn validate_group_action_v0(
         &self,
         rules: &ChangeControlRules,
