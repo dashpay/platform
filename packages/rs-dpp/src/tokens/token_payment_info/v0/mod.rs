@@ -1,16 +1,16 @@
 pub mod v0_accessors;
 
-use std::collections::BTreeMap;
-use bincode_derive::{Decode, Encode};
-use derive_more::Display;
-use serde::{Deserialize, Serialize};
-use platform_value::{Identifier, Value};
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
-use crate::ProtocolError;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
+use crate::ProtocolError;
+use bincode_derive::{Decode, Encode};
+use derive_more::Display;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::{Identifier, Value};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
@@ -24,7 +24,7 @@ use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccesso
     token_contract_position,
     minimum_token_cost,
     maximum_token_cost,
-    gas_fees_paid_by,
+    gas_fees_paid_by
 )]
 pub struct TokenPaymentInfoV0 {
     /// By default, we use a token in the same contract, this field must be set if the document
@@ -39,13 +39,13 @@ pub struct TokenPaymentInfoV0 {
     pub minimum_token_cost: Option<TokenAmount>,
     /// Maximum token cost, this most often should be set
     /// If:
-    /// - a client does not have this set 
+    /// - a client does not have this set
     /// - and the data contract allows the price of NFTs to be changed by the data contract's owner or allowed party.
     /// Then:
     /// - The user could see the cost changed on them
     pub maximum_token_cost: Option<TokenAmount>,
     /// Who pays the gas fees, this needs to match what the contract allows
-    pub gas_fees_paid_by: GasFeesPaidBy
+    pub gas_fees_paid_by: GasFeesPaidBy,
 }
 
 impl TokenPaymentInfoAccessorsV0 for TokenPaymentInfoV0 {

@@ -136,6 +136,7 @@ mod tests {
     use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::version::PlatformVersion;
     use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -169,6 +170,7 @@ mod tests {
             document_type_name: "".to_string(),
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
             token_cost: None,
+            gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
         }
         .into();
 
@@ -312,6 +314,7 @@ mod tests {
                         platform_version.protocol_version,
                     )),
                     token_cost: None,
+                    gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
                 }),
             }),
         );

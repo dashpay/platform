@@ -68,12 +68,9 @@ impl DocumentBaseTransitionV0 {
         identity_contract_nonce: IdentityNonce,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         Ok(DocumentBaseTransitionV0 {
-            id: Identifier::from(
-                map.remove_hash256_bytes(property_names::ID)?,
-            ),
+            id: Identifier::from(map.remove_hash256_bytes(property_names::ID)?),
             identity_contract_nonce,
-            document_type_name: map
-                .remove_string(property_names::DOCUMENT_TYPE)?,
+            document_type_name: map.remove_string(property_names::DOCUMENT_TYPE)?,
             data_contract_id: Identifier::new(
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
                     .unwrap_or(data_contract.id().to_buffer()),

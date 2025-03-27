@@ -8,19 +8,27 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 
 use platform_value::{Identifier, Value};
 
-use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::data_contract::TokenContractPosition;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
+use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 pub use v1::*;
+
+impl DocumentTypeV0MutGetters for DocumentType {
+    fn schema_mut(&mut self) -> &mut Value {
+        match self {
+            DocumentType::V0(v0) => v0.schema_mut(),
+            DocumentType::V1(v1) => v1.schema_mut(),
+        }
+    }
+}
 
 impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {
@@ -191,6 +199,50 @@ impl DocumentTypeV0Setters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.set_data_contract_id(data_contract_id),
             DocumentType::V1(v1) => v1.set_data_contract_id(data_contract_id),
+        }
+    }
+}
+
+impl DocumentTypeV1Setters for DocumentType {
+    fn set_document_creation_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(v1) => v1.set_document_creation_token_cost(cost),
+        }
+    }
+
+    fn set_document_replacement_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(v1) => v1.set_document_replacement_token_cost(cost),
+        }
+    }
+
+    fn set_document_deletion_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(v1) => v1.set_document_deletion_token_cost(cost),
+        }
+    }
+
+    fn set_document_transfer_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(v1) => v1.set_document_transfer_token_cost(cost),
+        }
+    }
+
+    fn set_document_price_update_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(v1) => v1.set_document_price_update_token_cost(cost),
+        }
+    }
+
+    fn set_document_purchase_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(v1) => v1.set_document_purchase_token_cost(cost),
         }
     }
 }
@@ -532,42 +584,42 @@ impl<'a> DocumentTypeV0Setters for DocumentTypeMutRef<'a> {
 }
 
 impl DocumentTypeV1Getters for DocumentType {
-    fn document_creation_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_creation_token_cost(),
         }
     }
 
-    fn document_replacement_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_replacement_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_replacement_token_cost(),
         }
     }
 
-    fn document_deletion_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_deletion_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_deletion_token_cost(),
         }
     }
 
-    fn document_transfer_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_transfer_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_transfer_token_cost(),
         }
     }
 
-    fn document_update_price_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_update_price_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_update_price_token_cost(),
         }
     }
 
-    fn document_purchase_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_purchase_token_cost(),
@@ -576,42 +628,42 @@ impl DocumentTypeV1Getters for DocumentType {
 }
 
 impl<'a> DocumentTypeV1Getters for DocumentTypeRef<'a> {
-    fn document_creation_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_creation_token_cost(),
         }
     }
 
-    fn document_replacement_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_replacement_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_replacement_token_cost(),
         }
     }
 
-    fn document_deletion_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_deletion_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_deletion_token_cost(),
         }
     }
 
-    fn document_transfer_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_transfer_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_transfer_token_cost(),
         }
     }
 
-    fn document_update_price_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_update_price_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_update_price_token_cost(),
         }
     }
 
-    fn document_purchase_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_purchase_token_cost(),
@@ -620,42 +672,42 @@ impl<'a> DocumentTypeV1Getters for DocumentTypeRef<'a> {
 }
 
 impl<'a> DocumentTypeV1Getters for DocumentTypeMutRef<'a> {
-    fn document_creation_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_creation_token_cost(),
         }
     }
 
-    fn document_replacement_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_replacement_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_replacement_token_cost(),
         }
     }
 
-    fn document_deletion_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_deletion_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_deletion_token_cost(),
         }
     }
 
-    fn document_transfer_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_transfer_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_transfer_token_cost(),
         }
     }
 
-    fn document_update_price_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_update_price_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_update_price_token_cost(),
         }
     }
 
-    fn document_purchase_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_purchase_token_cost(),

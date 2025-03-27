@@ -31,16 +31,14 @@ use crate::state_transition::data_contract_update_transition::IDENTIFIER_FIELDS;
 ))]
 use crate::ProtocolError;
 #[cfg(any(
-    feature = "state-transition-json-conversion"
-))]
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
-};
-#[cfg(any(
     feature = "state-transition-json-conversion",
     feature = "state-transition-value-conversion"
 ))]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+#[cfg(any(feature = "state-transition-json-conversion"))]
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
+};
 #[cfg(feature = "state-transition-json-conversion")]
 use platform_value::ReplacementType;
 #[cfg(any(

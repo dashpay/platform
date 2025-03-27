@@ -3,6 +3,7 @@ use crate::document::Document;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::DocumentCreateTransition;
 use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -11,6 +12,7 @@ impl DocumentCreateTransition {
         document: Document,
         document_type: DocumentTypeRef,
         entropy: [u8; 32],
+        token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
@@ -28,6 +30,7 @@ impl DocumentCreateTransition {
                 document,
                 document_type,
                 entropy,
+                token_payment_info,
                 identity_contract_nonce,
                 platform_version,
                 base_feature_version,

@@ -14,6 +14,7 @@ use crate::data_contract::DataContract;
 use crate::state_transition::batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
+use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 #[cfg(any(
     feature = "state-transition-value-conversion",
     feature = "state-transition-json-conversion"
@@ -33,7 +34,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 #[cfg(feature = "state-transition-value-conversion")]
 use std::collections::BTreeMap;
-use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(

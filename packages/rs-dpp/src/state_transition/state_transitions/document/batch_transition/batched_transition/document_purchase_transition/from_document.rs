@@ -7,12 +7,14 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 use crate::state_transition::batch_transition::batched_transition::DocumentPurchaseTransition;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentPurchaseTransition {
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
         price: Credits,
+        token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
@@ -30,6 +32,7 @@ impl DocumentPurchaseTransition {
                 document,
                 document_type,
                 price,
+                token_payment_info,
                 identity_contract_nonce,
                 platform_version,
                 base_feature_version,

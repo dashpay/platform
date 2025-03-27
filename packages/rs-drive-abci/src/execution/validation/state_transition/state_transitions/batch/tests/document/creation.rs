@@ -32,14 +32,20 @@ mod creation_tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::dashcore::Network;
     use dpp::dashcore::Network::Testnet;
-    use dpp::data_contract::DataContract;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
     use dpp::identity::SecurityLevel;
     use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use dpp::state_transition::batch_transition::{DocumentCreateTransition, BatchTransitionV0};
     use dpp::state_transition::StateTransition;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use crate::config::PlatformConfig;
+    use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_token_contract_with_owner_identity};
 
     #[test]
     fn test_document_creation() {
@@ -87,6 +93,7 @@ mod creation_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -173,6 +180,7 @@ mod creation_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -235,6 +243,7 @@ mod creation_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -343,6 +352,7 @@ mod creation_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -523,6 +533,7 @@ mod creation_tests {
                 &key_1,
                 2,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -544,6 +555,7 @@ mod creation_tests {
                 &key_2,
                 2,
                 0,
+                None,
                 &signer_2,
                 platform_version,
                 None,
@@ -565,6 +577,7 @@ mod creation_tests {
                 &key_1,
                 3,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -585,6 +598,7 @@ mod creation_tests {
                 &key_2,
                 3,
                 0,
+                None,
                 &signer_2,
                 platform_version,
                 None,
@@ -943,6 +957,7 @@ mod creation_tests {
                 &key_1,
                 2,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -961,6 +976,7 @@ mod creation_tests {
             base: DocumentBaseTransition::from_document(
                 &document_1,
                 domain,
+                None,
                 3,
                 platform_version,
                 None,
@@ -1215,6 +1231,7 @@ mod creation_tests {
                 &key_1,
                 2,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -1233,6 +1250,7 @@ mod creation_tests {
             base: DocumentBaseTransition::from_document(
                 &document_1,
                 domain,
+                None,
                 3,
                 platform_version,
                 None,
@@ -1561,6 +1579,7 @@ mod creation_tests {
                 &key_1,
                 2,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -1582,6 +1601,7 @@ mod creation_tests {
                 &key_2,
                 2,
                 0,
+                None,
                 &signer_2,
                 platform_version,
                 None,
@@ -1603,6 +1623,7 @@ mod creation_tests {
                 &key_1,
                 3,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -1624,6 +1645,7 @@ mod creation_tests {
                 &key_1,
                 4,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -1644,6 +1666,7 @@ mod creation_tests {
                 &key_2,
                 3,
                 0,
+                None,
                 &signer_2,
                 platform_version,
                 None,
@@ -1664,6 +1687,7 @@ mod creation_tests {
                 &key_1,
                 5,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -2102,6 +2126,7 @@ mod creation_tests {
                 &contender_1_key,
                 4,
                 0,
+                None,
                 &contender_1_signer,
                 platform_version,
                 None,
@@ -2333,6 +2358,7 @@ mod creation_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2395,6 +2421,7 @@ mod creation_tests {
                 &another_identity_key,
                 2,
                 0,
+                None,
                 &another_identity_signer,
                 platform_version,
                 None,
@@ -2457,11 +2484,12 @@ mod creation_tests {
 
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
-        let (contract, gold_token_id, _) = create_card_game_token_contract_with_owner_identity(
-            &mut platform,
-            contract_owner_id.id(),
-            platform_version,
-        );
+        let (contract, gold_token_id, _) =
+            create_card_game_internal_token_contract_with_owner_identity(
+                &mut platform,
+                contract_owner_id.id(),
+                platform_version,
+            );
 
         let token_supply = platform
             .drive
@@ -2509,6 +2537,7 @@ mod creation_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2578,11 +2607,12 @@ mod creation_tests {
 
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
-        let (contract, gold_token_id, _) = create_card_game_token_contract_with_owner_identity(
-            &mut platform,
-            contract_owner_id.id(),
-            platform_version,
-        );
+        let (contract, gold_token_id, _) =
+            create_card_game_internal_token_contract_with_owner_identity(
+                &mut platform,
+                contract_owner_id.id(),
+                platform_version,
+            );
 
         let token_supply = platform
             .drive
@@ -2631,6 +2661,7 @@ mod creation_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2687,5 +2718,165 @@ mod creation_tests {
 
         // We should still have 8
         assert_eq!(token_balance, Some(8));
+    }
+
+    #[test]
+    fn test_document_creation_paid_with_an_external_token() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (document_contract_owner_id, _, _) =
+            setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let (token_contract_owner_id, _, _) =
+            setup_identity(&mut platform, 11, dash_to_credits!(0.1));
+
+        let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
+
+        let (token_contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            token_contract_owner_id.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            platform_version,
+        );
+
+        let document_contract = create_card_game_external_token_contract_with_owner_identity(
+            &mut platform,
+            token_contract.id(),
+            0,
+            5,
+            GasFeesPaidBy::DocumentOwner,
+            document_contract_owner_id.id(),
+            platform_version,
+        );
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(100000));
+
+        assert_eq!(token_contract.tokens().len(), 1);
+
+        add_tokens_to_identity(&mut platform, token_id.into(), buyer.id(), 15);
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(100015));
+
+        let card_document_type = document_contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        assert_eq!(
+            card_document_type.document_creation_token_cost(),
+            Some(DocumentActionTokenCost {
+                contract_id: Some(token_contract.id()),
+                token_contract_position: 0,
+                token_amount: 5,
+                gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            })
+        );
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                buyer.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: Some(token_contract.id()),
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(5),
+                    gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                })),
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        assert_matches!(
+            documents_batch_create_transition,
+            StateTransition::Batch(BatchTransition::V1(_))
+        );
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // He had 15, but spent 5
+        assert_eq!(token_balance, Some(10));
     }
 }

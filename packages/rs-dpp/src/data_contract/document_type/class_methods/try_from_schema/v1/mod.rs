@@ -50,6 +50,8 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::TokenContractPosition;
 use crate::identity::SecurityLevel;
+use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::validation::operations::ProtocolValidationOperation;
@@ -543,19 +545,34 @@ impl DocumentTypeV1 {
 
         let token_costs_value = schema.get_optional_value("tokenCost")?;
 
-        let extract_cost =
-            |key: &str| -> Result<Option<(TokenContractPosition, TokenAmount)>, ProtocolError> {
-                token_costs_value
-                    .and_then(|v| v.get_optional_value(key).transpose())
-                    .transpose()?
-                    .map(|action_cost| {
-                        Ok((
-                            action_cost.get_integer::<TokenContractPosition>("tokenPosition")?,
-                            action_cost.get_integer::<TokenAmount>("amount")?,
-                        ))
+        let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
+            token_costs_value
+                .and_then(|v| v.get_optional_value(key).transpose())
+                .transpose()?
+                .map(|action_cost| {
+                    // Extract an optional contract_id. Adjust the key if necessary.
+                    let contract_id = action_cost.get_optional_identifier("contractId")?;
+                    // Extract token_contract_position as an integer, then convert it.
+                    let token_contract_position =
+                        action_cost.get_integer::<TokenContractPosition>("tokenPosition")?;
+                    // Extract the token amount.
+                    let token_amount = action_cost.get_integer::<TokenAmount>("amount")?;
+                    // Extract an optional string and map it to the enum, defaulting if missing or unrecognized.
+                    let gas_fees_paid_by = action_cost
+                        .get_optional_integer::<u64>("gasFeesPaidBy")?
+                        .map(|int| int.try_into())
+                        .transpose()?
+                        .unwrap_or(GasFeesPaidBy::DocumentOwner);
+
+                    Ok(DocumentActionTokenCost {
+                        contract_id,
+                        token_contract_position,
+                        token_amount,
+                        gas_fees_paid_by,
                     })
-                    .transpose()
-            };
+                })
+                .transpose()
+        };
 
         let token_costs = TokenCostsV0 {
             create: extract_cost("create")?,

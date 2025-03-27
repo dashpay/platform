@@ -107,6 +107,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10256,
             Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10257,
             Self::MissingDefaultLocalizationError(_) => 10258,
+            Self::UnknownGasFeesPaidByError(_) => 10259,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

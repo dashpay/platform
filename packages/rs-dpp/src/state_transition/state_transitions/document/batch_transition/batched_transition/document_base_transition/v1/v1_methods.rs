@@ -1,14 +1,14 @@
 use crate::prelude::IdentityNonce;
-use platform_value::Identifier;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
+use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `DocumentBaseTransitionV0`
-pub trait DocumentBaseTransitionV1Methods : DocumentBaseTransitionV0Methods {
+pub trait DocumentBaseTransitionV1Methods: DocumentBaseTransitionV0Methods {
     /// Returns the token payment info.
     fn token_payment_info(&self) -> Option<TokenPaymentInfo>;
-    
+
     /// Returns the token payment info.
     fn token_payment_info_ref(&self) -> &Option<TokenPaymentInfo>;
 

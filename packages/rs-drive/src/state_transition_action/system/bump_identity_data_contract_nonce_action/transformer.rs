@@ -106,7 +106,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from borrowed base transition
@@ -120,7 +120,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from base transition
@@ -134,7 +134,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from borrowed base transition
@@ -148,7 +148,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from base transition
@@ -162,7 +162,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from borrowed base transition
@@ -176,7 +176,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from base transition
@@ -190,7 +190,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from borrowed base transition
@@ -204,7 +204,7 @@ impl BumpIdentityDataContractNonceAction {
             identity_id,
             user_fee_increase,
         )
-            .into()
+        .into()
     }
 
     /// from data contract update

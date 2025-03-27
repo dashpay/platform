@@ -25,8 +25,8 @@ use crate::consensus::basic::data_contract::{
     NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -506,6 +506,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingDefaultLocalizationError(MissingDefaultLocalizationError),
+
+    #[error(transparent)]
+    UnknownGasFeesPaidByError(UnknownGasFeesPaidByError),
 }
 
 impl From<BasicError> for ConsensusError {

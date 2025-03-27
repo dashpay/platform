@@ -1,26 +1,26 @@
-use std::collections::BTreeMap;
-use bincode_derive::{Decode, Encode};
-use derive_more::{Display, From};
-use serde::{Deserialize, Serialize};
-use platform_value::{Identifier, Value};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
-use crate::ProtocolError;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
-use crate::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
+use crate::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+use crate::ProtocolError;
+use bincode_derive::{Decode, Encode};
+use derive_more::{Display, From};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::{Identifier, Value};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 pub mod v0;
 
 #[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
+    derive(Serialize, Deserialize)
 )]
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
-    V0(TokenPaymentInfoV0)
+    V0(TokenPaymentInfoV0),
 }
 
 impl TokenPaymentInfoAccessorsV0 for TokenPaymentInfo {

@@ -7,12 +7,14 @@ use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentUpdatePriceTransitionV0 {
     pub(crate) fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
         price: Credits,
+        token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
@@ -21,6 +23,7 @@ impl DocumentUpdatePriceTransitionV0 {
             base: DocumentBaseTransition::from_document(
                 &document,
                 document_type,
+                token_payment_info,
                 identity_contract_nonce,
                 platform_version,
                 base_feature_version,

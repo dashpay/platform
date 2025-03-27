@@ -6,11 +6,13 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 
 use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use crate::state_transition::batch_transition::batched_transition::DocumentDeleteTransition;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentDeleteTransition {
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
+        token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
@@ -27,6 +29,7 @@ impl DocumentDeleteTransition {
             0 => Ok(DocumentDeleteTransitionV0::from_document(
                 document,
                 document_type,
+                token_payment_info,
                 identity_contract_nonce,
                 platform_version,
                 base_feature_version,

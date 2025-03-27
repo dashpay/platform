@@ -1,7 +1,7 @@
-use platform_value::Identifier;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use platform_value::Identifier;
 
 /// Trait providing accessor and mutator methods for `TokenPaymentInfoV0`.
 pub trait TokenPaymentInfoAccessorsV0 {
