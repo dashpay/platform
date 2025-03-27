@@ -7,13 +7,13 @@ use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::ProtocolError;
 use std::sync::Arc;
-
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::drive::contract::DataContractFetchInfo;
 
 #[derive(Debug, Clone)]
 /// document base transition action v0
 pub struct DocumentBaseTransitionActionV0 {
-    /// The document Id
+    /// The document ID
     pub id: Identifier,
     /// The identity contract nonce, this is used to stop replay attacks
     pub identity_contract_nonce: IdentityNonce,
@@ -23,11 +23,13 @@ pub struct DocumentBaseTransitionActionV0 {
     pub data_contract: Arc<DataContractFetchInfo>,
     /// Token cost with the token_id coming first
     pub token_cost: Option<(Identifier, TokenAmount)>,
+    /// Who pays the gas fees
+    pub gas_fees_paid_by: GasFeesPaidBy,
 }
 
 /// document base transition action accessors v0
 pub trait DocumentBaseTransitionActionAccessorsV0 {
-    /// The document Id
+    /// The document ID
     fn id(&self) -> Identifier;
 
     /// The document type

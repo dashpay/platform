@@ -10,6 +10,8 @@ pub mod errors;
 pub mod info;
 pub mod status;
 pub mod token_event;
+pub mod token_payment_info;
+pub mod gas_fees_paid_by;
 
 pub const MAX_TOKEN_NOTE_LEN: usize = 2048;
 pub type SharedEncryptedNote = (SenderKeyIndex, RecipientKeyIndex, Vec<u8>);

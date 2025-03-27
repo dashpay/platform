@@ -24,6 +24,7 @@ use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
+#[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
@@ -35,6 +36,7 @@ use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::batch_transition;
+use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -195,10 +197,6 @@ impl DocumentFromCreateTransitionV0 for Document {
     {
         let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
-        match base {
-            DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 { id, .. } = base_v0;
-
                 let requires_created_at = document_type
                     .required_fields()
                     .contains(document::property_names::CREATED_AT);
@@ -259,7 +257,7 @@ impl DocumentFromCreateTransitionV0 for Document {
                     .document_structure_version
                 {
                     0 => Ok(DocumentV0 {
-                        id,
+                        id: base.id(),
                         owner_id,
                         properties: data,
                         revision: document_type.initial_revision(),
@@ -280,8 +278,6 @@ impl DocumentFromCreateTransitionV0 for Document {
                         received: version,
                     }),
                 }
-            }
-        }
     }
 
     fn try_from_create_transition_v0(
@@ -295,10 +291,6 @@ impl DocumentFromCreateTransitionV0 for Document {
         Self: Sized,
     {
         let DocumentCreateTransitionV0 { base, data, .. } = v0;
-
-        match base {
-            DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 { id, .. } = base_v0;
 
                 let requires_created_at = document_type
                     .required_fields()
@@ -360,7 +352,7 @@ impl DocumentFromCreateTransitionV0 for Document {
                     .document_structure_version
                 {
                     0 => Ok(DocumentV0 {
-                        id: *id,
+                        id: base.id(),
                         owner_id,
                         properties: data.clone(),
                         revision: document_type.initial_revision(),
@@ -381,8 +373,6 @@ impl DocumentFromCreateTransitionV0 for Document {
                         received: version,
                     }),
                 }
-            }
-        }
     }
 }
 

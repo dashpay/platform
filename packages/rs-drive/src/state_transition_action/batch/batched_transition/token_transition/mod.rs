@@ -29,7 +29,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contracts::SystemDataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DataContract, IdentityNonce};

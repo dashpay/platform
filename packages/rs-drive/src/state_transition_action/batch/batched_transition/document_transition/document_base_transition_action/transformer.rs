@@ -15,16 +15,12 @@ impl DocumentBaseTransitionAction {
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         get_token_cost: impl Fn(&DocumentType) -> Option<(TokenContractPosition, TokenAmount)>,
     ) -> Result<Self, ProtocolError> {
-        match value {
-            DocumentBaseTransition::V0(v0) => Ok(
-                DocumentBaseTransitionActionV0::try_from_base_transition_with_contract_lookup(
-                    v0,
-                    get_data_contract,
-                    get_token_cost,
-                )?
-                .into(),
-            ),
-        }
+        Ok(DocumentBaseTransitionActionV0::try_from_base_transition_with_contract_lookup(
+            value,
+            get_data_contract,
+            get_token_cost,
+        )?
+            .into())
     }
 
     /// from borrowed base transition with contract lookup
@@ -33,8 +29,11 @@ impl DocumentBaseTransitionAction {
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         get_token_cost: impl Fn(&DocumentType) -> Option<(TokenContractPosition, TokenAmount)>,
     ) -> Result<Self, ProtocolError> {
-        match value {
-            DocumentBaseTransition::V0(v0) => Ok(DocumentBaseTransitionActionV0::try_from_borrowed_base_transition_with_contract_lookup(v0, get_data_contract, get_token_cost)?.into()),
-        }
+        Ok(DocumentBaseTransitionActionV0::try_from_borrowed_base_transition_with_contract_lookup(
+            value,
+            get_data_contract,
+            get_token_cost,
+        )?
+            .into())
     }
 }

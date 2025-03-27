@@ -1,5 +1,5 @@
 pub mod from_document;
-pub mod v0_methods;
+pub mod v1_methods;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use std::collections::BTreeMap;
@@ -13,9 +13,6 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "state-transition-json-conversion")]
-use serde_json::Value as JsonValue;
-
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::identifier::Identifier;
@@ -27,6 +24,7 @@ use crate::state_transition::batch_transition::document_base_transition::propert
     feature = "state-transition-value-conversion"
 ))]
 use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
@@ -40,7 +38,7 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
     "document_type_name",
     "data_contract_id"
 )]
-pub struct DocumentBaseTransitionV0 {
+pub struct DocumentBaseTransitionV1 {
     /// The document ID
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
     pub id: Identifier,
@@ -58,16 +56,23 @@ pub struct DocumentBaseTransitionV0 {
         serde(rename = "$dataContractId")
     )]
     pub data_contract_id: Identifier,
+    /// An optional Token Payment Info
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(default, rename = "$tokenPaymentInfo")
+    )]
+    pub token_payment_info: Option<TokenPaymentInfo>
 }
 
-impl DocumentBaseTransitionV0 {
-    #[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "state-transition-value-conversion")]
+impl DocumentBaseTransitionV1 {
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,
         identity_contract_nonce: IdentityNonce,
-    ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
-        Ok(DocumentBaseTransitionV0 {
+    ) -> Result<DocumentBaseTransitionV1, ProtocolError> {
+        let inner_token_payment_info_map: Option<BTreeMap<String, Value>> = map.remove_optional_map_as_btree_map_keep_values_as_platform_value(property_names::TOKEN_PAYMENT_INFO).ok().flatten();
+        Ok(DocumentBaseTransitionV1 {
             id: Identifier::from(
                 map.remove_hash256_bytes(property_names::ID)?,
             ),
@@ -78,50 +83,9 @@ impl DocumentBaseTransitionV0 {
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
                     .unwrap_or(data_contract.id().to_buffer()),
             ),
+            token_payment_info: inner_token_payment_info_map.map(|map| {
+                map.try_into()
+            }).transpose()?,
         })
     }
-}
-
-pub trait DocumentTransitionObjectLike {
-    #[cfg(feature = "state-transition-json-conversion")]
-    /// Creates the Document Transition from JSON representation. The JSON representation contains
-    /// binary data encoded in base64, Identifiers encoded in base58
-    fn from_json_object(
-        json_str: JsonValue,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-    #[cfg(feature = "state-transition-value-conversion")]
-    /// Creates the document transition from Raw Object
-    fn from_object(
-        raw_transition: Value,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn from_value_map(
-        map: BTreeMap<String, Value>,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    /// Object is an [`platform::Value`] instance that preserves the `Vec<u8>` representation
-    /// for Identifiers and binary data
-    fn to_object(&self) -> Result<Value, ProtocolError>;
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    /// Value Map is a Map of string to [`platform::Value`] that represents the state transition
-    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError>;
-
-    #[cfg(feature = "state-transition-json-conversion")]
-    /// Object is an [`serde_json::Value`] instance that replaces the binary data with
-    ///  - base58 string for Identifiers
-    ///  - base64 string for other binary data
-    fn to_json(&self) -> Result<JsonValue, ProtocolError>;
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
 }

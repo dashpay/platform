@@ -3,6 +3,8 @@ mod fields;
 mod from_document;
 pub mod v0;
 mod v0_methods;
+pub mod v1;
+mod v1_methods;
 
 #[cfg(any(
     feature = "state-transition-value-conversion",
@@ -31,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 #[cfg(feature = "state-transition-value-conversion")]
 use std::collections::BTreeMap;
+use crate::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
@@ -40,6 +43,8 @@ use std::collections::BTreeMap;
 pub enum DocumentBaseTransition {
     #[display("V0({})", "_0")]
     V0(DocumentBaseTransitionV0),
+    #[display("V1({})", "_1")]
+    V1(DocumentBaseTransitionV1),
 }
 
 impl Default for DocumentBaseTransition {
