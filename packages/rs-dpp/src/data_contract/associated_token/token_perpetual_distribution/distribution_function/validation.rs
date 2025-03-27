@@ -360,6 +360,7 @@ impl DistributionFunction {
 
                 // Now, based on the monotonicity implied by (*a) * (*m),
                 // check for incoherence:
+                #[allow(clippy::comparison_chain)]
                 if (*a) * (*m) > 0 {
                     // The function is increasing.
                     if let Some(max) = max_value {
@@ -843,6 +844,7 @@ impl DistributionFunction {
                 // For InvertedLogarithmic, f'(x) = -a / (d * (x - s + o)).
                 // Hence, if a > 0, the function is decreasing;
                 // if a < 0, the function is increasing.
+                #[allow(clippy::comparison_chain)]
                 if *a > 0 {
                     // For a decreasing function, if the start amount is already at min_value,
                     // the function would never decrease further.

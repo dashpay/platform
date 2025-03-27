@@ -31,6 +31,7 @@ impl TokenDestroyFrozenFundsTransitionAction {
     /// # Returns
     ///
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenDestroyFrozenFundsTransitionAction` if successful, otherwise `ProtocolError`.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_destroy_frozen_funds_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -80,6 +81,7 @@ impl TokenDestroyFrozenFundsTransitionAction {
     ///
     /// # Returns
     ///
+    #[allow(clippy::too_many_arguments)]
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenDestroyFrozenFundsTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_borrowed_token_destroy_frozen_funds_transition_with_contract_lookup(
         drive: &Drive,

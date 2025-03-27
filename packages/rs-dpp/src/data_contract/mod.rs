@@ -74,9 +74,9 @@ type PropertyPath = String;
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 
 // Define static empty BTreeMaps
-static EMPTY_GROUPS: Lazy<BTreeMap<GroupContractPosition, Group>> = Lazy::new(|| BTreeMap::new());
+static EMPTY_GROUPS: Lazy<BTreeMap<GroupContractPosition, Group>> = Lazy::new(BTreeMap::new);
 static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
-    Lazy::new(|| BTreeMap::new());
+    Lazy::new(BTreeMap::new);
 
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.
@@ -100,9 +100,6 @@ static EMPTY_TOKENS: Lazy<BTreeMap<TokenContractPosition, TokenConfiguration>> =
 /// - the contract structure can imply missing parts based on default behavior
 /// - the contract structure can disable certain features dependant on missing information
 /// - the contract might be unusable until it is updated by the owner
-///
-
-/// Here we use PlatformSerialize, because
 #[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
 pub enum DataContract {
     V0(DataContractV0),

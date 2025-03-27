@@ -9,6 +9,12 @@ use std::ops::Deref;
 #[derive(Debug)]
 pub struct StatelessJsonSchemaLazyValidator(JsonSchemaValidator);
 
+impl Default for StatelessJsonSchemaLazyValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StatelessJsonSchemaLazyValidator {
     pub fn new() -> Self {
         Self(JsonSchemaValidator::new())

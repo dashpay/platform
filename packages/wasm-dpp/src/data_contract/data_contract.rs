@@ -25,10 +25,9 @@ use dpp::ProtocolError;
 
 use crate::data_contract::tokens::TokenConfigurationWasm;
 use crate::identifier::identifier_from_js_value;
-use crate::metadata::MetadataWasm;
 use crate::utils::get_bool_from_options;
 use crate::utils::SKIP_VALIDATION_PROPERTY_NAME;
-use crate::utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError};
+use crate::utils::{Inner, ToSerdeJSONExt, WithJsError};
 use crate::with_js_error;
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
@@ -439,7 +438,6 @@ impl DataContractWasm {
     ) -> Result<TokenConfigurationWasm, JsValue> {
         self.inner
             .expected_token_configuration(token_contract_position)
-            .map_err(ProtocolError::from)
             .with_js_error()
             .map(|token_configuration| token_configuration.clone().into())
     }

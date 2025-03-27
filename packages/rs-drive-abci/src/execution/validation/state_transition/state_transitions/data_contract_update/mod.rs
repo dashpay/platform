@@ -118,7 +118,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key.clone());
+        signer.add_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -128,7 +128,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key.clone());
+        signer.add_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),

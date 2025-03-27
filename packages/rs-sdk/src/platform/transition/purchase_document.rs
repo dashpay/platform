@@ -18,6 +18,7 @@ use dpp::state_transition::StateTransition;
 pub trait PurchaseDocument<S: Signer>: Waitable {
     /// Tries to purchase a document on platform
     /// Setting settings to `None` sets default connection behavior
+    #[allow(clippy::too_many_arguments)]
     async fn purchase_document(
         &self,
         price: Credits,
@@ -30,6 +31,7 @@ pub trait PurchaseDocument<S: Signer>: Waitable {
     ) -> Result<StateTransition, Error>;
 
     /// Tries to purchase a document on platform and waits for the response
+    #[allow(clippy::too_many_arguments)]
     async fn purchase_document_and_wait_for_response(
         &self,
         price: Credits,

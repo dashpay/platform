@@ -116,7 +116,7 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::Root => {
                     if let Ok(root_tree) = RootTree::try_from(key[0]) {
                         (
-                            format!("{}({})", root_tree.to_string(), key[0]),
+                            format!("{}({})", root_tree, key[0]),
                             Some(root_tree.into()),
                         )
                     } else {
@@ -151,7 +151,7 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                 KnownPath::IdentitiesRoot if key.len() == 1 => {
                     if let Ok(root_tree) = IdentityRootStructure::try_from(key[0]) {
                         (
-                            format!("{}({})", root_tree.to_string(), key[0]),
+                            format!("{}({})", root_tree, key[0]),
                             Some(root_tree.into()),
                         )
                     } else {

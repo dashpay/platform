@@ -111,7 +111,7 @@ impl BatchTransitionResolversV0 for BatchedTransition {
     }
 }
 
-impl<'a> BatchTransitionResolversV0 for BatchedTransitionRef<'a> {
+impl BatchTransitionResolversV0 for BatchedTransitionRef<'_> {
     fn as_transition_create(&self) -> Option<&DocumentCreateTransition> {
         match self {
             BatchedTransitionRef::Document(document) => document.as_transition_create(),

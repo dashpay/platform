@@ -36,11 +36,11 @@ mod refund_tests {
 
     // There's a fee for the first document that a user creates on a contract as they add space
     // For the identity data contract nonce
-    fn setup_join_contract_document<'a>(
+    fn setup_join_contract_document(
         platform: &TempPlatform<MockCoreRPCLike>,
         profile: DocumentTypeRef,
         rng: &mut StdRng,
-        identity: &'a Identity,
+        identity: &Identity,
         key: &IdentityPublicKey,
         signer: &SimpleSigner,
     ) -> Credits {
@@ -88,7 +88,7 @@ mod refund_tests {
             .expect("expect to create documents batch transition");
 
         let (mut fee_results, processed_block_fee_outcome) = process_state_transitions(
-            &platform,
+            platform,
             &vec![documents_batch_create_transition.clone()],
             BlockInfo::default(),
             &platform_state,
@@ -122,7 +122,7 @@ mod refund_tests {
             dash_to_credits!(1) - fee_result.total_base_fee();
 
         fetch_expected_identity_balance(
-            &platform,
+            platform,
             identity.id(),
             platform_version,
             expected_user_balance_after_creation,
@@ -131,11 +131,11 @@ mod refund_tests {
         expected_user_balance_after_creation
     }
 
-    fn setup_initial_document<'a>(
+    fn setup_initial_document(
         platform: &TempPlatform<MockCoreRPCLike>,
         profile: DocumentTypeRef,
         rng: &mut StdRng,
-        identity: &'a Identity,
+        identity: &Identity,
         key: &IdentityPublicKey,
         signer: &SimpleSigner,
     ) -> (Document, FeeResult, Credits) {
@@ -195,7 +195,7 @@ mod refund_tests {
             .expect("expect to create documents batch transition");
 
         let (mut fee_results, _) = process_state_transitions(
-            &platform,
+            platform,
             &vec![documents_batch_create_transition.clone()],
             BlockInfo::default(),
             &platform_state,
@@ -252,7 +252,7 @@ mod refund_tests {
         let expected_user_balance_after_creation = user_credits_left - fee_result.total_base_fee();
 
         fetch_expected_identity_balance(
-            &platform,
+            platform,
             identity.id(),
             platform_version,
             expected_user_balance_after_creation,

@@ -100,7 +100,7 @@ impl TryFrom<StateTransitionBroadcastErrorProto> for StateTransitionBroadcastErr
     type Error = Error;
 
     fn try_from(value: StateTransitionBroadcastErrorProto) -> Result<Self, Self::Error> {
-        let cause = if value.data.len() > 0 {
+        let cause = if !value.data.is_empty() {
             let consensus_error =
                 ConsensusError::deserialize_from_bytes(&value.data).map_err(|e| {
                     tracing::debug!("Failed to deserialize consensus error: {}", e);

@@ -21,7 +21,6 @@ use dpp::block::epoch::Epoch;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(feature = "fixtures-and-mocks")]
-#[cfg(feature = "fixtures-and-mocks")]
 use grovedb::TransactionArg;
 
 use crate::drive::Drive;
@@ -46,7 +45,7 @@ use dpp::version::PlatformVersion;
 use dpp::version::PlatformVersionCurrentVersion;
 
 // TODO: Not using
-/// The outcome of a query
+// /// The outcome of a query
 // pub struct QueryDocumentIdsOutcome {
 //     /// returned items
 //     pub items: Vec<Key>,
@@ -70,8 +69,8 @@ pub struct QuerySerializedDocumentsOutcome {
 
 impl Drive {
     // TODO: Not using
-    /// Performs and returns the result as ids of the specified query
-    /// along with skipped items and the cost.
+    // /// Performs and returns the result as ids of the specified query
+    // /// along with skipped items and the cost.
     // pub fn query_document_ids(
     //     &self,
     //     query: DriveQuery,
@@ -152,6 +151,7 @@ impl Drive {
     #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
+    #[allow(clippy::too_many_arguments)]
     pub fn query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],

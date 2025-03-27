@@ -77,7 +77,7 @@ impl DataContractV0Getters for DataContractV1 {
     }
 
     fn has_document_type_for_name(&self, name: &str) -> bool {
-        self.document_types.get(name).is_some()
+        self.document_types.contains_key(name)
     }
 
     fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {

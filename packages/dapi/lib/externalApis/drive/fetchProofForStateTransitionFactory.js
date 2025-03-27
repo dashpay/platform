@@ -29,6 +29,12 @@ function keepsHistory(batchedTransition, tokenConfiguration) {
     case TokenTransitionType.Unfreeze: {
       return tokenConfiguration.keepsHistory().keepsFreezingHistory();
     }
+    case TokenTransitionType.Claim:
+    case TokenTransitionType.ConfigUpdate:
+    case TokenTransitionType.EmergencyAction:
+    case TokenTransitionType.DestroyFrozenFunds: {
+      return true;
+    }
     default:
       return false;
   }
@@ -146,16 +152,6 @@ function fetchProofForStateTransitionFactory(driveClient, dpp) {
                 );
 
                 identityTokenBalancesList.push(requestSender, requestRecipient);
-                break;
-              }
-              case TokenTransitionType.DestroyFrozenFunds: {
-                const request = new IdentityTokenBalanceRequest();
-                request.setTokenId(batchedTransition.getTokenId().toBuffer());
-                request.setIdentityId(
-                  batchedTransition.toTransition().getFrozenIdentityId().toBuffer(),
-                );
-
-                identityTokenBalancesList.push(request);
                 break;
               }
               case TokenTransitionType.EmergencyAction:

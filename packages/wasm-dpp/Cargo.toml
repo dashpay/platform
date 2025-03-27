@@ -8,6 +8,9 @@ authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[lints.rust]
+dead_code = "allow"
+
 [dependencies]
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }

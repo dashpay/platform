@@ -11,6 +11,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 
 impl DocumentReplaceTransitionAction {
     /// try from borrowed
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransition,
         originally_created_at: Option<TimestampMillis>,

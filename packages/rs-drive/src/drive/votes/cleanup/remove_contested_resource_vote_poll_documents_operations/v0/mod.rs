@@ -19,6 +19,8 @@ impl Drive {
     /// any vote polls should be closed.
     /// !!!!! THIS VERSION CONTAINED A SERIOUS ISSUE !!!!!
     /// However, it should never have made it to mainnet.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_documents_operations_v0(
         &self,
         vote_polls: &[(

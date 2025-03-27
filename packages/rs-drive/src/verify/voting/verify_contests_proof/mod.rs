@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::query::vote_polls_by_document_type_query::ResolvedVotePollsByDocumentTypeQuery;
 use dpp::version::PlatformVersion;
 
-impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
+impl ResolvedVotePollsByDocumentTypeQuery<'_> {
     /// Verifies a proof for the vote poll vote state proof.
     ///
     /// This function takes a byte slice representing the serialized proof, verifies it, and returns a tuple consisting of the root hash

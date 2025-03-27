@@ -59,6 +59,7 @@ where
     /// This function may return an `Error` variant if there is a problem with deserializing the raw
     /// state transitions, processing state transitions, or executing events.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &[Vec<u8>],
@@ -85,7 +86,7 @@ where
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
             let execution_result = if proposing_state_transitions
-                && timer.map_or(false, |timer| {
+                && timer.is_some_and(|timer| {
                     timer.elapsed().as_millis()
                         > self
                             .config
@@ -216,6 +217,7 @@ where
         Ok(processing_result)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_validation_result_v0<'a>(
         &self,
         raw_state_transition: &'a [u8], //used for errors

@@ -1,4 +1,4 @@
-use crate::consensus::basic::json_schema_error::json_schema_error_data::JsonSchemaErrorData;
+use crate::consensus::basic::json_schema_error::error_data::JsonSchemaErrorData;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;

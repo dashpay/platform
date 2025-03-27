@@ -3,4 +3,4 @@ use crate::identity::IdentityPublicKey;
 use crate::serialization::ValueConvertible;
 pub use v0::*;
 
-impl<'a> ValueConvertible<'a> for IdentityPublicKey {}
+impl ValueConvertible<'_> for IdentityPublicKey {}

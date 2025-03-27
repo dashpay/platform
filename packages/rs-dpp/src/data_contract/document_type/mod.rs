@@ -125,7 +125,7 @@ impl DocumentType {
     }
 }
 
-impl<'a> DocumentTypeRef<'a> {
+impl DocumentTypeRef<'_> {
     pub fn to_owned_document_type(&self) -> DocumentType {
         match self {
             DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
@@ -136,8 +136,8 @@ impl<'a> DocumentTypeRef<'a> {
 
 impl DocumentTypeBasicMethods for DocumentType {}
 
-impl<'a> DocumentTypeBasicMethods for DocumentTypeRef<'a> {}
+impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {}
 
 impl DocumentTypeV0Methods for DocumentType {}
 
-impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {}
+impl DocumentTypeV0Methods for DocumentTypeRef<'_> {}

@@ -21,6 +21,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Creates a new token root subtree at `TokenBalances` keyed by `token_id`.
     /// This function applies the operations directly, calculates fees, and returns the fee result.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_token_trees_v0(
         &self,
         token_id: [u8; 32],
@@ -59,6 +60,7 @@ impl Drive {
     }
 
     /// Adds the token root creation operations to the provided `drive_operations` vector without
+    #[allow(clippy::too_many_arguments)]
     /// calculating or returning fees. If `apply` is false, it will only estimate costs.
     pub(super) fn create_token_trees_add_to_operations_v0(
         &self,
@@ -100,6 +102,7 @@ impl Drive {
 
     /// Gathers the operations needed to create the token root subtree. If `apply` is false, it
     /// populates `estimated_costs_only_with_layer_info` instead of applying.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_token_trees_operations_v0(
         &self,
         token_id: [u8; 32],

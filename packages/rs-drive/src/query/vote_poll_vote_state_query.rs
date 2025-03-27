@@ -389,7 +389,7 @@ pub struct ResolvedContestedDocumentVotePollDriveQuery<'a> {
     pub allow_include_locked_and_abstaining_vote_tally: bool,
 }
 
-impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
+impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
     /// Operations to construct a path query.
     pub fn construct_path_query(
         &self,
@@ -614,7 +614,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                     }
                                 }
                                 Element::Item(serialized_item_info, _) => {
-                                    if first_key.as_slice() == &RESOURCE_STORED_INFO_KEY_U8_32 {
+                                    if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                         // this is the stored info, let's check to see if the vote is over
                                         let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
                                         if finalized_contested_document_vote_poll_stored_info
@@ -717,7 +717,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
                                     }
                                 }
                                 Element::Item(serialized_item_info, _) => {
-                                    if first_key.as_slice() == &RESOURCE_STORED_INFO_KEY_U8_32 {
+                                    if first_key.as_slice() == RESOURCE_STORED_INFO_KEY_U8_32 {
                                         // this is the stored info, let's check to see if the vote is over
                                         let finalized_contested_document_vote_poll_stored_info = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&serialized_item_info)?;
                                         if finalized_contested_document_vote_poll_stored_info

@@ -20,6 +20,7 @@ use grovedb::{Element, MaybeTree, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn register_contested_resource_identity_vote_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
@@ -61,6 +62,7 @@ impl Drive {
         Ok(fees)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn register_contested_resource_identity_vote_operations_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],

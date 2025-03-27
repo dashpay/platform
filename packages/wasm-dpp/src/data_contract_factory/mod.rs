@@ -1,1 +1,1 @@
-mod data_contract_factory;
+mod factory;

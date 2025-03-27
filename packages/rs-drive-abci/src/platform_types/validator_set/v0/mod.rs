@@ -97,12 +97,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                                 );
 
                                 Some(Ok(abci::ValidatorUpdate {
-                                    pub_key: public_key.clone().map(|public_key| {
-                                        crypto::PublicKey {
-                                            sum: Some(Bls12381(
-                                                public_key.0.to_compressed().to_vec(),
-                                            )),
-                                        }
+                                    pub_key: (*public_key).map(|public_key| crypto::PublicKey {
+                                        sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
                                     }),
                                     power: 100,
                                     pro_tx_hash: pro_tx_hash.as_byte_array().to_vec(),
@@ -131,12 +127,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                                 );
 
                                 Some(Ok(abci::ValidatorUpdate {
-                                    pub_key: public_key.clone().map(|public_key| {
-                                        crypto::PublicKey {
-                                            sum: Some(Bls12381(
-                                                public_key.0.to_compressed().to_vec(),
-                                            )),
-                                        }
+                                    pub_key: (*public_key).map(|public_key| crypto::PublicKey {
+                                        sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
                                     }),
                                     power: 100,
                                     pro_tx_hash: pro_tx_hash.to_byte_array().to_vec(),

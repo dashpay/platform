@@ -1,3 +1,4 @@
+#[cfg(feature = "bls-signatures")]
 use dpp::bls_signatures::PublicKey;
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,7 @@ impl From<OldStructureValidatorSet> for dpp::core_types::validator_set::Validato
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(super) struct OldStructureValidatorSetV0 {
+pub struct OldStructureValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
     /// Rotation quorum index is available only for DIP24 quorums
@@ -71,7 +72,7 @@ impl From<OldStructureValidatorSetV0> for dpp::core_types::validator_set::v0::Va
 
 /// A validator in the context of a quorum
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub(super) struct ValidatorV0 {
+pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum

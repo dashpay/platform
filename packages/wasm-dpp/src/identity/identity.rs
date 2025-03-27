@@ -136,7 +136,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> u64 {
-        self.inner.revision() as u64
+        self.inner.revision()
     }
 
     #[wasm_bindgen(js_name=setMetadata)]

@@ -29,6 +29,7 @@ use std::collections::HashMap;
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::votes::insert) fn add_vote_poll_end_date_query_operations_v0(
         &self,
         creator_identity_id: Option<[u8; 32]>,
