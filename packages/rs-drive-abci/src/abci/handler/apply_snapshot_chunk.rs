@@ -262,6 +262,12 @@ where
 
     let block_height = platform_state.last_committed_block_height();
 
+    // At this point, platform state reflects the state of the system at snapshot time; however, we have already
+    // finalized that height, so we need to update state for the next block
+    if let Some(next_quorum_hash) = platform_state.take_next_validator_set_quorum_hash() {
+        platform_state.set_current_validator_set_quorum_hash(next_quorum_hash);
+    }
+
     tracing::info!(block_height, platform_state = ?platform_state, "state_sync_finalize");
 
     let tx = drive.grove.start_transaction();
