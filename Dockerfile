@@ -599,6 +599,7 @@ RUN apk add --no-cache libgcc libstdc++
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
 ENV CHECKPOINTS_PATH=/var/lib/dash/rs-drive-abci/db-checkpoints
 ENV REJECTIONS_PATH=/var/log/dash/rejected
+ENV SNAPSHOTS_ENABLED=true
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
