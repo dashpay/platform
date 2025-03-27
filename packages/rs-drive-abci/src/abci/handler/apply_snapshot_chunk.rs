@@ -192,12 +192,12 @@ where
         last_committed_block_info: Some(last_committed_block),
         current_protocol_version_in_consensus: v0.current_protocol_version_in_consensus,
         next_epoch_protocol_version: v0.next_epoch_protocol_version,
-        current_validator_set_quorum_hash: QuorumHash::from_byte_array(
-            v0.next_validator_set_quorum_hash
-                .unwrap_or(v0.current_validator_set_quorum_hash)
-                .to_buffer(),
-        ), // we are at H+1 so "next" validator hash will be the current one
-        next_validator_set_quorum_hash: None, // we are at H+1 and we don't know next validators hash yet
+        current_validator_set_quorum_hash: BlockHash::from_byte_array(
+            v0.current_validator_set_quorum_hash.to_buffer(),
+        ),
+        next_validator_set_quorum_hash: v0
+            .next_validator_set_quorum_hash
+            .map(|x| BlockHash::from_byte_array(x.to_buffer())),
         patched_platform_version: None,
         validator_sets: Default::default(),
         chain_lock_validating_quorums: SignatureVerificationQuorumSet::from(

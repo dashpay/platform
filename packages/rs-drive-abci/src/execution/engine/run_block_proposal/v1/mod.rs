@@ -378,17 +378,6 @@ where
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
 
-        let root_hash = self
-            .drive
-            .grove
-            .root_hash(Some(transaction), &platform_version.drive.grove_version)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
-
-        block_execution_context
-            .block_state_info_mut()
-            .set_app_hash(Some(root_hash));
-
         let validator_set_update = self.validator_set_update(
             block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
@@ -408,6 +397,16 @@ where
         };
 
         self.store_last_block_info(&extended_block_info, Some(transaction), platform_version)?;
+        let root_hash = self
+            .drive
+            .grove
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
+
+        block_execution_context
+            .block_state_info_mut()
+            .set_app_hash(Some(root_hash));
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
