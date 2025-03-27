@@ -1,5 +1,4 @@
 use crate::consensus::signature::SignatureError;
-#[cfg(feature = "state-transition-validation")]
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::data_contract::errors::DataContractError;
 
@@ -39,9 +38,7 @@ impl ErrorWithCode for BasicError {
             Self::UnsupportedFeatureError(_) => 10006,
 
             // Structure Errors: 10100-10199
-            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaCompilationError(..) => 10100,
-            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaError(_) => 10101,
             Self::InvalidIdentifierError { .. } => 10102,
             Self::ValueError(_) => 10103,
@@ -54,7 +51,6 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDataContractIdError { .. } => 10204,
             Self::InvalidIndexedPropertyConstraintError { .. } => 10205,
             Self::InvalidIndexPropertyTypeError { .. } => 10206,
-            #[cfg(feature = "json-schema-validation")]
             Self::InvalidJsonSchemaRefError { .. } => 10207,
             Self::SystemPropertyIndexAlreadyPresentError { .. } => 10208,
             Self::UndefinedIndexPropertyError { .. } => 10209,
@@ -282,7 +278,6 @@ impl ErrorWithCode for StateError {
             Self::PrefundedSpecializedBalanceNotFoundError(_) => 40401,
 
             // Data trigger errors: 40500-40699
-            #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
 
             // Token errors: 40700-40799
@@ -316,7 +311,6 @@ impl ErrorWithCode for StateError {
     }
 }
 
-#[cfg(feature = "state-transition-validation")]
 impl ErrorWithCode for DataTriggerError {
     fn code(&self) -> u32 {
         match self {
