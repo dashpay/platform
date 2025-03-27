@@ -378,6 +378,10 @@
             },
             "required": ["resolution"],
             "additionalProperties": false
+          },
+          "count": {
+            "type": "boolean",
+            "description": "Enables count operations on the index. Adds extra costs for documents storage"
           }
         },
         "required": [

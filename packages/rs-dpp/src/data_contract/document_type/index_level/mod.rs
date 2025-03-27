@@ -35,6 +35,8 @@ pub struct IndexLevelTypeInfo {
     pub should_insert_with_all_null: bool,
     /// The index type
     pub index_type: IndexType,
+    /// Is this index countable. Uses sum trees to enable count operations
+    pub count: bool,
 }
 
 impl IndexType {
@@ -214,6 +216,7 @@ impl IndexLevel {
                     current_level.has_index_with_type = Some(IndexLevelTypeInfo {
                         should_insert_with_all_null: index.null_searchable,
                         index_type,
+                        count: index.count,
                     });
                 }
             }
@@ -282,6 +285,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let old_index_structure =
@@ -309,6 +313,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let new_indices = vec![
@@ -321,6 +326,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                count: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -331,6 +337,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                count: false,
             },
         ];
 
@@ -367,6 +374,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                count: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -377,6 +385,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                count: false,
             },
         ];
 
@@ -389,6 +398,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let old_index_structure =
@@ -423,6 +433,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let new_indices = vec![Index {
@@ -440,6 +451,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let old_index_structure =
@@ -480,6 +492,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let new_indices = vec![Index {
@@ -491,6 +504,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            count: false,
         }];
 
         let old_index_structure =
