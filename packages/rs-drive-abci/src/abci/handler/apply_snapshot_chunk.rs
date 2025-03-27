@@ -168,7 +168,15 @@ where
     let extended_block_info =
         Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
             .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
-    let core_height = extended_block_info.block_info.core_height;
+    let core_height = extended_block_info.next_core_chain_lock_height;
+
+    if core_height != extended_block_info.block_info.core_height {
+        tracing::debug!(
+            block_info_core_height = extended_block_info.block_info.core_height,
+            core_height,
+            "core_height from core_rpc and block_info are different"
+        );
+    }
 
     let last_committed_block = ExtendedBlockInfo::V0(ExtendedBlockInfoV0 {
         basic_info: extended_block_info.block_info,

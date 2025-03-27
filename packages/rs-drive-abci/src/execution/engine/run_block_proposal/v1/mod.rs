@@ -391,9 +391,12 @@ where
             Some(transaction),
             platform_version,
         )?;
+
+        // TODO integrate into reduced platform state for saving
         let extended_block_info = ExtendedBlockInfo {
             block_info,
             proposer_pro_tx_hash,
+            next_core_chain_lock_height: core_chain_locked_height,
         };
 
         self.store_last_block_info(&extended_block_info, Some(transaction), platform_version)?;
