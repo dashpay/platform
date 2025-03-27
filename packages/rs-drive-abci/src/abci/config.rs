@@ -1,6 +1,6 @@
 //! Configuration of ABCI Application server
 
-use crate::utils::from_opt_str_or_number;
+use crate::utils::{from_opt_str_or_number, from_str_or_number};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -65,18 +65,21 @@ impl Default for AbciConfig {
 
 /// Configuration for StateSync feature
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct StateSyncAbciConfig {
     /// Enable snapshot
+    #[serde(deserialize_with = "from_str_or_number")]
     pub snapshots_enabled: bool,
 
     /// Path to checkpoints
-    #[serde(default = "StateSyncAbciConfig::default_checkpoints_path")]
     pub checkpoints_path: PathBuf,
 
     /// Frequency of snapshot creation (in blocks)
+    #[serde(deserialize_with = "from_str_or_number")]
     pub snapshots_frequency: i64,
 
     /// Maximum number of snapshots to keep
+    #[serde(deserialize_with = "from_str_or_number")]
     pub max_num_snapshots: usize,
 }
 
@@ -93,7 +96,7 @@ impl StateSyncAbciConfig {
             snapshots_enabled: false,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             snapshots_frequency: 5,
-            max_num_snapshots: 100,
+            max_num_snapshots: 5,
         }
     }
 
@@ -102,7 +105,7 @@ impl StateSyncAbciConfig {
             snapshots_enabled: true,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             snapshots_frequency: 5,
-            max_num_snapshots: 100,
+            max_num_snapshots: 5,
         }
     }
 
@@ -111,7 +114,7 @@ impl StateSyncAbciConfig {
             snapshots_enabled: false,
             checkpoints_path: PathBuf::from("/var/lib/dash-platform/data/checkpoints"),
             snapshots_frequency: 5,
-            max_num_snapshots: 100,
+            max_num_snapshots: 5,
         }
     }
 

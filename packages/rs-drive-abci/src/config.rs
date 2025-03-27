@@ -230,6 +230,9 @@ struct PlatformConfigIntermediate {
     pub core: CoreConfig,
     #[serde(flatten)]
     pub abci: AbciConfig,
+    #[serde(flatten)]
+    pub state_sync: StateSyncAbciConfig,
+    #[serde(flatten)]
     pub prometheus_bind_address: Option<String>,
     pub grpc_bind_address: String,
     #[serde(flatten)]
@@ -282,7 +285,7 @@ impl<'de> Deserialize<'de> for PlatformConfig {
             instant_lock: config.instant_lock,
             block_spacing_ms: config.block_spacing_ms,
             db_path: config.db_path,
-            state_sync_config: StateSyncAbciConfig::default(),
+            state_sync_config: config.state_sync,
             rejections_path: config.rejections_path,
             #[cfg(feature = "testing-config")]
             testing_configs: config.testing_configs,

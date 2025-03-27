@@ -609,12 +609,10 @@ VOLUME /var/lib/dash/rs-drive-abci/db
 VOLUME /var/log/dash
 
 # Ensure required paths do exist
-# TODO: remove /var/lib/dash-platform/data/checkpoints when drive-abci is fixed
 RUN mkdir -p /var/log/dash \
     ${DB_PATH} \
     ${CHECKPOINTS_PATH} \
-    ${REJECTIONS_PATH} \
-    /var/lib/dash-platform/data/checkpoints
+    ${REJECTIONS_PATH}
 
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
@@ -625,10 +623,10 @@ RUN ldd /usr/bin/drive-abci
 ARG USERNAME=dash
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
-# TODO: remove /var/lib/dash-platform/data/checkpoints when drive-abci is fixed
+
 RUN addgroup -g $USER_GID $USERNAME && \
     adduser -D -u $USER_UID -G $USERNAME -h /var/lib/dash/rs-drive-abci $USERNAME && \
-    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci /var/log/dash /var/lib/dash-platform/data/checkpoints
+    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci /var/log/dash
 
 USER $USERNAME
 
