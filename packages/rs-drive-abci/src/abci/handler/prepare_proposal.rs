@@ -291,7 +291,7 @@ where
         failed_tx_count,
         storage_fees,
         processing_fees,
-        "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
+        "Prepared proposal with {} transition {} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
         if valid_tx_count + invalid_paid_tx_count > 0 {
             "s"

@@ -377,17 +377,6 @@ where
         )?;
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
-        // HERE
-        self.store_reduced_platform_state(
-            block_execution_context.block_platform_state(),
-            Some(transaction),
-            platform_version,
-        )?;
-        let extended_block_info = ExtendedBlockInfo {
-            block_info,
-            proposer_pro_tx_hash,
-        };
-        self.store_last_block_info(&extended_block_info, Some(transaction), platform_version)?;
 
         let root_hash = self
             .drive
@@ -406,6 +395,19 @@ where
             &mut block_execution_context,
             platform_version,
         )?;
+
+        // HERE
+        self.store_reduced_platform_state(
+            block_execution_context.block_platform_state(),
+            Some(transaction),
+            platform_version,
+        )?;
+        let extended_block_info = ExtendedBlockInfo {
+            block_info,
+            proposer_pro_tx_hash,
+        };
+
+        self.store_last_block_info(&extended_block_info, Some(transaction), platform_version)?;
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(

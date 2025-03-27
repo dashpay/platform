@@ -25,7 +25,15 @@ impl<C> Platform<C> {
             .map(|bytes| {
                 let result =
                     ReducedPlatformStateForSaving::versioned_deserialize(&bytes, platform_version)
-                        .map_err(Error::Protocol);
+                        .map_err(Error::Protocol)
+                        .inspect(|reduced_platform_state| {
+                            tracing::trace!(
+                                bytes = hex::encode(&bytes),
+                                reduced_platform_state = ?reduced_platform_state,
+                                "state_sync: reduced platform state deserialized successfully for version {}",
+                                platform_version.protocol_version
+                            );
+                        });
 
                 if result.is_err() {
                     tracing::error!(

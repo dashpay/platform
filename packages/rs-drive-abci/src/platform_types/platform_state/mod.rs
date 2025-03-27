@@ -76,6 +76,13 @@ impl ReducedPlatformSerializable for PlatformState {
         let config = config::standard().with_big_endian().with_no_limit();
         let reduced_platform_state_for_saving: ReducedPlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;
+
+        tracing::trace!(
+            reduced_platform_state_for_saving = ?reduced_platform_state_for_saving,
+            "state_sync: reduced platform state saved successfully for version {}",
+            platform_version.protocol_version
+        );
+
         bincode::encode_to_vec(reduced_platform_state_for_saving, config).map_err(|e| {
             ProtocolError::PlatformSerializationError(format!(
                 "unable to serialize ReducedPlatformState: {}",
