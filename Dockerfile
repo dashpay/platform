@@ -598,6 +598,7 @@ RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
 ENV REJECTIONS_PATH=/var/log/dash/rejected
+ENV SNAPSHOTS_ENABLED=true
 
 RUN mkdir -p /var/log/dash \
     /var/lib/dash/rs-drive-abci/db \
