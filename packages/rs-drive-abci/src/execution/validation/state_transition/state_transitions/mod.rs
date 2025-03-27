@@ -470,7 +470,7 @@ pub(in crate::execution) mod tests {
         let raw_state_transitions = state_transitions
             .iter()
             .map(|a| a.serialize_to_bytes().expect("expected to serialize"))
-            .collect();
+            .collect::<Vec<_>>();
 
         let transaction = platform.drive.grove.start_transaction();
 

@@ -85,6 +85,7 @@ pub struct MimicExecuteBlockOptions {
 impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
+    #[allow(clippy::too_many_arguments)]
     pub fn mimic_execute_block(
         &self,
         proposer_pro_tx_hash: [u8; 32],

@@ -1,3 +1,6 @@
+#[cfg(any(feature = "mocks", test))]
+mod mock;
+
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -5,18 +8,15 @@ use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 use std::fmt::{Debug, Formatter};
 
-#[cfg(any(feature = "mocks", test))]
-use crate::rpc::core::MockCoreRPCLike;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use arc_swap::ArcSwap;
+use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
-use dpp::version::ProtocolVersion;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 
 // @append_only
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure
@@ -112,52 +112,6 @@ impl Platform<DefaultCoreRPC> {
             ))
         })?;
         Self::open_with_client(path, Some(config), core_rpc, None)
-    }
-}
-
-#[cfg(any(feature = "mocks", test))]
-impl Platform<MockCoreRPCLike> {
-    /// Open Platform with Drive and block execution context and mock core rpc.
-    pub fn open<P: AsRef<Path>>(
-        path: P,
-        config: Option<PlatformConfig>,
-        initial_protocol_version: Option<ProtocolVersion>,
-    ) -> Result<Platform<MockCoreRPCLike>, Error> {
-        let mut core_rpc_mock = MockCoreRPCLike::new();
-
-        core_rpc_mock.expect_get_block_hash().returning(|_| {
-            Ok(BlockHash::from_str(
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap())
-        });
-
-        core_rpc_mock.expect_get_block_json().returning(|_| {
-            Ok(json!({
-                "tx": [],
-            }))
-        });
-        Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
-    }
-
-    /// Fetch and reload the state from the backing store
-    pub fn reload_state_from_storage(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
-        let Some(persisted_state) =
-            Platform::<MockCoreRPCLike>::fetch_platform_state(&self.drive, None, platform_version)?
-        else {
-            return Ok(false);
-        };
-
-        PlatformVersion::set_current(PlatformVersion::get(
-            persisted_state.current_protocol_version_in_consensus(),
-        )?);
-
-        self.state.store(Arc::new(persisted_state));
-
-        Ok(true)
     }
 }
 
