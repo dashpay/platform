@@ -270,6 +270,81 @@ pub fn setup_family_tests(
 }
 
 #[cfg(feature = "server")]
+/// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
+pub fn setup_countable_family_tests(
+    count: u32,
+    seed: u64,
+    platform_version: &PlatformVersion,
+) -> (Drive, DataContract) {
+    let drive_config = DriveConfig::default();
+
+    let drive = setup_drive(Some(drive_config), None);
+
+    let db_transaction = drive.grove.start_transaction();
+
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
+    drive
+        .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+        .expect("expected to create contracts tree successfully");
+
+    // setup code
+    let contract = test_helpers::setup_contract(
+        &drive,
+        "tests/supporting_files/contract/family/family-contract-countable.json",
+        None,
+        None,
+        None::<fn(&mut DataContract)>,
+        Some(&db_transaction),
+        Some(platform_version),
+    );
+
+    let people = Person::random_people(count, seed);
+    for person in people {
+        let value = serde_json::to_value(person).expect("serialized person");
+        let document_cbor = cbor_serializer::serializable_value_to_cbor(&value, Some(0))
+            .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+    }
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .unwrap()
+        .expect("transaction should be committed");
+
+    (drive, contract)
+}
+
+#[cfg(feature = "server")]
 /// Same as `setup_family_tests` but with null values in the documents.
 pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
@@ -1174,8 +1249,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            32, 210, 24, 196, 148, 43, 20, 34, 0, 116, 183, 136, 32, 210, 163, 183, 214, 6, 152,
-            86, 46, 45, 88, 13, 23, 41, 37, 70, 129, 119, 211, 12,
+            52, 186, 238, 222, 182, 44, 21, 157, 245, 92, 246, 208, 252, 54, 235, 135, 213, 57,
+            149, 174, 152, 61, 63, 115, 248, 135, 161, 79, 245, 251, 56, 229,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2488,8 +2563,8 @@ mod tests {
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                251, 69, 177, 93, 128, 236, 106, 87, 205, 123, 80, 61, 44, 107, 186, 193, 22, 192,
-                239, 7, 107, 110, 97, 197, 59, 245, 26, 12, 63, 91, 248, 231
+                110, 0, 64, 166, 240, 60, 119, 196, 122, 11, 154, 52, 255, 157, 95, 48, 182, 170,
+                58, 40, 37, 186, 247, 154, 242, 152, 109, 71, 193, 151, 81, 32
             ],
         );
     }
@@ -2509,8 +2584,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192,
-            75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
+            54, 6, 179, 188, 181, 97, 161, 198, 92, 12, 185, 60, 151, 219, 115, 50, 51, 248, 81,
+            106, 10, 89, 183, 126, 179, 14, 72, 251, 234, 175, 4, 161,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3823,8 +3898,8 @@ mod tests {
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                5, 92, 86, 251, 178, 238, 8, 246, 80, 139, 148, 81, 135, 108, 57, 197, 114, 102,
-                219, 71, 50, 0, 47, 252, 106, 157, 118, 30, 128, 199, 55, 126,
+                210, 86, 49, 150, 167, 157, 51, 144, 168, 56, 23, 102, 241, 71, 99, 154, 100, 242,
+                18, 114, 80, 148, 15, 143, 54, 73, 38, 185, 167, 199, 99, 136
             ],
         );
     }
@@ -3974,8 +4049,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192,
-            75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
+            54, 6, 179, 188, 181, 97, 161, 198, 92, 12, 185, 60, 151, 219, 115, 50, 51, 248, 81,
+            106, 10, 89, 183, 126, 179, 14, 72, 251, 234, 175, 4, 161,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4549,8 +4624,8 @@ mod tests {
 
         // Make sure the state is deterministic
         let expected_app_hash = vec![
-            59, 253, 119, 177, 148, 100, 153, 121, 228, 238, 250, 185, 103, 53, 113, 8, 30, 192,
-            75, 150, 153, 2, 24, 109, 93, 91, 97, 75, 106, 35, 29, 252,
+            54, 6, 179, 188, 181, 97, 161, 198, 92, 12, 185, 60, 151, 219, 115, 50, 51, 248, 81,
+            106, 10, 89, 183, 126, 179, 14, 72, 251, 234, 175, 4, 161,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6992,4 +7067,59 @@ mod tests {
 
         assert_eq!(query_result.documents().len(), 1);
     }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn test_count_regular_index() {
+        let platform_version = PlatformVersion::latest();
+
+        let (drive, contract) = setup_countable_family_tests(6, 15, platform_version);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let root_hash = drive
+            .grove
+            .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        // A query getting all elements by firstName
+
+        let query_value = platform_value!({
+            "where": [
+                ["age", ">=", 1]
+            ],
+            "orderBy": [
+                ["age", "asc"]
+            ]
+        });
+
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+
+        let query = DriveDocumentQuery::from_value(
+            query_value,
+            &contract,
+            person_document_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (proof, _) = query
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("we should be able to a proof");
+
+        dbg!(hex::encode(proof));
+
+        // assert_eq!(root_hash, proof_root_hash);
+    }
+}
+
+#[cfg(feature = "server")]
+#[test]
+#[ignore]
+fn pwd() {
+    let working_dir = std::env::current_dir().unwrap();
+    println!("{}", working_dir.display());
 }
