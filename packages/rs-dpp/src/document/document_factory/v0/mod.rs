@@ -214,6 +214,8 @@ impl DocumentFactoryV0 {
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
     ) -> Result<BatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
+        // TODO: Use struct or types
+        #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
             Vec<(Document, DocumentTypeRef, Bytes32)>,
@@ -612,7 +614,7 @@ mod test {
         let result = DocumentFactoryV0::document_delete_transitions(
             documents,
             &mut nonce_counter,
-            &platform_version,
+            platform_version,
         );
 
         // Checks

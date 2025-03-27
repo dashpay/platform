@@ -29,27 +29,27 @@ pub struct TokenCostsV0 {
 /// Implementation of the `TokenCostGettersV0` trait for `TokenCostsV0`.
 impl TokenCostGettersV0 for TokenCostsV0 {
     fn document_creation_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
-        self.create.clone()
+        self.create
     }
 
     fn document_replacement_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
-        self.replace.clone()
+        self.replace
     }
 
     fn document_deletion_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
-        self.delete.clone()
+        self.delete
     }
 
     fn document_transfer_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
-        self.transfer.clone()
+        self.transfer
     }
 
     fn document_price_update_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
-        self.update_price.clone()
+        self.update_price
     }
 
     fn document_purchase_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
-        self.purchase.clone()
+        self.purchase
     }
 }
 

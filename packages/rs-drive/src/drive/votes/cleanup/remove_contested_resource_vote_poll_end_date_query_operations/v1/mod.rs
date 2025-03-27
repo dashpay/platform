@@ -19,6 +19,8 @@ use std::collections::BTreeMap;
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_end_date_query_operations_v1(
         &self,
         vote_polls: &[(
@@ -59,7 +61,7 @@ impl Drive {
                 self.batch_delete(
                     time_path.as_slice().into(),
                     unique_id.as_bytes(),
-                    delete_apply_type.clone(),
+                    delete_apply_type,
                     transaction,
                     batch_operations,
                     &platform_version.drive,
@@ -92,18 +94,14 @@ impl Drive {
                         platform_version,
                     )?.len();
 
-                if total_count <= count {
-                    true
-                } else {
-                    false
-                }
+                total_count <= count
             };
 
             if should_delete_parent_time_tree {
                 self.batch_delete(
                     vote_end_date_queries_tree_path_vec().as_slice().into(),
                     encode_u64(end_date).as_slice(),
-                    delete_apply_type.clone(),
+                    delete_apply_type,
                     transaction,
                     batch_operations,
                     &platform_version.drive,

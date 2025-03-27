@@ -88,6 +88,9 @@ impl Drive {
     /// Returns an `Error` if:
     /// * The specified platform version is not supported.
     /// * Internal database or transaction errors occur.
+    #[allow(clippy::too_many_arguments)]
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub(crate) fn prove_action_signers_operations(
         &self,
         contract_id: Identifier,

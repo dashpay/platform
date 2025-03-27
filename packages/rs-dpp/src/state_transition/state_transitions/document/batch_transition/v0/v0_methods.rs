@@ -50,7 +50,7 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
         Self: 'a;
 
     /// Iterator for `BatchedTransitionRef` items in version 0.
-    fn transitions_iter<'a>(&'a self) -> Self::IterType<'a> {
+    fn transitions_iter(&self) -> Self::IterType<'_> {
         self.transitions.iter().map(BatchedTransitionRef::Document)
     }
 

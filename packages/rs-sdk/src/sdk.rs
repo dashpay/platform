@@ -37,7 +37,6 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};

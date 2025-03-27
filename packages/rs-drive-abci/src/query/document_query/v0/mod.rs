@@ -518,7 +518,7 @@ mod tests {
         );
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -556,7 +556,7 @@ mod tests {
             .expect("expected to verify proof");
 
         assert_eq!(documents.len(), 1);
-        assert_eq!(documents.get(0).expect("first"), &random_document);
+        assert_eq!(documents.first().expect("first"), &random_document);
     }
 
     #[test]
@@ -591,7 +591,7 @@ mod tests {
         }
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,
@@ -676,7 +676,7 @@ mod tests {
             .to_buffer();
 
         let drive_document_query = DriveDocumentQuery {
-            contract: &created_data_contract.data_contract(),
+            contract: created_data_contract.data_contract(),
             document_type,
             internal_clauses: Default::default(),
             offset: None,

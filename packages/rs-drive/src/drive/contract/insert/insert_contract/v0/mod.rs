@@ -85,6 +85,7 @@ impl Drive {
 
     /// Adds a contract to storage using `add_contract_to_storage`
     /// and inserts the empty trees which will be necessary to later insert documents.
+    #[allow(clippy::too_many_arguments)]
     fn insert_contract_element_v0(
         &self,
         contract_element: Element,

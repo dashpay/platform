@@ -69,7 +69,6 @@ pub struct DriveVerifyTokenMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyVoteMethodVersions {
     pub verify_masternode_vote: FeatureVersion,
-    pub verify_start_at_contender_in_proof: FeatureVersion,
     pub verify_vote_poll_votes_proof: FeatureVersion,
     pub verify_identity_votes_given_proof: FeatureVersion,
     pub verify_vote_poll_vote_state_proof: FeatureVersion,

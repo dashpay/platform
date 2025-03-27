@@ -199,20 +199,6 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionActionV
         self.private_encrypted_note = private_encrypted_note;
     }
 
-    fn notes(
-        &self,
-    ) -> (
-        Option<String>,
-        Option<SharedEncryptedNote>,
-        Option<PrivateEncryptedNote>,
-    ) {
-        (
-            self.public_note.clone(),
-            self.shared_encrypted_note.clone(),
-            self.private_encrypted_note.clone(),
-        )
-    }
-
     fn notes_owned(
         self,
     ) -> (
@@ -224,6 +210,20 @@ impl TokenTransferTransitionActionAccessorsV0 for TokenTransferTransitionActionV
             self.public_note,
             self.shared_encrypted_note,
             self.private_encrypted_note,
+        )
+    }
+
+    fn notes(
+        &self,
+    ) -> (
+        Option<String>,
+        Option<SharedEncryptedNote>,
+        Option<PrivateEncryptedNote>,
+    ) {
+        (
+            self.public_note.clone(),
+            self.shared_encrypted_note.clone(),
+            self.private_encrypted_note.clone(),
         )
     }
 }

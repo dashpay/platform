@@ -291,12 +291,6 @@ impl From<&JsonValue> for Value {
     }
 }
 
-impl From<Box<JsonValue>> for Box<Value> {
-    fn from(value: Box<JsonValue>) -> Self {
-        value.into()
-    }
-}
-
 impl TryInto<JsonValue> for Value {
     type Error = Error;
 

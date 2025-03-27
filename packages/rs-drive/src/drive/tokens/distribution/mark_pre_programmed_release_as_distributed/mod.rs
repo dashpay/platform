@@ -35,6 +35,7 @@ impl Drive {
     /// # Versioning
     /// - Uses version 0 of `mark_pre_programmed_release_as_distributed_operations_v0` if supported.
     /// - Returns an error if an unknown version is received.
+    #[allow(clippy::too_many_arguments)]
     pub fn mark_pre_programmed_release_as_distributed_operations(
         &self,
         token_id: [u8; 32],

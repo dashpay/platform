@@ -11,6 +11,12 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct MissingDefaultLocalizationError {}
 
+impl Default for MissingDefaultLocalizationError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MissingDefaultLocalizationError {
     pub fn new() -> Self {
         Self {}

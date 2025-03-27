@@ -5,10 +5,15 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
+/// Evonode status
 pub mod evonode_status;
+/// Groups
 pub mod groups;
+/// Identity token balance
 pub mod identity_token_balance;
+/// Token info
 pub mod token_info;
+/// Token status
 pub mod token_status;
 
 use dpp::block::block_info::BlockInfo;

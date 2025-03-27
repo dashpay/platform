@@ -30,6 +30,7 @@ use platform_version::version::PlatformVersion;
 
 pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_mint_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -50,6 +51,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_burn_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -69,6 +71,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_transfer_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -90,6 +93,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_freeze_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -109,6 +113,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_unfreeze_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -128,6 +133,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_destroy_frozen_funds_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -147,6 +153,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_emergency_action_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -166,6 +173,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_config_update_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
@@ -185,6 +193,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_claim_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,

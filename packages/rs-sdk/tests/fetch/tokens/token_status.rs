@@ -24,7 +24,7 @@ async fn test_token_status() {
     assert_eq!(token_statuses.len(), 4);
 
     assert_matches!(token_statuses.get(&*TOKEN_ID_0), Some(None));
-    assert_matches!(token_statuses.get(&*TOKEN_ID_1), Some(Some(status)) if status.paused() == true);
+    assert_matches!(token_statuses.get(&*TOKEN_ID_1), Some(Some(status)) if status.paused());
     assert_matches!(token_statuses.get(&*TOKEN_ID_2), Some(None));
     assert_matches!(token_statuses.get(&UNKNOWN_TOKEN_ID), Some(None));
 }

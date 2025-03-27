@@ -110,8 +110,7 @@ impl Drive {
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             contract
-                                .serialize_to_bytes_with_platform_version(platform_version)
-                                .unwrap()
+                                .serialize_to_bytes_with_platform_version(platform_version)?
                                 .len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,

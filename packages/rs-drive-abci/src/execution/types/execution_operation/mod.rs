@@ -79,6 +79,7 @@ pub enum ValidationOperation {
 pub trait OperationLike {
     fn processing_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error>;
 
+    #[allow(dead_code)]
     fn storage_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error>;
 }
 

@@ -29,7 +29,7 @@ pub enum PathKeyInfo<'a, const N: usize> {
 
 /// Assume KeyInfoPath and KeyInfo implement Display.
 /// If they do not, you need to implement Display for them as well.
-impl<'a, const N: usize> fmt::Display for PathKeyInfo<'a, N> {
+impl<const N: usize> fmt::Display for PathKeyInfo<'_, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Helper function to format KeyInfo
         fn format_key_info(key_info: &KeyInfo) -> String {
@@ -50,11 +50,7 @@ impl<'a, const N: usize> fmt::Display for PathKeyInfo<'a, N> {
 
         // Helper function to format KeyInfoPath
         fn format_key_info_path(key_info_path: &KeyInfoPath) -> String {
-            let formatted_keys: Vec<String> = key_info_path
-                .0
-                .iter()
-                .map(|key_info| format_key_info(key_info))
-                .collect();
+            let formatted_keys: Vec<String> = key_info_path.0.iter().map(format_key_info).collect();
             format!("[{}]", formatted_keys.join(", "))
         }
 
@@ -100,7 +96,7 @@ impl<'a, const N: usize> fmt::Display for PathKeyInfo<'a, N> {
     }
 }
 
-impl<'a> TryFrom<Vec<Vec<u8>>> for PathKeyInfo<'a, 0> {
+impl TryFrom<Vec<Vec<u8>>> for PathKeyInfo<'_, 0> {
     type Error = Error;
 
     fn try_from(mut value: Vec<Vec<u8>>) -> Result<Self, Self::Error> {

@@ -430,7 +430,7 @@ mod dpns_tests {
             .collect();
 
         assert!(documents
-            .get(0)
+            .first()
             .expect("expected a document")
             .is_equal_ignoring_time_based_fields(
                 &document_3,

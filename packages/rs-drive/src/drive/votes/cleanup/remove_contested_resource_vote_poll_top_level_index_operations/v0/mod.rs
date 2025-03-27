@@ -12,6 +12,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_top_level_index_operations_v0(
         &self,
         vote_polls: &[(

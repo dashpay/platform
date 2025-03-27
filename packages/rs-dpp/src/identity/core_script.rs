@@ -163,7 +163,7 @@ impl<'de> Deserialize<'de> for CoreScript {
         } else {
             struct BytesVisitor;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
+            impl Visitor<'_> for BytesVisitor {
                 type Value = CoreScript;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

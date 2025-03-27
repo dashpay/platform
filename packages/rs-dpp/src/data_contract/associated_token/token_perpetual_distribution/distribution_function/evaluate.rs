@@ -26,7 +26,7 @@ impl DistributionFunction {
                 // Ensure that min is not greater than max.
                 if *min > *max {
                     return Err(ProtocolError::Overflow(
-                        "Random: min must be less than or equal to max".into(),
+                        "Random: min must be less than or equal to max",
                     ));
                 }
 
@@ -119,14 +119,12 @@ impl DistributionFunction {
                         None => {
                             if *a < 0 {
                                 0
+                            } else if let Some(max_value) = max_value {
+                                *max_value
                             } else {
-                                if let Some(max_value) = max_value {
-                                    *max_value
-                                } else {
-                                    return Err(ProtocolError::Overflow(
-                                        "Linear function evaluation overflow on multiplication",
-                                    ));
-                                }
+                                return Err(ProtocolError::Overflow(
+                                    "Linear function evaluation overflow on multiplication",
+                                ));
                             }
                         }
                         Some(mul) => {
@@ -196,13 +194,13 @@ impl DistributionFunction {
 
                 if diff < 0 {
                     return Err(ProtocolError::Overflow(
-                        "Polynomial function: argument is non-positive".into(),
+                        "Polynomial function: argument is non-positive",
                     ));
                 }
 
                 if diff > u64::MAX as i128 {
                     return Err(ProtocolError::Overflow(
-                        "Polynomial function: argument is too big (max should be u64::MAX)".into(),
+                        "Polynomial function: argument is too big (max should be u64::MAX)",
                     ));
                 }
 
@@ -263,14 +261,13 @@ impl DistributionFunction {
 
                 if diff < -(u64::MAX as i128) {
                     return Err(ProtocolError::Overflow(
-                        "Exponential function: argument is too small (min should be -u64::MAX)"
-                            .into(),
+                        "Exponential function: argument is too small (min should be -u64::MAX)",
                     ));
                 }
 
                 if diff > u64::MAX as i128 {
                     return Err(ProtocolError::Overflow(
-                        "Exponential function: argument is too big (max should be u64::MAX)".into(),
+                        "Exponential function: argument is too big (max should be u64::MAX)",
                     ));
                 }
 
@@ -329,12 +326,12 @@ impl DistributionFunction {
 
                 if diff <= 0 {
                     return Err(ProtocolError::Overflow(
-                        "Logarithmic function: argument for log is non-positive".into(),
+                        "Logarithmic function: argument for log is non-positive",
                     ));
                 }
 
                 if diff > u64::MAX as i128 {
-                    return Err(ProtocolError::Overflow("Logarithmic function: argument for log is too big (max should be u64::MAX)".into()));
+                    return Err(ProtocolError::Overflow("Logarithmic function: argument for log is too big (max should be u64::MAX)"));
                 }
 
                 let argument = (*m as f64) * (diff as f64) / (*n as f64);
@@ -381,17 +378,17 @@ impl DistributionFunction {
                 // Check for division-by-zero: d, n, and m must be non-zero.
                 if *d == 0 {
                     return Err(ProtocolError::DivideByZero(
-                        "InvertedLogarithmic: divisor d is 0".into(),
+                        "InvertedLogarithmic: divisor d is 0",
                     ));
                 }
                 if *n == 0 {
                     return Err(ProtocolError::DivideByZero(
-                        "InvertedLogarithmic: parameter n is 0".into(),
+                        "InvertedLogarithmic: parameter n is 0",
                     ));
                 }
                 if *m == 0 {
                     return Err(ProtocolError::DivideByZero(
-                        "InvertedLogarithmic: parameter m is 0".into(),
+                        "InvertedLogarithmic: parameter m is 0",
                     ));
                 }
 
@@ -406,7 +403,7 @@ impl DistributionFunction {
                 // the denominator inside the log must be positive.
                 if diff <= 0 {
                     return Err(ProtocolError::Overflow(
-                        "InvertedLogarithmic: (x - s + o) must be > 0".into(),
+                        "InvertedLogarithmic: (x - s + o) must be > 0",
                     ));
                 }
 
@@ -414,7 +411,7 @@ impl DistributionFunction {
                 let denom_f = (*m as f64) * (diff as f64);
                 if denom_f <= 0.0 {
                     return Err(ProtocolError::Overflow(
-                        "InvertedLogarithmic: computed denominator is non-positive".into(),
+                        "InvertedLogarithmic: computed denominator is non-positive",
                     ));
                 }
 
@@ -422,7 +419,7 @@ impl DistributionFunction {
                 let argument = (*n as f64) / denom_f;
                 if argument <= 0.0 {
                     return Err(ProtocolError::Overflow(
-                        "InvertedLogarithmic: log argument is non-positive".into(),
+                        "InvertedLogarithmic: log argument is non-positive",
                     ));
                 }
 
@@ -443,7 +440,7 @@ impl DistributionFunction {
                 // Ensure the computed value is finite and within the u64 range.
                 if !value.is_finite() || value > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
-                        "InvertedLogarithmic: evaluation overflow".into(),
+                        "InvertedLogarithmic: evaluation overflow",
                     ));
                 }
 

@@ -18,6 +18,7 @@ pub struct ToObjectOptions {
 pub struct ToObject {
     pub transition_type: u8,
     pub pro_tx_hash: Identifier,
+    #[allow(dead_code)]
     pub vote: Vote,
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: Option<KeyID>,

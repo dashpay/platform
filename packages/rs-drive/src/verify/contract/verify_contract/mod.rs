@@ -16,9 +16,9 @@ impl Drive {
     /// - `contract_known_keeps_history`: An optional boolean indicating whether the contract keeps a history.
     /// - `is_proof_subset`: A boolean indicating whether to verify a subset of a larger proof.
     /// - `in_multiple_contract_proof_form`: If the contract proof was made by proving many contracts, the form
-    /// of the proof will be different. We will be querying the contract id with a translation to 0 for non
-    /// historical and 0/0 for historical contracts. When you query a single contract you query directly on the item
-    /// 0 under the contract id you care about.
+    ///   of the proof will be different. We will be querying the contract id with a translation to 0 for non
+    ///   historical and 0/0 for historical contracts. When you query a single contract you query directly on the item
+    ///   0 under the contract id you care about.
     /// - `contract_id`: The contract's unique identifier.
     /// - `platform_version`: the platform version,
     ///

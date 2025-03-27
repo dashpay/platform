@@ -73,6 +73,8 @@ impl Drive {
     /// # Errors
     ///
     /// * `DriveError::UnknownVersionMismatch` - If the platform version does not support the requested operation.
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     pub fn fetch_identities_token_infos_with_costs(
         &self,
         token_id: [u8; 32],

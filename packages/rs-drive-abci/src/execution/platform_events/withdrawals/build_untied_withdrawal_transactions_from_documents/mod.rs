@@ -32,7 +32,7 @@ where
     ///   transaction index and the encoded transaction bytes. On failure, returns an `Error`.
     pub(in crate::execution::platform_events::withdrawals) fn build_untied_withdrawal_transactions_from_documents(
         &self,
-        documents: &mut Vec<Document>,
+        documents: &mut [Document],
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,

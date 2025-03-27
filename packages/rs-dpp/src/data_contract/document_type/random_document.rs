@@ -202,6 +202,7 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
     /// # Returns:
     /// A `Result<Document, ProtocolError>`, which is `Ok` containing the document if successful, or an error
     /// if the operation fails.
+    #[allow(clippy::too_many_arguments)]
     fn random_document_with_params(
         &self,
         owner_id: Identifier,
@@ -375,6 +376,7 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
     /// A `Result<Vec<(Document, Identity, Bytes32)>, ProtocolError>` which is `Ok` containing a vector of tuples
     /// if successful, each tuple consisting of a Document, its associated Identity, and a Bytes32 value, or an error
     /// if the operation fails.
+    #[allow(clippy::too_many_arguments)]
     fn random_documents_with_params<'i>(
         &self,
         count: u32,
@@ -420,4 +422,4 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
 
 impl CreateRandomDocument for DocumentType {}
 
-impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {}
+impl CreateRandomDocument for DocumentTypeRef<'_> {}

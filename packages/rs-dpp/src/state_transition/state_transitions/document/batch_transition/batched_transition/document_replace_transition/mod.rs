@@ -49,6 +49,7 @@ pub trait DocumentFromReplaceTransition {
     /// # Errors
     ///
     /// This function may return `ProtocolError` if there are validation errors related to document data, missing required metadata, or incompatibilities with the current platform version.
+    #[allow(clippy::too_many_arguments)]
     fn try_from_replace_transition(
         document_replace_transition_action: &DocumentReplaceTransition,
         owner_id: Identifier,
@@ -87,6 +88,7 @@ pub trait DocumentFromReplaceTransition {
     /// # Errors
     ///
     /// This function may return `ProtocolError` for the same reasons as `try_from_replace_transition`, including validation failures, missing metadata, or platform incompatibilities.
+    #[allow(clippy::too_many_arguments)]
     fn try_from_owned_replace_transition(
         document_replace_transition_action: DocumentReplaceTransition,
         owner_id: Identifier,

@@ -24,6 +24,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Removes the document from primary storage.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_document_from_primary_storage_v0(
         &self,
         document_id: Identifier,

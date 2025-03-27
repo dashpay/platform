@@ -128,7 +128,7 @@ impl TreePathStorageForm for ContestedDocumentResourceVoteStorageForm {
         let key_document_type_name = path.get(4).unwrap(); // document_type_name
         let key_vote_choice = path.get(path.len() - 3).unwrap(); // this is the vote choice
 
-        let Some(key_2_byte) = key_2.get(0) else {
+        let Some(key_2_byte) = key_2.first() else {
             return Err(ProtocolError::VoteError(format!(
                 "path {} third element must be a byte",
                 path.into_iter()

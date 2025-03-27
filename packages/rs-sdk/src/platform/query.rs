@@ -180,7 +180,7 @@ impl Query<proto::GetIdentityKeysRequest> for Identifier {
     }
 }
 
-impl<'a> Query<DocumentQuery> for DriveDocumentQuery<'a> {
+impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
     fn query(self, prove: bool) -> Result<DocumentQuery, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
