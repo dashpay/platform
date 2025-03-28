@@ -14,9 +14,7 @@ use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::serialization::{
-    PlatformDeserializableFromVersionedStructure, PlatformSerializable, ReducedPlatformSerializable,
-};
+use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
@@ -29,7 +27,6 @@ use crate::platform_types::signature_verification_quorum_set::SignatureVerificat
 use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;

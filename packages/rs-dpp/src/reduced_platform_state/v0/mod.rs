@@ -1,5 +1,7 @@
 use crate::block::block_info::BlockInfo;
+use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::util::deserializer::ProtocolVersion;
+use crate::ProtocolError;
 use crate::{
     block::extended_block_info::ExtendedBlockInfo,
     fee::default_costs::EpochIndexFeeVersionsForStorage,
@@ -37,4 +39,35 @@ pub struct ReducedPlatformStateForSavingV0 {
     /// note this can differ from the one in RequestPrepareProposal, as it can be modified by
     /// proposer.
     pub proposed_core_chain_locked_height: u32,
+}
+
+impl PlatformSerializable for ReducedPlatformStateForSavingV0 {
+    type Error = crate::errors::ProtocolError;
+
+    fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        let config = bincode::config::standard();
+        bincode::encode_to_vec(self, config).map_err(|e| {
+            ProtocolError::PlatformSerializationError(format!(
+                "cannot serialize ReducedPlatformStateForSavingV0: {}",
+                e
+            ))
+        })
+    }
+}
+
+impl PlatformDeserializable for ReducedPlatformStateForSavingV0 {
+    fn deserialize_from_bytes_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = bincode::config::standard();
+        bincode::decode_from_slice(data, config)
+            .map_err(|e| {
+                ProtocolError::PlatformDeserializationError(format!(
+                    "cannot deserialize ReducedPlatformStateForSavingV0: {}",
+                    e
+                ))
+            })
+            .map(|(object, _)| object)
+    }
 }

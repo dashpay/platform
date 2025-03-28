@@ -1,15 +1,8 @@
-use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
-use bincode::config;
-use dpp::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
-use dpp::serialization::{
-    PlatformDeserializableFromVersionedStructure, ReducedPlatformDeserializable,
-};
+use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::query::TransactionArg;
 

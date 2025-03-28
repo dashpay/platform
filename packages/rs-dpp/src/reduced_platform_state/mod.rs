@@ -1,7 +1,10 @@
-use crate::reduced_platform_state::v0::ReducedPlatformStateForSavingV0;
-use crate::serialization::ReducedPlatformDeserializable;
+use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use crate::{
+    reduced_platform_state::v0::ReducedPlatformStateForSavingV0,
+    serialization::PlatformDeserializableFromVersionedStructure,
+};
+use bincode::{Decode, Encode};
 use platform_version::version::PlatformVersion;
 
 pub mod v0;
@@ -12,24 +15,27 @@ pub enum ReducedPlatformStateForSaving {
     V0(ReducedPlatformStateForSavingV0),
 }
 
-impl ReducedPlatformDeserializable for ReducedPlatformStateForSaving {
+impl PlatformDeserializableFromVersionedStructure for ReducedPlatformStateForSaving {
     fn versioned_deserialize(
         data: &[u8],
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        let config = config::standard().with_big_endian().with_no_limit();
-        let reduced_platform_state_in_save_format: ReducedPlatformStateForSaving =
-            bincode::decode_from_slice(data, config)
-                .map_err(|e| {
-                    ProtocolError::PlatformDeserializationError(format!(
-                        "unable to deserialize ReducedPlatformStateForSaving: {}",
-                        e
-                    ))
-                })?
-                .0;
-        Ok(reduced_platform_state_in_save_format)
+        Ok(ReducedPlatformStateForSaving::V0(
+            ReducedPlatformStateForSavingV0::deserialize_from_bytes(data)?,
+        ))
+    }
+}
+
+impl PlatformSerializable for ReducedPlatformStateForSaving {
+    type Error = crate::errors::ProtocolError;
+
+    fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        let bytes = match self {
+            ReducedPlatformStateForSaving::V0(v0) => v0.serialize_to_bytes()?,
+        };
+        Ok(bytes)
     }
 }
