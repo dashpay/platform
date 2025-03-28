@@ -69,6 +69,7 @@ impl PlatformSerializable for PlatformState {
 }
 
 impl PlatformState {
+    /// Generate state in a form that is saved for snapshot recovery purposes
     pub fn to_snapshot_state(
         &self,
         current_block_info: BlockInfo,
