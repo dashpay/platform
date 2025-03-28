@@ -18,6 +18,8 @@ use std::collections::BTreeMap;
 impl Drive {
     /// We add documents poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_documents_operations_v1(
         &self,
         vote_polls: &[(
@@ -56,10 +58,7 @@ impl Drive {
                                 Err(e) => return Some(Err(e.into())),
                             };
 
-                        match maybe_document_result {
-                            Some(document) => Some(Ok(document.id().to_vec())), // Assuming document.id holds the document key
-                            None => None, // Handle the case where no document is found
-                        }
+                        maybe_document_result.map(|document| Ok(document.id().to_vec()))
                     })
                     .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 

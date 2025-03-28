@@ -4,7 +4,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-#[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
@@ -83,7 +82,6 @@ use crate::consensus::basic::token::{
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
-#[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::{
     json_schema_compilation_error::JsonSchemaCompilationError, json_schema_error::JsonSchemaError,
 };
@@ -136,12 +134,10 @@ pub enum BasicError {
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
-    #[cfg(feature = "json-schema-validation")]
     // Structure error
     #[error(transparent)]
     JsonSchemaCompilationError(JsonSchemaCompilationError),
 
-    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
 
@@ -173,7 +169,6 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError),
 
-    #[cfg(feature = "json-schema-validation")]
     #[error(transparent)]
     InvalidJsonSchemaRefError(InvalidJsonSchemaRefError),
 

@@ -22,6 +22,7 @@ impl<C> Platform<C> {
     /// from the oldest unpaid epoch pool to proposers.
     ///
     /// Returns `ProposersPayouts` if there are any.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v1(
         &self,
         current_epoch_index: u16,

@@ -13,6 +13,7 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentBaseTransitionActionStateValidationV0 {
+#[allow(clippy::too_many_arguments)]
     fn validate_state_v0(
         &self,
         platform: &PlatformStateRef,

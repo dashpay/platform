@@ -1982,8 +1982,8 @@ mod replacement_tests {
 
         assert_eq!(contract.tokens().len(), 2);
 
-        add_tokens_to_identity(&mut platform, gold_token_id.into(), creator.id(), 15);
-        add_tokens_to_identity(&mut platform, gas_token_id.into(), creator.id(), 5);
+        add_tokens_to_identity(&mut platform, gold_token_id, creator.id(), 15);
+        add_tokens_to_identity(&mut platform, gas_token_id, creator.id(), 5);
 
         let card_document_type = contract
             .document_type_for_name("card")

@@ -338,7 +338,7 @@ where
             let mut vec = vec![0u8; len];
             decoder.reader().read(&mut vec)?;
             // Safety: Vec<T> is Vec<u8>
-            return Ok(unsafe { core::mem::transmute(vec) });
+            return Ok(unsafe { core::mem::transmute::<Vec<u8>, Vec<T>>(vec) });
         }
         decoder.claim_container_read::<T>(len)?;
 
@@ -494,7 +494,7 @@ where
     }
 }
 
-impl<'cow, T> PlatformVersionedDecode for Cow<'cow, T>
+impl<T> PlatformVersionedDecode for Cow<'_, T>
 where
     T: ToOwned + ?Sized,
     <T as ToOwned>::Owned: PlatformVersionedDecode,
@@ -521,7 +521,7 @@ where
     }
 }
 
-impl<'cow, T> PlatformVersionEncode for Cow<'cow, T>
+impl<T> PlatformVersionEncode for Cow<'_, T>
 where
     T: ToOwned + ?Sized,
     for<'a> &'a T: PlatformVersionEncode,

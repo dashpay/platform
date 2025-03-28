@@ -59,6 +59,13 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentType::V0(v0) => v0.find_contested_index(),
+            DocumentType::V1(v1) => v1.find_contested_index(),
+        }
+    }
+
     fn index_structure(&self) -> &IndexLevel {
         match self {
             DocumentType::V0(v0) => v0.index_structure(),
@@ -129,6 +136,13 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
+    fn documents_transferable(&self) -> Transferable {
+        match self {
+            DocumentType::V0(v0) => v0.documents_transferable(),
+            DocumentType::V1(v1) => v1.documents_transferable(),
+        }
+    }
+
     fn trade_mode(&self) -> TradeMode {
         match self {
             DocumentType::V0(v0) => v0.trade_mode(),
@@ -140,13 +154,6 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.creation_restriction_mode(),
             DocumentType::V1(v1) => v1.creation_restriction_mode(),
-        }
-    }
-
-    fn documents_transferable(&self) -> Transferable {
-        match self {
-            DocumentType::V0(v0) => v0.documents_transferable(),
-            DocumentType::V1(v1) => v1.documents_transferable(),
         }
     }
 
@@ -175,13 +182,6 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.security_level_requirement(),
             DocumentType::V1(v1) => v1.security_level_requirement(),
-        }
-    }
-
-    fn find_contested_index(&self) -> Option<&Index> {
-        match self {
-            DocumentType::V0(v0) => v0.find_contested_index(),
-            DocumentType::V1(v1) => v1.find_contested_index(),
         }
     }
 
@@ -247,7 +247,7 @@ impl DocumentTypeV1Setters for DocumentType {
     }
 }
 
-impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
+impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
     fn name(&self) -> &String {
         match self {
             DocumentTypeRef::V0(v0) => v0.name(),
@@ -273,6 +273,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         match self {
             DocumentTypeRef::V0(v0) => v0.indexes(),
             DocumentTypeRef::V1(v1) => v1.indexes(),
+        }
+    }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.find_contested_index(),
+            DocumentTypeRef::V1(v1) => v1.find_contested_index(),
         }
     }
 
@@ -395,13 +402,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn find_contested_index(&self) -> Option<&Index> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.find_contested_index(),
-            DocumentTypeRef::V1(v1) => v1.find_contested_index(),
-        }
-    }
-
     #[cfg(feature = "validation")]
     fn json_schema_validator_ref(&self) -> &StatelessJsonSchemaLazyValidator {
         match self {
@@ -410,7 +410,7 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 }
-impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
+impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
     fn name(&self) -> &String {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.name(),
@@ -436,6 +436,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.indexes(),
             DocumentTypeMutRef::V1(v1) => v1.indexes(),
+        }
+    }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.find_contested_index(),
+            DocumentTypeMutRef::V1(v1) => v1.find_contested_index(),
         }
     }
 
@@ -558,13 +565,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn find_contested_index(&self) -> Option<&Index> {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.find_contested_index(),
-            DocumentTypeMutRef::V1(v1) => v1.find_contested_index(),
-        }
-    }
-
     #[cfg(feature = "validation")]
     fn json_schema_validator_ref(&self) -> &StatelessJsonSchemaLazyValidator {
         match self {
@@ -574,7 +574,7 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     }
 }
 
-impl<'a> DocumentTypeV0Setters for DocumentTypeMutRef<'a> {
+impl DocumentTypeV0Setters for DocumentTypeMutRef<'_> {
     fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.set_data_contract_id(data_contract_id),
@@ -627,8 +627,8 @@ impl DocumentTypeV1Getters for DocumentType {
     }
 }
 
-impl<'a> DocumentTypeV1Getters for DocumentTypeRef<'a> {
-    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
+impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
+    fn document_creation_token_cost(&self) -> Option<(DocumentActionTokenCost)> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_creation_token_cost(),
@@ -671,8 +671,8 @@ impl<'a> DocumentTypeV1Getters for DocumentTypeRef<'a> {
     }
 }
 
-impl<'a> DocumentTypeV1Getters for DocumentTypeMutRef<'a> {
-    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
+impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
+    fn document_creation_token_cost(&self) -> Option<(DocumentActionTokenCost)> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_creation_token_cost(),

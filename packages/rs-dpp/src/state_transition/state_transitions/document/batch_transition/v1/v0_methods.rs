@@ -94,7 +94,7 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
         Self: 'a;
 
     /// Iterator for `BatchedTransitionRef` items in version 1.
-    fn transitions_iter<'a>(&'a self) -> Self::IterType<'a> {
+    fn transitions_iter(&self) -> Self::IterType<'_> {
         self.transitions
             .iter()
             .map(|transition| transition.borrow_as_ref())

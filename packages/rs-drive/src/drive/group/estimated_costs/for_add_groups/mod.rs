@@ -48,7 +48,6 @@ impl Drive {
     /// The function constructs the paths based on the contract ID, group contract position, and action ID (if provided).
     /// It then populates the `estimated_costs_only_with_layer_info` map with the estimated costs for each relevant tree
     /// involved in the group action update.
-
     pub(crate) fn add_estimation_costs_for_add_groups(
         contract_id: [u8; 32],
         groups: &BTreeMap<GroupContractPosition, Group>,

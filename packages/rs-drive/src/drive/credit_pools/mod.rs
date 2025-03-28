@@ -47,7 +47,6 @@ pub mod unpaid_epoch;
 pub mod initialization;
 
 /// Operations module
-
 #[cfg(feature = "server")]
 pub mod operations;
 

@@ -1,7 +1,7 @@
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::StateTransitionJsonConvert;
 
-impl<'a> StateTransitionJsonConvert<'a> for IdentityUpdateTransitionV0 {}
+impl StateTransitionJsonConvert<'_> for IdentityUpdateTransitionV0 {}
 
 #[cfg(test)]
 mod test {

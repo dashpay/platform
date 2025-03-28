@@ -13,6 +13,7 @@ use crate::platform_types::platform::PlatformStateRef;
 mod state_v0;
 
 pub trait DocumentBaseTransitionActionValidation {
+    #[allow(clippy::too_many_arguments)]
     fn validate_state(
         &self,
         platform: &PlatformStateRef,

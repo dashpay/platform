@@ -31,6 +31,7 @@ impl<C> Platform<C> {
     /// # Returns
     ///
     /// * `Result<Option<proposer_payouts::ProposersPayouts>, Error>` - Returns a Result wrapping an optional ProposersPayouts value if the operation is successful, otherwise returns an Error.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution::platform_events) fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
         &self,
         current_epoch_index: u16,

@@ -80,7 +80,7 @@ impl Drive {
 
                 let sum_item = match element {
                     Some(SumItem(value, ..)) if value >= 0 => value as TokenAmount,
-                    Some(SumItem(_, ..)) => {
+                    Some(SumItem(..)) => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "negative token amount in pre-programmed distribution".to_string(),
                         )));
@@ -93,9 +93,7 @@ impl Drive {
                 };
 
                 // Push to the vector for this timestamp
-                acc.entry(time)
-                    .or_insert_with(Vec::new)
-                    .push((recipient, sum_item));
+                acc.entry(time).or_default().push((recipient, sum_item));
 
                 Ok(acc)
             },

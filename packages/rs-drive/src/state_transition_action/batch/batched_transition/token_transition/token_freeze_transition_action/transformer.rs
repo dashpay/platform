@@ -31,6 +31,7 @@ impl TokenFreezeTransitionAction {
     /// # Returns
     ///
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenFreezeTransitionAction` if successful, otherwise `ProtocolError`.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_freeze_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -80,6 +81,7 @@ impl TokenFreezeTransitionAction {
     ///
     /// # Returns
     ///
+    #[allow(clippy::too_many_arguments)]
     /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenFreezeTransitionAction` if successful, otherwise `ProtocolError`.
     pub fn try_from_borrowed_token_freeze_transition_with_contract_lookup(
         drive: &Drive,

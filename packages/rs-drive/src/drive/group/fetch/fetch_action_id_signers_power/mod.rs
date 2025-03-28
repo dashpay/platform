@@ -42,6 +42,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn fetch_action_id_signers_power_and_add_operations(
         &self,
         contract_id: Identifier,

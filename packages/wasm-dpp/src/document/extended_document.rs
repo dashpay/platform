@@ -141,7 +141,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> Option<u64> {
-        self.0.document().revision().map(|r| r)
+        self.0.document().revision()
     }
 
     #[wasm_bindgen(js_name=setEntropy)]

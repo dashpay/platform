@@ -138,7 +138,7 @@ impl Decode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
+impl BorrowDecode<'_> for ValidatorSetV0 {
     fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded
 
@@ -311,7 +311,7 @@ mod tests {
         let node_ip = "192.168.1.1".to_string();
         let node_id = PubkeyHash::from_slice(&[4; 20]).unwrap();
         let validator = ValidatorV0 {
-            pro_tx_hash: pro_tx_hash.clone(),
+            pro_tx_hash,
             public_key,
             node_ip,
             node_id,

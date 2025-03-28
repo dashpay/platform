@@ -13,7 +13,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransition {
+impl StateTransitionValueConvert<'_> for DataContractUpdateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             DataContractUpdateTransition::V0(transition) => {

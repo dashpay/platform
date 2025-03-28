@@ -25,6 +25,7 @@ use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::identity::contract_info) fn refresh_potential_contract_info_key_references_v0(
         &self,
         identity_id: [u8; 32],
@@ -62,6 +63,7 @@ impl Drive {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Refreshes keys for the contract info
     fn refresh_contract_info_operations_v0(
         &self,

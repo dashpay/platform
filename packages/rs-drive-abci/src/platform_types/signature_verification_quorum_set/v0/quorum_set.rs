@@ -110,7 +110,7 @@ pub struct QuorumsWithConfig<'q> {
     pub config: &'q QuorumConfig,
 }
 
-impl<'q> QuorumsWithConfig<'q> {
+impl QuorumsWithConfig<'_> {
     /// Choose pseudorandom DIP8 or DIP24 quorum based on quorum config
     /// and request_id
     pub fn choose_quorum(
@@ -121,7 +121,7 @@ impl<'q> QuorumsWithConfig<'q> {
     }
 }
 
-impl<'q> SelectedQuorumSetIterator<'q> {
+impl SelectedQuorumSetIterator<'_> {
     /// Number of quorum sets
     pub fn len(&self) -> usize {
         self.quorum_set.len()

@@ -71,7 +71,7 @@ pub enum BatchedTransitionMutRef<'a> {
     Token(&'a mut TokenTransition),
 }
 
-impl<'a> BatchedTransitionRef<'a> {
+impl BatchedTransitionRef<'_> {
     pub fn to_owned_transition(&self) -> BatchedTransition {
         match self {
             BatchedTransitionRef::Document(doc_ref) => {

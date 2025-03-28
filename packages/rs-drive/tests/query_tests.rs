@@ -630,7 +630,7 @@ impl Domain {
             let label = first_names.choose(&mut rng).unwrap();
             let domain = Domain {
                 id: Identifier::random_with_rng(&mut rng),
-                owner_id: if let Some(_) = total_owners {
+                owner_id: if total_owners.is_some() {
                     // Pick a random owner from the owners list
                     *owners.choose(&mut rng).unwrap()
                 } else {
@@ -4685,7 +4685,7 @@ mod tests {
     #[test]
     fn test_dpns_query_first_version() {
         let platform_version = PlatformVersion::first();
-        let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, &platform_version);
+        let (drive, contract) = setup_dpns_tests_with_batches(10, None, 11456, platform_version);
 
         let db_transaction = drive.grove.start_transaction();
 

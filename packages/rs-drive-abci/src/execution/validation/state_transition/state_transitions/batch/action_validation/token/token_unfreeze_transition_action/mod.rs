@@ -12,6 +12,8 @@ use crate::platform_types::platform::PlatformStateRef;
 
 mod state_v0;
 
+// TODO: Is not using
+#[allow(dead_code)]
 pub trait TokenUnfreezeTransitionStructureValidation {
     fn validate_structure(
         &self,
