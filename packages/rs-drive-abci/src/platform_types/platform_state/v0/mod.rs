@@ -259,7 +259,7 @@ impl PlatformStateV0 {
     /// Convert to a snapshot state
     pub(super) fn to_snapshot_state(
         &self,
-        current_block_info: BlockInfo,
+        current_block_info: ExtendedBlockInfo,
         proposed_core_chain_locked_height: u32,
     ) -> Result<ReducedPlatformStateForSaving, Error> {
         let quorums = self.validator_sets();

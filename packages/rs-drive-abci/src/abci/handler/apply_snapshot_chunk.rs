@@ -15,6 +15,8 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumListResult, MasternodeListDiff, MasternodeType, QuorumType,
 };
+use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
+use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use dpp::core_types::validator_set::ValidatorSet as CoreValidatorSet;
@@ -182,7 +184,7 @@ where
 ///    with an exception to validator_set_update().
 fn reconstruct_platform_state<'a, 'db: 'a, A, C>(
     app: &'a A,
-    _app_hash: &[u8],
+    app_hash: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<(), Error>
 where
@@ -254,10 +256,12 @@ where
         &mut platform_state,
         saved.proposed_core_chain_locked_height, // new one, to be used in currently finalized block
         true,
-        &saved.current_block_info,
+        saved.current_block_info.basic_info(),
         &transaction,
         platform_version,
     )?;
+    log_apphash(app.platform(), "after update_core_info")?;
+
     log_apphash(app.platform(), "before sort_quorums")?;
     sort_quorums(platform_state.validator_sets_mut(), &saved.quorum_positions);
     /* We assume all that logic is already done, either in update_core_info or earlier in run_block_proposal
@@ -300,9 +304,37 @@ where
     */
     let block_height = platform_state.last_committed_block_height();
     log_apphash(app.platform(), "before store_platform_state")?;
-    platform.store_platform_state(&platform_state, Some(&transaction), platform_version)?;
-    log_apphash(app.platform(), "before commit_transaction")?;
 
+    platform.store_platform_state(&platform_state, Some(&transaction), platform_version)?;
+
+    log_apphash(app.platform(), "before update_state_cache")?;
+
+    // Now, we must advance to new height in state
+    //
+    // We need an ExtendedBlockInfoV0 with app_hash filled; we don't have it as we save during proposal processing
+    // TODO: also signature (?) and maybe block hash(?)
+    let committed_block: ExtendedBlockInfo = match saved.current_block_info {
+        ExtendedBlockInfo::V0(block_info) => ExtendedBlockInfoV0 {
+            app_hash: app_hash.try_into().map_err(|_| {
+                AbciError::StateSyncBadRequest(format!(
+                    "app_hash {:?} has invalid legth",
+                    &app_hash
+                ))
+            })?,
+            ..block_info
+        }
+        .into(),
+    };
+    platform.update_state_cache(
+        committed_block,
+        platform_state,
+        &transaction,
+        platform_version,
+    )?;
+
+    // platform.state.store(Arc::new(platform_state));
+
+    log_apphash(app.platform(), "before commit_transaction")?;
     drive
         .grove
         .commit_transaction(transaction)
@@ -314,10 +346,10 @@ where
         })
         .value?;
 
-    tracing::trace!(block_height, platform_state = ?platform_state, "state_sync_finalize");
-    log_apphash(app.platform(), "before state.store")?;
-
-    platform.state.store(Arc::new(platform_state));
+    if tracing::enabled!(tracing::Level::TRACE) {
+        let platform_state_for_logging = platform.state.load();
+        tracing::trace!(block_height, platform_state = ?platform_state_for_logging, "state_sync_finalize");
+    }
 
     log_apphash(app.platform(), "at the end of reconstruct_platform_state")?;
 

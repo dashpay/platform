@@ -1,5 +1,5 @@
 use dpp::block::epoch::Epoch;
-
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::validation::ValidationResult;
 use drive::error::Error::GroveDB;
 
@@ -356,7 +356,7 @@ where
 
         let mut block_execution_context: BlockExecutionContext =
             block_execution_context::v0::BlockExecutionContextV0 {
-                block_state_info: block_state_info.into(),
+                block_state_info: block_state_info.clone().into(),
                 epoch_info,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
@@ -385,10 +385,20 @@ where
         )?;
 
         // HERE
+        let extended_block_info = ExtendedBlockInfoV0 {
+            basic_info: block_info,
+            app_hash: Default::default(), // will be set on restore
+            quorum_hash: block_proposal.validator_set_quorum_hash,
+            proposer_pro_tx_hash: block_proposal.proposer_pro_tx_hash,
+            signature: [0u8; 96], // will be set on restore
+            round: block_proposal.round,
+            block_id_hash: block_proposal.block_hash.unwrap_or_default(),
+        }
+        .into();
         // Saving info required to reconstruct platform state
         let snapshot_state = block_execution_context
             .block_platform_state()
-            .to_snapshot_state(block_info, core_chain_locked_height)?;
+            .to_snapshot_state(extended_block_info, core_chain_locked_height)?;
         self.store_reduced_platform_state(&snapshot_state, Some(transaction), platform_version)?;
 
         let root_hash = self

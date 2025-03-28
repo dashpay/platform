@@ -69,7 +69,7 @@ impl PlatformState {
     /// Generate state in a form that is saved for snapshot recovery purposes
     pub fn to_snapshot_state(
         &self,
-        current_block_info: BlockInfo,
+        current_block_info: ExtendedBlockInfo,
         proposed_core_chain_locked_height: u32,
     ) -> Result<ReducedPlatformStateForSaving, Error> {
         match self {

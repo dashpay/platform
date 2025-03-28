@@ -1,4 +1,3 @@
-use crate::block::block_info::BlockInfo;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::util::deserializer::ProtocolVersion;
 use crate::ProtocolError;
@@ -16,10 +15,8 @@ use platform_value::Bytes32;
 pub struct ReducedPlatformStateForSavingV0 {
     /// The last committed block info (at height `H-1`)
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
-
     /// Currently processed block info (at height `H`)
-    pub current_block_info: BlockInfo,
-
+    pub current_block_info: ExtendedBlockInfo,
     /// Current Version
     pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
