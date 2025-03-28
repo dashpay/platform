@@ -225,7 +225,7 @@ where
         None,
         &mut platform_state,
         saved.proposed_core_chain_locked_height, // new one, to be used in currently finalized block
-        false,
+        true,
         &saved.current_block_info,
         &transaction,
         platform_version,
