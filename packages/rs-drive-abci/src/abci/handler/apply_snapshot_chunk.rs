@@ -15,12 +15,10 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumListResult, MasternodeListDiff, MasternodeType, QuorumType,
 };
-use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
-use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use dpp::core_types::validator_set::ValidatorSet as CoreValidatorSet;
-use dpp::dashcore::{BlockHash, QuorumHash};
+use dpp::dashcore::BlockHash;
 use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
@@ -30,13 +28,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
-pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C: 'db>(
+pub fn apply_snapshot_chunk<'a, 'db: 'a, A, C>(
     app: &'a A,
     request: proto::RequestApplySnapshotChunk,
 ) -> Result<proto::ResponseApplySnapshotChunk, Error>
 where
     A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
-    C: CoreRPCLike,
+    C: CoreRPCLike + 'db,
 {
     if tracing::enabled!(tracing::Level::TRACE) {
         let chunk_id = if request.chunk_id.len() > 8 {
@@ -138,7 +136,32 @@ where
             )))?;
         }
 
-        reconstruct_platform_state(app, session.app_hash.as_slice())?;
+        reconstruct_platform_state(app, session.app_hash.as_slice(), platform_version)?;
+
+        let drive_app_hash = app
+            .platform()
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .map_err(|e| {
+                AbciError::StateSyncInternalError(format!(
+                    "apply_snapshot_chunk unable to get app hash: {}",
+                    e
+                ))
+            })
+            .unwrap()?;
+
+        if drive_app_hash.to_vec() != session.app_hash {
+            tracing::error!(
+                state_sync_app_hash = ?hex::encode(session.app_hash),
+                drive_app_hash = ?hex::encode(drive_app_hash),
+                "state_sync: grovedb verification failed with incorrect app hash"
+            );
+            Err(AbciError::StateSyncInternalError(format!(
+                "apply_snapshot_chunk grovedb verification failed with incorrect app hash: {}",
+                hex::encode(drive_app_hash)
+            )))?;
+        }
 
         Ok(proto::ResponseApplySnapshotChunk {
             result: proto::response_apply_snapshot_chunk::Result::CompleteSnapshot.into(),
@@ -156,8 +179,12 @@ where
 /// the system before entering this function:
 ///
 /// 1. [Platform::<C>::fetch_reduced_platform_state] returns platform state after processing majority of `run_block_proposal`,
-/// with an exception to validator_set_update().
-fn reconstruct_platform_state<'a, 'db: 'a, A, C>(app: &'a A, app_hash: &[u8]) -> Result<(), Error>
+///    with an exception to validator_set_update().
+fn reconstruct_platform_state<'a, 'db: 'a, A, C>(
+    app: &'a A,
+    _app_hash: &[u8],
+    platform_version: &PlatformVersion,
+) -> Result<(), Error>
 where
     A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
     C: CoreRPCLike + 'db,
@@ -165,14 +192,13 @@ where
     let config = &app.platform().config;
     let platform = app.platform();
     let drive = &platform.drive;
-    let core_rpc = &platform.core_rpc;
-    let platform_version = PlatformVersion::latest(); // TODO: Check if this is correct
+
+    log_apphash(app.platform(), "begin of reconstruct_platform_state")?;
 
     let reduced_platform_state =
-        Platform::<C>::fetch_reduced_platform_state(drive, None, &PlatformVersion::latest())?
-            .ok_or_else(|| {
-                AbciError::StateSyncInternalError("reduced_platform_state".to_string())
-            })?;
+        Platform::<C>::fetch_reduced_platform_state(drive, None, platform_version)?.ok_or_else(
+            || AbciError::StateSyncInternalError("reduced_platform_state".to_string()),
+        )?;
 
     let saved = match reduced_platform_state {
         ReducedPlatformStateForSaving::V0(v0) => v0,
@@ -219,6 +245,8 @@ where
             .collect(),
     });
 
+    log_apphash(app.platform(), "before update_core_info")?;
+
     // Update the masternode list and create masternode identities and also update the active quorums
     let transaction = drive.grove.start_transaction();
     app.platform().update_core_info(
@@ -230,6 +258,7 @@ where
         &transaction,
         platform_version,
     )?;
+    log_apphash(app.platform(), "before sort_quorums")?;
     sort_quorums(platform_state.validator_sets_mut(), &saved.quorum_positions);
     /* We assume all that logic is already done, either in update_core_info or earlier in run_block_proposal
         // we use the last committed core chain lock height to build the masternode list,
@@ -270,12 +299,9 @@ where
         )?;
     */
     let block_height = platform_state.last_committed_block_height();
-
-    platform.store_platform_state(
-        &platform_state,
-        Some(&transaction),
-        &PlatformVersion::latest(),
-    )?;
+    log_apphash(app.platform(), "before store_platform_state")?;
+    platform.store_platform_state(&platform_state, Some(&transaction), platform_version)?;
+    log_apphash(app.platform(), "before commit_transaction")?;
 
     drive
         .grove
@@ -289,10 +315,40 @@ where
         .value?;
 
     tracing::trace!(block_height, platform_state = ?platform_state, "state_sync_finalize");
+    log_apphash(app.platform(), "before state.store")?;
 
     platform.state.store(Arc::new(platform_state));
 
+    log_apphash(app.platform(), "at the end of reconstruct_platform_state")?;
+
     Ok(())
+}
+
+/// Logs the application hash of the platform state and returns it.
+fn log_apphash<'db, C>(platform: &Platform<C>, desc: &str) -> Result<[u8; 32], Error>
+where
+    C: CoreRPCLike + 'db,
+{
+    let grove_version = &platform
+        .state
+        .load()
+        .current_platform_version()
+        .unwrap()
+        .drive
+        .grove_version;
+
+    let app_hash = platform
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()?;
+
+    tracing::trace!(
+        app_ash = ?hex::encode(app_hash),
+        "state_sync: app hash {}", desc,
+    );
+
+    Ok(app_hash)
 }
 
 fn build_masternode_lists<'a, 'db: 'a, A, C: 'db>(
