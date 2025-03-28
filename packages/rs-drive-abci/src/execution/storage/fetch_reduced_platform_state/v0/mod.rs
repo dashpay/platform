@@ -23,27 +23,22 @@ impl<C> Platform<C> {
             .fetch_reduced_platform_state_bytes(transaction, platform_version)
             .map_err(Error::Drive)?
             .map(|bytes| {
-                let result =
                     ReducedPlatformStateForSaving::versioned_deserialize(&bytes, platform_version)
-                        .map_err(Error::Protocol)
-                        .inspect(|reduced_platform_state| {
+                        .inspect(|d| {
                             tracing::trace!(
-                                bytes = hex::encode(&bytes),
-                                reduced_platform_state = ?reduced_platform_state,
+                                len = bytes.len(),
+                                reduced_platform_state = ?d,
                                 "state_sync: reduced platform state deserialized successfully for version {}",
                                 platform_version.protocol_version
                             );
-                        });
-
-                if result.is_err() {
+                        })
+                        .inspect_err(|e|
                     tracing::error!(
                         bytes = hex::encode(&bytes),
-                        "Unable deserialize reduced platform state for version {}",
-                        platform_version.protocol_version
-                    );
-                }
-
-                result
+                        "Unable deserialize reduced platform state for version {}: {:?}",
+                        platform_version.protocol_version,e
+                    )).map_err(Error::Protocol)
+                       
             })
             .transpose()
     }

@@ -20,6 +20,12 @@ impl<C> Platform<C> {
                 Error::Serialization(SerializationError::CorruptedSerialization(e.to_string()))
             })?;
 
+        tracing::trace!(
+            reduced_state=?self,
+            len = state_bytes.len(),
+            "state_sync: storing reduced platform state"
+        );
+
         self.drive
             .store_reduced_platform_state_bytes(&state_bytes, transaction, platform_version)
             .map_err(Error::Drive)?;
