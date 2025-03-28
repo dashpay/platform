@@ -377,7 +377,15 @@ where
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
 
+        let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
+            last_committed_platform_state,
+            &mut block_execution_context,
+            platform_version,
+        )?;
+
         // HERE
+        // Saving info required to reconstruct platform state
         let snapshot_state = block_execution_context
             .block_platform_state()
             .to_snapshot_state(block_info, core_chain_locked_height)?;
@@ -393,13 +401,6 @@ where
         block_execution_context
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
-
-        let validator_set_update = self.validator_set_update(
-            block_proposal.proposer_pro_tx_hash,
-            last_committed_platform_state,
-            &mut block_execution_context,
-            platform_version,
-        )?;
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
