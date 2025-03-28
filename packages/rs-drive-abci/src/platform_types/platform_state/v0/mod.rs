@@ -1,5 +1,6 @@
 mod old_structures;
 
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
@@ -19,7 +20,7 @@ use indexmap::IndexMap;
 use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use crate::config::PlatformConfig;
@@ -268,6 +269,15 @@ impl PlatformStateV0 {
             .map(|(block_hash, _)| (block_hash.to_byte_array().to_vec()))
             .collect();
 
+        let last_block_info: Option<ExtendedBlockInfo> = self
+            .last_committed_block_info()
+            .clone()
+            .map(|info| filter_extended_block_info(info.clone()));
+        // .ok_or(AbciError::StateSyncInternalError(
+        //     "last_committed_block_info must be set before saving the state for state sync"
+        //         .to_string(),
+        // ))?;
+
         Ok(ReducedPlatformStateForSaving::V0(
             ReducedPlatformStateForSavingV0 {
                 current_protocol_version_in_consensus: self.current_protocol_version_in_consensus,
@@ -287,11 +297,27 @@ impl PlatformStateV0 {
                     })
                     .collect(),
                 quorum_positions,
-                current_block_info,
-                last_committed_block_info: self.last_committed_block_info.clone(),
+                last_committed_block_info: last_block_info,
+                current_block_info: filter_extended_block_info(current_block_info),
                 proposed_core_chain_locked_height,
             },
         ))
+    }
+}
+
+/// Remove fields from [ExtendedBlockInfo] that cannot be saved to a snapshot state.
+///
+/// Helper function to remove fields from [ExtendedBlockInfo] that cannot be saved to a snapshot state
+/// because they are not always available (eg. on proposer) and can cause app hash mismatch.
+fn filter_extended_block_info(input: ExtendedBlockInfo) -> ExtendedBlockInfo {
+    match input {
+        ExtendedBlockInfo::V0(v0) => ExtendedBlockInfoV0 {
+            app_hash: Default::default(),      // will be set on restore
+            signature: [0u8; 96],              // we don't have it here, hope it's not needed
+            block_id_hash: Default::default(), // we don't have it here, hope it's not needed
+            ..v0
+        }
+        .into(),
     }
 }
 
