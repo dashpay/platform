@@ -200,6 +200,7 @@ impl SpecializedDocumentFactoryV0 {
                 data_contract: self.data_contract.clone(),
                 metadata: None,
                 entropy: Bytes32::new(document_entropy),
+                token_payment_info: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -332,6 +333,7 @@ impl SpecializedDocumentFactoryV0 {
                 data_contract: self.data_contract.clone(),
                 metadata: None,
                 entropy: Bytes32::default(),
+                token_payment_info: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

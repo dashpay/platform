@@ -3,7 +3,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
 use std::sync::Arc;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
 use platform_version::version::PlatformVersion;
@@ -17,9 +17,11 @@ impl DocumentCreateTransitionAction {
     /// from_document_create_transition_with_contract_lookup
     pub fn try_from_document_create_transition_with_contract_lookup(
         drive: &Drive,
+        owner_id: Identifier,
         transaction: TransactionArg,
         value: DocumentCreateTransition,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<
@@ -31,7 +33,7 @@ impl DocumentCreateTransitionAction {
     > {
         match value {
             DocumentCreateTransition::V0(v0) => {
-                DocumentCreateTransitionActionV0::try_from_document_create_transition_with_contract_lookup(drive, transaction, v0, block_info, get_data_contract, platform_version)
+                DocumentCreateTransitionActionV0::try_from_document_create_transition_with_contract_lookup(drive, owner_id, transaction, v0, block_info, user_fee_increase, get_data_contract, platform_version)
             }
         }
     }
@@ -39,9 +41,11 @@ impl DocumentCreateTransitionAction {
     /// from_document_borrowed_create_transition_with_contract_lookup
     pub fn try_from_document_borrowed_create_transition_with_contract_lookup(
         drive: &Drive,
+        owner_id: Identifier,
         transaction: TransactionArg,
         value: &DocumentCreateTransition,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<
@@ -53,7 +57,7 @@ impl DocumentCreateTransitionAction {
     > {
         match value {
             DocumentCreateTransition::V0(v0) => {
-                DocumentCreateTransitionActionV0::try_from_borrowed_document_create_transition_with_contract_lookup(drive, transaction, v0, block_info, get_data_contract, platform_version)
+                DocumentCreateTransitionActionV0::try_from_borrowed_document_create_transition_with_contract_lookup(drive, owner_id, transaction, v0, block_info, user_fee_increase, get_data_contract, platform_version)
             }
         }
     }

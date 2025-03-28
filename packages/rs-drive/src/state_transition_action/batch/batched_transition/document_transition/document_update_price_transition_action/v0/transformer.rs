@@ -5,7 +5,7 @@ use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
@@ -19,8 +19,10 @@ impl DocumentUpdatePriceTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed_document_update_price_transition(
         document_update_price_transition: &DocumentUpdatePriceTransitionV0,
+        owner_id: Identifier,
         original_document: Document,
         block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<
         (

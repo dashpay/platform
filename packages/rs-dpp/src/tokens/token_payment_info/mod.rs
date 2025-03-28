@@ -7,13 +7,16 @@ use crate::ProtocolError;
 use bincode_derive::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{Identifier, Value};
+use platform_value::{Error, Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use crate::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 
 pub mod v0;
+pub mod methods;
 
-#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Copy, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq, Display, From)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
@@ -21,6 +24,10 @@ pub mod v0;
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
     V0(TokenPaymentInfoV0),
+}
+
+impl TokenPaymentInfoMethodsV0 for TokenPaymentInfo {
+    
 }
 
 impl TokenPaymentInfoAccessorsV0 for TokenPaymentInfo {
@@ -112,5 +119,12 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
                     .map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,
             }),
         }
+    }
+}
+
+impl TryFrom<TokenPaymentInfo> for Value {
+    type Error = Error;
+    fn try_from(value: TokenPaymentInfo) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
     }
 }

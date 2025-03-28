@@ -248,6 +248,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestNotPaidForError(_) => 40114,
             Self::RequiredTokenPaymentInfoNotSetError(_) => 40115,
             Self::IdentityHasNotAgreedToPayRequiredTokenAmountError(_) => 40116,
+            Self::IdentityTryingToPayWithWrongTokenError(_) => 40117,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

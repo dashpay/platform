@@ -11,8 +11,7 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Identity {} has not agreed to pay the required token amount for token {}: required {}, min offer {:?}, max offer {:?}, action: {}",
-    identity_id,
+    "Identity has not agreed to pay the required token amount for token {}: required {}, min offer {:?}, max offer {:?}, action: {}",
     token_id,
     required_amount,
     identity_min_offer,
@@ -22,7 +21,6 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct IdentityHasNotAgreedToPayRequiredTokenAmountError {
     token_id: Identifier,
-    identity_id: Identifier,
     required_amount: u64,
     identity_min_offer: Option<TokenAmount>,
     identity_max_offer: Option<TokenAmount>,
@@ -33,7 +31,6 @@ impl IdentityHasNotAgreedToPayRequiredTokenAmountError {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         token_id: Identifier,
-        identity_id: Identifier,
         required_amount: u64,
         identity_min_offer: Option<TokenAmount>,
         identity_max_offer: Option<TokenAmount>,
@@ -41,7 +38,6 @@ impl IdentityHasNotAgreedToPayRequiredTokenAmountError {
     ) -> Self {
         Self {
             token_id,
-            identity_id,
             required_amount,
             identity_min_offer,
             identity_max_offer,
@@ -51,10 +47,6 @@ impl IdentityHasNotAgreedToPayRequiredTokenAmountError {
 
     pub fn token_id(&self) -> &Identifier {
         &self.token_id
-    }
-
-    pub fn identity_id(&self) -> &Identifier {
-        &self.identity_id
     }
 
     pub fn required_amount(&self) -> u64 {

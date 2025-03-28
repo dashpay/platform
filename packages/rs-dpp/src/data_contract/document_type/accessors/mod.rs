@@ -628,7 +628,7 @@ impl DocumentTypeV1Getters for DocumentType {
 }
 
 impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
-    fn document_creation_token_cost(&self) -> Option<(DocumentActionTokenCost)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_creation_token_cost(),
@@ -672,7 +672,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
 }
 
 impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
-    fn document_creation_token_cost(&self) -> Option<(DocumentActionTokenCost)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_creation_token_cost(),

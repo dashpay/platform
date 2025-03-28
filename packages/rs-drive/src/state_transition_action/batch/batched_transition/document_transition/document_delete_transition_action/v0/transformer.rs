@@ -2,7 +2,7 @@ use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
@@ -16,6 +16,8 @@ impl DocumentDeleteTransitionActionV0 {
     /// try from
     pub fn try_from_document_delete_transition_with_contract_lookup(
         value: DocumentDeleteTransitionV0,
+        owner_id: Identifier,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<
         (
@@ -46,6 +48,8 @@ impl DocumentDeleteTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed_document_delete_transition_with_contract_lookup(
         value: &DocumentDeleteTransitionV0,
+        owner_id: Identifier,
+        user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<
         (

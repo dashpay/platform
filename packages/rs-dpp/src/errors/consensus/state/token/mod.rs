@@ -20,6 +20,7 @@ mod token_transfer_recipient_identity_not_exist_error;
 mod unauthorized_token_action_error;
 mod identity_has_not_agreed_to_pay_required_token_amount_error;
 mod required_token_payment_info_not_set_error;
+mod identity_trying_to_pay_with_wrong_token_error;
 
 pub use identity_does_not_have_enough_token_balance_error::*;
 pub use identity_token_account_already_frozen_error::*;
@@ -43,3 +44,4 @@ pub use token_transfer_recipient_identity_not_exist_error::*;
 pub use unauthorized_token_action_error::*;
 pub use identity_has_not_agreed_to_pay_required_token_amount_error::*;
 pub use required_token_payment_info_not_set_error::*;
+pub use identity_trying_to_pay_with_wrong_token_error::*;

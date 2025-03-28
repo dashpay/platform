@@ -4,7 +4,6 @@ mod fields;
 mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
-pub(crate) mod v1;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
@@ -33,7 +32,6 @@ use derive_more::From;
 #[derive(Debug, Clone, PlatformVersioned, From)]
 pub enum ExtendedDocument {
     V0(ExtendedDocumentV0),
-    V1(ExtendedDocumentV1),
 }
 
 impl ExtendedDocument {
@@ -645,6 +643,7 @@ mod test {
             metadata: None,
             data_contract_id,
             entropy: Default::default(),
+            token_payment_info: None,
         }
         .into()
     }
