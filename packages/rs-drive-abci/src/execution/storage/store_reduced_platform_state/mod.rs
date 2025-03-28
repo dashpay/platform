@@ -4,6 +4,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 
@@ -11,7 +12,7 @@ impl<C> Platform<C> {
     /// Store the execution state in grovedb storage
     pub fn store_reduced_platform_state(
         &self,
-        state: &PlatformState,
+        state: &ReducedPlatformStateForSaving,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {

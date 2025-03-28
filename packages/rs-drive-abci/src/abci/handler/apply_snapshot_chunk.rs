@@ -15,7 +15,7 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumListResult, MasternodeListDiff, MasternodeType, QuorumType,
 };
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
@@ -142,7 +142,15 @@ where
         })
     }
 }
-
+/// Reconstructs the platform state from the snapshot data.
+///
+/// ## Expected state
+///
+/// Given that we run state sync using snapshots created at height H, we expect the following state of
+/// the system before entering this function:
+///
+/// 1. [Platform::<C>::fetch_reduced_platform_state] returns platform state after processing majority of `run_block_proposal`,
+/// with an exception to validator_set_update().
 fn reconstruct_platform_state<'a, 'db: 'a, A, C>(app: &'a A, app_hash: &[u8]) -> Result<(), Error>
 where
     A: SnapshotManagerApplication + StateSyncApplication<'db, C> + 'db,
@@ -152,6 +160,7 @@ where
     let platform = app.platform();
     let drive = &platform.drive;
     let core_rpc = &platform.core_rpc;
+    let platform_version = PlatformVersion::latest(); // TODO: Check if this is correct
 
     let reduced_platform_state =
         Platform::<C>::fetch_reduced_platform_state(drive, None, &PlatformVersion::latest())?
@@ -159,51 +168,30 @@ where
                 AbciError::StateSyncInternalError("reduced_platform_state".to_string())
             })?;
 
-    let ReducedPlatformStateForSaving::V0(v0) = reduced_platform_state else {
-        return Err(Error::from(AbciError::StateSyncInternalError(
-            "reduced_platform_state invalid matching".to_string(),
-        )));
+    let saved = match reduced_platform_state {
+        ReducedPlatformStateForSaving::V0(v0) => v0,
+        _ => {
+            return Err(Error::from(AbciError::StateSyncInternalError(
+                "reduced_platform_state invalid matching".to_string(),
+            )))
+        }
     };
 
-    let extended_block_info =
-        Platform::<C>::fetch_last_block_info(drive, None, &PlatformVersion::latest())?
-            .ok_or_else(|| AbciError::StateSyncInternalError("last_block_info".to_string()))?;
-    let core_height = extended_block_info.next_core_chain_lock_height;
-
-    if core_height != extended_block_info.block_info.core_height {
-        tracing::debug!(
-            block_info_core_height = extended_block_info.block_info.core_height,
-            core_height,
-            "core_height from core_rpc and block_info are different"
-        );
-    }
-
-    let last_committed_block = ExtendedBlockInfo::V0(ExtendedBlockInfoV0 {
-        basic_info: extended_block_info.block_info,
-        app_hash: match app_hash.try_into() {
-            Ok(hash) => hash,
-            Err(_) => {
-                return Err(Error::from(AbciError::StateSyncInternalError(
-                    "Invalid app_hash length".to_string(),
-                )));
-            }
-        },
-        quorum_hash: v0.current_validator_set_quorum_hash.to_buffer(),
-        block_id_hash: [0u8; 32],
-        proposer_pro_tx_hash: extended_block_info.proposer_pro_tx_hash,
-        signature: [0u8; 96],
-        round: 0,
-    });
-
+    // Restore platform state.
+    //
+    // Platform state is saved in [`Platform::run_block_proposal`], after executing validator rotation
+    // and before finalizing the block.
+    //
+    // At this point, we should have validator sets loaded for next height.
     let mut platform_state = PlatformState::V0(PlatformStateV0 {
         genesis_block_info: None,
-        last_committed_block_info: Some(last_committed_block),
-        current_protocol_version_in_consensus: v0.current_protocol_version_in_consensus,
-        next_epoch_protocol_version: v0.next_epoch_protocol_version,
+        last_committed_block_info: saved.last_committed_block_info,
+        current_protocol_version_in_consensus: saved.current_protocol_version_in_consensus,
+        next_epoch_protocol_version: saved.next_epoch_protocol_version,
         current_validator_set_quorum_hash: BlockHash::from_byte_array(
-            v0.current_validator_set_quorum_hash.to_buffer(),
+            saved.current_validator_set_quorum_hash.to_buffer(),
         ),
-        next_validator_set_quorum_hash: v0
+        next_validator_set_quorum_hash: saved
             .next_validator_set_quorum_hash
             .map(|x| BlockHash::from_byte_array(x.to_buffer())),
         patched_platform_version: None,
@@ -211,68 +199,93 @@ where
         chain_lock_validating_quorums: SignatureVerificationQuorumSet::from(
             SignatureVerificationQuorumSet::new(
                 &config.chain_lock,
-                PlatformVersion::get(v0.current_protocol_version_in_consensus)?,
+                PlatformVersion::get(saved.current_protocol_version_in_consensus)?,
             )?,
         ),
         instant_lock_validating_quorums: SignatureVerificationQuorumSet::from(
             SignatureVerificationQuorumSet::new(
                 &config.instant_lock,
-                PlatformVersion::get(v0.current_protocol_version_in_consensus)?,
+                PlatformVersion::get(saved.current_protocol_version_in_consensus)?,
             )?,
         ),
         full_masternode_list: BTreeMap::new(),
         hpmn_masternode_list: BTreeMap::new(),
-        previous_fee_versions: v0
+        previous_fee_versions: saved
             .previous_fee_versions
             .into_iter()
             .map(|(epoch_index, _)| (epoch_index, FeeVersion::first()))
             .collect(),
     });
 
-    build_masternode_lists(app, &mut platform_state, core_height)?;
-
-    let mut extended_quorum_list = core_rpc.get_quorum_listextended(Some(core_height))?;
-
-    build_quorum_verification_set(
-        app,
-        &extended_quorum_list,
-        QuorumSetType::ChainLock(config.chain_lock.quorum_type),
-        platform_state.chain_lock_validating_quorums_mut(),
-    )?;
-    build_quorum_verification_set(
-        app,
-        &extended_quorum_list,
-        QuorumSetType::InstantLock(config.instant_lock.quorum_type),
-        platform_state.instant_lock_validating_quorums_mut(),
-    )?;
-
-    build_validators_list(
-        app,
+    // Update the masternode list and create masternode identities and also update the active quorums
+    let transaction = drive.grove.start_transaction();
+    app.platform().update_core_info(
+        None,
         &mut platform_state,
-        &mut extended_quorum_list,
-        &v0.quorum_positions,
-        config.validator_set.quorum_type,
+        saved.proposed_core_chain_locked_height, // new one, to be used in currently finalized block
+        false,
+        &saved.current_block_info,
+        &transaction,
+        platform_version,
     )?;
+    sort_quorums(platform_state.validator_sets_mut(), &saved.quorum_positions);
+    /* We assume all that logic is already done, either in update_core_info or earlier in run_block_proposal
+        // we use the last committed core chain lock height to build the masternode list,
+        // as this will be a starting point for validators list update
+        build_masternode_lists(
+            app,
+            &mut platform_state,
+            extended_block_info.last_committed_core_chain_lock_height,
+        )?;
 
-    update_validators_list(
-        app,
-        &mut platform_state,
-        extended_block_info.proposer_pro_tx_hash,
-    )?;
+        let mut extended_quorum_list = core_rpc.get_quorum_listextended(Some(core_height))?;
 
+        build_quorum_verification_set(
+            app,
+            &extended_quorum_list,
+            QuorumSetType::ChainLock(config.chain_lock.quorum_type),
+            platform_state.chain_lock_validating_quorums_mut(),
+        )?;
+        build_quorum_verification_set(
+            app,
+            &extended_quorum_list,
+            QuorumSetType::InstantLock(config.instant_lock.quorum_type),
+            platform_state.instant_lock_validating_quorums_mut(),
+        )?;
+
+        build_validators_list(
+            app,
+            &mut platform_state,
+            &mut extended_quorum_list,
+            &saved.quorum_positions,
+            config.validator_set.quorum_type,
+        )?;
+
+        update_validators_list(
+            app,
+            &mut platform_state,
+            extended_block_info.proposer_pro_tx_hash,
+        )?;
+    */
     let block_height = platform_state.last_committed_block_height();
-
-    // At this point, platform state reflects the state of the system at snapshot time; however, we have already
-    // finalized that height, so we need to update state for the next block
-    if let Some(next_quorum_hash) = platform_state.take_next_validator_set_quorum_hash() {
-        platform_state.set_current_validator_set_quorum_hash(next_quorum_hash);
-    }
-
     tracing::info!(block_height, platform_state = ?platform_state, "state_sync_finalize");
 
-    let tx = drive.grove.start_transaction();
-    platform.store_platform_state(&platform_state, Some(&tx), &PlatformVersion::latest())?;
-    let _ = drive.grove.commit_transaction(tx);
+    platform.store_platform_state(
+        &platform_state,
+        Some(&transaction),
+        &PlatformVersion::latest(),
+    )?;
+
+    drive
+        .grove
+        .commit_transaction(transaction)
+        .map_err(|e| {
+            AbciError::StateSyncInternalError(format!(
+                "apply_snapshot_chunk unable to commit transaction: {}",
+                e
+            ))
+        })
+        .value?;
 
     platform.state.store(Arc::new(platform_state));
 
@@ -427,11 +440,13 @@ where
         .collect::<Result<Vec<_>, Error>>()?;
 
     // Validator sets generated by previous algorithm, just to double-check
+
     let old_validator_sets = old_sort_quorums(new_validator_sets.clone())
         .into_iter()
         .collect::<Vec<_>>();
-
+    /*
     sort_quorums(&mut new_validator_sets, quorums_order);
+    */
     platform_state
         .validator_sets_mut()
         .extend(new_validator_sets.clone());
@@ -488,15 +503,15 @@ fn old_sort_quorums(
 /// Ensure quorums are in the order described by `order`.
 ///
 /// Modifies `quorums` in place.
-fn sort_quorums(quorums: &mut [(BlockHash, CoreValidatorSet)], order: &[Vec<u8>]) {
+fn sort_quorums(quorums: &mut IndexMap<BlockHash, CoreValidatorSet>, order: &[Vec<u8>]) {
     let lookup_table = BTreeMap::from_iter(order.iter().enumerate().map(|x| (x.1 as &[u8], x.0)));
 
-    quorums.sort_by(|a, b| {
-        let a_hash = a.0.to_byte_array();
-        let b_hash = b.0.to_byte_array();
+    quorums.sort_by(|a, _, b, _| {
+        let a_hash = a.as_byte_array().as_slice();
+        let b_hash = b.as_byte_array().as_slice();
 
-        let a_index = lookup_table.get(a_hash.as_slice()).unwrap_or(&usize::MAX);
-        let b_index = lookup_table.get(b_hash.as_slice()).unwrap_or(&usize::MAX);
+        let a_index = lookup_table.get(a_hash).unwrap_or(&usize::MAX);
+        let b_index = lookup_table.get(b_hash).unwrap_or(&usize::MAX);
 
         a_index.cmp(b_index)
     });

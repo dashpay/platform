@@ -12,6 +12,7 @@ use dpp::dashcore::hashes::Hash;
 
 use dpp::platform_value::Bytes32;
 
+use dpp::reduced_platform_state::ReducedPlatformStateForSaving;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 
@@ -254,33 +255,43 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV1 {
     }
 }
 
-impl TryFrom<PlatformStateV0> for ReducedPlatformStateForSavingV0 {
-    type Error = Error;
-
-    fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
-        let quorums = value.validator_sets();
+impl PlatformStateV0 {
+    /// Convert to a snapshot state
+    pub(super) fn to_snapshot_state(
+        &self,
+        current_block_info: BlockInfo,
+        proposed_core_chain_locked_height: u32,
+    ) -> Result<ReducedPlatformStateForSaving, Error> {
+        let quorums = self.validator_sets();
         let quorum_positions = quorums
             .into_iter()
             .map(|(block_hash, _)| (block_hash.to_byte_array().to_vec()))
             .collect();
 
-        Ok(ReducedPlatformStateForSavingV0 {
-            current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
-            next_epoch_protocol_version: value.next_epoch_protocol_version,
-            current_validator_set_quorum_hash: value
-                .current_validator_set_quorum_hash
-                .to_byte_array()
-                .into(),
-            next_validator_set_quorum_hash: value
-                .next_validator_set_quorum_hash
-                .map(|quorum_hash| quorum_hash.to_byte_array().into()),
-            previous_fee_versions: value
-                .previous_fee_versions
-                .into_iter()
-                .map(|(epoch_index, fee_version)| (epoch_index, fee_version.fee_version_number))
-                .collect(),
-            quorum_positions,
-        })
+        Ok(ReducedPlatformStateForSaving::V0(
+            ReducedPlatformStateForSavingV0 {
+                current_protocol_version_in_consensus: self.current_protocol_version_in_consensus,
+                next_epoch_protocol_version: self.next_epoch_protocol_version,
+                current_validator_set_quorum_hash: self
+                    .current_validator_set_quorum_hash
+                    .to_byte_array()
+                    .into(),
+                next_validator_set_quorum_hash: self
+                    .next_validator_set_quorum_hash
+                    .map(|quorum_hash| quorum_hash.to_byte_array().into()),
+                previous_fee_versions: self
+                    .previous_fee_versions
+                    .iter()
+                    .map(|(&epoch_index, fee_version)| {
+                        (epoch_index, fee_version.fee_version_number)
+                    })
+                    .collect(),
+                quorum_positions,
+                current_block_info,
+                last_committed_block_info: self.last_committed_block_info.clone(),
+                proposed_core_chain_locked_height,
+            },
+        ))
     }
 }
 

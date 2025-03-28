@@ -30,18 +30,6 @@ pub struct BlockInfo {
     pub epoch: Epoch,
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
-pub struct ExtendedBlockInfo {
-    /// Block info
-    pub block_info: BlockInfo,
-
-    /// Block proposer's proTxHash
-    pub proposer_pro_tx_hash: [u8; 32],
-
-    /// next core chain lock height that matches next validator set quorum hash
-    pub next_core_chain_lock_height: u32,
-}
-
 impl fmt::Display for BlockInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

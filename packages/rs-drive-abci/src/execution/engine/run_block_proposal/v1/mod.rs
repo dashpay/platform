@@ -1,4 +1,3 @@
-use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -378,28 +377,12 @@ where
 
         tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
 
-        let validator_set_update = self.validator_set_update(
-            block_proposal.proposer_pro_tx_hash,
-            last_committed_platform_state,
-            &mut block_execution_context,
-            platform_version,
-        )?;
-
         // HERE
-        self.store_reduced_platform_state(
-            block_execution_context.block_platform_state(),
-            Some(transaction),
-            platform_version,
-        )?;
+        let snapshot_state = block_execution_context
+            .block_platform_state()
+            .to_snapshot_state(block_info, core_chain_locked_height)?;
+        self.store_reduced_platform_state(&snapshot_state, Some(transaction), platform_version)?;
 
-        // TODO integrate into reduced platform state for saving
-        let extended_block_info = ExtendedBlockInfo {
-            block_info,
-            proposer_pro_tx_hash,
-            next_core_chain_lock_height: core_chain_locked_height,
-        };
-
-        self.store_last_block_info(&extended_block_info, Some(transaction), platform_version)?;
         let root_hash = self
             .drive
             .grove
@@ -410,6 +393,13 @@ where
         block_execution_context
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
+
+        let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
+            last_committed_platform_state,
+            &mut block_execution_context,
+            platform_version,
+        )?;
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(

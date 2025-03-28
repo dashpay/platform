@@ -68,28 +68,17 @@ impl PlatformSerializable for PlatformState {
     }
 }
 
-impl ReducedPlatformSerializable for PlatformState {
-    type Error = Error;
-
-    fn reduced_serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        let platform_version = self.current_platform_version()?;
-        let config = config::standard().with_big_endian().with_no_limit();
-        let reduced_platform_state_for_saving: ReducedPlatformStateForSaving =
-            self.clone().try_into_platform_versioned(platform_version)?;
-
-        tracing::trace!(
-            reduced_platform_state_for_saving = ?reduced_platform_state_for_saving,
-            "state_sync: reduced platform state saved successfully for version {}",
-            platform_version.protocol_version
-        );
-
-        bincode::encode_to_vec(reduced_platform_state_for_saving, config).map_err(|e| {
-            ProtocolError::PlatformSerializationError(format!(
-                "unable to serialize ReducedPlatformState: {}",
-                e
-            ))
-            .into()
-        })
+impl PlatformState {
+    pub fn to_snapshot_state(
+        &self,
+        current_block_info: BlockInfo,
+        proposed_core_chain_locked_height: u32,
+    ) -> Result<ReducedPlatformStateForSaving, Error> {
+        match self {
+            PlatformState::V0(v0) => {
+                v0.to_snapshot_state(current_block_info, proposed_core_chain_locked_height)
+            }
+        }
     }
 }
 
@@ -221,36 +210,6 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
                                 .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
-                }
-            }
-        }
-    }
-}
-
-impl TryFromPlatformVersioned<PlatformState> for ReducedPlatformStateForSaving {
-    type Error = Error;
-    fn try_from_platform_versioned(
-        value: PlatformState,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
-        match value {
-            PlatformState::V0(v0) => {
-                match platform_version
-                    .drive_abci
-                    .structs
-                    .reduced_platform_state_for_saving_structure_default
-                {
-                    0 => {
-                        let reduced_saving_v0: ReducedPlatformStateForSavingV0 = v0.try_into()?;
-                        Ok(ReducedPlatformStateForSaving::V0(reduced_saving_v0))
-                    }
-                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method:
-                        "ReducedPlatformStateForSaving::try_from_platform_versioned(PlatformState)"
-                            .to_string(),
                         known_versions: vec![0],
                         received: version,
                     })),
