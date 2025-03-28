@@ -39,9 +39,15 @@ where
     C: CoreRPCLike,
 {
     if tracing::enabled!(tracing::Level::TRACE) {
+        let chunk_id = if request.chunk_id.len() > 8 {
+            &(request.chunk_id[0..8])
+        } else {
+            &request.chunk_id
+        };
         tracing::trace!(
+            chunk_id,
             "[state_sync] api apply_snapshot_chunk chunk_id:{}",
-            hex::encode(&request.chunk_id)
+            hex::encode(chunk_id)
         );
     }
 
@@ -196,24 +202,20 @@ where
             .map(|x| BlockHash::from_byte_array(x.to_buffer())),
         patched_platform_version: None,
         validator_sets: Default::default(),
-        chain_lock_validating_quorums: SignatureVerificationQuorumSet::from(
-            SignatureVerificationQuorumSet::new(
-                &config.chain_lock,
-                PlatformVersion::get(saved.current_protocol_version_in_consensus)?,
-            )?,
-        ),
-        instant_lock_validating_quorums: SignatureVerificationQuorumSet::from(
-            SignatureVerificationQuorumSet::new(
-                &config.instant_lock,
-                PlatformVersion::get(saved.current_protocol_version_in_consensus)?,
-            )?,
-        ),
+        chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
+            &config.chain_lock,
+            PlatformVersion::get(saved.current_protocol_version_in_consensus)?,
+        )?,
+        instant_lock_validating_quorums: SignatureVerificationQuorumSet::new(
+            &config.instant_lock,
+            PlatformVersion::get(saved.current_protocol_version_in_consensus)?,
+        )?,
         full_masternode_list: BTreeMap::new(),
         hpmn_masternode_list: BTreeMap::new(),
         previous_fee_versions: saved
             .previous_fee_versions
-            .into_iter()
-            .map(|(epoch_index, _)| (epoch_index, FeeVersion::first()))
+            .into_keys()
+            .map(|epoch_index| (epoch_index, FeeVersion::first()))
             .collect(),
     });
 
@@ -268,7 +270,6 @@ where
         )?;
     */
     let block_height = platform_state.last_committed_block_height();
-    tracing::info!(block_height, platform_state = ?platform_state, "state_sync_finalize");
 
     platform.store_platform_state(
         &platform_state,
@@ -286,6 +287,8 @@ where
             ))
         })
         .value?;
+
+    tracing::trace!(block_height, platform_state = ?platform_state, "state_sync_finalize");
 
     platform.state.store(Arc::new(platform_state));
 
