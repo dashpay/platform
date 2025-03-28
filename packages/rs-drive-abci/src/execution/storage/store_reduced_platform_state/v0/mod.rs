@@ -21,7 +21,7 @@ impl<C> Platform<C> {
             })?;
 
         tracing::trace!(
-            reduced_state=?self,
+            reduced_state=?state,
             len = state_bytes.len(),
             "state_sync: storing reduced platform state"
         );
