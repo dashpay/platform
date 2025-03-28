@@ -232,7 +232,6 @@ struct PlatformConfigIntermediate {
     pub abci: AbciConfig,
     #[serde(flatten)]
     pub state_sync: StateSyncAbciConfig,
-    #[serde(flatten)]
     pub prometheus_bind_address: Option<String>,
     pub grpc_bind_address: String,
     #[serde(flatten)]
