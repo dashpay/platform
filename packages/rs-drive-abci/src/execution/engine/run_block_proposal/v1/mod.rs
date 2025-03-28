@@ -390,9 +390,9 @@ where
             app_hash: Default::default(), // will be set on restore
             quorum_hash: block_proposal.validator_set_quorum_hash,
             proposer_pro_tx_hash: block_proposal.proposer_pro_tx_hash,
-            signature: [0u8; 96], // will be set on restore
+            signature: [0u8; 96], // we don't have it here, hope it's not needed
             round: block_proposal.round,
-            block_id_hash: block_proposal.block_hash.unwrap_or_default(),
+            block_id_hash: Default::default(), // we don't have it here, hope it's not needed
         }
         .into();
         // Saving info required to reconstruct platform state
