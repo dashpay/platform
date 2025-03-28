@@ -626,11 +626,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
-
-                let batched_action = BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::CreateAction(document_create_action),
-                );
-                Ok(batched_action.into())
+                Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
@@ -702,7 +698,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_replace_action =
+                let (document_replace_action, fee_result) =
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document_created_at,
@@ -715,23 +711,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::ReplaceAction(document_replace_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_replace_action)
                 } else {
                     Ok(result)
                 }
             }
             DocumentTransition::Delete(document_delete_transition) => {
-                let action = DocumentDeleteTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition, |_identifier| {
+                let (batched_action, fee_result) = DocumentDeleteTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 })?;
-                let batched_action = BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::DeleteAction(action),
-                );
-                Ok(batched_action.into())
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+                
+                Ok(batched_action)
             }
             DocumentTransition::Transfer(document_transfer_transition) => {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
@@ -773,7 +770,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_transfer_action =
+                let (document_transfer_action, fee_result) =
                     DocumentTransferTransitionAction::try_from_borrowed_document_transfer_transition(
                         document_transfer_transition,
                         original_document.clone(), //todo: remove clone
@@ -781,11 +778,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::TransferAction(document_transfer_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_transfer_action)
                 } else {
                     Ok(result)
                 }
@@ -830,7 +827,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_update_price_action =
+                let (document_update_price_action, fee_result) =
                     DocumentUpdatePriceTransitionAction::try_from_borrowed_document_update_price_transition(
                         document_update_price_transition,
                         original_document.clone(), //todo: find a way to not have to use cloning
@@ -838,11 +835,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::UpdatePriceAction(document_update_price_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_update_price_action)
                 } else {
                     Ok(result)
                 }
@@ -897,7 +894,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_purchase_action =
+                let (document_purchase_action, fee_result) =
                     DocumentPurchaseTransitionAction::try_from_borrowed_document_purchase_transition(
                         document_purchase_transition,
                         original_document.clone(), //todo: find a way to not have to use cloning
@@ -906,11 +903,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::PurchaseAction(document_purchase_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_purchase_action)
                 } else {
                     Ok(result)
                 }

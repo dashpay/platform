@@ -4,7 +4,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
 use std::sync::Arc;
-
+use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
@@ -15,8 +15,10 @@ use crate::drive::Drive;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 impl DocumentCreateTransitionActionV0 {
     /// try from document create transition with contract lookup
@@ -27,7 +29,13 @@ impl DocumentCreateTransitionActionV0 {
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    )  -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let DocumentCreateTransitionV0 {
             base,
             data,
@@ -103,14 +111,18 @@ impl DocumentCreateTransitionActionV0 {
             };
 
         Ok((
-            DocumentCreateTransitionActionV0 {
-                base,
-                block_info: *block_info,
-                data,
-                prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
-                current_store_contest_info,
-                should_store_contest_info,
-            },
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+                DocumentCreateTransitionActionV0 {
+                    base,
+                    block_info: *block_info,
+                    data,
+                    prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
+                    current_store_contest_info,
+                    should_store_contest_info,
+                }
+                    .into(),
+            ))
+                .into(),
             fee_result,
         ))
     }
@@ -123,7 +135,13 @@ impl DocumentCreateTransitionActionV0 {
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, FeeResult), Error> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let DocumentCreateTransitionV0 {
             base,
             data,
@@ -201,14 +219,18 @@ impl DocumentCreateTransitionActionV0 {
             };
 
         Ok((
-            DocumentCreateTransitionActionV0 {
-                base,
-                block_info: *block_info,
-                data: data.clone(),
-                prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
-                current_store_contest_info,
-                should_store_contest_info,
-            },
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+                DocumentCreateTransitionActionV0 {
+                    base,
+                    block_info: *block_info,
+                    data: data.clone(),
+                    prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
+                    current_store_contest_info,
+                    should_store_contest_info,
+                }
+                    .into(),
+            ))
+                .into(),
             fee_result,
         ))
     }

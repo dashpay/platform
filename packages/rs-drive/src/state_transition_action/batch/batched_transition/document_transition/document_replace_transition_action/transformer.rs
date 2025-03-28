@@ -1,12 +1,14 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-
+use dpp::fee::fee_result::FeeResult;
 use dpp::identity::TimestampMillis;
-use dpp::prelude::{BlockHeight, CoreBlockHeight};
+use dpp::prelude::{BlockHeight, ConsensusValidationResult, CoreBlockHeight};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::DocumentReplaceTransition;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
 
 impl DocumentReplaceTransitionAction {
@@ -21,9 +23,15 @@ impl DocumentReplaceTransitionAction {
         originally_transferred_at_core_block_height: Option<CoreBlockHeight>,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         match document_replace_transition {
-            DocumentReplaceTransition::V0(v0) => Ok(
+            DocumentReplaceTransition::V0(v0) => 
                 DocumentReplaceTransitionActionV0::try_from_borrowed_document_replace_transition(
                     v0,
                     originally_created_at,
@@ -34,9 +42,7 @@ impl DocumentReplaceTransitionAction {
                     originally_transferred_at_core_block_height,
                     block_info,
                     get_data_contract,
-                )?
-                .into(),
-            ),
+                ),
         }
     }
 }

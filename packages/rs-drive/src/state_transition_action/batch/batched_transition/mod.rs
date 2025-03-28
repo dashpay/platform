@@ -1,5 +1,6 @@
 use derive_more::From;
 use dpp::identifier::Identifier;
+use dpp::ProtocolError;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
@@ -37,4 +38,46 @@ impl BatchedTransitionAction {
             }
         }
     }
+    /// as_document_action
+        pub fn as_document_action(&self) -> Result<&DocumentTransitionAction, ProtocolError> {
+            match self {
+                BatchedTransitionAction::DocumentAction(action) => Ok(action),
+                other => Err(ProtocolError::InvalidBatchedTransitionActionVariant {
+                    expected: "DocumentAction",
+                    found: other.variant_name(),
+                }),
+            }
+        }
+
+    /// as_token_action
+        pub fn as_token_action(&self) -> Result<&TokenTransitionAction, ProtocolError> {
+            match self {
+                BatchedTransitionAction::TokenAction(action) => Ok(action),
+                other => Err(ProtocolError::InvalidBatchedTransitionActionVariant {
+                    expected: "TokenAction",
+                    found: other.variant_name(),
+                }),
+            }
+        }
+
+    /// as_bump_identity_nonce_action
+
+        pub fn as_bump_identity_nonce_action(&self) -> Result<&BumpIdentityDataContractNonceAction, ProtocolError> {
+            match self {
+                BatchedTransitionAction::BumpIdentityDataContractNonce(action) => Ok(action),
+                other => Err(ProtocolError::InvalidBatchedTransitionActionVariant {
+                    expected: "BumpIdentityDataContractNonce",
+                    found: other.variant_name(),
+                }),
+            }
+        }
+
+        /// Helper method to get the variant name for diagnostics.
+        fn variant_name(&self) -> &'static str {
+            match self {
+                BatchedTransitionAction::DocumentAction(_) => "DocumentAction",
+                BatchedTransitionAction::TokenAction(_) => "TokenAction",
+                BatchedTransitionAction::BumpIdentityDataContractNonce(_) => "BumpIdentityDataContractNonce",
+            }
+        }
 }

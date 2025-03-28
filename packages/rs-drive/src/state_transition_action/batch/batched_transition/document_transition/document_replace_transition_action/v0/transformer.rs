@@ -3,13 +3,17 @@ use dpp::document::property_names;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identity::TimestampMillis;
-use dpp::prelude::{BlockHeight, CoreBlockHeight};
+use dpp::prelude::{BlockHeight, ConsensusValidationResult, CoreBlockHeight};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::v0::DocumentReplaceTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 impl DocumentReplaceTransitionActionV0 {
     /// try from borrowed
@@ -23,7 +27,13 @@ impl DocumentReplaceTransitionActionV0 {
         originally_transferred_at_core_block_height: Option<CoreBlockHeight>,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let DocumentReplaceTransitionV0 {
             base,
             revision,
@@ -57,19 +67,26 @@ impl DocumentReplaceTransitionActionV0 {
             None
         };
 
-        Ok(DocumentReplaceTransitionActionV0 {
-            base,
-            revision: *revision,
-            created_at: originally_created_at,
-            updated_at,
-            transferred_at: originally_transferred_at,
-            created_at_block_height: originally_created_at_block_height,
-            updated_at_block_height,
-            transferred_at_block_height: originally_transferred_at_block_height,
-            created_at_core_block_height: originally_created_at_core_block_height,
-            updated_at_core_block_height,
-            transferred_at_core_block_height: originally_transferred_at_core_block_height,
-            data: data.clone(),
-        })
+        Ok((
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::ReplaceAction(
+                DocumentReplaceTransitionActionV0 {
+                    base,
+                    revision: *revision,
+                    created_at: originally_created_at,
+                    updated_at,
+                    transferred_at: originally_transferred_at,
+                    created_at_block_height: originally_created_at_block_height,
+                    updated_at_block_height,
+                    transferred_at_block_height: originally_transferred_at_block_height,
+                    created_at_core_block_height: originally_created_at_core_block_height,
+                    updated_at_core_block_height,
+                    transferred_at_core_block_height: originally_transferred_at_core_block_height,
+                    data: data.clone(),
+                }
+                    .into(),
+            ))
+                .into(),
+            FeeResult::default(),
+        ))
     }
 }

@@ -4,11 +4,16 @@ use dpp::document::{property_names, Document, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::v0::DocumentUpdatePriceTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 impl DocumentUpdatePriceTransitionActionV0 {
     /// try from borrowed
@@ -17,7 +22,13 @@ impl DocumentUpdatePriceTransitionActionV0 {
         original_document: Document,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let DocumentUpdatePriceTransitionV0 { base, price, .. } = document_update_price_transition;
         let base =
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
@@ -44,9 +55,16 @@ impl DocumentUpdatePriceTransitionActionV0 {
             modified_document.set_updated_at_core_block_height(Some(block_info.core_height));
         }
 
-        Ok(DocumentUpdatePriceTransitionActionV0 {
-            base,
-            document: modified_document,
-        })
+        Ok((
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::UpdatePriceAction(
+                DocumentUpdatePriceTransitionActionV0 {
+                    base,
+                    document: modified_document,
+                }
+                    .into(),
+            ))
+                .into(),
+            FeeResult::default(),
+        ))
     }
 }

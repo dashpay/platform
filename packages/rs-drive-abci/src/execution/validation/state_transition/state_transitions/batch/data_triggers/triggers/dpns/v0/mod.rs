@@ -448,7 +448,7 @@ mod test {
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None,
                                                                                                                document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
-                }, platform_version).expect("expected to create action").0.into(),
+                }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
             &data_trigger_context,
             platform_version,
         )

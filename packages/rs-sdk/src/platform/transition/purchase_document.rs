@@ -12,6 +12,7 @@ use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
@@ -25,6 +26,7 @@ pub trait PurchaseDocument<S: Signer>: Waitable {
         document_type: DocumentType,
         purchaser_id: Identifier,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
@@ -37,6 +39,7 @@ pub trait PurchaseDocument<S: Signer>: Waitable {
         document_type: DocumentType,
         purchaser_id: Identifier,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
@@ -51,6 +54,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
         document_type: DocumentType,
         purchaser_id: Identifier,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
@@ -73,6 +77,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             &identity_public_key,
             new_identity_contract_nonce,
             settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
             signer,
             sdk.version(),
             None,
@@ -92,6 +97,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
         document_type: DocumentType,
         purchaser_id: Identifier,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
@@ -102,6 +108,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
                 document_type,
                 purchaser_id,
                 identity_public_key,
+                token_payment_info,
                 signer,
                 settings,
             )

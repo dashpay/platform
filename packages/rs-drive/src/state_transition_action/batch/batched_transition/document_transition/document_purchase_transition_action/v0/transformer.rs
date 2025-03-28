@@ -4,11 +4,16 @@ use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Sette
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::v0::DocumentPurchaseTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 impl DocumentPurchaseTransitionActionV0 {
     /// try from borrowed
@@ -18,7 +23,13 @@ impl DocumentPurchaseTransitionActionV0 {
         purchaser_id: Identifier,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let DocumentPurchaseTransitionV0 { base, price, .. } = document_purchase_transition;
         let base =
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
@@ -50,11 +61,18 @@ impl DocumentPurchaseTransitionActionV0 {
             modified_document.set_transferred_at_core_block_height(Some(block_info.core_height));
         }
 
-        Ok(DocumentPurchaseTransitionActionV0 {
-            base,
-            document: modified_document,
-            original_owner_id,
-            price: *price,
-        })
+        Ok((
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::PurchaseAction(
+                DocumentPurchaseTransitionActionV0 {
+                    base,
+                    document: modified_document,
+                    original_owner_id,
+                    price: *price,
+                }
+                    .into(),
+            ))
+                .into(),
+            FeeResult::default(),
+        ))
     }
 }

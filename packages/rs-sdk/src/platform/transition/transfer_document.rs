@@ -11,6 +11,7 @@ use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use rs_dapi_client::{DapiRequest, IntoInner};
 
 #[async_trait::async_trait]
@@ -24,6 +25,7 @@ pub trait TransferDocument<S: Signer>: Waitable {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
@@ -35,6 +37,7 @@ pub trait TransferDocument<S: Signer>: Waitable {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
@@ -48,6 +51,7 @@ impl<S: Signer> TransferDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
@@ -69,6 +73,7 @@ impl<S: Signer> TransferDocument<S> for Document {
             &identity_public_key,
             new_identity_contract_nonce,
             settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
             signer,
             sdk.version(),
             None,
@@ -95,6 +100,7 @@ impl<S: Signer> TransferDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
@@ -104,6 +110,7 @@ impl<S: Signer> TransferDocument<S> for Document {
                 sdk,
                 document_type,
                 identity_public_key,
+                token_payment_info,
                 signer,
                 settings,
             )

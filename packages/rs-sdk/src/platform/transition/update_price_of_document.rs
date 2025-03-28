@@ -12,6 +12,7 @@ use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for updating the price of a document on Platform
@@ -24,6 +25,7 @@ pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
@@ -35,6 +37,7 @@ pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
@@ -48,6 +51,7 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
@@ -69,6 +73,7 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
             &identity_public_key,
             new_identity_contract_nonce,
             settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
             signer,
             sdk.version(),
             None,
@@ -87,11 +92,12 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         sdk: &Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
         let state_transition = self
-            .update_price_of_document(price, sdk, document_type, identity_public_key, signer, None)
+            .update_price_of_document(price, sdk, document_type, identity_public_key, token_payment_info, signer, None)
             .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await

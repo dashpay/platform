@@ -4,6 +4,7 @@ mod fields;
 mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
+pub(crate) mod v1;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
@@ -27,10 +28,12 @@ use platform_versioning::PlatformVersioned;
 use serde_json::Value as JsonValue;
 #[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
+use derive_more::From;
 
-#[derive(Debug, Clone, PlatformVersioned)]
+#[derive(Debug, Clone, PlatformVersioned, From)]
 pub enum ExtendedDocument {
     V0(ExtendedDocumentV0),
+    V1(ExtendedDocumentV1),
 }
 
 impl ExtendedDocument {

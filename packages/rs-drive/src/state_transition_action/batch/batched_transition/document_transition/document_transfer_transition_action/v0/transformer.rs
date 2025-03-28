@@ -4,11 +4,16 @@ use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Sette
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::v0::DocumentTransferTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
 impl DocumentTransferTransitionActionV0 {
     /// try from borrowed
@@ -17,7 +22,13 @@ impl DocumentTransferTransitionActionV0 {
         original_document: Document,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
         let DocumentTransferTransitionV0 {
             base,
             recipient_owner_id,
@@ -51,9 +62,16 @@ impl DocumentTransferTransitionActionV0 {
             modified_document.set_transferred_at_core_block_height(Some(block_info.core_height));
         }
 
-        Ok(DocumentTransferTransitionActionV0 {
-            base,
-            document: modified_document,
-        })
+        Ok((
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::TransferAction(
+                DocumentTransferTransitionActionV0 {
+                    base,
+                    document: modified_document,
+                }
+                    .into(),
+            ))
+                .into(),
+            FeeResult::default(),
+        ))
     }
 }

@@ -7,6 +7,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl ExtendedDocument {
     /// Returns an immutable reference to the properties of the document.
@@ -149,6 +150,13 @@ impl ExtendedDocument {
     pub fn set_document(&mut self, document: Document) {
         match self {
             ExtendedDocument::V0(v0) => v0.document = document,
+        }
+    }
+
+    /// Returns a reference to the actual document object containing the data.
+    pub fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.token_payment_info,
         }
     }
 
