@@ -2,11 +2,11 @@ use platform_value::Identifier;
 use crate::balances::credits::TokenAmount;
 use crate::fee::Credits;
 use crate::prelude::Revision;
-use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::v0::transition::TokenOrderCancelLimitTransitionV0;
+use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::v0::transition::TokenOrderCancelTransitionV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 
-impl TokenBaseTransitionAccessors for TokenOrderCancelLimitTransitionV0 {
+impl TokenBaseTransitionAccessors for TokenOrderCancelTransitionV0 {
     fn base(&self) -> &TokenBaseTransition {
         &self.base
     }
@@ -20,7 +20,7 @@ impl TokenBaseTransitionAccessors for TokenOrderCancelLimitTransitionV0 {
     }
 }
 
-pub trait TokenOrderCancelLimitTransitionV0Methods: TokenBaseTransitionAccessors {
+pub trait TokenOrderCancelTransitionV0Methods: TokenBaseTransitionAccessors {
     /// Order ID to cancel
     fn order_id(&self) -> Identifier;
 
@@ -34,7 +34,7 @@ pub trait TokenOrderCancelLimitTransitionV0Methods: TokenBaseTransitionAccessors
     fn set_order_revision(&mut self, revision: Revision);
 }
 
-impl TokenOrderCancelLimitTransitionV0Methods for TokenOrderCancelLimitTransitionV0 {
+impl TokenOrderCancelTransitionV0Methods for TokenOrderCancelTransitionV0 {
     fn order_id(&self) -> Identifier {
         self.order_id
     }

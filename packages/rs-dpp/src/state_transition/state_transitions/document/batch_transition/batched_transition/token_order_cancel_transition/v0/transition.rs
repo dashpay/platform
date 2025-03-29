@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {base}, Order ID: {order_id}, Order Revision: {order_revision} credits")]
-pub struct TokenOrderCancelLimitTransitionV0 {
+pub struct TokenOrderCancelTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub(super) base: TokenBaseTransition,

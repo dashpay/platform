@@ -1,11 +1,11 @@
 use platform_value::Identifier;
 use crate::prelude::Revision;
-use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::transition::TokenOrderCancelLimitTransition;
-use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::v0::accessors::TokenOrderCancelLimitTransitionV0Methods;
+use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::transition::TokenOrderCancelTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::v0::accessors::TokenOrderCancelTransitionV0Methods;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 
-impl TokenBaseTransitionAccessors for TokenOrderCancelLimitTransition {
+impl TokenBaseTransitionAccessors for TokenOrderCancelTransition {
     fn base(&self) -> &TokenBaseTransition {
         match self {
             Self::V0(v0) => v0.base(),
@@ -25,28 +25,28 @@ impl TokenBaseTransitionAccessors for TokenOrderCancelLimitTransition {
     }
 }
 
-impl TokenOrderCancelLimitTransitionV0Methods for TokenOrderCancelLimitTransition {
+impl TokenOrderCancelTransitionV0Methods for TokenOrderCancelTransition {
     fn order_id(&self) -> Identifier {
         match self {
-            TokenOrderCancelLimitTransition::V0(v0) => v0.order_id(),
+            TokenOrderCancelTransition::V0(v0) => v0.order_id(),
         }
     }
 
     fn set_order_id(&mut self, id: Identifier) {
         match self {
-            TokenOrderCancelLimitTransition::V0(v0) => v0.set_order_id(id),
+            TokenOrderCancelTransition::V0(v0) => v0.set_order_id(id),
         }
     }
 
     fn order_revision(&self) -> Revision {
         match self {
-            TokenOrderCancelLimitTransition::V0(v0) => v0.order_revision(),
+            TokenOrderCancelTransition::V0(v0) => v0.order_revision(),
         }
     }
 
     fn set_order_revision(&mut self, revision: Revision) {
         match self {
-            TokenOrderCancelLimitTransition::V0(v0) => v0.set_order_revision(revision),
+            TokenOrderCancelTransition::V0(v0) => v0.set_order_revision(revision),
         }
     }
 }
