@@ -30,7 +30,7 @@ pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;
 pub mod token_unfreeze_transition;
-mod validate_token_amount;
+mod validation;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;

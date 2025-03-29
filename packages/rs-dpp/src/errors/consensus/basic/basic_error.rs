@@ -78,8 +78,8 @@ use crate::consensus::basic::token::{
     ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError,
     DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError,
     InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError,
-    InvalidTokenPositionError, MissingDefaultLocalizationError, TokenTransferToOurselfError,
-    ZeroTokenAmountError, ZeroTokenPriceError,
+    InvalidTokenPositionError, InvalidTokenPriceError, MissingDefaultLocalizationError,
+    TokenTransferToOurselfError, ZeroTokenAmountError, ZeroTokenPriceError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
@@ -508,6 +508,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ZeroTokenPriceError(ZeroTokenPriceError),
+
+    #[error(transparent)]
+    InvalidTokenPriceError(InvalidTokenPriceError),
 }
 
 impl From<BasicError> for ConsensusError {

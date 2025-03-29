@@ -1,32 +1,19 @@
-use crate::consensus::basic::token::ZeroTokenPriceError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::token_order_buy_limit_transition::transition::TokenOrderBuyLimitTransition;
 use crate::state_transition::batch_transition::batched_transition::token_order_buy_limit_transition::v0::accessors::TokenOrderBuyLimitTransitionV0Methods;
-use crate::state_transition::batch_transition::batched_transition::validate_token_amount::ValidateTokenAmountV0;
+use crate::state_transition::batch_transition::batched_transition::validation::{validate_token_amount_v0, validate_token_price_v0};
 
-pub(super) trait TokenOrderBuyLimitTransitionStructureValidationV0:
-    ValidateTokenAmountV0
-{
+pub(super) trait TokenOrderBuyLimitTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
-impl ValidateTokenAmountV0 for TokenOrderBuyLimitTransition {}
-
 impl TokenOrderBuyLimitTransitionStructureValidationV0 for TokenOrderBuyLimitTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if let Some(consensus_error) = self.validate_token_amount_v0(self.token_amount()) {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                consensus_error,
-            ));
-        }
+        let mut result = validate_token_amount_v0(self.token_amount());
 
-        if self.token_max_price() == 0 {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                ZeroTokenPriceError::new().into(),
-            ));
-        }
+        result.merge(validate_token_price_v0(self.token_max_price()));
 
-        Ok(SimpleConsensusValidationResult::default())
+        Ok(result)
     }
 }

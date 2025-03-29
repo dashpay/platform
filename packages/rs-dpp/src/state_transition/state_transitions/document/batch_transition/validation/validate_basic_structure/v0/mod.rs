@@ -18,6 +18,9 @@ use std::collections::BTreeMap;
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::token::{InvalidActionIdError, InvalidTokenIdError};
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use crate::state_transition::batch_transition::batched_transition::token_order_adjust_price_transition::validate_structure::TokenOrderAdjustPriceTransitionStructureValidation;
+use crate::state_transition::batch_transition::batched_transition::token_order_buy_limit_transition::validate_structure::TokenOrderBuyLimitTransitionStructureValidation;
+use crate::state_transition::batch_transition::batched_transition::token_order_sell_limit_transition::validate_structure::TokenOrderSellLimitTransitionStructureValidation;
 use crate::state_transition::batch_transition::batched_transition::token_transition::{TokenTransition, TokenTransitionV0Methods};
 use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
@@ -169,6 +172,16 @@ impl BatchTransition {
                 }
                 TokenTransition::Claim(release_transition) => {
                     release_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::OrderBuyLimit(transition) => {
+                    transition.validate_structure(platform_version)?
+                }
+                TokenTransition::OrderSellLimit(transition) => {
+                    transition.validate_structure(platform_version)?
+                }
+                TokenTransition::OrderCancel(_) => SimpleConsensusValidationResult::default(),
+                TokenTransition::OrderAdjustPrice(transition) => {
+                    transition.validate_structure(platform_version)?
                 }
             };
 

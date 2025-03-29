@@ -4,6 +4,7 @@ use crate::consensus::basic::token::{
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use crate::state_transition::batch_transition::batched_transition::validation::validate_public_note;
 use crate::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use crate::state_transition::batch_transition::TokenConfigUpdateTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
@@ -15,31 +16,19 @@ pub(super) trait TokenConfigUpdateTransitionStructureValidationV0 {
 }
 impl TokenConfigUpdateTransitionStructureValidationV0 for TokenConfigUpdateTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = SimpleConsensusValidationResult::new();
+
         if matches!(
             self.update_token_configuration_item(),
             TokenConfigurationChangeItem::TokenConfigurationNoChange
         ) {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(BasicError::InvalidTokenConfigUpdateNoChangeError(
-                    InvalidTokenConfigUpdateNoChangeError::new(),
-                )),
-            ));
+            result.add_error(InvalidTokenConfigUpdateNoChangeError::new());
         }
 
         if let Some(public_note) = self.public_note() {
-            if public_note.len() > MAX_TOKEN_NOTE_LEN {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(
-                        InvalidTokenNoteTooBigError::new(
-                            MAX_TOKEN_NOTE_LEN as u32,
-                            "public_note",
-                            public_note.len() as u32,
-                        ),
-                    )),
-                ));
-            }
+            result.merge(validate_public_note(public_note));
         }
 
-        Ok(SimpleConsensusValidationResult::default())
+        Ok(result)
     }
 }

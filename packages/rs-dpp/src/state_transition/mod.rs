@@ -362,6 +362,18 @@ impl StateTransition {
                             "TokenConfigUpdate"
                         }
                         BatchedTransitionRef::Token(TokenTransition::Claim(_)) => "TokenClaim",
+                        BatchedTransitionRef::Token(TokenTransition::OrderBuyLimit(_)) => {
+                            "TokenOrderBuyLimit"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::OrderSellLimit(_)) => {
+                            "TokenOrderSellLimit"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::OrderCancel(_)) => {
+                            "TokenOrderCancel"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::OrderAdjustPrice(_)) => {
+                            "TokenOrderAdjustPrice"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }

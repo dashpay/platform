@@ -147,6 +147,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenNoteTooBigError(_) => 10459,
             Self::ZeroTokenAmountError(_) => 10460,
             Self::ZeroTokenPriceError(_) => 10461,
+            Self::InvalidTokenPriceError(_) => 10462,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
