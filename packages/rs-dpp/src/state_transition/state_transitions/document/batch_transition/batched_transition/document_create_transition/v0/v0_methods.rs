@@ -5,18 +5,19 @@ use platform_value::Value;
 
 use crate::fee::Credits;
 use std::collections::BTreeMap;
+use crate::state_transition::batch_transition::batched_transition::Entropy;
 use crate::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 
 pub trait DocumentCreateTransitionV0Methods: DocumentBaseTransitionAccessors {
     /// Returns a reference to the `entropy` field of the `DocumentCreateTransitionV0`.
-    fn entropy(&self) -> [u8; 32];
+    fn entropy(&self) -> Entropy;
 
     /// Sets the value of the `entropy` field in the `DocumentCreateTransitionV0`.
     ///
     /// # Arguments
     ///
     /// * `entropy` - An array of 32 bytes to set.
-    fn set_entropy(&mut self, entropy: [u8; 32]);
+    fn set_entropy(&mut self, entropy: Entropy);
 
     /// Returns an optional reference to the `data` field of the `DocumentCreateTransitionV0`.
     fn data(&self) -> &BTreeMap<String, Value>;
@@ -51,11 +52,11 @@ impl DocumentBaseTransitionAccessors for DocumentCreateTransitionV0 {
 }
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
-    fn entropy(&self) -> [u8; 32] {
+    fn entropy(&self) -> Entropy {
         self.entropy
     }
 
-    fn set_entropy(&mut self, entropy: [u8; 32]) {
+    fn set_entropy(&mut self, entropy: Entropy) {
         self.entropy = entropy;
     }
 

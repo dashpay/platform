@@ -22,10 +22,15 @@ pub mod token_destroy_frozen_funds_transition;
 pub mod token_emergency_action_transition;
 pub mod token_freeze_transition;
 pub mod token_mint_transition;
+pub mod token_order_adjust_price_transition;
+pub mod token_order_buy_limit_transition;
+pub mod token_order_cancel_transition;
+pub mod token_order_sell_limit_transition;
 pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;
 pub mod token_unfreeze_transition;
+mod validate_token_amount;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -42,6 +47,9 @@ use platform_value::Identifier;
 use token_transition::TokenTransition;
 
 pub const PROPERTY_ACTION: &str = "$action";
+
+/// Entropy used for creating unique identifiers
+pub type Entropy = [u8; 32];
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(

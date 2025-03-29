@@ -1,8 +1,9 @@
 use platform_value::Identifier;
 use crate::consensus::basic::BasicError;
-use crate::consensus::basic::token::{InvalidTokenAmountError, InvalidTokenNoteTooBigError, TokenTransferToOurselfError};
+use crate::consensus::basic::token::{InvalidTokenAmountError, InvalidTokenNoteTooBigError, TokenTransferToOurselfError, ZeroTokenAmountError};
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
+use crate::state_transition::batch_transition::batched_transition::validate_token_amount::{ValidateTokenAmountV0};
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
@@ -10,22 +11,25 @@ use crate::state_transition::batch_transition::TokenTransferTransition;
 use crate::tokens::MAX_TOKEN_NOTE_LEN;
 use crate::validation::SimpleConsensusValidationResult;
 
-pub(super) trait TokenTransferTransitionActionStructureValidationV0 {
+pub(super) trait TokenTransferTransitionActionStructureValidationV0:
+    ValidateTokenAmountV0
+{
     fn validate_structure_v0(
         &self,
         owner_id: Identifier,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
+
+impl ValidateTokenAmountV0 for TokenTransferTransition {}
+
 impl TokenTransferTransitionActionStructureValidationV0 for TokenTransferTransition {
     fn validate_structure_v0(
         &self,
         owner_id: Identifier,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if self.amount() > i64::MAX as u64 {
+        if let Some(consensus_error) = self.validate_token_amount_v0(self.amount()) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(BasicError::InvalidTokenAmountError(
-                    InvalidTokenAmountError::new(i64::MAX as u64, self.amount()),
-                )),
+                consensus_error,
             ));
         }
 

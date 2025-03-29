@@ -35,6 +35,7 @@ use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::batch_transition;
+use crate::state_transition::batch_transition::batched_transition::Entropy;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -63,7 +64,7 @@ pub struct DocumentCreateTransitionV0 {
         feature = "state-transition-serde-conversion",
         serde(rename = "$entropy")
     )]
-    pub entropy: [u8; 32],
+    pub entropy: Entropy,
 
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,

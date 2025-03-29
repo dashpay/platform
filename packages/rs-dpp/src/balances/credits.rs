@@ -32,8 +32,12 @@ pub type SumTokenAmount = i128;
 pub type SignedCredits = i64;
 
 /// Maximum value of credits
-pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
+pub const MAX_CREDITS: Credits = i64::MAX as Credits; //i64 Max
 
+/// Maximum token amount
+pub const TOKEN_MAX_AMOUNT: TokenAmount = i64::MAX as TokenAmount;
+
+/// Number of credits in 1 duff
 pub const CREDITS_PER_DUFF: Credits = 1000;
 
 /// Trait for signed and unsigned credits
