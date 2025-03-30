@@ -39,6 +39,7 @@ use crate::state_transition::batch_transition::batched_transition::document_purc
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {

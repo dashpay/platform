@@ -8,7 +8,9 @@ use crate::consensus::basic::data_contract::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::property::DocumentProperty;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
@@ -26,6 +28,7 @@ use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumen
 use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
@@ -34,8 +37,12 @@ use crate::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
-    insert_values, insert_values_nested, MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
-    MAX_INDEXED_STRING_PROPERTY_LENGTH, NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
+    insert_values, insert_values_nested,
+};
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::try_from_schema::{
+    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
+    NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
 };
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
@@ -568,20 +575,24 @@ impl DocumentTypeV1 {
                         .transpose()?
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
 
-                    // If contractId is present and user tries to burn, bail out:
-                    if contract_id.is_some() && effect == DocumentActionTokenEffect::BurnToken {
-                        return Err(ProtocolError::ConsensusError(
-                            ConsensusError::BasicError(
-                                BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
-                                    TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
-                                        contract_id.unwrap(),
-                                        token_contract_position,
-                                        key.to_string(),
+                    #[cfg(feature = "validation")]
+                    if full_validation {
+
+                        // If contractId is present and user tries to burn, bail out:
+                        if contract_id.is_some() && effect == DocumentActionTokenEffect::BurnToken {
+                            return Err(ProtocolError::ConsensusError(
+                                ConsensusError::BasicError(
+                                    BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+                                        TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
+                                            contract_id.unwrap(),
+                                            token_contract_position,
+                                            key.to_string(),
+                                        ),
                                     ),
-                                ),
-                            )
-                            .into(),
-                        ));
+                                )
+                                    .into(),
+                            ));
+                        }
                     }
 
                     // Extract an optional string and map it to the enum, defaulting if missing or unrecognized.

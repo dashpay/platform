@@ -4,11 +4,11 @@ use toml::Value;
 
 fn main() {
     let crates = [
-        ("rs-sdk", vec![]),
-        ("rs-drive-abci", vec![]),
+        // ("rs-sdk", vec![]),
+        // ("rs-drive-abci", vec![]),
         ("rs-dpp", vec![]),
-        ("rs-drive", vec![]),
-        ("rs-drive-proof-verifier", vec![]),
+        // ("rs-drive", vec![]),
+        // ("rs-drive-proof-verifier", vec![]),
     ];
 
     for (specific_crate, to_ignore) in crates {

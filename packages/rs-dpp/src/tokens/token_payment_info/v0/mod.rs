@@ -9,6 +9,7 @@ use bincode_derive::{Decode, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

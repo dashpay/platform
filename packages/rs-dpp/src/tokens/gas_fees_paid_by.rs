@@ -4,6 +4,7 @@ use crate::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode_derive::{Decode, Encode};
 use derive_more::Display;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]

@@ -35,7 +35,7 @@ use crate::ProtocolError;
     feature = "state-transition-value-conversion"
 ))]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-#[cfg(any(feature = "state-transition-json-conversion"))]
+#[cfg(feature = "state-transition-json-conversion")]
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
 };

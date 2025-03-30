@@ -9,7 +9,10 @@ use bincode_derive::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{Error, Identifier, Value};
+#[cfg(feature = "state-transition-value-conversion")]
+use platform_value::Error;
+use platform_value::{Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -131,6 +134,7 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
     }
 }
 
+#[cfg(feature = "state-transition-value-conversion")]
 impl TryFrom<TokenPaymentInfo> for Value {
     type Error = Error;
     fn try_from(value: TokenPaymentInfo) -> Result<Self, Self::Error> {

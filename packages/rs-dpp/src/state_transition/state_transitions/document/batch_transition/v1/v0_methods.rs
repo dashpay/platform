@@ -85,6 +85,7 @@ use crate::state_transition::batch_transition::token_unfreeze_transition::TokenU
 use crate::tokens::emergency_action::TokenEmergencyAction;
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
+#[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
