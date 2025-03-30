@@ -14,30 +14,6 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionV0};
 
 impl DocumentCreateTransitionAction {
-    /// from_document_create_transition_with_contract_lookup
-    pub fn try_from_document_create_transition_with_contract_lookup(
-        drive: &Drive,
-        owner_id: Identifier,
-        transaction: TransactionArg,
-        value: DocumentCreateTransition,
-        block_info: &BlockInfo,
-        user_fee_increase: UserFeeIncrease,
-        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-        platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            ConsensusValidationResult<BatchedTransitionAction>,
-            FeeResult,
-        ),
-        Error,
-    > {
-        match value {
-            DocumentCreateTransition::V0(v0) => {
-                DocumentCreateTransitionActionV0::try_from_document_create_transition_with_contract_lookup(drive, owner_id, transaction, v0, block_info, user_fee_increase, get_data_contract, platform_version)
-            }
-        }
-    }
-
     /// from_document_borrowed_create_transition_with_contract_lookup
     pub fn try_from_document_borrowed_create_transition_with_contract_lookup(
         drive: &Drive,

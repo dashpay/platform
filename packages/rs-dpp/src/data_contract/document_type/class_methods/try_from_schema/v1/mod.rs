@@ -26,6 +26,7 @@ use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumen
 use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+use crate::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
@@ -51,7 +52,9 @@ use crate::data_contract::storage_requirements::keys_for_document_type::StorageK
 use crate::data_contract::TokenContractPosition;
 use crate::identity::SecurityLevel;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
-use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
+use crate::tokens::token_amount_on_contract_token::{
+    DocumentActionTokenCost, DocumentActionTokenEffect,
+};
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::validation::operations::ProtocolValidationOperation;
@@ -558,6 +561,29 @@ impl DocumentTypeV1 {
                         action_cost.get_integer::<TokenContractPosition>("tokenPosition")?;
                     // Extract the token amount.
                     let token_amount = action_cost.get_integer::<TokenAmount>("amount")?;
+                    // Extract the token effect
+                    let effect = action_cost
+                        .get_optional_integer::<u64>("effect")?
+                        .map(|int| int.try_into())
+                        .transpose()?
+                        .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
+
+                    // If contractId is present and user tries to burn, bail out:
+                    if contract_id.is_some() && effect == DocumentActionTokenEffect::BurnToken {
+                        return Err(ProtocolError::ConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+                                    TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
+                                        contract_id.unwrap(),
+                                        token_contract_position,
+                                        key.to_string(),
+                                    ),
+                                ),
+                            )
+                            .into(),
+                        ));
+                    }
+
                     // Extract an optional string and map it to the enum, defaulting if missing or unrecognized.
                     let gas_fees_paid_by = action_cost
                         .get_optional_integer::<u64>("gasFeesPaidBy")?
@@ -569,6 +595,7 @@ impl DocumentTypeV1 {
                         contract_id,
                         token_contract_position,
                         token_amount,
+                        effect,
                         gas_fees_paid_by,
                     })
                 })

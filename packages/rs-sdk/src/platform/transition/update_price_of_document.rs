@@ -97,7 +97,15 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
         let state_transition = self
-            .update_price_of_document(price, sdk, document_type, identity_public_key, token_payment_info, signer, None)
+            .update_price_of_document(
+                price,
+                sdk,
+                document_type,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                None,
+            )
             .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await

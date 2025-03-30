@@ -110,8 +110,9 @@ mod tests {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use crate::document::Document;
+    use crate::document::{Document, DocumentV0Setters};
     use crate::tests::json_document::json_document_to_contract;
+    use platform_value::Value;
     use platform_version::version::PlatformVersion;
 
     #[test]

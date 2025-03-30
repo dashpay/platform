@@ -1,8 +1,9 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::IdentityDoesNotHaveEnoughTokenBalanceError;
+use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError};
 use dpp::identifier::Identifier;
+use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
@@ -39,7 +40,35 @@ impl DocumentBaseTransitionActionStateValidationV0 for DocumentBaseTransitionAct
         // The following was introduced with tokens, since there are no token costs before v9 there was no reason to
         // create a new version for state verification
 
-        if let Some((token_id, cost_in_tokens)) = self.token_cost() {
+        if let Some((token_id, _, cost_in_tokens)) = self.token_cost() {
+            let (maybe_identity_token_info, fee_result) =
+                platform.drive.fetch_identity_token_info_with_costs(
+                    token_id.to_buffer(),
+                    owner_id.to_buffer(),
+                    block_info,
+                    true,
+                    transaction,
+                    platform_version,
+                )?;
+
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+            if let Some(identity_token_info) = maybe_identity_token_info {
+                // if we have an info we need to make sure we are not frozen for this identity
+                if identity_token_info.frozen() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                            IdentityTokenAccountFrozenError::new(
+                                token_id,
+                                owner_id,
+                                format!("Document {} token payment", transition_type),
+                            ),
+                        )),
+                    ));
+                }
+            }
+
             let (maybe_identity_token_balance, fee_result) =
                 platform.drive.fetch_identity_token_balance_with_costs(
                     token_id.to_buffer(),

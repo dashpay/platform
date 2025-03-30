@@ -104,6 +104,8 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10257,
             Self::MissingDefaultLocalizationError(_) => 10258,
             Self::UnknownGasFeesPaidByError(_) => 10259,
+            Self::UnknownDocumentActionTokenEffectError(_) => 10260,
+            Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

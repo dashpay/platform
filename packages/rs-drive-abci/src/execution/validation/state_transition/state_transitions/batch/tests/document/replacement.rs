@@ -1967,7 +1967,7 @@ mod replacement_tests {
         let (creator, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, gas_token_id) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,

@@ -287,6 +287,39 @@
           }
         }
       ]
+    },
+    "documentActionTokenCost": {
+      "type": "object",
+      "properties": {
+        "contractId": {
+          "type": "array",
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32
+        },
+        "tokenPosition": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "effect": {
+          "type": "integer",
+          "description": "0 - TransferTokenToContractOwner (default), 1 - Burn"
+        },
+        "gasFeesPaidBy": {
+          "type": "integer",
+          "description": "0 - DocumentOwner (default), 1 - ContractOwner, 2 - PreferContractOwner"
+        }
+      },
+      "required": [
+        "tokenPosition",
+        "amount"
+      ],
+      "additionalProperties": false
     }
   },
   "properties": {
@@ -452,6 +485,30 @@
         2
       ],
       "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Multiple, 2 - Multiple with reference to latest key."
+    },
+    "tokenCost": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "replace": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "delete": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "transfer": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "update_price": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        },
+        "purchase": {
+          "$ref": "#/$defs/documentActionTokenCost"
+        }
+      },
+      "additionalProperties": false
     },
     "properties": {
       "type": "object",

@@ -4,7 +4,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
@@ -26,6 +25,10 @@ use crate::consensus::basic::data_contract::{
     UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
     UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
     UnknownTradeModeError, UnknownTransferableTypeError,
+};
+use crate::consensus::basic::data_contract::{
+    InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
+    UnknownDocumentActionTokenEffectError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -504,6 +507,14 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnknownGasFeesPaidByError(UnknownGasFeesPaidByError),
+
+    #[error(transparent)]
+    UnknownDocumentActionTokenEffectError(UnknownDocumentActionTokenEffectError),
+
+    #[error(transparent)]
+    TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+        TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -28,14 +28,16 @@ impl DocumentTransferTransitionAction {
         Error,
     > {
         match document_transfer_transition {
-            DocumentTransferTransition::V0(v0) => DocumentTransferTransitionActionV0::try_from_borrowed_document_transfer_transition(
+            DocumentTransferTransition::V0(v0) => {
+                DocumentTransferTransitionActionV0::try_from_borrowed_document_transfer_transition(
                     v0,
                     owner_id,
                     original_document,
                     block_info,
                     user_fee_increase,
                     get_data_contract,
-                ),
+                )
+            }
         }
     }
 }

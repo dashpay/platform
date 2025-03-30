@@ -7,6 +7,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use dpp::ProtocolError;
 use std::sync::Arc;
 
@@ -22,7 +23,7 @@ pub struct DocumentBaseTransitionActionV0 {
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
     /// Token cost with the token_id coming first
-    pub token_cost: Option<(Identifier, TokenAmount)>,
+    pub token_cost: Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>,
     /// Who pays the gas fees
     pub gas_fees_paid_by: GasFeesPaidBy,
 }
@@ -53,5 +54,5 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn identity_contract_nonce(&self) -> IdentityNonce;
 
     /// Token cost
-    fn token_cost(&self) -> Option<(Identifier, TokenAmount)>;
+    fn token_cost(&self) -> Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>;
 }

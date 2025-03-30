@@ -2,7 +2,7 @@ use super::*;
 
 mod deletion_tests {
     use super::*;
-    use crate::execution::validation::state_transition::tests::create_card_game_internal_token_contract_with_owner_identity;
+    use crate::execution::validation::state_transition::tests::create_card_game_internal_token_contract_with_owner_identity_burn_tokens;
 
     #[test]
     fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
@@ -770,7 +770,7 @@ mod deletion_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, gas_token_id) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -940,7 +940,7 @@ mod deletion_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, gas_token_id) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,

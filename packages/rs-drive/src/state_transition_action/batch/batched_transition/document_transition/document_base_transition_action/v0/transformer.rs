@@ -20,92 +20,6 @@ use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionV0;
 
 impl DocumentBaseTransitionActionV0 {
-    /// try from base transition with contract lookup
-    pub fn try_from_base_transition_with_contract_lookup(
-        value: DocumentBaseTransition,
-        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-        get_token_cost: impl Fn(&DocumentType) -> Option<DocumentActionTokenCost>,
-        action: &str,
-    ) -> Result<ConsensusValidationResult<Self>, Error> {
-        let data_contract_id = value.data_contract_id();
-        let data_contract = get_data_contract(data_contract_id)?;
-        let document_type = data_contract
-            .contract
-            .document_type_borrowed_for_name(value.document_type_name().as_str())?;
-        let document_action_token_cost = get_token_cost(document_type);
-        let token_cost = document_action_token_cost.map(
-            |DocumentActionTokenCost {
-                 contract_id,
-                 token_contract_position,
-                 token_amount,
-                 ..
-             }| {
-                (
-                    calculate_token_id(
-                        contract_id.unwrap_or(data_contract_id).as_bytes(),
-                        token_contract_position,
-                    )
-                    .into(),
-                    token_amount,
-                )
-            },
-        );
-        if let Some(document_action_token_cost) = document_action_token_cost {
-            let Some(token_payment_info) = value.token_payment_info_ref() else {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(
-                        RequiredTokenPaymentInfoNotSetError::new(
-                            token_cost.expect("expected token cost").0,
-                            action.to_string(),
-                        ),
-                    )),
-                ));
-            };
-            // Let's see that the user agreed to pay using the correct token
-            if !token_payment_info.matches_token_contract(&document_action_token_cost.contract_id, document_action_token_cost.token_contract_position) {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(StateError::IdentityTryingToPayWithWrongTokenError(
-                        IdentityTryingToPayWithWrongTokenError::new(
-                            document_action_token_cost.contract_id,
-                            document_action_token_cost.token_contract_position,
-                            token_cost.expect("expected token cost").0,
-                            token_payment_info.payment_token_contract_id(),
-                            token_payment_info.token_contract_position(),
-                            token_payment_info.token_id(data_contract_id)
-                        ),
-                    )),
-                ));
-            }
-            // Let's see that the user agreed to pay the required amount
-            if !token_payment_info.is_valid_for_required_cost(document_action_token_cost.token_amount) {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
-                        IdentityHasNotAgreedToPayRequiredTokenAmountError::new(
-                            token_cost.expect("expected token cost").0,
-                            document_action_token_cost.token_amount,
-                            token_payment_info.minimum_token_cost(),
-                            token_payment_info.maximum_token_cost(),
-                            action.to_string(),
-                        ),
-                    )),
-                ));
-            }
-        }
-        let gas_fees_paid_by = value
-            .token_payment_info_ref()
-            .as_ref()
-            .map(|token_payment_info| token_payment_info.gas_fees_paid_by())
-            .unwrap_or(GasFeesPaidBy::DocumentOwner);
-        Ok(DocumentBaseTransitionActionV0 {
-            id: value.id(),
-            identity_contract_nonce: value.identity_contract_nonce(),
-            document_type_name: value.document_type_name_owned(),
-            data_contract,
-            token_cost,
-            gas_fees_paid_by,
-        }.into())
-    }
-
     /// try from borrowed base transition with contract lookup
     pub fn try_from_borrowed_base_transition_with_contract_lookup(
         value: &DocumentBaseTransition,
@@ -124,6 +38,7 @@ impl DocumentBaseTransitionActionV0 {
                  contract_id,
                  token_contract_position,
                  token_amount,
+                 effect,
                  ..
              }| {
                 (
@@ -131,7 +46,8 @@ impl DocumentBaseTransitionActionV0 {
                         contract_id.unwrap_or(data_contract_id).as_bytes(),
                         token_contract_position,
                     )
-                        .into(),
+                    .into(),
+                    effect,
                     token_amount,
                 )
             },
@@ -148,7 +64,10 @@ impl DocumentBaseTransitionActionV0 {
                 ));
             };
             // Let's see that the user agreed to pay using the correct token
-            if !token_payment_info.matches_token_contract(&document_action_token_cost.contract_id, document_action_token_cost.token_contract_position) {
+            if !token_payment_info.matches_token_contract(
+                &document_action_token_cost.contract_id,
+                document_action_token_cost.token_contract_position,
+            ) {
                 return Ok(ConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::IdentityTryingToPayWithWrongTokenError(
                         IdentityTryingToPayWithWrongTokenError::new(
@@ -157,23 +76,27 @@ impl DocumentBaseTransitionActionV0 {
                             token_cost.expect("expected token cost").0,
                             token_payment_info.payment_token_contract_id(),
                             token_payment_info.token_contract_position(),
-                            token_payment_info.token_id(data_contract_id)
+                            token_payment_info.token_id(data_contract_id),
                         ),
                     )),
                 ));
             }
             // Let's see that the user agreed to pay the required amount
-            if !token_payment_info.is_valid_for_required_cost(document_action_token_cost.token_amount) {
+            if !token_payment_info
+                .is_valid_for_required_cost(document_action_token_cost.token_amount)
+            {
                 return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
-                        IdentityHasNotAgreedToPayRequiredTokenAmountError::new(
-                            token_cost.expect("expected token cost").0,
-                            document_action_token_cost.token_amount,
-                            token_payment_info.minimum_token_cost(),
-                            token_payment_info.maximum_token_cost(),
-                            action.to_string(),
+                    ConsensusError::StateError(
+                        StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
+                            IdentityHasNotAgreedToPayRequiredTokenAmountError::new(
+                                token_cost.expect("expected token cost").0,
+                                document_action_token_cost.token_amount,
+                                token_payment_info.minimum_token_cost(),
+                                token_payment_info.maximum_token_cost(),
+                                action.to_string(),
+                            ),
                         ),
-                    )),
+                    ),
                 ));
             }
         }
@@ -189,6 +112,7 @@ impl DocumentBaseTransitionActionV0 {
             data_contract,
             token_cost,
             gas_fees_paid_by,
-        }.into())
+        }
+        .into())
     }
 }

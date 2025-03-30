@@ -280,7 +280,9 @@ pub enum StateError {
     PreProgrammedDistributionTimestampInPastError(PreProgrammedDistributionTimestampInPastError),
 
     #[error(transparent)]
-    IdentityHasNotAgreedToPayRequiredTokenAmountError(IdentityHasNotAgreedToPayRequiredTokenAmountError),
+    IdentityHasNotAgreedToPayRequiredTokenAmountError(
+        IdentityHasNotAgreedToPayRequiredTokenAmountError,
+    ),
 
     #[error(transparent)]
     RequiredTokenPaymentInfoNotSetError(RequiredTokenPaymentInfoNotSetError),

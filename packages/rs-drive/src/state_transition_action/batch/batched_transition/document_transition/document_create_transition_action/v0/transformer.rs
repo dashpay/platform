@@ -22,17 +22,17 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl DocumentCreateTransitionActionV0 {
-    /// try from document create transition with contract lookup
-    pub fn try_from_document_create_transition_with_contract_lookup(
+    /// try from borrowed document create transition with contract lookup
+    pub fn try_from_borrowed_document_create_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
         transaction: TransactionArg,
-        value: DocumentCreateTransitionV0,
+        value: &DocumentCreateTransitionV0,
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         platform_version: &PlatformVersion,
-    )  -> Result<
+    ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
             FeeResult,
@@ -45,18 +45,19 @@ impl DocumentCreateTransitionActionV0 {
             prefunded_voting_balance,
             ..
         } = value;
-        let base_action_validation_result = DocumentBaseTransitionAction::try_from_base_transition_with_contract_lookup(
-            base,
-            get_data_contract,
-            |document_type| document_type.document_creation_token_cost(),
-            "create",
-        )?;
+        let base_action_validation_result =
+            DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
+                base,
+                get_data_contract,
+                |document_type| document_type.document_creation_token_cost(),
+                "create",
+            )?;
 
         let base = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
                 let bump_action =
-                    BumpIdentityDataContractNonceAction::from_document_base_transition(
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                         base,
                         owner_id,
                         user_fee_increase,
@@ -73,113 +74,6 @@ impl DocumentCreateTransitionActionV0 {
                 ));
             }
         };
-
-        let document_type = base.document_type()?;
-
-        let document_type_indexes = document_type.indexes();
-
-        let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
-            .map(|(index_name, credits)| {
-                let index = document_type_indexes.get(&index_name).ok_or(
-                    ProtocolError::UnknownContestedIndexResolution(format!(
-                        "index {} not found on document type {}",
-                        index_name.clone(),
-                        document_type.name()
-                    )),
-                )?;
-                let index_values = index.extract_values(&data);
-
-                let vote_poll = ContestedDocumentResourceVotePoll {
-                    contract_id: base.data_contract_id(),
-                    document_type_name: base.document_type_name().clone(),
-                    index_name,
-                    index_values,
-                };
-
-                let resolved_vote_poll = vote_poll
-                    .resolve_owned_with_provided_arc_contract_fetch_info(
-                        base.data_contract_fetch_info(),
-                    )?;
-
-                Ok::<_, Error>((resolved_vote_poll, credits))
-            })
-            .transpose()?;
-
-        let mut fee_result = FeeResult::default();
-
-        let (current_store_contest_info, should_store_contest_info) =
-            if let Some((contested_document_resource_vote_poll, _)) =
-                &prefunded_voting_balances_by_vote_poll
-            {
-                let (fetch_fee_result, maybe_current_store_contest_info) = drive
-                    .fetch_contested_document_vote_poll_stored_info(
-                        contested_document_resource_vote_poll,
-                        Some(&block_info.epoch),
-                        transaction,
-                        platform_version,
-                    )?;
-
-                fee_result = fetch_fee_result.ok_or(Error::Drive(
-                    DriveError::CorruptedCodeExecution("expected fee result"),
-                ))?;
-                let should_store_contest_info = if maybe_current_store_contest_info.is_none() {
-                    // We are starting a new contest
-                    Some(ContestedDocumentVotePollStoredInfo::new(
-                        *block_info,
-                        platform_version,
-                    )?)
-                } else {
-                    None
-                };
-                (maybe_current_store_contest_info, should_store_contest_info)
-            } else {
-                (None, None)
-            };
-
-        Ok((
-            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
-                DocumentCreateTransitionActionV0 {
-                    base,
-                    block_info: *block_info,
-                    data,
-                    prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
-                    current_store_contest_info,
-                    should_store_contest_info,
-                }
-                    .into(),
-            ))
-                .into(),
-            fee_result,
-        ))
-    }
-
-    /// try from borrowed document create transition with contract lookup
-    pub fn try_from_borrowed_document_create_transition_with_contract_lookup(
-        drive: &Drive,
-        transaction: TransactionArg,
-        value: &DocumentCreateTransitionV0,
-        block_info: &BlockInfo,
-        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-        platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            ConsensusValidationResult<BatchedTransitionAction>,
-            FeeResult,
-        ),
-        Error,
-    > {
-        let DocumentCreateTransitionV0 {
-            base,
-            data,
-            prefunded_voting_balance,
-            ..
-        } = value;
-        let base =
-            DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
-                base,
-                get_data_contract,
-                |document_type| document_type.document_creation_token_cost(),
-            )?;
 
         let document_type = base.document_type()?;
 
@@ -254,9 +148,9 @@ impl DocumentCreateTransitionActionV0 {
                     current_store_contest_info,
                     should_store_contest_info,
                 }
-                    .into(),
-            ))
                 .into(),
+            ))
+            .into(),
             fee_result,
         ))
     }

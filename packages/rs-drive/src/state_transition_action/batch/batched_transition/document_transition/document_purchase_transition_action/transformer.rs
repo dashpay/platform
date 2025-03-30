@@ -29,7 +29,7 @@ impl DocumentPurchaseTransitionAction {
         Error,
     > {
         match document_purchase_transition {
-            DocumentPurchaseTransition::V0(v0) => 
+            DocumentPurchaseTransition::V0(v0) => {
                 DocumentPurchaseTransitionActionV0::try_from_borrowed_document_purchase_transition(
                     v0,
                     owner_id,
@@ -38,7 +38,8 @@ impl DocumentPurchaseTransitionAction {
                     block_info,
                     user_fee_increase,
                     get_data_contract,
-                ),
+                )
+            }
         }
     }
 }

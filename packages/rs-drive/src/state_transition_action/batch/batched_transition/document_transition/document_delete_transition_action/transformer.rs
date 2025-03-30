@@ -10,24 +10,6 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::{DocumentDeleteTransitionAction, DocumentDeleteTransitionActionV0};
 
 impl DocumentDeleteTransitionAction {
-    /// from
-    pub fn try_from_document_create_transition_with_contract_lookup(
-        value: DocumentDeleteTransition,
-        owner_id: Identifier,
-        user_fee_increase: UserFeeIncrease,
-        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-    ) -> Result<
-        (
-            ConsensusValidationResult<BatchedTransitionAction>,
-            FeeResult,
-        ),
-        Error,
-    > {
-        match value {
-            DocumentDeleteTransition::V0(v0) => DocumentDeleteTransitionActionV0::try_from_document_delete_transition_with_contract_lookup(v0, owner_id, user_fee_increase,  get_data_contract),
-        }
-    }
-
     /// from borrowed
     pub fn try_from_document_borrowed_create_transition_with_contract_lookup(
         value: &DocumentDeleteTransition,

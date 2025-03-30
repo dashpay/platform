@@ -21,14 +21,8 @@ pub struct RequiredTokenPaymentInfoNotSetError {
 }
 
 impl RequiredTokenPaymentInfoNotSetError {
-    pub fn new(
-        token_id: Identifier,
-        action: String,
-    ) -> Self {
-        Self {
-            token_id,
-            action,
-        }
+    pub fn new(token_id: Identifier, action: String) -> Self {
+        Self { token_id, action }
     }
 
     pub fn token_id(&self) -> &Identifier {

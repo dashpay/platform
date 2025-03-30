@@ -129,7 +129,7 @@ pub(in crate::execution) mod tests {
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::group::Group;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
-    use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
+    use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
 
     /// We add an identity, but we also add the same amount to system credits
@@ -2372,7 +2372,34 @@ pub(in crate::execution) mod tests {
         (basic_token_contract, token_id.into())
     }
 
-    pub(in crate::execution) fn create_card_game_internal_token_contract_with_owner_identity(
+    pub(in crate::execution) fn create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier, Identifier) {
+        let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+        let basic_token_contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency-burn-tokens.json",
+            Some(data_contract_id.to_buffer()),
+            Some(identity_id.to_buffer()),
+            Some(|data_contract: &mut DataContract| {
+                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at_block_height(Some(0));
+            }),
+            None,
+            Some(platform_version),
+        );
+
+        let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+        let token_id_2 = calculate_token_id(data_contract_id.as_bytes(), 1);
+
+        (basic_token_contract, token_id.into(), token_id_2.into())
+    }
+
+    pub(in crate::execution) fn create_card_game_internal_token_contract_with_owner_identity_transfer_tokens(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         platform_version: &PlatformVersion,
@@ -2424,6 +2451,7 @@ pub(in crate::execution) mod tests {
                     contract_id: Some(token_contract_id),
                     token_contract_position,
                     token_amount: token_cost_amount,
+                    effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                     gas_fees_paid_by,
                 }));
                 let gas_fees_paid_by_int: u8 = gas_fees_paid_by.into();

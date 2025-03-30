@@ -14,6 +14,7 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::v0::DocumentReplaceTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl DocumentReplaceTransitionActionV0 {
     /// try from borrowed
@@ -43,12 +44,35 @@ impl DocumentReplaceTransitionActionV0 {
             data,
             ..
         } = document_replace_transition;
-        let base =
+        let base_action_validation_result =
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
-                |document_type| document_type.document_replacement_token_cost(),
+                |document_type| document_type.document_creation_token_cost(),
+                "replace",
             )?;
+
+        let base = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action,
+                        base_action_validation_result.errors,
+                    ),
+                    FeeResult::default(),
+                ));
+            }
+        };
         let updated_at = if base.document_type_field_is_required(property_names::UPDATED_AT)? {
             Some(block_info.time_ms)
         } else {
@@ -86,9 +110,9 @@ impl DocumentReplaceTransitionActionV0 {
                     transferred_at_core_block_height: originally_transferred_at_core_block_height,
                     data: data.clone(),
                 }
-                    .into(),
-            ))
                 .into(),
+            ))
+            .into(),
             FeeResult::default(),
         ))
     }

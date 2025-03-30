@@ -42,7 +42,7 @@ impl TryFrom<u8> for GasFeesPaidBy {
             2 => Ok(GasFeesPaidBy::PreferContractOwner),
             value => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::UnknownGasFeesPaidByError(
-                    UnknownGasFeesPaidByError::new(vec![0, 1], value as u64),
+                    UnknownGasFeesPaidByError::new(vec![0, 1, 2], value as u64),
                 ))
                 .into(),
             )),
@@ -58,7 +58,7 @@ impl TryFrom<u64> for GasFeesPaidBy {
             .map_err(|_| {
                 ProtocolError::ConsensusError(
                     ConsensusError::BasicError(BasicError::UnknownGasFeesPaidByError(
-                        UnknownGasFeesPaidByError::new(vec![0, 1], value),
+                        UnknownGasFeesPaidByError::new(vec![0, 1, 2], value),
                     ))
                     .into(),
                 )

@@ -22,9 +22,9 @@ use crate::{
 };
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
-use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -163,7 +163,12 @@ impl DocumentFactoryWASM {
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)> = documents
+                let documents_with_refs: Vec<(
+                    Document,
+                    DocumentTypeRef,
+                    Bytes32,
+                    Option<TokenPaymentInfo>,
+                )> = documents
                     .iter()
                     .map(|extended_document| {
                         (

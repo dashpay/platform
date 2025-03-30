@@ -14,6 +14,7 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::v0::DocumentTransferTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl DocumentTransferTransitionActionV0 {
     /// try from borrowed
@@ -36,12 +37,35 @@ impl DocumentTransferTransitionActionV0 {
             recipient_owner_id,
             ..
         } = document_transfer_transition;
-        let base =
+        let base_action_validation_result =
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
-                |document_type| document_type.document_transfer_token_cost(),
+                |document_type| document_type.document_creation_token_cost(),
+                "transfer",
             )?;
+
+        let base = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action,
+                        base_action_validation_result.errors,
+                    ),
+                    FeeResult::default(),
+                ));
+            }
+        };
 
         let mut modified_document = original_document;
 
@@ -70,9 +94,9 @@ impl DocumentTransferTransitionActionV0 {
                     base,
                     document: modified_document,
                 }
-                    .into(),
-            ))
                 .into(),
+            ))
+            .into(),
             FeeResult::default(),
         ))
     }

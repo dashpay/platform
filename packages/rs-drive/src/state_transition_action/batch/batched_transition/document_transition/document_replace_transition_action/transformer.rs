@@ -34,7 +34,7 @@ impl DocumentReplaceTransitionAction {
         Error,
     > {
         match document_replace_transition {
-            DocumentReplaceTransition::V0(v0) => 
+            DocumentReplaceTransition::V0(v0) => {
                 DocumentReplaceTransitionActionV0::try_from_borrowed_document_replace_transition(
                     v0,
                     owner_id,
@@ -47,7 +47,8 @@ impl DocumentReplaceTransitionAction {
                     block_info,
                     user_fee_increase,
                     get_data_contract,
-                ),
+                )
+            }
         }
     }
 }

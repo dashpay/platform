@@ -45,7 +45,7 @@ mod creation_tests {
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use crate::config::PlatformConfig;
-    use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_token_contract_with_owner_identity};
+    use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
 
     #[test]
     fn test_document_creation() {
@@ -2469,7 +2469,7 @@ mod creation_tests {
     }
 
     #[test]
-    fn test_document_creation_paid_with_a_token() {
+    fn test_document_creation_paid_with_a_token_burn() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -2485,7 +2485,7 @@ mod creation_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, _) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -2595,8 +2595,164 @@ mod creation_tests {
 
         // He had 15, but spent 10
         assert_eq!(token_balance, Some(5));
+
+        // There was a burn so the contract owner shouldn't have gotten more tokens
+        let contract_owner_token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gold_token_id.to_buffer(),
+                contract_owner_id.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // He started with None, so should have None
+        assert_eq!(contract_owner_token_balance, None);
     }
-    
+
+    #[test]
+    fn test_document_creation_paid_with_a_token_transfer() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (contract_owner_id, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
+
+        let (contract, gold_token_id, _) =
+            create_card_game_internal_token_contract_with_owner_identity_transfer_tokens(
+                &mut platform,
+                contract_owner_id.id(),
+                platform_version,
+            );
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(0));
+
+        assert_eq!(contract.tokens().len(), 2);
+
+        add_tokens_to_identity(&mut platform, gold_token_id, buyer.id(), 15);
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(gold_token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(15));
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a profile document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                buyer.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                })),
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gold_token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // The buyer had 15, but spent 10
+        assert_eq!(token_balance, Some(5));
+
+        let contract_owner_token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                gold_token_id.to_buffer(),
+                contract_owner_id.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // He was paid 10
+        assert_eq!(contract_owner_token_balance, Some(10));
+    }
+
     #[test]
     fn test_document_creation_paid_with_a_token_not_spending_enough() {
         let platform_version = PlatformVersion::latest();
@@ -2614,7 +2770,7 @@ mod creation_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, _) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -2679,7 +2835,7 @@ mod creation_tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -2703,9 +2859,9 @@ mod creation_tests {
         assert_matches!(
             processing_result.execution_results().as_slice(),
             [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
-                    _
-                )),
+                ConsensusError::StateError(
+                    StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(_)
+                ),
                 _
             )]
         );
@@ -2731,7 +2887,6 @@ mod creation_tests {
         assert_eq!(token_balance, Some(15));
     }
 
-
     #[test]
     fn test_document_creation_paid_with_a_token_minimum_cost_set_rare_scenario() {
         let platform_version = PlatformVersion::latest();
@@ -2749,7 +2904,7 @@ mod creation_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, _) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -2814,7 +2969,7 @@ mod creation_tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -2838,9 +2993,9 @@ mod creation_tests {
         assert_matches!(
             processing_result.execution_results().as_slice(),
             [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
-                    _
-                )),
+                ConsensusError::StateError(
+                    StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(_)
+                ),
                 _
             )]
         );
@@ -2883,7 +3038,7 @@ mod creation_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, _) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -2948,7 +3103,7 @@ mod creation_tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -3012,7 +3167,7 @@ mod creation_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, _) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -3071,7 +3226,7 @@ mod creation_tests {
                 None,
                 None,
             )
-                .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
             .serialize_to_bytes()
@@ -3095,9 +3250,7 @@ mod creation_tests {
         assert_matches!(
             processing_result.execution_results().as_slice(),
             [PaidConsensusError(
-                ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(
-                    _
-                )),
+                ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(_)),
                 _
             )]
         );
@@ -3140,7 +3293,7 @@ mod creation_tests {
         let (buyer, signer, key) = setup_identity(&mut platform, 234, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, _) =
-            create_card_game_internal_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -3193,7 +3346,13 @@ mod creation_tests {
                 &key,
                 2,
                 0,
-                None,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None, // This contract
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: None, // We'll pay whatever
+                    gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                })),
                 &signer,
                 platform_version,
                 None,
@@ -3319,6 +3478,7 @@ mod creation_tests {
                 contract_id: Some(token_contract.id()),
                 token_contract_position: 0,
                 token_amount: 5,
+                effect: Default::default(),
                 gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             })
         );
@@ -3410,5 +3570,25 @@ mod creation_tests {
 
         // He had 15, but spent 5
         assert_eq!(token_balance, Some(10));
+
+        let token_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+
+        assert_eq!(token_supply, Some(100015));
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                document_contract_owner_id.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+
+        // He was paid 5
+        assert_eq!(token_balance, Some(5));
     }
 }

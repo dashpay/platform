@@ -14,6 +14,7 @@ use crate::state_transition_action::batch::batched_transition::BatchedTransition
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::v0::DocumentPurchaseTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 impl DocumentPurchaseTransitionActionV0 {
     /// try from borrowed
@@ -33,13 +34,35 @@ impl DocumentPurchaseTransitionActionV0 {
         Error,
     > {
         let DocumentPurchaseTransitionV0 { base, price, .. } = document_purchase_transition;
-        let base =
+        let base_action_validation_result =
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
-                |document_type| document_type.document_purchase_token_cost(),
+                |document_type| document_type.document_creation_token_cost(),
+                "purchase",
             )?;
 
+        let base = match base_action_validation_result.is_valid() {
+            true => base_action_validation_result.into_data()?,
+            false => {
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
+                let batched_action =
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
+
+                return Ok((
+                    ConsensusValidationResult::new_with_data_and_errors(
+                        batched_action,
+                        base_action_validation_result.errors,
+                    ),
+                    FeeResult::default(),
+                ));
+            }
+        };
         let original_owner_id = original_document.owner_id();
 
         let mut modified_document = original_document;
@@ -71,9 +94,9 @@ impl DocumentPurchaseTransitionActionV0 {
                     original_owner_id,
                     price: *price,
                 }
-                    .into(),
-            ))
                 .into(),
+            ))
+            .into(),
             FeeResult::default(),
         ))
     }

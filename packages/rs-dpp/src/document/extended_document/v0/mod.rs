@@ -40,6 +40,7 @@ use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 #[cfg(feature = "document-json-conversion")]
@@ -47,7 +48,6 @@ use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
-use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
@@ -309,8 +309,10 @@ impl ExtendedDocumentV0 {
                 property_names::TOKEN_PAYMENT_INFO,
             )
             .ok()
-            .flatten().map(|map| map.try_into()).transpose()?;
-        
+            .flatten()
+            .map(|map| map.try_into())
+            .transpose()?;
+
         let document_type_name = properties
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
@@ -366,7 +368,9 @@ impl ExtendedDocumentV0 {
                 property_names::TOKEN_PAYMENT_INFO,
             )
             .ok()
-            .flatten().map(|map| map.try_into()).transpose()?;
+            .flatten()
+            .map(|map| map.try_into())
+            .transpose()?;
 
         let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
 
@@ -426,7 +430,7 @@ impl ExtendedDocumentV0 {
             JsonValue::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
         );
         if let Some(token_payment_info) = self.token_payment_info {
-            let value : Value = token_payment_info.try_into()?;
+            let value: Value = token_payment_info.try_into()?;
             value_mut.insert(
                 property_names::TOKEN_PAYMENT_INFO.to_string(),
                 value.try_into_validating_json()?,
