@@ -19,6 +19,7 @@ use rs_dapi_client::{DapiRequest, IntoInner};
 pub trait TransferDocument<S: Signer>: Waitable {
     /// Transfers a document on platform
     /// Setting settings to `None` sets default connection behavior
+    #[allow(clippy::too_many_arguments)]
     async fn transfer_document_to_identity(
         &self,
         recipient_id: Identifier,
@@ -31,6 +32,7 @@ pub trait TransferDocument<S: Signer>: Waitable {
     ) -> Result<StateTransition, Error>;
 
     /// Transfers a document on platform and waits for the response
+    #[allow(clippy::too_many_arguments)]
     async fn transfer_document_to_identity_and_wait_for_response(
         &self,
         recipient_id: Identifier,

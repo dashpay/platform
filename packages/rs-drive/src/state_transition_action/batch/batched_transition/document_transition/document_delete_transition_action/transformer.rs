@@ -11,7 +11,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 
 impl DocumentDeleteTransitionAction {
     /// from borrowed
-    pub fn try_from_document_borrowed_create_transition_with_contract_lookup(
+    pub fn try_from_document_borrowed_delete_transition_with_contract_lookup(
         value: &DocumentDeleteTransition,
         owner_id: Identifier,
         user_fee_increase: UserFeeIncrease,

@@ -19,6 +19,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
     /// Updates the price of a document on platform
     /// Setting settings to `None` sets default connection behavior
+    #[allow(clippy::too_many_arguments)]
     async fn update_price_of_document(
         &self,
         price: Credits,
@@ -31,6 +32,7 @@ pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
     ) -> Result<StateTransition, Error>;
 
     /// Updates the price of a document on platform and waits for the response
+    #[allow(clippy::too_many_arguments)]
     async fn update_price_of_document_and_wait_for_response(
         &self,
         price: Credits,
