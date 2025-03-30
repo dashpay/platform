@@ -155,8 +155,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 token_claim_transition_structure_validation: 0,
                 token_claim_transition_state_validation: 0,
                 token_order_buy_limit_transition_structure_validation: 0,
+                token_order_buy_limit_transition_state_validation: 0,
                 token_order_sell_limit_transition_structure_validation: 0,
+                token_order_sell_limit_transition_state_validation: 0,
+                token_order_cancel_transition_state_validation: 0,
                 token_order_adjust_price_transition_structure_validation: 0,
+                token_order_adjust_price_transition_state_validation: 0,
             },
         },
         has_nonce_validation: 1, // <---- changed this

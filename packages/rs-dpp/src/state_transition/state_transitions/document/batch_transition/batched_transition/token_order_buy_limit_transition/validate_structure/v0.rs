@@ -10,6 +10,8 @@ pub(super) trait TokenOrderBuyLimitTransitionStructureValidationV0 {
 
 impl TokenOrderBuyLimitTransitionStructureValidationV0 for TokenOrderBuyLimitTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        // TODO: We shouldn't allow group actions?
+
         let mut result = validate_token_amount_v0(self.token_amount());
 
         result.merge(validate_token_price_v0(self.token_max_price()));

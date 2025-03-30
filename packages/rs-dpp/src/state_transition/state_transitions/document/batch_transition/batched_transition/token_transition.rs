@@ -240,15 +240,6 @@ pub trait TokenTransitionV0Methods {
     fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier>;
 
     fn can_calculate_action_id(&self) -> bool;
-    /// Historical document type name for the token history contract
-    fn historical_document_type_name(&self) -> &str;
-    /// Historical document type for the token history contract
-    fn historical_document_type<'a>(
-        &self,
-        token_history_contract: &'a DataContract,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
-    /// Historical document id
-    fn historical_document_id(&self, owner_id: Identifier) -> Identifier;
     fn associated_token_event(
         &self,
         token_configuration: &TokenConfiguration,
@@ -351,47 +342,6 @@ impl TokenTransitionV0Methods for TokenTransition {
 
     fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
         self.base_mut().set_identity_contract_nonce(nonce);
-    }
-
-    /// Historical document type name for the token history contract
-    fn historical_document_type_name(&self) -> &str {
-        match self {
-            TokenTransition::Burn(_) => "burn",
-            TokenTransition::Mint(_) => "mint",
-            TokenTransition::Transfer(_) => "transfer",
-            TokenTransition::Freeze(_) => "freeze",
-            TokenTransition::Unfreeze(_) => "unfreeze",
-            TokenTransition::EmergencyAction(_) => "emergencyAction",
-            TokenTransition::DestroyFrozenFunds(_) => "destroyFrozenFunds",
-            TokenTransition::ConfigUpdate(_) => "configUpdate",
-            TokenTransition::Claim(_) => "claim",
-            // TODO: Decide should it use historical contract or own
-            TokenTransition::OrderBuyLimit(_) => "",
-            TokenTransition::OrderSellLimit(_) => "",
-            TokenTransition::OrderCancel(_) => "",
-            TokenTransition::OrderAdjustPrice(_) => "",
-        }
-    }
-
-    /// Historical document type for the token history contract
-    fn historical_document_type<'a>(
-        &self,
-        token_history_contract: &'a DataContract,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
-        Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
-    }
-
-    /// Historical document id
-    fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
-        let token_id = self.token_id();
-        let name = self.historical_document_type_name();
-        let owner_nonce = self.identity_contract_nonce();
-        Document::generate_document_id_v0(
-            &token_id,
-            &owner_id,
-            format!("history_{}", name).as_str(),
-            owner_nonce.to_be_bytes().as_slice(),
-        )
     }
 
     fn associated_token_event(

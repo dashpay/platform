@@ -22,18 +22,18 @@ pub mod token_emergency_action_transition_action;
 
 /// token_claim_transition_action
 pub mod token_claim_transition_action;
+/// token_order_adjust_price_transition_action
+pub mod token_order_adjust_price_transition_action;
+/// token_order_buy_limit_transition_action
+pub mod token_order_buy_limit_transition_action;
+/// token_order_cancel_transition_action
+pub mod token_order_cancel_transition_action;
+/// token_order_sell_limit_transition_action
+pub mod token_order_sell_limit_transition_action;
 
 use derive_more::From;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
-use dpp::identifier::Identifier;
-use dpp::prelude::{DataContract, IdentityNonce};
-use dpp::ProtocolError;
-use platform_version::version::PlatformVersion;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
@@ -48,6 +48,14 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionAction, TokenClaimTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_adjust_price_transition_action::action::TokenOrderAdjustPriceTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_adjust_price_transition_action::TokenOrderAdjustPriceTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_buy_limit_transition_action::action::TokenOrderBuyLimitTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_buy_limit_transition_action::TokenOrderBuyLimitTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_cancel_transition_action::action::TokenOrderCancelTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_cancel_transition_action::TokenOrderCancelTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_sell_limit_transition_action::action::TokenOrderSellLimitTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_order_sell_limit_transition_action::TokenOrderSellLimitTransitionActionAccessorsV0;
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -70,6 +78,14 @@ pub enum TokenTransitionAction {
     DestroyFrozenFundsAction(TokenDestroyFrozenFundsTransitionAction),
     /// update the token configuration
     ConfigUpdateAction(TokenConfigUpdateTransitionAction),
+    /// order buy limit
+    OrderBuyLimitAction(TokenOrderBuyLimitTransitionAction),
+    /// order sell limit
+    OrderSellLimitAction(TokenOrderSellLimitTransitionAction),
+    /// order cancel
+    OrderCancelAction(TokenOrderCancelTransitionAction),
+    /// order adjust price
+    OrderAdjustPriceAction(TokenOrderAdjustPriceTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -85,6 +101,10 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(action) => action.base(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base(),
             TokenTransitionAction::ConfigUpdateAction(action) => action.base(),
+            TokenTransitionAction::OrderBuyLimitAction(action) => action.base(),
+            TokenTransitionAction::OrderSellLimitAction(action) => action.base(),
+            TokenTransitionAction::OrderCancelAction(action) => action.base(),
+            TokenTransitionAction::OrderAdjustPriceAction(action) => action.base(),
         }
     }
 
@@ -100,63 +120,11 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(action) => action.base_owned(),
             TokenTransitionAction::DestroyFrozenFundsAction(action) => action.base_owned(),
             TokenTransitionAction::ConfigUpdateAction(action) => action.base_owned(),
+            TokenTransitionAction::OrderBuyLimitAction(action) => action.base_owned(),
+            TokenTransitionAction::OrderSellLimitAction(action) => action.base_owned(),
+            TokenTransitionAction::OrderCancelAction(action) => action.base_owned(),
+            TokenTransitionAction::OrderAdjustPriceAction(action) => action.base_owned(),
         }
-    }
-
-    /// Historical document type name for the token history contract
-    pub fn historical_document_type_name(&self) -> &str {
-        match self {
-            TokenTransitionAction::BurnAction(_) => "burn",
-            TokenTransitionAction::MintAction(_) => "mint",
-            TokenTransitionAction::TransferAction(_) => "transfer",
-            TokenTransitionAction::FreezeAction(_) => "freeze",
-            TokenTransitionAction::UnfreezeAction(_) => "unfreeze",
-            TokenTransitionAction::ClaimAction(_) => "claim",
-            TokenTransitionAction::EmergencyActionAction(_) => "emergencyAction",
-            TokenTransitionAction::DestroyFrozenFundsAction(_) => "destroyFrozenFunds",
-            TokenTransitionAction::ConfigUpdateAction(_) => "configUpdate",
-        }
-    }
-
-    /// Historical document type for the token history contract
-    pub fn historical_document_type<'a>(
-        &self,
-        token_history_contract: &'a DataContract,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
-        Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
-    }
-
-    /// Historical document id
-    pub fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
-        let token_id = self.base().token_id();
-        let name = self.historical_document_type_name();
-        let owner_nonce = self.base().identity_contract_nonce();
-        Document::generate_document_id_v0(
-            &token_id,
-            &owner_id,
-            format!("history_{}", name).as_str(),
-            owner_nonce.to_be_bytes().as_slice(),
-        )
-    }
-
-    /// Historical document id
-    pub fn build_historical_document(
-        &self,
-        token_id: Identifier,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-        block_info: &BlockInfo,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, Error> {
-        self.associated_token_event()
-            .build_historical_document_owned(
-                token_id,
-                owner_id,
-                owner_nonce,
-                block_info,
-                platform_version,
-            )
-            .map_err(Error::Protocol)
     }
 
     /// Do we keep history for this action
@@ -172,6 +140,11 @@ impl TokenTransitionAction {
             TokenTransitionAction::EmergencyActionAction(_) => Ok(true),
             TokenTransitionAction::DestroyFrozenFundsAction(_) => Ok(true),
             TokenTransitionAction::ConfigUpdateAction(_) => Ok(true),
+            // TODO: Back to it
+            TokenTransitionAction::OrderBuyLimitAction(_) => Ok(false),
+            TokenTransitionAction::OrderSellLimitAction(_) => Ok(false),
+            TokenTransitionAction::OrderCancelAction(_) => Ok(false),
+            TokenTransitionAction::OrderAdjustPriceAction(_) => Ok(false),
         }
     }
 }
