@@ -14,13 +14,16 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
-#[cfg(any(
-    feature = "state-transition-serde-conversion",
-    all(
-        feature = "document-serde-conversion",
-        feature = "data-contract-serde-conversion"
+#[cfg_attr(
+    any(
+        feature = "state-transition-serde-conversion",
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
     ),
-))]
+    derive(Serialize, Deserialize)
+)]
 pub enum GasFeesPaidBy {
     /// The user pays the gas fees
     #[default]
