@@ -53,11 +53,10 @@
       },
       "status": {
         "type": "integer",
-        "description": "The status of order: 0 - open, 1 - complete, 2 - canceled",
+        "description": "The status of order: 0 - open, 1 - complete",
         "enum": [
           0,
-          1,
-          2,
+          1
         ],
         "position": 1
       },
