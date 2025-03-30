@@ -9,15 +9,26 @@ use bincode_derive::{Decode, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(any(
+    feature = "state-transition-serde-conversion",
+    all(
+        feature = "document-serde-conversion",
+        feature = "data-contract-serde-conversion"
+    ),
+))]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    any(
+        feature = "state-transition-serde-conversion",
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+    ),
+    derive(Serialize, Deserialize)
 )]
 #[display(
     "Contract ID: {:?}, Token Position: {:?}, Min Cost: {:?}, Max Cost: {:?}, Gas Fees Paid By: {}",
