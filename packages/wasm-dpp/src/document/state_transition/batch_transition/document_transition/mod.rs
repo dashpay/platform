@@ -19,7 +19,6 @@ use wasm_bindgen::prelude::*;
 use dpp::fee::Credits;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::prelude::Revision;
-use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
