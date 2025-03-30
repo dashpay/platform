@@ -2,6 +2,8 @@ use super::*;
 
 mod transfer_tests {
     use super::*;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
     #[test]
     fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices() {
@@ -1098,7 +1100,13 @@ mod transfer_tests {
                 &key,
                 2,
                 0,
-                None,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,
@@ -1192,7 +1200,13 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
-                None,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 1,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,

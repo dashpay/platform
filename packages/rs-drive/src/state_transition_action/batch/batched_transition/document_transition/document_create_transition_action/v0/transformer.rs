@@ -23,6 +23,7 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 
 impl DocumentCreateTransitionActionV0 {
     /// try from borrowed document create transition with contract lookup
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_document_create_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,

@@ -61,7 +61,6 @@ impl BatchedTransitionAction {
     }
 
     /// as_bump_identity_nonce_action
-
     pub fn as_bump_identity_nonce_action(
         &self,
     ) -> Result<&BumpIdentityDataContractNonceAction, ProtocolError> {

@@ -579,19 +579,21 @@ impl DocumentTypeV1 {
                     if full_validation {
 
                         // If contractId is present and user tries to burn, bail out:
-                        if contract_id.is_some() && effect == DocumentActionTokenEffect::BurnToken {
-                            return Err(ProtocolError::ConsensusError(
-                                ConsensusError::BasicError(
-                                    BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
-                                        TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
-                                            contract_id.unwrap(),
-                                            token_contract_position,
-                                            key.to_string(),
+                        if let Some(contract_id) = contract_id {
+                            if effect == DocumentActionTokenEffect::BurnToken {
+                                return Err(ProtocolError::ConsensusError(
+                                    ConsensusError::BasicError(
+                                        BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+                                            TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
+                                                contract_id,
+                                                token_contract_position,
+                                                key.to_string(),
+                                            ),
                                         ),
-                                    ),
-                                )
-                                    .into(),
-                            ));
+                                    )
+                                        .into(),
+                                ));
+                            }
                         }
                     }
 

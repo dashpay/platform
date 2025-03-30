@@ -5,6 +5,8 @@ mod replacement_tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::identifier::Identifier;
     use dpp::prelude::IdentityNonce;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use std::collections::BTreeMap;
 
     #[test]
@@ -2018,7 +2020,13 @@ mod replacement_tests {
                 &key,
                 2,
                 0,
-                None,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,
@@ -2065,7 +2073,13 @@ mod replacement_tests {
                 &key,
                 3,
                 0,
-                None,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 1,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(2),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,

@@ -15,6 +15,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 
 impl DocumentCreateTransitionAction {
     /// from_document_borrowed_create_transition_with_contract_lookup
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_document_borrowed_create_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,

@@ -33,7 +33,7 @@ impl DocumentDeleteTransitionActionV0 {
             DocumentBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 base,
                 get_data_contract,
-                |document_type| document_type.document_creation_token_cost(),
+                |document_type| document_type.document_deletion_token_cost(),
                 "delete",
             )?;
 
