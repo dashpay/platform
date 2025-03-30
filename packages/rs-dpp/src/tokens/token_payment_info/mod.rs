@@ -12,15 +12,13 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(feature = "state-transition-value-conversion")]
 use platform_value::Error;
 use platform_value::{Identifier, Value};
-#[cfg(
-    any(
-        feature = "state-transition-serde-conversion",
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
-    )
-)]
+#[cfg(any(
+    feature = "state-transition-serde-conversion",
+    all(
+        feature = "document-serde-conversion",
+        feature = "data-contract-serde-conversion"
+    ),
+))]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
