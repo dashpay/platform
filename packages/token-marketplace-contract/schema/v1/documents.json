@@ -1,0 +1,100 @@
+{
+  "order": {
+    "description": "// TODO: Fill it",
+    "type": "object",
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "amount": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "type": {
+        "type": "integer",
+        "description": "The type of order: 0 - buy, 1 - sell",
+        "enum": [
+          0,
+          1
+        ],
+        "position": 0
+      },
+      "status": {
+        "type": "integer",
+        "description": "The status of order: 0 - open, 1 - complete, 2 - canceled",
+        "enum": [
+          0,
+          1,
+          2,
+        ],
+        "position": 1
+      },
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 2,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "initialTokenAmount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The amount of tokens to buy/sell",
+        "position": 3
+      },
+      "processedTokenAmount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Already processed amount of tokens",
+        "position": 3
+      },
+      "tokenPrice": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Max/min price for buy/sell specified amount of tokens",
+        "position": 4
+      }
+    },
+    "required": [
+      "tokenId",
+      "amount",
+      "$createdAt",
+      "$updatedAt"
+    ],
+    "additionalProperties": false
+  }
+}

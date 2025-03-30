@@ -6,6 +6,10 @@
   - .github/workflows/tests*
   - packages/token-history-contract/**
 
+'@dashevo/token-marketplace-contract': &token-marketplace-contract
+  - .github/workflows/tests*
+  - packages/token-marketplace-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -35,6 +39,7 @@
   - *withdrawals-contract
   - *wallet-utils-contract
   - *token-history-contract
+  - *token-marketplace-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**
@@ -86,6 +91,7 @@ dashmate:
   - *dpns-contract
   - *withdrawals-contract
   - *token-history-contract
+  - *token-marketplace-contract
   - *wallet-lib
   - *dapi-client
 

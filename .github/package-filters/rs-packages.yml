@@ -6,6 +6,10 @@ token-history-contract: &token-history-contract
   - .github/workflows/tests*
   - packages/token-history-contract/**
 
+token-marketplace-contract: &token-marketplace-contract
+  - .github/workflows/tests*
+  - packages/token-marketplace-contract/**
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -35,6 +39,7 @@ dpp: &dpp
   - *withdrawals-contract
   - *wallet-utils-contract
   - *token-history-contract
+  - *token-marketplace-contract
   - *json-schema-compatibility-validator
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
