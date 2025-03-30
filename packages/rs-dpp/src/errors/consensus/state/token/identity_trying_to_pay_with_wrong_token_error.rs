@@ -39,7 +39,7 @@ impl IdentityTryingToPayWithWrongTokenError {
     }
 
     pub fn expected_contract_id(&self) -> Option<Identifier> {
-        self.expected_contract_id.clone()
+        self.expected_contract_id
     }
 
     pub fn expected_token_contract_position(&self) -> TokenContractPosition {
@@ -51,7 +51,7 @@ impl IdentityTryingToPayWithWrongTokenError {
     }
 
     pub fn actual_contract_id(&self) -> Option<Identifier> {
-        self.actual_contract_id.clone()
+        self.actual_contract_id
     }
 
     pub fn actual_token_contract_position(&self) -> TokenContractPosition {

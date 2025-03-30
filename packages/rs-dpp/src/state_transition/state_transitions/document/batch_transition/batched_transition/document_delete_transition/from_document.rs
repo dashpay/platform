@@ -9,6 +9,7 @@ use crate::state_transition::batch_transition::batched_transition::DocumentDelet
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentDeleteTransition {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,

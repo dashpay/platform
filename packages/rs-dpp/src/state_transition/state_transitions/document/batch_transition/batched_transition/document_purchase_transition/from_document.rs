@@ -10,6 +10,7 @@ use crate::state_transition::batch_transition::batched_transition::DocumentPurch
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 
 impl DocumentPurchaseTransition {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,

@@ -42,7 +42,7 @@ pub struct TokenPaymentInfoV0 {
     /// If:
     /// - a client does not have this set
     /// - and the data contract allows the price of NFTs to be changed by the data contract's owner or allowed party.
-    /// Then:
+    ///   Then:
     /// - The user could see the cost changed on them
     pub maximum_token_cost: Option<TokenAmount>,
     /// Who pays the gas fees, this needs to match what the contract allows

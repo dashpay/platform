@@ -9,6 +9,7 @@ use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl DocumentBaseTransition {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_document(
         document: &Document,
         document_type: DocumentTypeRef,
