@@ -28,6 +28,10 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_emergency_action_transition_action::TokenEmergencyActionTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_freeze_transition_action::TokenFreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_mint_transition_action::TokenMintTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_order_adjust_price_transition_action::TokenOrderAdjustPriceTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_order_buy_limit_transition_action::TokenOrderBuyLimitTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_order_cancel_transition_action::TokenOrderCancelTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_order_sell_limit_transition_action::TokenOrderSellLimitTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_transfer_transition_action::TokenTransferTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
@@ -221,6 +225,39 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         )?
                     }
                     TokenTransitionAction::ClaimAction(claim_action) => claim_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::OrderBuyLimitAction(action) => action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
+                    TokenTransitionAction::OrderSellLimitAction(action) => action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
+                    TokenTransitionAction::OrderCancelAction(action) => action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
+                    TokenTransitionAction::OrderAdjustPriceAction(action) => action
                         .validate_state(
                             platform,
                             owner_id,

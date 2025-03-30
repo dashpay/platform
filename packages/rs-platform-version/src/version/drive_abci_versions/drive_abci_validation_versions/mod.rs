@@ -120,6 +120,13 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_base_transition_group_action_validation: FeatureVersion,
     pub token_claim_transition_structure_validation: FeatureVersion,
     pub token_claim_transition_state_validation: FeatureVersion,
+    pub token_order_buy_limit_transition_structure_validation: FeatureVersion,
+    pub token_order_buy_limit_transition_state_validation: FeatureVersion,
+    pub token_order_sell_limit_transition_structure_validation: FeatureVersion,
+    pub token_order_sell_limit_transition_state_validation: FeatureVersion,
+    pub token_order_cancel_transition_state_validation: FeatureVersion,
+    pub token_order_adjust_price_transition_structure_validation: FeatureVersion,
+    pub token_order_adjust_price_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -5,6 +5,10 @@ pub mod destroy;
 pub mod emergency_action;
 pub mod freeze;
 pub mod mint;
+pub mod order_adjust_price;
+pub mod order_buy_limit;
+pub mod order_cancel;
+pub mod order_sell_limit;
 pub mod transfer;
 pub mod unfreeze;
 
@@ -15,6 +19,10 @@ use crate::batch_transition::token_transition::destroy::TokenDestroyFrozenFundsT
 use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
+use crate::batch_transition::token_transition::order_adjust_price::TokenOrderAdjustPriceTransitionWasm;
+use crate::batch_transition::token_transition::order_buy_limit::TokenOrderBuyLimitTransitionWasm;
+use crate::batch_transition::token_transition::order_cancel::TokenOrderCancelTransitionWasm;
+use crate::batch_transition::token_transition::order_sell_limit::TokenOrderSellLimitTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
 use crate::identifier::IdentifierWrapper;
@@ -38,6 +46,10 @@ pub enum TokenTransitionType {
     Claim,
     EmergencyAction,
     ConfigUpdate,
+    OrderBuyLimit,
+    OrderSellLimit,
+    OrderCancel,
+    OrderAdjustPrice,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -52,6 +64,10 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::EmergencyAction(_) => TokenTransitionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionType::ConfigUpdate,
             TokenTransition::Claim(_) => TokenTransitionType::Claim,
+            TokenTransition::OrderBuyLimit(_) => TokenTransitionType::OrderBuyLimit,
+            TokenTransition::OrderSellLimit(_) => TokenTransitionType::OrderSellLimit,
+            TokenTransition::OrderCancel(_) => TokenTransitionType::OrderCancel,
+            TokenTransition::OrderAdjustPrice(_) => TokenTransitionType::OrderAdjustPrice,
         }
     }
 }
@@ -133,6 +149,18 @@ impl TokenTransitionWasm {
                 TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
             }
             TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
+            TokenTransition::OrderBuyLimit(transition) => {
+                TokenOrderBuyLimitTransitionWasm::from(transition.clone()).into()
+            }
+            TokenTransition::OrderSellLimit(transition) => {
+                TokenOrderSellLimitTransitionWasm::from(transition.clone()).into()
+            }
+            TokenTransition::OrderCancel(transition) => {
+                TokenOrderCancelTransitionWasm::from(transition.clone()).into()
+            }
+            TokenTransition::OrderAdjustPrice(transition) => {
+                TokenOrderAdjustPriceTransitionWasm::from(transition.clone()).into()
+            }
         }
     }
 }

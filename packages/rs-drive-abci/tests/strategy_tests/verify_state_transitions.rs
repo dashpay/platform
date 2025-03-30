@@ -267,23 +267,30 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     },
                                 );
                             }
-                            BatchedTransitionAction::TokenAction(token_transition_action) => {
-                                if token_transition_action
+                            BatchedTransitionAction::TokenAction(transition_action) => {
+                                if transition_action
                                     .keeps_history()
                                     .expect("expected no error in token action keeps history")
                                 {
+                                    let Some(token_event) = transition_action.associated_token_event() else {
+                                        unreachable!("token event must be defined if keep history is enabled for token action");
+                                    };
+
+                                    let token_id = transition_action.base().token_id();
+                                    let owner_id = batch_transition.owner_id();
+                                    let owner_nonce = transition_action.base().identity_contract_nonce();
+
                                     // if we keep history we just need to check the historical document
                                     proofs_request.documents.push(
                                         get_proofs_request_v0::DocumentRequest {
                                             contract_id: SystemDataContract::TokenHistory
                                                 .id()
                                                 .to_vec(),
-                                            document_type: token_transition_action
-                                                .historical_document_type_name()
+                                            document_type: token_event.associated_document_type_name()
                                                 .to_string(),
                                             document_type_keeps_history: false,
-                                            document_id: token_transition_action
-                                                .historical_document_id(batch_transition.owner_id())
+                                            document_id: token_event
+                                                .associated_document_id(token_id, owner_id, owner_nonce)
                                                 .to_vec(),
                                             document_contested_status: 0,
                                         },
@@ -507,10 +514,21 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .keeps_history()
                                     .expect("expected no error in token action keeps history")
                                 {
+                                    let Some(token_event) =
+                                        token_transition_action.associated_token_event()
+                                    else {
+                                        unreachable!("token event must be defined if keep history is enabled for token action");
+                                    };
+
                                     let token_id = token_transition_action.base().token_id();
-                                    let document_type_name = token_transition_action
-                                        .historical_document_type_name()
-                                        .to_string();
+                                    let owner_id = batch_transition.owner_id();
+                                    let owner_nonce =
+                                        token_transition_action.base().identity_contract_nonce();
+                                    let document_type_name =
+                                        token_event.associated_document_type_name().to_string();
+                                    let document_id = token_event
+                                        .associated_document_id(token_id, owner_id, owner_nonce)
+                                        .to_buffer();
 
                                     let token_history = platform
                                         .drive
@@ -518,15 +536,17 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         .system_data_contracts
                                         .load_token_history();
 
+                                    let document_type = token_event
+                                        .associated_document_type(&token_history)
+                                        .expect("expected document type");
+
                                     let query = SingleDocumentDriveQuery {
                                         contract_id: SystemDataContract::TokenHistory
                                             .id()
                                             .to_buffer(),
                                         document_type_name,
                                         document_type_keeps_history: false,
-                                        document_id: token_transition_action
-                                            .historical_document_id(batch_transition.owner_id())
-                                            .to_buffer(),
+                                        document_id,
                                         block_time_ms: None, //None because we want latest
                                         contested_status:
                                             SingleDocumentDriveQueryContestedStatus::NotContested,
@@ -552,30 +572,25 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         "we expect a token history document"
                                     );
 
-                                    let expected_document = token_transition_action
-                                        .build_historical_document(
+                                    let basic_info = platform
+                                        .state
+                                        .last_committed_block_info()
+                                        .as_ref()
+                                        .expect("expected last commited block info")
+                                        .basic_info();
+
+                                    let expected_document = token_event
+                                        .build_associated_historical_document_owned(
                                             token_id,
                                             batch_transition.owner_id(),
-                                            token_transition_action
-                                                .base()
-                                                .identity_contract_nonce(),
-                                            platform
-                                                .state
-                                                .last_committed_block_info()
-                                                .as_ref()
-                                                .expect("expected last commited block info")
-                                                .basic_info(),
+                                            owner_nonce,
+                                            basic_info,
                                             platform_version,
                                         )
                                         .expect("expected to build historical document");
 
                                     let serialized_expected_document = expected_document
-                                        .serialize(
-                                            token_transition_action
-                                                .historical_document_type(&token_history)
-                                                .expect("expected document type"),
-                                            platform_version,
-                                        )
+                                        .serialize(document_type, platform_version)
                                         .expect("expected to serialize");
 
                                     assert_eq!(
@@ -881,16 +896,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .collect();
 
                                 proofs_request
-                                .votes
-                                .push(get_proofs_request_v0::VoteStatusRequest{
-                                    request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
-                                        contract_id: contested_document_resource_vote_poll.contract.id().to_vec(),
-                                        document_type_name: contested_document_resource_vote_poll.document_type_name.clone(),
-                                        index_name: contested_document_resource_vote_poll.index_name.clone(),
-                                        voter_identifier: masternode_vote_action.pro_tx_hash().to_vec(),
-                                        index_values: serialized_index_values,
-                                    }))
-                                });
+                                    .votes
+                                    .push(get_proofs_request_v0::VoteStatusRequest {
+                                        request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
+                                            contract_id: contested_document_resource_vote_poll.contract.id().to_vec(),
+                                            document_type_name: contested_document_resource_vote_poll.document_type_name.clone(),
+                                            index_name: contested_document_resource_vote_poll.index_name.clone(),
+                                            voter_identifier: masternode_vote_action.pro_tx_hash().to_vec(),
+                                            index_values: serialized_index_values,
+                                        }))
+                                    });
                                 contested_document_resource_vote_poll.contract.as_ref()
                             }
                         },

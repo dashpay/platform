@@ -10,6 +10,10 @@ use crate::state_transition::batch_transition::batched_transition::{DocumentPurc
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use crate::state_transition::batch_transition::batched_transition::token_order_adjust_price_transition::transition::TokenOrderAdjustPriceTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_buy_limit_transition::transition::TokenOrderBuyLimitTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::transition::TokenOrderCancelTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_sell_limit_transition::transition::TokenOrderSellLimitTransition;
 use crate::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -117,6 +121,22 @@ impl BatchTransitionResolversV0 for DocumentTransition {
     }
 
     fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition> {
+        None
+    }
+
+    fn as_transition_token_order_buy_limit(&self) -> Option<&TokenOrderBuyLimitTransition> {
+        None
+    }
+
+    fn as_transition_token_order_sell_limit(&self) -> Option<&TokenOrderSellLimitTransition> {
+        None
+    }
+
+    fn as_transition_token_order_cancel(&self) -> Option<&TokenOrderCancelTransition> {
+        None
+    }
+
+    fn as_transition_token_order_adjust_price(&self) -> Option<&TokenOrderAdjustPriceTransition> {
         None
     }
 }

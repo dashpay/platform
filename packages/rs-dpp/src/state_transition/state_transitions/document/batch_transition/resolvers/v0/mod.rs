@@ -8,6 +8,10 @@ use crate::state_transition::batch_transition::{
     TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
     TokenMintTransition, TokenTransferTransition,
 };
+use crate::state_transition::batch_transition::batched_transition::token_order_adjust_price_transition::transition::TokenOrderAdjustPriceTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_buy_limit_transition::transition::TokenOrderBuyLimitTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::transition::TokenOrderCancelTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_sell_limit_transition::transition::TokenOrderSellLimitTransition;
 
 pub trait BatchTransitionResolversV0 {
     fn as_transition_create(&self) -> Option<&DocumentCreateTransition>;
@@ -28,4 +32,12 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition>;
 
     fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition>;
+
+    fn as_transition_token_order_buy_limit(&self) -> Option<&TokenOrderBuyLimitTransition>;
+
+    fn as_transition_token_order_sell_limit(&self) -> Option<&TokenOrderSellLimitTransition>;
+
+    fn as_transition_token_order_cancel(&self) -> Option<&TokenOrderCancelTransition>;
+
+    fn as_transition_token_order_adjust_price(&self) -> Option<&TokenOrderAdjustPriceTransition>;
 }

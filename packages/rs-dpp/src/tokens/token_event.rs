@@ -6,6 +6,7 @@ use crate::data_contract::associated_token::token_distribution_key::TokenDistrib
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
@@ -54,6 +55,7 @@ pub enum TokenEvent {
     ),
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
+    // TODO: Add token trade event
 }
 
 impl TokenEvent {
@@ -78,7 +80,21 @@ impl TokenEvent {
         Ok(token_history_contract.document_type_for_name(self.associated_document_type_name())?)
     }
 
-    pub fn build_historical_document_owned(
+    pub fn associated_document_id(
+        &self,
+        token_id: Identifier,
+        owner_id: Identifier,
+        owner_nonce: IdentityNonce,
+    ) -> Identifier {
+        Document::generate_document_id_v0(
+            &token_id,
+            &owner_id,
+            format!("history_{}", self.associated_document_type_name()).as_str(),
+            owner_nonce.to_be_bytes().as_slice(),
+        )
+    }
+
+    pub fn build_associated_historical_document_owned(
         self,
         token_id: Identifier,
         owner_id: Identifier,
@@ -86,12 +102,7 @@ impl TokenEvent {
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-        let document_id = Document::generate_document_id_v0(
-            &token_id,
-            &owner_id,
-            format!("history_{}", self.associated_document_type_name()).as_str(),
-            owner_nonce.to_be_bytes().as_slice(),
-        );
+        let document_id = self.associated_document_id(token_id, owner_id, owner_nonce);
 
         let properties = match self {
             TokenEvent::Mint(mint_amount, recipient_id, public_note) => {

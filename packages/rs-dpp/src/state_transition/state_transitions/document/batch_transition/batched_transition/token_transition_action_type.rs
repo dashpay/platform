@@ -14,6 +14,10 @@ pub enum TokenTransitionActionType {
     Claim,
     EmergencyAction,
     ConfigUpdate,
+    OrderBuyLimit,
+    OrderSellLimit,
+    OrderCancel,
+    OrderAdjustPrice,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -28,6 +32,10 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Claim => "Claim",
             TokenTransitionActionType::EmergencyAction => "EmergencyAction",
             TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
+            TokenTransitionActionType::OrderBuyLimit => "OrderBuyLimit",
+            TokenTransitionActionType::OrderSellLimit => "OrderSellLimit",
+            TokenTransitionActionType::OrderCancel => "OrderCancel",
+            TokenTransitionActionType::OrderAdjustPrice => "OrderAdjustPrice",
         };
         write!(f, "{}", action_str)
     }
@@ -49,6 +57,10 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::Claim(_) => TokenTransitionActionType::Claim,
             TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionActionType::ConfigUpdate,
+            TokenTransition::OrderBuyLimit(_) => TokenTransitionActionType::OrderBuyLimit,
+            TokenTransition::OrderSellLimit(_) => TokenTransitionActionType::OrderSellLimit,
+            TokenTransition::OrderCancel(_) => TokenTransitionActionType::OrderCancel,
+            TokenTransition::OrderAdjustPrice(_) => TokenTransitionActionType::OrderAdjustPrice,
         }
     }
 }

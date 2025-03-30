@@ -21,6 +21,10 @@ use crate::ProtocolError;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
+use crate::state_transition::batch_transition::batched_transition::token_order_adjust_price_transition::transition::TokenOrderAdjustPriceTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_buy_limit_transition::transition::TokenOrderBuyLimitTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_cancel_transition::transition::TokenOrderCancelTransition;
+use crate::state_transition::batch_transition::batched_transition::token_order_sell_limit_transition::transition::TokenOrderSellLimitTransition;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -74,6 +78,18 @@ pub enum TokenTransition {
 
     #[display("TokenConfigUpdateTransition({})", "_0")]
     ConfigUpdate(TokenConfigUpdateTransition),
+
+    #[display("TokenOrderBuyLimitTransition({})", "_0")]
+    OrderBuyLimit(TokenOrderBuyLimitTransition),
+
+    #[display("TokenOrderSellLimitTransition({})", "_0")]
+    OrderSellLimit(TokenOrderSellLimitTransition),
+
+    #[display("TokenOrderCancelTransition({})", "_0")]
+    OrderCancel(TokenOrderCancelTransition),
+
+    #[display("TokenOrderAdjustPriceTransition({})", "_0")]
+    OrderAdjustPrice(TokenOrderAdjustPriceTransition),
 }
 
 impl BatchTransitionResolversV0 for TokenTransition {
@@ -168,6 +184,38 @@ impl BatchTransitionResolversV0 for TokenTransition {
             None
         }
     }
+
+    fn as_transition_token_order_buy_limit(&self) -> Option<&TokenOrderBuyLimitTransition> {
+        if let Self::OrderBuyLimit(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_order_sell_limit(&self) -> Option<&TokenOrderSellLimitTransition> {
+        if let Self::OrderSellLimit(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_order_cancel(&self) -> Option<&TokenOrderCancelTransition> {
+        if let Self::OrderCancel(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    fn as_transition_token_order_adjust_price(&self) -> Option<&TokenOrderAdjustPriceTransition> {
+        if let Self::OrderAdjustPrice(ref t) = self {
+            Some(t)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait TokenTransitionV0Methods {
@@ -192,30 +240,11 @@ pub trait TokenTransitionV0Methods {
     fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier>;
 
     fn can_calculate_action_id(&self) -> bool;
-    /// Historical document type name for the token history contract
-    fn historical_document_type_name(&self) -> &str;
-    /// Historical document type for the token history contract
-    fn historical_document_type<'a>(
-        &self,
-        token_history_contract: &'a DataContract,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
-    /// Historical document id
-    fn historical_document_id(&self, owner_id: Identifier) -> Identifier;
     fn associated_token_event(
         &self,
         token_configuration: &TokenConfiguration,
         contract_owner_id: Identifier,
-    ) -> Result<TokenEvent, ProtocolError>;
-    /// Historical document id
-    fn build_historical_document(
-        &self,
-        token_id: Identifier,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-        block_info: &BlockInfo,
-        token_configuration: &TokenConfiguration,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError>;
+    ) -> Result<Option<TokenEvent>, ProtocolError>;
 }
 
 impl TokenTransitionV0Methods for TokenTransition {
@@ -230,6 +259,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(t) => t.base(),
             TokenTransition::EmergencyAction(t) => t.base(),
             TokenTransition::ConfigUpdate(t) => t.base(),
+            TokenTransition::OrderBuyLimit(t) => t.base(),
+            TokenTransition::OrderSellLimit(t) => t.base(),
+            TokenTransition::OrderCancel(t) => t.base(),
+            TokenTransition::OrderAdjustPrice(t) => t.base(),
         }
     }
 
@@ -244,6 +277,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(t) => t.base_mut(),
             TokenTransition::EmergencyAction(t) => t.base_mut(),
             TokenTransition::ConfigUpdate(t) => t.base_mut(),
+            TokenTransition::OrderBuyLimit(t) => t.base_mut(),
+            TokenTransition::OrderSellLimit(t) => t.base_mut(),
+            TokenTransition::OrderCancel(t) => t.base_mut(),
+            TokenTransition::OrderAdjustPrice(t) => t.base_mut(),
         }
     }
 
@@ -262,6 +299,10 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::Claim(_) => None,
             TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id)),
             TokenTransition::ConfigUpdate(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::OrderBuyLimit(_) => None,
+            TokenTransition::OrderSellLimit(_) => None,
+            TokenTransition::OrderCancel(_) => None,
+            TokenTransition::OrderAdjustPrice(_) => None,
         }
     }
 
@@ -274,7 +315,12 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::DestroyFrozenFunds(_)
             | TokenTransition::EmergencyAction(_)
             | TokenTransition::ConfigUpdate(_) => true,
-            TokenTransition::Transfer(_) | TokenTransition::Claim(_) => false,
+            TokenTransition::Transfer(_)
+            | TokenTransition::Claim(_)
+            | TokenTransition::OrderBuyLimit(_)
+            | TokenTransition::OrderSellLimit(_)
+            | TokenTransition::OrderCancel(_)
+            | TokenTransition::OrderAdjustPrice(_) => false,
         }
     }
 
@@ -298,110 +344,77 @@ impl TokenTransitionV0Methods for TokenTransition {
         self.base_mut().set_identity_contract_nonce(nonce);
     }
 
-    /// Historical document type name for the token history contract
-    fn historical_document_type_name(&self) -> &str {
-        match self {
-            TokenTransition::Burn(_) => "burn",
-            TokenTransition::Mint(_) => "mint",
-            TokenTransition::Transfer(_) => "transfer",
-            TokenTransition::Freeze(_) => "freeze",
-            TokenTransition::Unfreeze(_) => "unfreeze",
-            TokenTransition::EmergencyAction(_) => "emergencyAction",
-            TokenTransition::DestroyFrozenFunds(_) => "destroyFrozenFunds",
-            TokenTransition::ConfigUpdate(_) => "configUpdate",
-            TokenTransition::Claim(_) => "claim",
-        }
-    }
-
-    /// Historical document type for the token history contract
-    fn historical_document_type<'a>(
-        &self,
-        token_history_contract: &'a DataContract,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
-        Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
-    }
-
-    /// Historical document id
-    fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
-        let token_id = self.token_id();
-        let name = self.historical_document_type_name();
-        let owner_nonce = self.identity_contract_nonce();
-        Document::generate_document_id_v0(
-            &token_id,
-            &owner_id,
-            format!("history_{}", name).as_str(),
-            owner_nonce.to_be_bytes().as_slice(),
-        )
-    }
-
-    /// Historical document id
-    fn build_historical_document(
-        &self,
-        token_id: Identifier,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-        block_info: &BlockInfo,
-        token_configuration: &TokenConfiguration,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        self.associated_token_event(token_configuration, owner_id)?
-            .build_historical_document_owned(
-                token_id,
-                owner_id,
-                owner_nonce,
-                block_info,
-                platform_version,
-            )
-    }
-
     fn associated_token_event(
         &self,
         token_configuration: &TokenConfiguration,
         owner_id: Identifier,
-    ) -> Result<TokenEvent, ProtocolError> {
-        Ok(match self {
+    ) -> Result<Option<TokenEvent>, ProtocolError> {
+        let event = match self {
             TokenTransition::Burn(burn) => {
-                TokenEvent::Burn(burn.burn_amount(), burn.public_note().cloned())
+                let event = TokenEvent::Burn(burn.burn_amount(), burn.public_note().cloned());
+
+                Some(event)
             }
             TokenTransition::Mint(mint) => {
                 let recipient = match mint.issued_to_identity_id() {
                     None => token_configuration.distribution_rules().new_tokens_destination_identity().copied().ok_or(ProtocolError::NotSupported("either the mint destination must be set or the contract must have a destination set for new tokens".to_string()))?,
                     Some(recipient) => recipient,
                 };
-                TokenEvent::Mint(mint.amount(), recipient, mint.public_note().cloned())
+                let event = TokenEvent::Mint(mint.amount(), recipient, mint.public_note().cloned());
+
+                Some(event)
             }
             TokenTransition::Transfer(transfer) => {
                 let (public_note, shared_encrypted_note, private_encrypted_note) = transfer.notes();
-                TokenEvent::Transfer(
+                let event = TokenEvent::Transfer(
                     transfer.recipient_id(),
                     public_note,
                     shared_encrypted_note,
                     private_encrypted_note,
                     transfer.amount(),
-                )
+                );
+
+                Some(event)
             }
             TokenTransition::Freeze(freeze) => {
-                TokenEvent::Freeze(freeze.frozen_identity_id(), freeze.public_note().cloned())
+                let event =
+                    TokenEvent::Freeze(freeze.frozen_identity_id(), freeze.public_note().cloned());
+
+                Some(event)
             }
-            TokenTransition::Unfreeze(unfreeze) => TokenEvent::Unfreeze(
-                unfreeze.frozen_identity_id(),
-                unfreeze.public_note().cloned(),
-            ),
-            TokenTransition::EmergencyAction(emergency_action) => TokenEvent::EmergencyAction(
-                emergency_action.emergency_action(),
-                emergency_action.public_note().cloned(),
-            ),
+            TokenTransition::Unfreeze(unfreeze) => {
+                let event = TokenEvent::Unfreeze(
+                    unfreeze.frozen_identity_id(),
+                    unfreeze.public_note().cloned(),
+                );
+
+                Some(event)
+            }
+            TokenTransition::EmergencyAction(emergency_action) => {
+                let event = TokenEvent::EmergencyAction(
+                    emergency_action.emergency_action(),
+                    emergency_action.public_note().cloned(),
+                );
+
+                Some(event)
+            }
             TokenTransition::DestroyFrozenFunds(destroy_frozen_funds) => {
-                TokenEvent::DestroyFrozenFunds(
+                let event = TokenEvent::DestroyFrozenFunds(
                     destroy_frozen_funds.frozen_identity_id(),
                     TokenAmount::MAX, // we do not know how much will be destroyed
                     destroy_frozen_funds.public_note().cloned(),
-                )
+                );
+
+                Some(event)
             }
-            TokenTransition::ConfigUpdate(config_update) => TokenEvent::ConfigUpdate(
-                config_update.update_token_configuration_item().clone(),
-                config_update.public_note().cloned(),
-            ),
+            TokenTransition::ConfigUpdate(config_update) => {
+                let event = TokenEvent::ConfigUpdate(
+                    config_update.update_token_configuration_item().clone(),
+                    config_update.public_note().cloned(),
+                );
+
+                Some(event)
+            }
             TokenTransition::Claim(claim) => {
                 let distribution_rules = token_configuration.distribution_rules();
                 let distribution_recipient = match claim.distribution_type() {
@@ -434,12 +447,20 @@ impl TokenTransitionV0Methods for TokenTransition {
                     }
                 };
 
-                TokenEvent::Claim(
+                let event = TokenEvent::Claim(
                     distribution_recipient,
                     TokenAmount::MAX, // we do not know how much will be released
                     claim.public_note().cloned(),
-                )
+                );
+
+                Some(event)
             }
-        })
+            TokenTransition::OrderBuyLimit(_) => None,
+            TokenTransition::OrderSellLimit(_) => None,
+            TokenTransition::OrderCancel(_) => None,
+            TokenTransition::OrderAdjustPrice(_) => None,
+        };
+
+        Ok(event)
     }
 }

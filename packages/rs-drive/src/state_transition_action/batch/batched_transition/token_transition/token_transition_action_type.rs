@@ -19,6 +19,16 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
                 TokenTransitionActionType::DestroyFrozenFunds
             }
             TokenTransitionAction::ConfigUpdateAction(_) => TokenTransitionActionType::ConfigUpdate,
+            TokenTransitionAction::OrderBuyLimitAction(_) => {
+                TokenTransitionActionType::OrderBuyLimit
+            }
+            TokenTransitionAction::OrderSellLimitAction(_) => {
+                TokenTransitionActionType::OrderSellLimit
+            }
+            TokenTransitionAction::OrderCancelAction(_) => TokenTransitionActionType::OrderCancel,
+            TokenTransitionAction::OrderAdjustPriceAction(_) => {
+                TokenTransitionActionType::OrderAdjustPrice
+            }
         }
     }
 }

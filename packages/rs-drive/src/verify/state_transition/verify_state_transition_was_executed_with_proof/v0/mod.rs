@@ -7,6 +7,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::data_contract::TokenConfiguration;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::PRICE;
@@ -306,69 +307,22 @@ impl Drive {
                             ))),
                         )?;
 
-                        let identity_contract_nonce =
-                            token_transition.base().identity_contract_nonce();
-
-                        let token_history_document_type_name =
-                            token_transition.historical_document_type_name().to_string();
-
-                        let token_history_contract = load_system_data_contract(
-                            SystemDataContract::TokenHistory,
-                            platform_version,
-                        )?;
-
-                        let token_history_document_type =
-                            token_transition.historical_document_type(&token_history_contract)?;
-
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
                         )?;
+
                         let keeps_historical_document = token_config.keeps_history();
 
-                        let historical_query = || {
-                            let query = SingleDocumentDriveQuery {
-                                contract_id: token_history_contract.id().into_buffer(),
-                                document_type_name: token_history_document_type_name,
-                                document_type_keeps_history: false,
-                                document_id: token_transition
-                                    .historical_document_id(owner_id)
-                                    .to_buffer(),
-                                block_time_ms: None, //None because we want latest
-                                contested_status:
-                                    SingleDocumentDriveQueryContestedStatus::NotContested,
-                            };
-
-                            let (root_hash, document) = query.verify_proof(
-                                false,
-                                proof,
-                                token_history_document_type,
-                                platform_version,
-                            )?;
-
-                            let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_transition.historical_document_type_name()))))?;
-
-                            let expected_document = token_transition.build_historical_document(
-                                token_id,
-                                owner_id,
-                                identity_contract_nonce,
-                                &BlockInfo::default(),
-                                token_config,
-                                platform_version,
-                            )?;
-
-                            if !document.is_equal_ignoring_time_based_fields(
-                                &expected_document,
-                                Some(vec!["destroyedAmount"]),
-                                platform_version,
-                            )? {
-                                return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
-                            }
-                            Ok((root_hash, VerifiedTokenActionWithDocument(document)))
-                        };
                         match token_transition {
                             TokenTransition::Burn(_) => {
                                 if keeps_historical_document.keeps_burning_history() {
-                                    historical_query()
+                                    verify_token_historical_document(
+                                        proof,
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )
                                 } else {
                                     let (root_hash, Some(balance)) =
                                         Drive::verify_token_balance_for_identity_id(
@@ -387,7 +341,13 @@ impl Drive {
                             }
                             TokenTransition::Mint(token_mint_transition) => {
                                 if keeps_historical_document.keeps_minting_history() {
-                                    historical_query()
+                                    verify_token_historical_document(
+                                        proof,
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )
                                 } else {
                                     let recipient_id =
                                         token_mint_transition.recipient_id(token_config)?;
@@ -408,7 +368,13 @@ impl Drive {
                             }
                             TokenTransition::Transfer(token_transfer_transition) => {
                                 if keeps_historical_document.keeps_transfer_history() {
-                                    historical_query()
+                                    verify_token_historical_document(
+                                        proof,
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )
                                 } else {
                                     let recipient_id = token_transfer_transition.recipient_id();
                                     let identity_ids =
@@ -435,7 +401,13 @@ impl Drive {
                             }
                             TokenTransition::Freeze(token_freeze_transition) => {
                                 if keeps_historical_document.keeps_freezing_history() {
-                                    historical_query()
+                                    verify_token_historical_document(
+                                        proof,
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )
                                 } else {
                                     let (root_hash, Some(identity_token_info)) =
                                         Drive::verify_token_info_for_identity_id(
@@ -463,7 +435,13 @@ impl Drive {
                             }
                             TokenTransition::Unfreeze(token_unfreeze_transition) => {
                                 if keeps_historical_document.keeps_freezing_history() {
-                                    historical_query()
+                                    verify_token_historical_document(
+                                        proof,
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )
                                 } else {
                                     let (root_hash, Some(identity_token_info)) =
                                         Drive::verify_token_info_for_identity_id(
@@ -492,7 +470,17 @@ impl Drive {
                             TokenTransition::DestroyFrozenFunds(_)
                             | TokenTransition::EmergencyAction(_)
                             | TokenTransition::ConfigUpdate(_)
-                            | TokenTransition::Claim(_) => historical_query(),
+                            | TokenTransition::Claim(_) => verify_token_historical_document(
+                                proof,
+                                token_transition,
+                                token_config,
+                                owner_id,
+                                platform_version,
+                            ),
+                            TokenTransition::OrderBuyLimit(_) => verify_token_order(),
+                            TokenTransition::OrderSellLimit(_) => verify_token_order(),
+                            TokenTransition::OrderCancel(_) => verify_token_order(),
+                            TokenTransition::OrderAdjustPrice(_) => verify_token_order(),
                         }
                     }
                 }
@@ -653,4 +641,66 @@ impl Drive {
             }
         }
     }
+}
+
+fn verify_token_order() -> Result<(RootHash, StateTransitionProofResult), Error> {
+    // TODO: Implement this
+
+    Ok((RootHash::default(), VerifiedDocuments(Default::default())))
+}
+
+fn verify_token_historical_document(
+    proof: &[u8],
+    token_transition: &TokenTransition,
+    token_config: &TokenConfiguration,
+    owner_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let token_history_contract =
+        load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+
+    let Some(token_event) = token_transition.associated_token_event(token_config, owner_id)? else {
+        unreachable!("verify_token_historical_event must be called only for token transitions that have an associated token event");
+    };
+
+    let token_id = token_transition.token_id();
+    let owner_nonce = token_transition.base().identity_contract_nonce();
+
+    let query = SingleDocumentDriveQuery {
+        contract_id: token_history_contract.id().into_buffer(),
+        document_type_name: token_event.associated_document_type_name().to_string(),
+        document_type_keeps_history: false,
+        document_id: token_event
+            .associated_document_id(token_id, owner_id, owner_nonce)
+            .to_buffer(),
+        block_time_ms: None, //None because we want latest
+        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+    };
+
+    let token_history_document_type = token_history_contract
+        .document_type_for_name(token_event.associated_document_type_name())?;
+
+    let (root_hash, Some(document)) =
+        query.verify_proof(false, proof, token_history_document_type, platform_version)?
+    else {
+        return Err(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because the token keeps historical documents", token_event.associated_document_type_name()))));
+    };
+
+    let expected_document = token_event.build_associated_historical_document_owned(
+        token_id,
+        owner_id,
+        owner_nonce,
+        &BlockInfo::default(),
+        platform_version,
+    )?;
+
+    if !document.is_equal_ignoring_time_based_fields(
+        &expected_document,
+        Some(vec!["destroyedAmount"]),
+        platform_version,
+    )? {
+        return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
+    }
+
+    Ok((root_hash, VerifiedTokenActionWithDocument(document)))
 }

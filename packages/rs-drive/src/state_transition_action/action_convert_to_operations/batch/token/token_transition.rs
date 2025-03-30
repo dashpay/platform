@@ -57,64 +57,111 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
             }
             TokenTransitionAction::ConfigUpdateAction(token_config_update) => token_config_update
                 .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::OrderBuyLimitAction(action) => {
+                action.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::OrderSellLimitAction(action) => {
+                action.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::OrderCancelAction(action) => {
+                action.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::OrderAdjustPriceAction(action) => {
+                action.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
         }
     }
 }
 
 impl TokenTransitionAction {
     /// Gets the associated token event for the transition action
-    pub fn associated_token_event(&self) -> TokenEvent {
+    pub fn associated_token_event(&self) -> Option<TokenEvent> {
         match self {
-            TokenTransitionAction::BurnAction(burn_action) => TokenEvent::Burn(
-                burn_action.burn_amount(),
-                burn_action.public_note().cloned(),
-            ),
-            TokenTransitionAction::MintAction(mint_action) => TokenEvent::Mint(
-                mint_action.mint_amount(),
-                mint_action.identity_balance_holder_id(),
-                mint_action.public_note().cloned(),
-            ),
+            TokenTransitionAction::BurnAction(burn_action) => {
+                let event = TokenEvent::Burn(
+                    burn_action.burn_amount(),
+                    burn_action.public_note().cloned(),
+                );
+
+                Some(event)
+            }
+            TokenTransitionAction::MintAction(mint_action) => {
+                let event = TokenEvent::Mint(
+                    mint_action.mint_amount(),
+                    mint_action.identity_balance_holder_id(),
+                    mint_action.public_note().cloned(),
+                );
+
+                Some(event)
+            }
             TokenTransitionAction::TransferAction(transfer_action) => {
                 let (public_note, shared_encrypted_note, private_encrypted_note) =
                     transfer_action.notes();
-                TokenEvent::Transfer(
+
+                let event = TokenEvent::Transfer(
                     transfer_action.recipient_id(),
                     public_note,
                     shared_encrypted_note,
                     private_encrypted_note,
                     transfer_action.amount(),
-                )
+                );
+
+                Some(event)
             }
-            TokenTransitionAction::FreezeAction(freeze_action) => TokenEvent::Freeze(
-                freeze_action.identity_to_freeze_id(),
-                freeze_action.public_note().cloned(),
-            ),
-            TokenTransitionAction::UnfreezeAction(unfreeze_action) => TokenEvent::Unfreeze(
-                unfreeze_action.frozen_identity_id(),
-                unfreeze_action.public_note().cloned(),
-            ),
-            TokenTransitionAction::ClaimAction(release_action) => TokenEvent::Claim(
-                release_action.distribution_info().into(),
-                release_action.amount(),
-                release_action.public_note().cloned(),
-            ),
+            TokenTransitionAction::FreezeAction(freeze_action) => {
+                let event = TokenEvent::Freeze(
+                    freeze_action.identity_to_freeze_id(),
+                    freeze_action.public_note().cloned(),
+                );
+
+                Some(event)
+            }
+            TokenTransitionAction::UnfreezeAction(unfreeze_action) => {
+                let event = TokenEvent::Unfreeze(
+                    unfreeze_action.frozen_identity_id(),
+                    unfreeze_action.public_note().cloned(),
+                );
+
+                Some(event)
+            }
+            TokenTransitionAction::ClaimAction(release_action) => {
+                let event = TokenEvent::Claim(
+                    release_action.distribution_info().into(),
+                    release_action.amount(),
+                    release_action.public_note().cloned(),
+                );
+
+                Some(event)
+            }
             TokenTransitionAction::EmergencyActionAction(emergency_action) => {
-                TokenEvent::EmergencyAction(
+                let event = TokenEvent::EmergencyAction(
                     emergency_action.emergency_action(),
                     emergency_action.public_note().cloned(),
-                )
+                );
+
+                Some(event)
             }
             TokenTransitionAction::DestroyFrozenFundsAction(destroy_action) => {
-                TokenEvent::DestroyFrozenFunds(
+                let event = TokenEvent::DestroyFrozenFunds(
                     destroy_action.frozen_identity_id(),
                     destroy_action.amount(),
                     destroy_action.public_note().cloned(),
-                )
+                );
+
+                Some(event)
             }
-            TokenTransitionAction::ConfigUpdateAction(config_update) => TokenEvent::ConfigUpdate(
-                config_update.update_token_configuration_item().clone(),
-                config_update.public_note().cloned(),
-            ),
+            TokenTransitionAction::ConfigUpdateAction(config_update) => {
+                let event = TokenEvent::ConfigUpdate(
+                    config_update.update_token_configuration_item().clone(),
+                    config_update.public_note().cloned(),
+                );
+
+                Some(event)
+            }
+            TokenTransitionAction::OrderBuyLimitAction(_) => None,
+            TokenTransitionAction::OrderSellLimitAction(_) => None,
+            TokenTransitionAction::OrderCancelAction(_) => None,
+            TokenTransitionAction::OrderAdjustPriceAction(_) => None,
         }
     }
 }

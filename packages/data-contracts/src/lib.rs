@@ -23,6 +23,7 @@ pub enum SystemDataContract {
     Dashpay = 4,
     WalletUtils = 5,
     TokenHistory = 6,
+    TokenMarket = 7,
 }
 
 pub struct DataContractSource {
@@ -43,6 +44,7 @@ impl SystemDataContract {
             SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
             SystemDataContract::WalletUtils => wallet_utils_contract::ID_BYTES,
             SystemDataContract::TokenHistory => token_history_contract::ID_BYTES,
+            SystemDataContract::TokenMarket => token_marketplace_contract::ID_BYTES,
         };
         Identifier::new(bytes)
     }
@@ -98,9 +100,18 @@ impl SystemDataContract {
             SystemDataContract::TokenHistory => DataContractSource {
                 id_bytes: token_history_contract::ID_BYTES,
                 owner_id_bytes: token_history_contract::OWNER_ID_BYTES,
-                version: platform_version.system_data_contracts.wallet as u32,
+                version: platform_version.system_data_contracts.token_history as u32,
                 definitions: token_history_contract::load_definitions(platform_version)?,
                 document_schemas: token_history_contract::load_documents_schemas(platform_version)?,
+            },
+            SystemDataContract::TokenMarket => DataContractSource {
+                id_bytes: token_marketplace_contract::ID_BYTES,
+                owner_id_bytes: token_marketplace_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.token_marketplace as u32,
+                definitions: token_marketplace_contract::load_definitions(platform_version)?,
+                document_schemas: token_marketplace_contract::load_documents_schemas(
+                    platform_version,
+                )?,
             },
         };
 
