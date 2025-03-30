@@ -27,6 +27,12 @@ use platform_value::btreemap_extensions::{
     BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
+#[cfg(
+    all(
+        feature = "document-serde-conversion",
+        feature = "data-contract-serde-conversion"
+    )
+)]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

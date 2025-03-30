@@ -12,7 +12,15 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(feature = "state-transition-value-conversion")]
 use platform_value::Error;
 use platform_value::{Identifier, Value};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(
+    any(
+        feature = "state-transition-serde-conversion",
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+    )
+)]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -32,7 +40,13 @@ pub mod v0;
     From,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    any(
+        feature = "state-transition-serde-conversion",
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+    ),
     derive(Serialize, Deserialize)
 )]
 pub enum TokenPaymentInfo {
