@@ -4,14 +4,23 @@ use crate::consensus::ConsensusError;
 use crate::ProtocolError;
 use bincode_derive::{Decode, Encode};
 use derive_more::Display;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(any(
+    feature = "state-transition-serde-conversion",
+    all(
+        feature = "document-serde-conversion",
+        feature = "data-contract-serde-conversion"
+    ),
+))]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
-#[cfg_attr(
+#[cfg(any(
     feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+    all(
+        feature = "document-serde-conversion",
+        feature = "data-contract-serde-conversion"
+    ),
+))]
 pub enum GasFeesPaidBy {
     /// The user pays the gas fees
     #[default]
