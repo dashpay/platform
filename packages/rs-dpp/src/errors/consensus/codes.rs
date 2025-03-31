@@ -103,6 +103,9 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10256,
             Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10257,
             Self::MissingDefaultLocalizationError(_) => 10258,
+            Self::UnknownGasFeesPaidByError(_) => 10259,
+            Self::UnknownDocumentActionTokenEffectError(_) => 10260,
+            Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -245,6 +248,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
             Self::DocumentContestNotPaidForError(_) => 40114,
+            Self::RequiredTokenPaymentInfoNotSetError(_) => 40115,
+            Self::IdentityHasNotAgreedToPayRequiredTokenAmountError(_) => 40116,
+            Self::IdentityTryingToPayWithWrongTokenError(_) => 40117,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

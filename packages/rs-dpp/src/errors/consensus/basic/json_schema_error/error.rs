@@ -1,3 +1,4 @@
+#[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::json_schema_error::error_data::JsonSchemaErrorData;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
@@ -7,6 +8,7 @@ use bincode::{Decode, Encode};
 use jsonschema::ValidationError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
+#[cfg(feature = "json-schema-validation")]
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 

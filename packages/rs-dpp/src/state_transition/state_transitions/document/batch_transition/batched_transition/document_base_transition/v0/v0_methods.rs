@@ -14,6 +14,9 @@ pub trait DocumentBaseTransitionV0Methods {
     /// Returns the document type name.
     fn document_type_name(&self) -> &String;
 
+    /// Returns the document type name as owned.
+    fn document_type_name_owned(self) -> String;
+
     /// Sets the document type name.
     fn set_document_type_name(&mut self, document_type_name: String);
 
@@ -38,6 +41,10 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
 
     fn document_type_name(&self) -> &String {
         &self.document_type_name
+    }
+
+    fn document_type_name_owned(self) -> String {
+        self.document_type_name
     }
 
     fn set_document_type_name(&mut self, document_type_name: String) {

@@ -9,7 +9,7 @@ use dpp::consensus::basic::data_contract::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
+use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -87,10 +87,10 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
             }
         }
 
-        let expected_position = 0;
-
-        for (token_contract_position, token_configuration) in self.data_contract().tokens() {
-            if expected_position != *token_contract_position {
+        for (expected_position, (token_contract_position, token_configuration)) in
+            self.data_contract().tokens().iter().enumerate()
+        {
+            if expected_position as TokenContractPosition != *token_contract_position {
                 let bump_action = StateTransitionAction::BumpIdentityNonceAction(
                     BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                 );
@@ -98,7 +98,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     bump_action,
                     vec![NonContiguousContractTokenPositionsError::new(
-                        expected_position,
+                        expected_position as TokenContractPosition,
                         *token_contract_position,
                     )
                     .into()],

@@ -129,7 +129,7 @@ mod test {
         platform
             .core_rpc
             .expect_get_protx_diff_with_masternodes()
-            .returning(move |base_block, block| {
+            .returning(move |_base_block, block| {
                 if block == 2128896 {
                     let file_path = adjust_path_based_on_current_dir(
                         "tests/supporting_files/mainnet_protx_list_diffs/1-2128896.json",

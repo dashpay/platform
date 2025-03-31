@@ -33,7 +33,6 @@ use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
-use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::batch::BatchTransitionAction;
 use drive::state_transition_action::batch::v0::BatchTransitionActionV0;
 
@@ -90,6 +89,7 @@ trait BatchTransitionInternalTransformerV0 {
         data_contract_id: &Identifier,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+        user_fee_increase: UserFeeIncrease,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -103,6 +103,7 @@ trait BatchTransitionInternalTransformerV0 {
         document_type_name: &str,
         owner_id: Identifier,
         document_transitions: &[&DocumentTransition],
+        user_fee_increase: UserFeeIncrease,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -144,6 +145,7 @@ trait BatchTransitionInternalTransformerV0 {
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
+        user_fee_increase: UserFeeIncrease,
         owner_id: Identifier,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -236,6 +238,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
                         data_contract_id,
                         owner_id,
                         document_transitions_by_document_type,
+                        user_fee_increase,
                         execution_context,
                         transaction,
                         platform_version,
@@ -350,6 +353,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         data_contract_id: &Identifier,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+        user_fee_increase: UserFeeIncrease,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -385,6 +389,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     document_type_name,
                     owner_id,
                     document_transitions,
+                    user_fee_increase,
                     execution_context,
                     transaction,
                     platform_version,
@@ -403,6 +408,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         document_type_name: &str,
         owner_id: Identifier,
         document_transitions: &[&DocumentTransition],
+        user_fee_increase: UserFeeIncrease,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -476,6 +482,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         data_contract_fetch_info.clone(),
                         transition,
                         &replaced_documents,
+                        user_fee_increase,
                         owner_id,
                         execution_context,
                         platform_version,
@@ -617,6 +624,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
+        user_fee_increase: UserFeeIncrease,
         owner_id: Identifier,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -624,18 +632,14 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         match transition {
             DocumentTransition::Create(document_create_transition) => {
                 let (document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
-                    drive, transaction,
-                    document_create_transition, block_info, |_identifier| {
+                    drive, owner_id, transaction,
+                    document_create_transition, block_info, user_fee_increase, |_identifier| {
                         Ok(data_contract_fetch_info.clone())
                     }, platform_version)?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
-
-                let batched_action = BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::CreateAction(document_create_action),
-                );
-                Ok(batched_action.into())
+                Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
@@ -707,9 +711,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_replace_action =
+                let (document_replace_action, fee_result) =
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
+                        owner_id,
                         original_document_created_at,
                         original_document_created_at_block_height,
                         original_document_created_at_core_block_height,
@@ -717,26 +722,28 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         original_document_transferred_at_block_height,
                         original_document_transferred_at_core_block_height,
                         block_info,
+                        user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::ReplaceAction(document_replace_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_replace_action)
                 } else {
                     Ok(result)
                 }
             }
             DocumentTransition::Delete(document_delete_transition) => {
-                let action = DocumentDeleteTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition, |_identifier| {
+                let (batched_action, fee_result) = DocumentDeleteTransitionAction::try_from_document_borrowed_delete_transition_with_contract_lookup(document_delete_transition, owner_id, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 })?;
-                let batched_action = BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::DeleteAction(action),
-                );
-                Ok(batched_action.into())
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
             }
             DocumentTransition::Transfer(document_transfer_transition) => {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
@@ -778,19 +785,21 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_transfer_action =
+                let (document_transfer_action, fee_result) =
                     DocumentTransferTransitionAction::try_from_borrowed_document_transfer_transition(
                         document_transfer_transition,
+                        owner_id,
                         original_document.clone(), //todo: remove clone
                         block_info,
+                        user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::TransferAction(document_transfer_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_transfer_action)
                 } else {
                     Ok(result)
                 }
@@ -835,19 +844,21 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_update_price_action =
+                let (document_update_price_action, fee_result) =
                     DocumentUpdatePriceTransitionAction::try_from_borrowed_document_update_price_transition(
                         document_update_price_transition,
+                        owner_id,
                         original_document.clone(), //todo: find a way to not have to use cloning
                         block_info,
+                        user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::UpdatePriceAction(document_update_price_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_update_price_action)
                 } else {
                     Ok(result)
                 }
@@ -902,20 +913,22 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let document_purchase_action =
+                let (document_purchase_action, fee_result) =
                     DocumentPurchaseTransitionAction::try_from_borrowed_document_purchase_transition(
                         document_purchase_transition,
+                        owner_id,
                         original_document.clone(), //todo: find a way to not have to use cloning
                         owner_id,
                         block_info,
+                        user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
                 if result.is_valid() {
-                    let batched_action = BatchedTransitionAction::DocumentAction(
-                        DocumentTransitionAction::PurchaseAction(document_purchase_action),
-                    );
-                    Ok(batched_action.into())
+                    Ok(document_purchase_action)
                 } else {
                     Ok(result)
                 }

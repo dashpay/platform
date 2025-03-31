@@ -1,19 +1,20 @@
 /// transformer
 pub mod transformer;
 
+use crate::drive::contract::DataContractFetchInfo;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use dpp::ProtocolError;
 use std::sync::Arc;
-
-use crate::drive::contract::DataContractFetchInfo;
 
 #[derive(Debug, Clone)]
 /// document base transition action v0
 pub struct DocumentBaseTransitionActionV0 {
-    /// The document Id
+    /// The document ID
     pub id: Identifier,
     /// The identity contract nonce, this is used to stop replay attacks
     pub identity_contract_nonce: IdentityNonce,
@@ -22,12 +23,14 @@ pub struct DocumentBaseTransitionActionV0 {
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
     /// Token cost with the token_id coming first
-    pub token_cost: Option<(Identifier, TokenAmount)>,
+    pub token_cost: Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>,
+    /// Who pays the gas fees
+    pub gas_fees_paid_by: GasFeesPaidBy,
 }
 
 /// document base transition action accessors v0
 pub trait DocumentBaseTransitionActionAccessorsV0 {
-    /// The document Id
+    /// The document ID
     fn id(&self) -> Identifier;
 
     /// The document type
@@ -51,5 +54,5 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn identity_contract_nonce(&self) -> IdentityNonce;
 
     /// Token cost
-    fn token_cost(&self) -> Option<(Identifier, TokenAmount)>;
+    fn token_cost(&self) -> Option<(Identifier, DocumentActionTokenEffect, TokenAmount)>;
 }

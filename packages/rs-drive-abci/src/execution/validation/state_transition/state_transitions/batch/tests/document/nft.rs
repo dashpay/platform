@@ -3,6 +3,8 @@ use super::*;
 mod nft_tests {
     use super::*;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
     #[test]
     fn test_document_set_price_on_document_without_ability_to_purchase() {
         let platform_version = PlatformVersion::latest();
@@ -47,6 +49,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -117,6 +120,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -206,6 +210,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -299,6 +304,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -426,6 +432,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -545,6 +552,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -661,6 +669,7 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -821,6 +830,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -944,6 +954,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1039,6 +1050,7 @@ mod nft_tests {
                 &key,
                 4,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1167,6 +1179,7 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -1326,6 +1339,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1449,6 +1463,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1567,6 +1582,7 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -1711,6 +1727,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1757,6 +1774,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1807,6 +1825,7 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -1903,6 +1922,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1949,6 +1969,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -1999,6 +2020,7 @@ mod nft_tests {
                 &key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2100,6 +2122,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2146,6 +2169,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2196,6 +2220,7 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -2307,6 +2332,7 @@ mod nft_tests {
                 &key,
                 4, // 1 because he's never done anything
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2402,6 +2428,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2495,6 +2522,7 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2589,6 +2617,7 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -2681,6 +2710,7 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -2729,6 +2759,7 @@ mod nft_tests {
                 &other_identity_key,
                 1,
                 0,
+                None,
                 &other_identity_signer,
                 platform_version,
                 None,
@@ -2820,7 +2851,7 @@ mod nft_tests {
             setup_identity(&mut platform, 450, dash_to_credits!(1.0));
 
         let (contract, gold_token_id, gas_token_id) =
-            create_card_game_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -2874,6 +2905,13 @@ mod nft_tests {
                 &key,
                 2,
                 0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: Some(10),
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,
@@ -2970,6 +3008,13 @@ mod nft_tests {
                 &key,
                 3,
                 0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 1,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(1),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,
@@ -3061,6 +3106,13 @@ mod nft_tests {
                 &recipient_key,
                 1, // 1 because he's never done anything
                 0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: Some(2),
+                    maximum_token_cost: Some(3),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &recipient_signer,
                 platform_version,
                 None,

@@ -9,6 +9,7 @@ use bincode::error::EncodeError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{BorrowDecode, Decode, Encode};
 use dashcore::blsful::Bls12381G2Impl;
+#[cfg(feature = "core-types-serialization")]
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
@@ -18,7 +19,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 
-/// The validator set is only slightly different from a quorum as it does not contain non valid
+/// The validator set is only slightly different from a quorum as it does not contain non-valid
 /// members
 #[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(

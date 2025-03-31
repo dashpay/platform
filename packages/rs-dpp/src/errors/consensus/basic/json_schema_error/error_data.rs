@@ -6,7 +6,9 @@ use jsonschema::paths::PathChunk;
 use jsonschema::ValidationError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(feature = "json-schema-validation")]
 use std::fmt::Write;
+#[cfg(feature = "json-schema-validation")]
 use std::ops::Deref;
 
 #[derive(Debug, Serialize, Default, Deserialize)]

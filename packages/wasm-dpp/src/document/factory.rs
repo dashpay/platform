@@ -22,6 +22,7 @@ use crate::{
 };
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
 
@@ -158,11 +159,16 @@ impl DocumentFactoryWASM {
         #[allow(clippy::type_complexity)]
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef, Bytes32)>,
+            Vec<(Document, DocumentTypeRef, Bytes32, Option<TokenPaymentInfo>)>,
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32)> = documents
+                let documents_with_refs: Vec<(
+                    Document,
+                    DocumentTypeRef,
+                    Bytes32,
+                    Option<TokenPaymentInfo>,
+                )> = documents
                     .iter()
                     .map(|extended_document| {
                         (
@@ -172,6 +178,7 @@ impl DocumentFactoryWASM {
                                 .document_type_for_name(extended_document.document_type_name())
                                 .expect("should be able to get document type"),
                             extended_document.entropy().to_owned(),
+                            extended_document.token_payment_info(),
                         )
                     })
                     .collect();
