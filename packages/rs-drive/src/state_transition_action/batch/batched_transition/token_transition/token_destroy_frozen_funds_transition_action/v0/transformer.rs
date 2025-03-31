@@ -43,6 +43,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
     ///
     /// * `Result<ConsensusValidationResult<TokenDestroyFrozenFundsTransitionActionV0>, Error>` - Returns the constructed `TokenDestroyFrozenFundsTransitionActionV0` if successful,
     ///   or an error if any issue arises, such as missing data or an invalid state transition.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_token_destroy_frozen_funds_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -110,7 +111,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action.into(),
+                    batched_action,
                     vec![StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                         IdentityDoesNotHaveEnoughTokenBalanceError::new(
                             base.token_id(),
@@ -139,7 +140,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,
@@ -189,6 +190,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
     ///   `TokenDestroyFrozenFundsTransitionActionV0` and a `FeeResult` if successful. If an error occurs (e.g., missing data or
     ///   invalid state transition), it returns an `Error`.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_token_destroy_frozen_funds_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -247,7 +249,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
         let Some(token_amount) = maybe_token_amount else {
             let bump_action =
                 BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    &base,
+                    base,
                     owner_id,
                     user_fee_increase,
                 );
@@ -256,7 +258,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
             return Ok((
                 ConsensusValidationResult::new_with_data_and_errors(
-                    batched_action.into(),
+                    batched_action,
                     vec![StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
                         IdentityDoesNotHaveEnoughTokenBalanceError::new(
                             base.token_id(),
@@ -286,7 +288,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
 
                 return Ok((
                     ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action.into(),
+                        batched_action,
                         base_action_validation_result.errors,
                     ),
                     fee_result,

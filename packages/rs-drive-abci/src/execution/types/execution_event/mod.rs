@@ -71,7 +71,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     },
 }
 
-impl<'a> ExecutionEvent<'a> {
+impl ExecutionEvent<'_> {
     pub(crate) fn create_from_state_transition_action(
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,

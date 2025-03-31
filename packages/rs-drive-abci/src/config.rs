@@ -75,6 +75,7 @@ impl CheckTxCoreRpcConfig {
 /// Configuration for Dash Core related things
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct CoreConfig {
     /// Core RPC config for consensus
     #[serde(flatten)]
@@ -82,15 +83,6 @@ pub struct CoreConfig {
     /// Core RPC config for check tx
     #[serde(flatten)]
     pub check_tx_rpc: CheckTxCoreRpcConfig,
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            consensus_rpc: Default::default(),
-            check_tx_rpc: Default::default(),
-        }
-    }
 }
 
 /// Configuration of the execution part of Dash Platform.
@@ -244,6 +236,8 @@ struct PlatformConfigIntermediate {
     pub instant_lock: InstantLockConfig,
     pub block_spacing_ms: u64,
     #[serde(default = "PlatformConfig::default_initial_protocol_version")]
+    // TODO: Is not using
+    #[allow(dead_code)]
     pub initial_protocol_version: ProtocolVersion,
     pub db_path: PathBuf,
     #[serde(default)]

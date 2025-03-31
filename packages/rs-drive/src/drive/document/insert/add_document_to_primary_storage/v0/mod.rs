@@ -51,6 +51,7 @@ impl Drive {
     /// Adds a document to primary storage.
     /// If a document isn't sent to this function then we are just calling to know the query and
     /// insert operations
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_to_primary_storage_0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,

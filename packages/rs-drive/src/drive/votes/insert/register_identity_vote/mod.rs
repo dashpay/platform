@@ -39,7 +39,7 @@ impl Drive {
     /// Returns an `Error` if:
     /// - The platform version is unknown or unsupported, resulting in a version mismatch error.
     /// - There is a failure in processing the vote due to transaction or blockchain state issues.
-    ///
+    #[allow(clippy::too_many_arguments)]
     pub fn register_identity_vote(
         &self,
         voter_pro_tx_hash: [u8; 32],

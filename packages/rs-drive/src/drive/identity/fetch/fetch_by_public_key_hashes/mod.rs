@@ -72,7 +72,7 @@ mod tests {
                     .fetch_identity_ids_by_non_unique_public_key_hash(
                         hash,
                         Some(&transaction),
-                        &drive_version,
+                        drive_version,
                     )
                     .expect("expected to get identity ids");
                 assert!(identity_ids.contains(&identity.id().to_buffer()));

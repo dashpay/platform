@@ -13,9 +13,9 @@ use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl<'a> ValueConvertible<'a> for IdentityTopUpTransition {}
+impl ValueConvertible<'_> for IdentityTopUpTransition {}
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransition {
+impl StateTransitionValueConvert<'_> for IdentityTopUpTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             IdentityTopUpTransition::V0(transition) => {

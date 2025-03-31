@@ -20,6 +20,7 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
+use derive_more::From;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
@@ -28,7 +29,7 @@ use serde_json::Value as JsonValue;
 #[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PlatformVersioned)]
+#[derive(Debug, Clone, PlatformVersioned, From)]
 pub enum ExtendedDocument {
     V0(ExtendedDocumentV0),
 }
@@ -642,6 +643,7 @@ mod test {
             metadata: None,
             data_contract_id,
             entropy: Default::default(),
+            token_payment_info: None,
         }
         .into()
     }

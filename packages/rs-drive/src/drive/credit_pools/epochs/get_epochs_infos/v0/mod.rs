@@ -8,7 +8,6 @@ use dpp::ProtocolError;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
-use std::u64;
 
 use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_FEE_MULTIPLIER, KEY_PROTOCOL_VERSION, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
@@ -117,7 +116,7 @@ impl Drive {
                     Err(e) => return Some(Err(e)),
                 };
 
-                let first_block_time_element = inner_map.get(&KEY_START_TIME.to_vec())?;
+                let first_block_time_element = inner_map.get(KEY_START_TIME.as_slice())?;
 
                 let Element::Item(encoded_start_time, _) = first_block_time_element else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(
@@ -137,7 +136,8 @@ impl Drive {
 
                 let first_block_time = u64::from_be_bytes(first_block_time_bytes);
 
-                let first_block_height_element = inner_map.get(&KEY_START_BLOCK_HEIGHT.to_vec())?;
+                let first_block_height_element =
+                    inner_map.get(KEY_START_BLOCK_HEIGHT.as_slice())?;
 
                 let Element::Item(encoded_start_block_height, _) = first_block_height_element
                 else {
@@ -162,7 +162,7 @@ impl Drive {
                 let first_block_height = u64::from_be_bytes(first_block_height_bytes);
 
                 let first_core_block_height_element =
-                    inner_map.get(&KEY_START_BLOCK_CORE_HEIGHT.to_vec())?;
+                    inner_map.get(KEY_START_BLOCK_CORE_HEIGHT.as_slice())?;
 
                 let Element::Item(encoded_start_core_block_height, _) =
                     first_core_block_height_element
@@ -186,7 +186,7 @@ impl Drive {
 
                 let first_core_block_height = u32::from_be_bytes(first_core_block_height_bytes);
 
-                let fee_multiplier_element = inner_map.get(&KEY_FEE_MULTIPLIER.to_vec())?;
+                let fee_multiplier_element = inner_map.get(KEY_FEE_MULTIPLIER.as_slice())?;
 
                 let Element::Item(encoded_multiplier, _) = fee_multiplier_element else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(
@@ -206,7 +206,7 @@ impl Drive {
 
                 let fee_multiplier = u64::from_be_bytes(fee_multiplier_bytes);
 
-                let protocol_version_element = inner_map.get(&KEY_PROTOCOL_VERSION.to_vec())?;
+                let protocol_version_element = inner_map.get(KEY_PROTOCOL_VERSION.as_slice())?;
 
                 let Element::Item(encoded_protocol_version, _) = protocol_version_element else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(

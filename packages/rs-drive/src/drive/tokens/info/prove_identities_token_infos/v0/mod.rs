@@ -133,7 +133,7 @@ mod tests {
         let proof = drive
             .prove_identities_token_infos_v0(
                 token_id.to_buffer(),
-                &vec![identity.id().to_buffer()],
+                &[identity.id().to_buffer()],
                 None,
                 platform_version,
             )
@@ -143,7 +143,7 @@ mod tests {
             Drive::verify_token_infos_for_identity_ids(
                 proof.as_slice(),
                 token_id.to_buffer(),
-                &vec![identity.id().to_buffer()],
+                &[identity.id().to_buffer()],
                 false,
                 platform_version,
             )
@@ -223,7 +223,7 @@ mod tests {
         let proof = drive
             .prove_identities_token_infos_v0(
                 token_id.to_buffer(),
-                &vec![identity.id().to_buffer()],
+                &[identity.id().to_buffer()],
                 None,
                 platform_version,
             )
@@ -233,7 +233,7 @@ mod tests {
             Drive::verify_token_infos_for_identity_ids(
                 proof.as_slice(),
                 token_id.to_buffer(),
-                &vec![identity.id().to_buffer()],
+                &[identity.id().to_buffer()],
                 false,
                 platform_version,
             )
@@ -334,7 +334,7 @@ mod tests {
         let proof = drive
             .prove_identities_token_infos_v0(
                 token_id.to_buffer(),
-                &vec![identity_1.id().to_buffer(), identity_2.id().to_buffer()],
+                &[identity_1.id().to_buffer(), identity_2.id().to_buffer()],
                 None,
                 platform_version,
             )
@@ -344,7 +344,7 @@ mod tests {
             Drive::verify_token_infos_for_identity_ids(
                 proof.as_slice(),
                 token_id.to_buffer(),
-                &vec![identity_1.id().to_buffer(), identity_2.id().to_buffer()],
+                &[identity_1.id().to_buffer(), identity_2.id().to_buffer()],
                 false,
                 platform_version,
             )

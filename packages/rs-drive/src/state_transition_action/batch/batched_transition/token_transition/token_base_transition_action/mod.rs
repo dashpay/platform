@@ -53,15 +53,15 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionAction {
         }
     }
 
-    fn token_configuration(&self) -> Result<&TokenConfiguration, Error> {
-        match self {
-            TokenBaseTransitionAction::V0(v0) => v0.token_configuration(),
-        }
-    }
-
     fn identity_contract_nonce(&self) -> IdentityNonce {
         match self {
             TokenBaseTransitionAction::V0(v0) => v0.identity_contract_nonce(),
+        }
+    }
+
+    fn token_configuration(&self) -> Result<&TokenConfiguration, Error> {
+        match self {
+            TokenBaseTransitionAction::V0(v0) => v0.token_configuration(),
         }
     }
 

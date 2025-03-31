@@ -85,9 +85,9 @@ impl TreePath for ResourceVote {
 
                 // at this point the path only contains the parts before the index
 
-                let mut properties_iter = index.properties.iter();
+                let properties_iter = index.properties.iter();
 
-                while let Some(index_part) = properties_iter.next() {
+                for index_part in properties_iter {
                     path.push(index_part.name.as_bytes());
                 }
                 Ok(path)

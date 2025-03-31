@@ -1889,7 +1889,7 @@ mod tests {
         drive
             .apply_contract(
                 &contract,
-                block_info.clone(),
+                block_info,
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,

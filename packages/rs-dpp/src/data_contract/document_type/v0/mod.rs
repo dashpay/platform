@@ -66,10 +66,3 @@ pub struct DocumentTypeV0 {
 impl DocumentTypeBasicMethods for DocumentTypeV0 {}
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {}
-
-impl DocumentTypeV0 {
-    // Public method to set the data_contract_id
-    pub fn set_data_contract_id(&mut self, new_id: Identifier) {
-        self.data_contract_id = new_id;
-    }
-}

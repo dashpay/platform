@@ -2,6 +2,8 @@ use super::*;
 
 mod transfer_tests {
     use super::*;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
     #[test]
     fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices() {
@@ -69,6 +71,7 @@ mod transfer_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -115,6 +118,7 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -223,6 +227,7 @@ mod transfer_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -316,6 +321,7 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -447,6 +453,7 @@ mod transfer_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -540,6 +547,7 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -691,6 +699,7 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -796,6 +805,7 @@ mod transfer_tests {
                 &key,
                 2,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -889,6 +899,7 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
+                None,
                 &signer,
                 platform_version,
                 None,
@@ -957,6 +968,7 @@ mod transfer_tests {
                 &recipient_key,
                 2,
                 0,
+                None,
                 &recipient_signer,
                 platform_version,
                 None,
@@ -1035,7 +1047,7 @@ mod transfer_tests {
         let (receiver, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.1));
 
         let (contract, gold_token_id, gas_token_id) =
-            create_card_game_token_contract_with_owner_identity(
+            create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
                 &mut platform,
                 contract_owner_id.id(),
                 platform_version,
@@ -1050,8 +1062,8 @@ mod transfer_tests {
 
         assert_eq!(contract.tokens().len(), 2);
 
-        add_tokens_to_identity(&mut platform, gold_token_id.into(), creator.id(), 15);
-        add_tokens_to_identity(&mut platform, gas_token_id.into(), creator.id(), 5);
+        add_tokens_to_identity(&mut platform, gold_token_id, creator.id(), 15);
+        add_tokens_to_identity(&mut platform, gas_token_id, creator.id(), 5);
 
         let token_supply = platform
             .drive
@@ -1088,6 +1100,13 @@ mod transfer_tests {
                 &key,
                 2,
                 0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 0,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,
@@ -1181,6 +1200,13 @@ mod transfer_tests {
                 &key,
                 3,
                 0,
+                Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                    payment_token_contract_id: None,
+                    token_contract_position: 1,
+                    minimum_token_cost: None,
+                    maximum_token_cost: Some(10),
+                    gas_fees_paid_by: Default::default(),
+                })),
                 &signer,
                 platform_version,
                 None,

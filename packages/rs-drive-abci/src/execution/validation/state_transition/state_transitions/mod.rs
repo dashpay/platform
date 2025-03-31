@@ -74,13 +74,14 @@ pub(in crate::execution) mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::{get_contested_resource_vote_state_request_v0, GetContestedResourceVoteStateRequestV0};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
+    use dpp::balances::credits::TokenAmount;
     use dpp::dash_to_credits;
     use dpp::dashcore::{ProTxHash, Txid};
     use dpp::dashcore::hashes::Hash;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
-    use dpp::data_contract::{DataContract, GroupContractPosition};
-    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::{DataContract, GroupContractPosition, TokenContractPosition};
+    use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Setters};
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -127,6 +128,9 @@ pub(in crate::execution) mod tests {
     use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::group::Group;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -160,7 +164,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key.clone());
+        signer.add_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -170,7 +174,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key.clone());
+        signer.add_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -217,7 +221,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key.clone());
+        signer.add_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -227,7 +231,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key.clone());
+        signer.add_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -261,7 +265,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key.clone());
+        signer.add_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -271,7 +275,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key.clone());
+        signer.add_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -327,7 +331,7 @@ pub(in crate::execution) mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key.clone());
+        signer.add_key(key.clone(), private_key);
 
         identity.add_public_key(key.clone());
 
@@ -369,7 +373,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key.clone());
+        signer.add_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -379,7 +383,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key.clone());
+        signer.add_key(critical_public_key.clone(), private_key);
 
         let (withdrawal_public_key, withdrawal_private_key) =
             IdentityPublicKey::random_key_with_known_attributes(
@@ -393,10 +397,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(
-            withdrawal_public_key.clone(),
-            withdrawal_private_key.clone(),
-        );
+        signer.add_key(withdrawal_public_key.clone(), withdrawal_private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -473,7 +474,7 @@ pub(in crate::execution) mod tests {
         let raw_state_transitions = state_transitions
             .iter()
             .map(|a| a.serialize_to_bytes().expect("expected to serialize"))
-            .collect();
+            .collect::<Vec<_>>();
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -481,7 +482,7 @@ pub(in crate::execution) mod tests {
             .platform
             .process_raw_state_transitions(
                 &raw_state_transitions,
-                &platform_state,
+                platform_state,
                 &block_info,
                 &transaction,
                 platform_version,
@@ -586,8 +587,8 @@ pub(in crate::execution) mod tests {
             .public_key_hash()
             .expect("expected a public key hash");
 
-        signer.add_key(transfer_key.clone(), transfer_private_key.clone());
-        signer.add_key(owner_key.clone(), owner_private_key.clone());
+        signer.add_key(transfer_key.clone(), transfer_private_key);
+        signer.add_key(owner_key.clone(), owner_private_key);
 
         let pro_tx_hash_bytes: [u8; 32] = rng.gen();
 
@@ -669,7 +670,7 @@ pub(in crate::execution) mod tests {
             IdentityPublicKey::random_voting_key_with_rng(0, &mut rng, platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(voting_key.clone(), voting_private_key.clone());
+        signer.add_key(voting_key.clone(), voting_private_key);
 
         let pro_tx_hash_bytes: [u8; 32] = rng.gen();
 
@@ -1096,6 +1097,7 @@ pub(in crate::execution) mod tests {
                 key_1,
                 2 + nonce_offset.unwrap_or_default(),
                 0,
+                None,
                 signer_1,
                 platform_version,
                 None,
@@ -1117,6 +1119,7 @@ pub(in crate::execution) mod tests {
                 key_2,
                 2 + nonce_offset.unwrap_or_default(),
                 0,
+                None,
                 signer_2,
                 platform_version,
                 None,
@@ -1138,6 +1141,7 @@ pub(in crate::execution) mod tests {
                 key_1,
                 3 + nonce_offset.unwrap_or_default(),
                 0,
+                None,
                 signer_1,
                 platform_version,
                 None,
@@ -1158,6 +1162,7 @@ pub(in crate::execution) mod tests {
                 key_2,
                 3 + nonce_offset.unwrap_or_default(),
                 0,
+                None,
                 signer_2,
                 platform_version,
                 None,
@@ -1409,6 +1414,7 @@ pub(in crate::execution) mod tests {
                 key_1,
                 2,
                 0,
+                None,
                 signer_1,
                 platform_version,
                 None,
@@ -1430,6 +1436,7 @@ pub(in crate::execution) mod tests {
                 key_2,
                 2,
                 0,
+                None,
                 signer_2,
                 platform_version,
                 None,
@@ -1451,6 +1458,7 @@ pub(in crate::execution) mod tests {
                 key_1,
                 3,
                 0,
+                None,
                 signer_1,
                 platform_version,
                 None,
@@ -1471,6 +1479,7 @@ pub(in crate::execution) mod tests {
                 key_2,
                 3,
                 0,
+                None,
                 signer_2,
                 platform_version,
                 None,
@@ -1631,6 +1640,7 @@ pub(in crate::execution) mod tests {
                 &key_1,
                 2,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -1652,6 +1662,7 @@ pub(in crate::execution) mod tests {
                 &key_1,
                 3,
                 0,
+                None,
                 &signer_1,
                 platform_version,
                 None,
@@ -2361,7 +2372,34 @@ pub(in crate::execution) mod tests {
         (basic_token_contract, token_id.into())
     }
 
-    pub(in crate::execution) fn create_card_game_token_contract_with_owner_identity(
+    pub(in crate::execution) fn create_card_game_internal_token_contract_with_owner_identity_burn_tokens(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Identifier, Identifier) {
+        let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+        let basic_token_contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency-burn-tokens.json",
+            Some(data_contract_id.to_buffer()),
+            Some(identity_id.to_buffer()),
+            Some(|data_contract: &mut DataContract| {
+                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at_block_height(Some(0));
+            }),
+            None,
+            Some(platform_version),
+        );
+
+        let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+        let token_id_2 = calculate_token_id(data_contract_id.as_bytes(), 1);
+
+        (basic_token_contract, token_id.into(), token_id_2.into())
+    }
+
+    pub(in crate::execution) fn create_card_game_internal_token_contract_with_owner_identity_transfer_tokens(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         platform_version: &PlatformVersion,
@@ -2386,5 +2424,49 @@ pub(in crate::execution) mod tests {
         let token_id_2 = calculate_token_id(data_contract_id.as_bytes(), 1);
 
         (basic_token_contract, token_id.into(), token_id_2.into())
+    }
+
+    pub(in crate::execution) fn create_card_game_external_token_contract_with_owner_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        token_contract_id: Identifier,
+        token_contract_position: TokenContractPosition,
+        token_cost_amount: TokenAmount,
+        gas_fees_paid_by: GasFeesPaidBy,
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+        let basic_token_contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/crypto-card-game/crypto-card-game-use-external-currency.json",
+            Some(data_contract_id.to_buffer()),
+            Some(identity_id.to_buffer()),
+            Some(|data_contract: &mut DataContract| {
+                data_contract.set_created_at_epoch(Some(0));
+                data_contract.set_created_at(Some(0));
+                data_contract.set_created_at_block_height(Some(0));
+                let document_type = data_contract.document_types_mut().get_mut("card").expect("expected a document type with name card");
+                document_type.set_document_creation_token_cost(Some(DocumentActionTokenCost {
+                    contract_id: Some(token_contract_id),
+                    token_contract_position,
+                    token_amount: token_cost_amount,
+                    effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
+                    gas_fees_paid_by,
+                }));
+                let gas_fees_paid_by_int: u8 = gas_fees_paid_by.into();
+                let schema = document_type.schema_mut();
+                let token_cost = schema.get_mut("tokenCost").expect("expected to get token cost").expect("expected token cost to be set");
+                let creation_token_cost = token_cost.get_mut("create").expect("expected to get creation token cost").expect("expected creation token cost to be set");
+                creation_token_cost.set_value("contractId", token_contract_id.into()).expect("expected to set token contract id");
+                creation_token_cost.set_value("tokenPosition", token_contract_position.into()).expect("expected to set token position");
+                creation_token_cost.set_value("amount", token_cost_amount.into()).expect("expected to set token amount");
+                creation_token_cost.set_value("gasFeesPaidBy", gas_fees_paid_by_int.into()).expect("expected to set token amount");
+            }),
+            None,
+            Some(platform_version),
+        );
+
+        basic_token_contract
     }
 }

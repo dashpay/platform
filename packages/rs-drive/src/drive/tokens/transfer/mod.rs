@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Transfers tokens from one identity to another without changing total supply.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_transfer(
         &self,
         token_id: [u8; 32],
@@ -42,6 +43,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds operations to transfer tokens without calculating fees.
     pub fn token_transfer_add_to_operations(
         &self,
@@ -74,6 +76,7 @@ impl Drive {
     }
 
     /// Gathers the operations needed to transfer tokens.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_transfer_operations(
         &self,
         token_id: [u8; 32],

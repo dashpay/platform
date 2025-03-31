@@ -500,29 +500,28 @@ mod tests {
         )
         .expect("expected to get document 1");
 
-        let mut operations = vec![];
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &document0,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id),
+        let operations = vec![
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document0,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &document1,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id),
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document1,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
+        ];
 
         drive_operations.push(DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {
@@ -747,29 +746,28 @@ mod tests {
         )
         .expect("expected to get document");
 
-        let mut operations = vec![];
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &person_document0,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id0),
+        let operations = vec![
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &person_document0,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id0),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &person_document1,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id1),
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &person_document1,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id1),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
+        ];
 
         drive_operations.push(DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {
@@ -816,21 +814,20 @@ mod tests {
         )
         .expect("expected to get document");
 
-        let mut operations = vec![];
-
-        operations.push(UpdateOperation(UpdateOperationInfo {
-            document: &person_document0,
-            serialized_document: None,
-            owner_id: Some(random_owner_id0),
-            storage_flags: None,
-        }));
-
-        operations.push(UpdateOperation(UpdateOperationInfo {
-            document: &person_document1,
-            serialized_document: None,
-            owner_id: Some(random_owner_id1),
-            storage_flags: None,
-        }));
+        let operations = vec![
+            UpdateOperation(UpdateOperationInfo {
+                document: &person_document0,
+                serialized_document: None,
+                owner_id: Some(random_owner_id0),
+                storage_flags: None,
+            }),
+            UpdateOperation(UpdateOperationInfo {
+                document: &person_document1,
+                serialized_document: None,
+                owner_id: Some(random_owner_id1),
+                storage_flags: None,
+            }),
+        ];
 
         drive_operations.push(DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {

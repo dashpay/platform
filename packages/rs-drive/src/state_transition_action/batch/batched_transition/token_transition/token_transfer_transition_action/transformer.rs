@@ -35,6 +35,7 @@ impl TokenTransferTransitionAction {
     ///
     /// * `Result<(TokenTransferTransitionAction, FeeResult), Error>` - A result containing the constructed `TokenTransferTransitionAction`
     ///   and the calculated `FeeResult`, or an error if the transition cannot be processed.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_token_transfer_transition_with_contract_lookup(
         drive: &Drive,
         owner_id: Identifier,
@@ -82,6 +83,7 @@ impl TokenTransferTransitionAction {
     /// # Returns
     ///
     /// * `Result<(TokenTransferTransitionAction, FeeResult), Error>` - A result containing the constructed `TokenTransferTransitionAction`
+    #[allow(clippy::too_many_arguments)]
     ///   and the calculated `FeeResult`, or an error if the transition cannot be processed.
     pub fn try_from_borrowed_token_transfer_transition_with_contract_lookup(
         drive: &Drive,

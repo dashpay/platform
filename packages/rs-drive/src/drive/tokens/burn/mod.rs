@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Burns tokens by reducing the total supply and removing them from an identity's balance.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_burn(
         &self,
         token_id: [u8; 32],
@@ -40,6 +41,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds the operations to burn tokens without calculating fees and optionally applying.
     pub fn token_burn_add_to_operations(
         &self,

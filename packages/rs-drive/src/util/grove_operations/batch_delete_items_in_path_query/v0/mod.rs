@@ -36,10 +36,10 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        if path_query.query.limit == None {
-            Error::Drive(DriveError::NotSupported(
+        if path_query.query.limit.is_none() {
+            return Err(Error::Drive(DriveError::NotSupported(
                 "Limits are required for path_query",
-            ));
+            )));
         }
         let query_result = if path_query
             .query
@@ -104,7 +104,7 @@ impl Drive {
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    (path.as_slice()).into(),
+                    path.as_slice().into(),
                     key.as_slice(),
                     &options,
                     is_known_to_be_subtree_with_sum,
