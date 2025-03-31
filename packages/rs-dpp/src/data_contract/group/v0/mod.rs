@@ -99,8 +99,6 @@ impl GroupMethodsV0 for GroupV0 {
 
         let mut total_power: GroupMemberPower = 0;
 
-        let mut total_power_without_unilateral_members: GroupMemberPower = 0;
-
         // Iterate over members to validate their power and calculate the total power
         for (&member, &power) in &self.members {
             if power == 0 {
@@ -122,12 +120,6 @@ impl GroupMethodsV0 for GroupV0 {
             total_power = total_power
                 .checked_add(power)
                 .ok_or_else(|| ProtocolError::Overflow("Total power overflowed"))?;
-
-            if power < self.required_power {
-                total_power_without_unilateral_members = total_power_without_unilateral_members
-                    .checked_add(power)
-                    .ok_or_else(|| ProtocolError::Overflow("Total power overflowed"))?;
-            }
         }
 
         // Check if the total power meets the required power
