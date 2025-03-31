@@ -164,7 +164,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_members_have_enough_power() {
+        fn test_group_with_all_unilateral_members() {
             let member1 = Identifier::random();
             let member2 = Identifier::random();
 
