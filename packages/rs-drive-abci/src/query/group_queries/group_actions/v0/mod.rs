@@ -139,7 +139,7 @@ impl<C> Platform<C> {
                                         TokenEvent::Mint(amount, recipient_id, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::Mint(MintEvent {
-                                                    amount: amount as u64,
+                                                    amount,
                                                     recipient_id: recipient_id.to_vec(),
                                                     public_note,
                                                 })),
@@ -148,7 +148,7 @@ impl<C> Platform<C> {
                                         TokenEvent::Burn(amount, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::Burn(BurnEvent {
-                                                    amount: amount as u64,
+                                                    amount,
                                                     public_note,
                                                 })),
                                             })

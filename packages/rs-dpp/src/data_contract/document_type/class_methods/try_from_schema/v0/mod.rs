@@ -8,7 +8,9 @@ use crate::consensus::basic::data_contract::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::property::DocumentProperty;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -32,6 +34,7 @@ use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesE
 use crate::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::class_methods::try_from_schema::{
     MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
     NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
@@ -57,6 +60,7 @@ use platform_value::{Identifier, Value};
 impl DocumentTypeV0 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
         name: &str,

@@ -8,7 +8,7 @@ use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
-impl<'a> DriveDocumentQuery<'a> {
+impl DriveDocumentQuery<'_> {
     /// Verifies if a document exists at the beginning of a proof,
     /// and returns the root hash and the optionally found document.
     ///

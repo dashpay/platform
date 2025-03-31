@@ -36,6 +36,7 @@ const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
 const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 
 impl DocumentType {
+    #[allow(clippy::too_many_arguments)]
     pub fn try_from_schema(
         data_contract_id: Identifier,
         name: &str,
@@ -84,6 +85,7 @@ impl DocumentType {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_values(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,

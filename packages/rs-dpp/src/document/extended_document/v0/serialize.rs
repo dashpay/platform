@@ -125,6 +125,7 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             metadata: None,
 
             entropy: Default::default(),
+            token_payment_info: None,
         })
     }
 }

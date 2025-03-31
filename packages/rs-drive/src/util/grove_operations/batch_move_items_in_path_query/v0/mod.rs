@@ -28,6 +28,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn batch_move_items_in_path_query_v0(
         &self,
         path_query: &PathQuery,
@@ -38,7 +39,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        if path_query.query.limit == None {
+        if path_query.query.limit.is_none() {
             return Err(Error::Drive(DriveError::NotSupported(
                 "Limits are required for path_query",
             )));
@@ -107,7 +108,7 @@ impl Drive {
                 BatchMoveApplyType::StatefulBatchMove {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    (path.as_slice()).into(),
+                    path.as_slice().into(),
                     key.as_slice(),
                     &options,
                     is_known_to_be_subtree_with_sum,

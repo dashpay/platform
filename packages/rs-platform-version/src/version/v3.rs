@@ -35,7 +35,6 @@ pub const PROTOCOL_VERSION_3: ProtocolVersion = 3;
 /// This was done directly in ABCI.
 /// If we get between 51 and 67% we will have a chain stall
 /// However the chain will come back up as soon as enough have upgraded.
-
 pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
     protocol_version: 3,
     drive: DRIVE_VERSION_V2,

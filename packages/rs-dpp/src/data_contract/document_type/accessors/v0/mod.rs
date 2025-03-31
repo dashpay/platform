@@ -14,6 +14,11 @@ use crate::nft::TradeMode;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub trait DocumentTypeV0MutGetters {
+    /// Gets the schema as mut
+    fn schema_mut(&mut self) -> &mut Value;
+}
+
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
     fn name(&self) -> &String;

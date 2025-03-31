@@ -80,7 +80,7 @@ impl<C> Platform<C> {
             ))
         ));
 
-        if &index.name != &index_name {
+        if index.name != index_name {
             return Ok(QueryValidationResult::new_with_error(QueryError::InvalidArgument(format!(
                 "index with name {} is not the contested index on the document type {}, {} is the name of the only contested index",
                 index_name, document_type_name, index.name

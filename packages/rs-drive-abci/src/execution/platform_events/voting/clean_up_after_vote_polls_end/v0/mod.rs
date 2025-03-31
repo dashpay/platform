@@ -26,6 +26,8 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // Create a vector to hold the references to the contested document resource vote polls
+        // TODO: Use type or struct
+        #[allow(clippy::type_complexity)]
         let mut contested_polls: Vec<(
             &ContestedDocumentResourceVotePollWithContractInfo,
             &TimestampMillis,

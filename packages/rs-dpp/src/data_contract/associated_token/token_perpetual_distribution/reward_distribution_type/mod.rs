@@ -183,7 +183,7 @@ impl RewardDistributionType {
                 RewardDistributionMoment::EpochBasedMoment(step),
                 RewardDistributionMoment::EpochBasedMoment(current),
             ) => Ok(RewardDistributionMoment::EpochBasedMoment(
-                (start + (step as u16).saturating_mul(max_cycles as u16)).min(current),
+                (start + step.saturating_mul(max_cycles as u16)).min(current),
             )),
             _ => Err(ProtocolError::CorruptedCodeExecution(
                 "Mismatch moment types".to_string(),

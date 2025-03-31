@@ -139,7 +139,9 @@ impl GroupMethodsV0 for GroupV0 {
         }
 
         // Check if the total power without unilateral members meets the required power
-        if total_power_without_unilateral_members < self.required_power {
+        if total_power_without_unilateral_members < self.required_power
+            && total_power_without_unilateral_members > 0
+        {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError::new(
                     total_power_without_unilateral_members,

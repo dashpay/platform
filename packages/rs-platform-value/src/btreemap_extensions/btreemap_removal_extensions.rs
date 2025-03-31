@@ -59,6 +59,20 @@ pub trait BTreeValueRemoveFromMapHelper {
     where
         K: TryFrom<Value, Error = Error> + Ord,
         V: TryFrom<Value, Error = Error>;
+
+    fn remove_map_as_btree_map_keep_values_as_platform_value<K, V>(
+        &mut self,
+        key: &str,
+    ) -> Result<BTreeMap<K, Value>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord;
+
+    fn remove_optional_map_as_btree_map_keep_values_as_platform_value<K>(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<BTreeMap<K, Value>>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord;
 }
 
 pub trait BTreeValueRemoveTupleFromMapHelper {
@@ -341,6 +355,41 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
             })
             .transpose()
     }
+
+    fn remove_map_as_btree_map_keep_values_as_platform_value<K, V>(
+        &mut self,
+        key: &str,
+    ) -> Result<BTreeMap<K, Value>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+    {
+        self.remove_optional_map_as_btree_map_keep_values_as_platform_value(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to remove map property {key}")))
+    }
+
+    fn remove_optional_map_as_btree_map_keep_values_as_platform_value<K>(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<BTreeMap<K, Value>>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+    {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Value::Map(map) = v {
+                    Some(
+                        map.iter()
+                            .map(|(key, value)| Ok((key.clone().try_into()?, value.clone())))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .transpose()
+    }
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
@@ -613,6 +662,41 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
                     Some(
                         map.into_iter()
                             .map(|(key, value)| Ok((key.try_into()?, value.try_into()?)))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_map_as_btree_map_keep_values_as_platform_value<K, V>(
+        &mut self,
+        key: &str,
+    ) -> Result<BTreeMap<K, Value>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+    {
+        self.remove_optional_map_as_btree_map_keep_values_as_platform_value(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to remove map property {key}")))
+    }
+
+    fn remove_optional_map_as_btree_map_keep_values_as_platform_value<K>(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<BTreeMap<K, Value>>, Error>
+    where
+        K: TryFrom<Value, Error = Error> + Ord,
+    {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Value::Map(map) = v {
+                    Some(
+                        map.into_iter()
+                            .map(|(key, value)| Ok((key.try_into()?, value)))
                             .collect(),
                     )
                 } else {

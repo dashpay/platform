@@ -77,7 +77,7 @@ impl Drive {
                             )),
                         ))?;
 
-                        Ok((s, layer_info.clone()))
+                        Ok((s, *layer_info))
                     })
                     .collect::<Result<IntMap<u16, EstimatedLayerInformation>, Error>>()?;
                 // We need to update the current layer to only have 1 element that we want to delete

@@ -1,5 +1,4 @@
 use crate::consensus::signature::SignatureError;
-#[cfg(feature = "state-transition-validation")]
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::data_contract::errors::DataContractError;
 
@@ -39,9 +38,7 @@ impl ErrorWithCode for BasicError {
             Self::UnsupportedFeatureError(_) => 10006,
 
             // Structure Errors: 10100-10199
-            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaCompilationError(..) => 10100,
-            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaError(_) => 10101,
             Self::InvalidIdentifierError { .. } => 10102,
             Self::ValueError(_) => 10103,
@@ -54,7 +51,6 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDataContractIdError { .. } => 10204,
             Self::InvalidIndexedPropertyConstraintError { .. } => 10205,
             Self::InvalidIndexPropertyTypeError { .. } => 10206,
-            #[cfg(feature = "json-schema-validation")]
             Self::InvalidJsonSchemaRefError { .. } => 10207,
             Self::SystemPropertyIndexAlreadyPresentError { .. } => 10208,
             Self::UndefinedIndexPropertyError { .. } => 10209,
@@ -107,6 +103,9 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionFunctionInvalidParameterTupleError(_) => 10256,
             Self::InvalidTokenDistributionFunctionIncoherenceError(_) => 10257,
             Self::MissingDefaultLocalizationError(_) => 10258,
+            Self::UnknownGasFeesPaidByError(_) => 10259,
+            Self::UnknownDocumentActionTokenEffectError(_) => 10260,
+            Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -249,6 +248,9 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
             Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
             Self::DocumentContestNotPaidForError(_) => 40114,
+            Self::RequiredTokenPaymentInfoNotSetError(_) => 40115,
+            Self::IdentityHasNotAgreedToPayRequiredTokenAmountError(_) => 40116,
+            Self::IdentityTryingToPayWithWrongTokenError(_) => 40117,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -282,7 +284,6 @@ impl ErrorWithCode for StateError {
             Self::PrefundedSpecializedBalanceNotFoundError(_) => 40401,
 
             // Data trigger errors: 40500-40699
-            #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
 
             // Token errors: 40700-40799
@@ -316,7 +317,6 @@ impl ErrorWithCode for StateError {
     }
 }
 
-#[cfg(feature = "state-transition-validation")]
 impl ErrorWithCode for DataTriggerError {
     fn code(&self) -> u32 {
         match self {

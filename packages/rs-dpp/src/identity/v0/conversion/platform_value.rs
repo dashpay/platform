@@ -5,9 +5,9 @@ use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use platform_value::Value;
 
-impl<'a> ValueConvertible<'a> for IdentityV0 {}
+impl ValueConvertible<'_> for IdentityV0 {}
 
-impl<'a> IdentityPlatformValueConversionMethodsV0<'a> for IdentityV0 {
+impl IdentityPlatformValueConversionMethodsV0<'_> for IdentityV0 {
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         //same as object for Identities
         let mut value = self.to_object()?;

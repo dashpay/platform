@@ -75,7 +75,7 @@ impl Frequency {
         let mut picked_numbers = Vec::new();
         let chance_per_block_hit = self
             .chance_per_block
-            .map_or(true, |chance| rng.gen_bool(chance));
+            .is_none_or(|chance| rng.gen_bool(chance));
 
         if chance_per_block_hit {
             let times_per_block_dist = Uniform::from(self.times_per_block_range.clone());
@@ -101,7 +101,7 @@ impl Frequency {
         let mut picked_numbers = Vec::new();
         let chance_per_block_hit = self
             .chance_per_block
-            .map_or(true, |chance| rng.gen_bool(chance));
+            .is_none_or(|chance| rng.gen_bool(chance));
 
         if chance_per_block_hit {
             let times_per_block_dist = Uniform::from(self.times_per_block_range.clone());
@@ -141,7 +141,7 @@ impl Frequency {
         let mut picked_numbers = Vec::new();
         let chance_per_block_hit = self
             .chance_per_block
-            .map_or(true, |chance| rng.gen_bool(chance));
+            .is_none_or(|chance| rng.gen_bool(chance));
 
         if chance_per_block_hit {
             let times_per_block_dist = Uniform::from(self.times_per_block_range.clone());
@@ -180,7 +180,7 @@ impl Frequency {
         let mut picked_numbers = Vec::new();
         let chance_per_block_hit = self
             .chance_per_block
-            .map_or(true, |chance| rng.gen_bool(chance));
+            .is_none_or(|chance| rng.gen_bool(chance));
 
         if chance_per_block_hit {
             let times_per_block_dist = Uniform::from(self.times_per_block_range.clone());

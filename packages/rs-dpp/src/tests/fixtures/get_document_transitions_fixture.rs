@@ -8,11 +8,18 @@ use crate::document::Document;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+use crate::tokens::token_payment_info::TokenPaymentInfo;
+
 pub fn get_batched_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
+            Vec<(
+                Document,
+                DocumentTypeRef<'a>,
+                Bytes32,
+                Option<TokenPaymentInfo>,
+            )>,
         ),
     >,
     nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce

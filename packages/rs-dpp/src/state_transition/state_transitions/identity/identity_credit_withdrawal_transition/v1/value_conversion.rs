@@ -10,7 +10,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use platform_version::version::PlatformVersion;
 
-impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransitionV1 {
+impl StateTransitionValueConvert<'_> for IdentityCreditWithdrawalTransitionV1 {
     fn from_object(
         raw_object: Value,
         _platform_version: &PlatformVersion,

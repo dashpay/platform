@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Mints (issues) new tokens by increasing the total supply and adding them to an identity's balance.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_mint_many(
         &self,
         token_id: Identifier,
@@ -43,6 +44,7 @@ impl Drive {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Adds the operations to mint_many tokens without calculating fees and optionally applying.
     pub fn token_mint_many_add_to_operations(
         &self,
@@ -75,6 +77,7 @@ impl Drive {
     }
 
     /// Gathers the operations needed to mint_many tokens.
+    #[allow(clippy::too_many_arguments)]
     pub fn token_mint_many_operations(
         &self,
         token_id: Identifier,

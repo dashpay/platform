@@ -6,19 +6,22 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
+use crate::data_contract::document_type::accessors::DocumentTypeV1Setters;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+use crate::data_contract::document_type::token_costs::accessors::TokenCostSettersV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
+use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use platform_value::{Identifier, Value};
 
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 mod accessors;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
@@ -71,10 +74,29 @@ impl DocumentTypeBasicMethods for DocumentTypeV1 {}
 
 impl DocumentTypeV0Methods for DocumentTypeV1 {}
 
-impl DocumentTypeV1 {
-    // Public method to set the data_contract_id
-    pub fn set_data_contract_id(&mut self, new_id: Identifier) {
-        self.data_contract_id = new_id;
+impl DocumentTypeV1Setters for DocumentTypeV1 {
+    fn set_document_creation_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        self.token_costs.set_document_creation_token_cost(cost)
+    }
+
+    fn set_document_replacement_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        self.token_costs.set_document_replacement_token_cost(cost)
+    }
+
+    fn set_document_deletion_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        self.token_costs.set_document_deletion_token_cost(cost)
+    }
+
+    fn set_document_transfer_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        self.token_costs.set_document_transfer_token_cost(cost)
+    }
+
+    fn set_document_price_update_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        self.token_costs.set_document_price_update_token_cost(cost)
+    }
+
+    fn set_document_purchase_token_cost(&mut self, cost: Option<DocumentActionTokenCost>) {
+        self.token_costs.set_document_purchase_token_cost(cost)
     }
 }
 

@@ -66,6 +66,7 @@ pub trait DocumentFromReplaceTransitionV0 {
     /// # Errors
     ///
     /// This function may return a `ProtocolError` if validation fails, required fields are missing, or if there are mismatches between field types and the schema defined in the data contract.
+    #[allow(clippy::too_many_arguments)]
     fn try_from_replace_transition_v0(
         value: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
@@ -101,6 +102,7 @@ pub trait DocumentFromReplaceTransitionV0 {
     /// # Errors
     ///
     /// This function may return a `ProtocolError` for the same reasons as `try_from_replace_transition_v0`, including validation failures, missing required fields, or schema mismatches.
+    #[allow(clippy::too_many_arguments)]
     fn try_from_owned_replace_transition_v0(
         value: DocumentReplaceTransitionV0,
         owner_id: Identifier,

@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds token transaction history
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_token_transaction_history_operations_v0(
         &self,
         token_id: Identifier,
