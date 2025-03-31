@@ -300,18 +300,29 @@
         },
         "tokenPosition": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 65535
         },
         "amount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1,
+          "maximum": 281474976710655
         },
         "effect": {
           "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
           "description": "0 - TransferTokenToContractOwner (default), 1 - Burn"
         },
         "gasFeesPaidBy": {
           "type": "integer",
+          "enum": [
+            0,
+            1,
+            2
+          ],
           "description": "0 - DocumentOwner (default), 1 - ContractOwner, 2 - PreferContractOwner"
         }
       },
