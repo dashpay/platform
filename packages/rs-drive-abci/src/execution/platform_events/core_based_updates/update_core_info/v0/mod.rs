@@ -23,7 +23,7 @@ where
     /// * block_platform_state - A mutable reference to the current platform state in the block
     ///   execution context to be updated.
     /// * core_block_height - The current block height in the Dash Core.
-    /// * is_init_chain - A boolean indicating if the chain is being initialized.
+    /// * start_from_scratch - A boolean indicating if the chain is being initialized.
     /// * block_info - A reference to the block information.
     /// * transaction - The current groveDB transaction.
     ///
@@ -38,13 +38,14 @@ where
         platform_state: Option<&PlatformState>,
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
-        is_init_chain: bool,
+        start_from_scratch: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // the core height of the block platform state is the last committed
-        if !is_init_chain && block_platform_state.last_committed_core_height() == core_block_height
+        if !start_from_scratch
+            && block_platform_state.last_committed_core_height() == core_block_height
         {
             // if we get the same height that we know we do not need to update core info
             return Ok(());
@@ -53,7 +54,7 @@ where
             platform_state,
             block_platform_state,
             core_block_height,
-            is_init_chain,
+            start_from_scratch,
             block_info,
             transaction,
             platform_version,
@@ -63,7 +64,7 @@ where
             platform_state,
             block_platform_state,
             core_block_height,
-            false,
+            start_from_scratch,
             platform_version,
         )
     }
