@@ -111,7 +111,6 @@ impl ErrorWithCode for BasicError {
             Self::GroupPositionDoesNotExistError(_) => 10350,
             Self::GroupActionNotAllowedOnTransitionError(_) => 10351,
             Self::GroupTotalPowerLessThanRequiredError(_) => 10352,
-            Self::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_) => 10353,
             Self::GroupExceedsMaxMembersError(_) => 10354,
             Self::GroupMemberHasPowerOfZeroError(_) => 10355,
             Self::GroupMemberHasPowerOverLimitError(_) => 10356,

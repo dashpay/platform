@@ -1,6 +1,5 @@
 use crate::consensus::basic::data_contract::{
     GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
     GroupTotalPowerLessThanRequiredError,
 };
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
@@ -135,17 +134,6 @@ impl GroupMethodsV0 for GroupV0 {
         if total_power < self.required_power {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 GroupTotalPowerLessThanRequiredError::new(total_power, self.required_power).into(),
-            ));
-        }
-
-        // Check if the total power without unilateral members meets the required power
-        if total_power_without_unilateral_members < self.required_power {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError::new(
-                    total_power_without_unilateral_members,
-                    self.required_power,
-                )
-                .into(),
             ));
         }
 

@@ -10,10 +10,10 @@ use crate::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, DataContractTokenConfigurationUpdateError,
     DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
     GroupExceedsMaxMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
-    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    GroupPositionDoesNotExistError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidTokenBaseSupplyError,
     InvalidTokenDistributionFunctionDivideByZeroError,
@@ -496,11 +496,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     GroupTotalPowerLessThanRequiredError(GroupTotalPowerLessThanRequiredError),
-
-    #[error(transparent)]
-    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(
-        GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
-    ),
 
     #[error(transparent)]
     MissingDefaultLocalizationError(MissingDefaultLocalizationError),
