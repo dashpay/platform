@@ -46,6 +46,7 @@ pub struct Config {
     pub platform_ssl: bool,
 
     /// When platform_ssl is true, use the PEM-encoded CA certificate from provided absolute path to verify the server certificate.
+    #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
     #[serde(default)]
     pub platform_ca_cert_path: Option<PathBuf>,
 

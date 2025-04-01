@@ -117,6 +117,15 @@ impl<'a> TokenDestroyFrozenFundsTransitionBuilder<'a> {
         self
     }
 
+    /// Returns the settings for the token destroy transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
+    fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
     /// Signs the token destroy transition
     ///
     /// # Arguments

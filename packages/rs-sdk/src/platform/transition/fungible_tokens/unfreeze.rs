@@ -117,6 +117,15 @@ impl<'a> TokenUnfreezeTransitionBuilder<'a> {
         self
     }
 
+    /// Returns the settings for the token unfreeze transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
+    fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
     /// Signs the token unfreeze transition
     ///
     /// # Arguments

@@ -137,6 +137,15 @@ impl<'a> TokenMintTransitionBuilder<'a> {
         self
     }
 
+    /// Returns the settings for the token mint transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
+    fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
     /// Signs the token mint transition
     ///
     /// # Arguments

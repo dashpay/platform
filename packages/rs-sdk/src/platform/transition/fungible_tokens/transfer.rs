@@ -141,6 +141,15 @@ impl<'a> TokenTransferTransitionBuilder<'a> {
         self
     }
 
+    /// Returns the settings for the token transfer transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
+    fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
     /// Signs the token transfer transition
     ///
     /// # Arguments

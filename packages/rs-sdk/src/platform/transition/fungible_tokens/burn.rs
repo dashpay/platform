@@ -109,6 +109,15 @@ impl<'a> TokenBurnTransitionBuilder<'a> {
         self
     }
 
+    /// Returns the settings for the token burn transition
+    ///
+    /// # Returns
+    ///
+    /// * `Option<PutSettings>` - The settings, if any
+    fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
     /// Signs the token burn transition
     ///
     /// # Arguments

@@ -1,6 +1,7 @@
 use crate::transport::TransportRequest;
 use crate::{Address, CanRetry, DapiClientError, RequestSettings};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dapi_grpc::tonic::async_trait;
 use std::fmt::Debug;
 
@@ -124,6 +125,22 @@ where
             retries: self.retries,
             address: self.address,
         }
+    }
+}
+
+impl<T: VersionedGrpcResponse> VersionedGrpcResponse for ExecutionResponse<T> {
+    type Error = T::Error;
+
+    fn metadata(&self) -> Result<&dapi_grpc::platform::v0::ResponseMetadata, Self::Error> {
+        self.inner.metadata()
+    }
+
+    fn proof(&self) -> Result<&dapi_grpc::platform::v0::Proof, Self::Error> {
+        self.inner.proof()
+    }
+
+    fn proof_owned(self) -> Result<dapi_grpc::platform::v0::Proof, Self::Error> {
+        self.inner.proof_owned()
     }
 }
 

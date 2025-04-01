@@ -94,10 +94,10 @@ pub type LastQueryTimestamp = u64;
 ///
 /// See tests/ for examples of using the SDK.
 pub struct Sdk {
-    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)
-    pub network: Network,
     inner: SdkInstance,
-    /// Use proofs when retrieving data from Platform.
+    /// Type of network we use. Determines some parameters, like quorum types.
+    network: Network,
+    /// Use proofs when retrieving data from the platform.
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
@@ -139,7 +139,6 @@ pub struct Sdk {
 impl Clone for Sdk {
     fn clone(&self) -> Self {
         Self {
-            network: self.network,
             inner: self.inner.clone(),
             proofs: self.proofs,
             internal_cache: Arc::clone(&self.internal_cache),
@@ -149,6 +148,7 @@ impl Clone for Sdk {
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
             dapi_client_settings: self.dapi_client_settings,
+            network: self.network,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -275,7 +275,11 @@ impl Sdk {
         Ok(())
     }
 
-    // TODO: Changed to public for tests
+    /// Get configured Dash Core network type.
+    pub fn network(&self) -> Network {
+        self.network
+    }
+
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -300,7 +304,7 @@ impl Sdk {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
-                self.network,
+                self.network(),
                 self.version(),
                 &provider,
             ),
@@ -706,8 +710,9 @@ impl DapiRequestExecutor for Sdk {
 /// Mandatory steps of initialization in normal mode are:
 ///
 /// 1. Create an instance of [SdkBuilder] with [`SdkBuilder::new()`]
-/// 2. Configure the builder with [`SdkBuilder::with_core()`]
-/// 3. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
+/// 2. Set up network type with [`SdkBuilder::with_network()`]
+/// 3. Configure the builder with [`SdkBuilder::with_core()`]
+/// 4. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
 pub struct SdkBuilder {
     /// List of addressses to connect to.
     ///
@@ -715,12 +720,15 @@ pub struct SdkBuilder {
     addresses: Option<AddressList>,
     settings: Option<RequestSettings>,
 
-    network: Network,
-
     core_ip: String,
     core_port: u16,
     core_user: String,
     core_password: Zeroizing<String>,
+
+    /// Dash Core network type used by the SDK.
+    ///
+    /// Defaults to [Network::Dash].
+    network: Network,
 
     /// If true, request and verify proofs of the responses.
     proofs: bool,
@@ -768,12 +776,11 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: None,
-            network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
             core_password: "".to_string().into(),
             core_user: "".to_string(),
-
+            network: Network::Dash,
             proofs: true,
             metadata_height_tolerance: Some(1),
             metadata_time_tolerance_ms: None,
@@ -801,6 +808,10 @@ impl Default for SdkBuilder {
 
 impl SdkBuilder {
     /// Create a new SdkBuilder with provided address list.
+    ///
+    /// It creates new SdkBuilder, preconfigured to connect to provided addresses.
+    ///
+    /// Once created, consider setting the [Network] with [`SdkBuilder::with_network()`].
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
@@ -842,9 +853,15 @@ impl SdkBuilder {
         )
     }
 
-    /// Configure network type.
+    /// Configure network type to connect to.
     ///
-    /// Defaults to Network::Dash which is mainnet.
+    /// Consider using one of these:
+    /// * [Network::Dash] for mainnet,
+    /// * [Network::Testnet] for testnet,
+    /// * [Network::Devnet] for testing, QA, staging and similar environments,
+    /// * [Network::Regtest] for local development environments (eg. whole network started with dashmate on one host).
+    ///
+    /// Defaults to [Network::Dash].
     pub fn with_network(mut self, network: Network) -> Self {
         self.network = network;
         self
@@ -1031,9 +1048,9 @@ impl SdkBuilder {
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
-                    network: self.network,
                     dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
+                    network: self.network,
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
@@ -1094,7 +1111,6 @@ impl SdkBuilder {
                 let mock_sdk = MockDashPlatformSdk::new(self.version, Arc::clone(&dapi));
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
-                    network: self.network,
                     dapi_client_settings,
                     inner:SdkInstance::Mock {
                         mock:mock_sdk.clone(),
@@ -1102,6 +1118,7 @@ impl SdkBuilder {
                         address_list: AddressList::new(),
                         version: self.version,
                     },
+                    network: self.network,
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
