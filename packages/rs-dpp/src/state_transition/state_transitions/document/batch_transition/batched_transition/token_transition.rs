@@ -422,9 +422,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                                 TokenDistributionResolvedRecipient::ContractOwnerIdentity(owner_id)
                             }
                             TokenDistributionRecipient::Identity(identifier) => {
-                                TokenDistributionResolvedRecipient::ContractOwnerIdentity(
-                                    identifier,
-                                )
+                                TokenDistributionResolvedRecipient::Identity(identifier)
                             }
                             TokenDistributionRecipient::EvonodesByParticipation => {
                                 TokenDistributionResolvedRecipient::Evonode(owner_id)

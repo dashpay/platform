@@ -139,7 +139,7 @@ impl TokenTransitionAction {
         )
     }
 
-    /// Historical document id
+    /// Historical document
     pub fn build_historical_document(
         &self,
         token_id: Identifier,
