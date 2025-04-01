@@ -593,7 +593,10 @@
       },
       "distributionType": {
         "type": "integer",
-        "minimum": 0,
+        "enum": [
+          0,
+          1
+        ],
         "description": "The type of distribution (0: PreProgrammed, 1: Perpetual)",
         "position": 3
       },
@@ -674,7 +677,7 @@
           0,
           1
         ],
-        "description": "The action we are performing. 0 - Pause, 1 - Resume",
+        "description": "The action we are performing (0: Pause, 1: Resume)",
         "position": 1
       }
     },

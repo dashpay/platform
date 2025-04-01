@@ -1,11 +1,9 @@
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
-use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use dpp::data_contract::{DataContract, TokenContractPosition};
-use dpp::group::GroupStateTransitionInfoStatus;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -58,7 +56,7 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         }
     }
 
-    /// Adds a public note to the token mint transition
+    /// Adds a public note to the token claim transition
     ///
     /// # Arguments
     ///
@@ -72,7 +70,7 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         self
     }
 
-    /// Adds a user fee increase to the token mint transition
+    /// Adds a user fee increase to the token claim transition
     ///
     /// # Arguments
     ///
@@ -86,7 +84,7 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         self
     }
 
-    /// Adds settings to the token mint transition
+    /// Adds settings to the token claim transition
     ///
     /// # Arguments
     ///
@@ -100,7 +98,7 @@ impl<'a> TokenClaimTransitionBuilder<'a> {
         self
     }
 
-    /// Signs the token mint transition
+    /// Signs the token claim transition
     ///
     /// # Arguments
     ///
