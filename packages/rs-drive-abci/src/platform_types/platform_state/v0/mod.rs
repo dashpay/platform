@@ -297,8 +297,7 @@ impl PlatformStateV0 {
                     })
                     .collect(),
                 quorum_positions,
-                last_committed_block_info: last_block_info,
-                current_block_info: filter_extended_block_info(current_block_info),
+                last_committed_block_info: Some(filter_extended_block_info(current_block_info)), // we assume this is what we committed
                 proposed_core_chain_locked_height,
             },
         ))

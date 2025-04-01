@@ -204,11 +204,6 @@ where
 
     let saved = match reduced_platform_state {
         ReducedPlatformStateForSaving::V0(v0) => v0,
-        _ => {
-            return Err(Error::from(AbciError::StateSyncInternalError(
-                "reduced_platform_state invalid matching".to_string(),
-            )))
-        }
     };
 
     // Restore platform state.
@@ -219,7 +214,7 @@ where
     // At this point, we should have validator sets loaded for next height.
     let mut platform_state = PlatformState::V0(PlatformStateV0 {
         genesis_block_info: None,
-        last_committed_block_info: saved.last_committed_block_info,
+        last_committed_block_info: None,
         current_protocol_version_in_consensus: saved.current_protocol_version_in_consensus,
         next_epoch_protocol_version: saved.next_epoch_protocol_version,
         current_validator_set_quorum_hash: BlockHash::from_byte_array(
@@ -246,6 +241,26 @@ where
             .map(|epoch_index| (epoch_index, FeeVersion::first()))
             .collect(),
     });
+    // We need an ExtendedBlockInfoV0 with app_hash filled; we don't have it as we save during proposal processing
+    // TODO: we leave signature and block hash set to [0u8;32], implement them as Option<> to avoid misuse of not
+    // initialized values
+    let current_block_info: ExtendedBlockInfo = match saved.last_committed_block_info {
+        Some(ExtendedBlockInfo::V0(block_info)) => ExtendedBlockInfoV0 {
+            app_hash: app_hash.try_into().map_err(|_| {
+                AbciError::StateSyncBadRequest(format!(
+                    "app_hash {:?} has invalid legth",
+                    &app_hash
+                ))
+            })?,
+            ..block_info
+        }
+        .into(),
+        None => {
+            return Err(Error::from(AbciError::StateSyncInternalError(
+                "reduced_platform_state: last_committed_block_info must be set".to_string(),
+            )))
+        }
+    };
 
     log_apphash(app.platform(), "before update_core_info")?;
 
@@ -256,77 +271,25 @@ where
         &mut platform_state,
         saved.proposed_core_chain_locked_height, // new one, to be used in currently finalized block
         true,
-        saved.current_block_info.basic_info(),
+        current_block_info.basic_info(),
         &transaction,
         platform_version,
     )?;
-    log_apphash(app.platform(), "after update_core_info")?;
 
     log_apphash(app.platform(), "before sort_quorums")?;
     sort_quorums(platform_state.validator_sets_mut(), &saved.quorum_positions);
-    /* We assume all that logic is already done, either in update_core_info or earlier in run_block_proposal
-        // we use the last committed core chain lock height to build the masternode list,
-        // as this will be a starting point for validators list update
-        build_masternode_lists(
-            app,
-            &mut platform_state,
-            extended_block_info.last_committed_core_chain_lock_height,
-        )?;
 
-        let mut extended_quorum_list = core_rpc.get_quorum_listextended(Some(core_height))?;
-
-        build_quorum_verification_set(
-            app,
-            &extended_quorum_list,
-            QuorumSetType::ChainLock(config.chain_lock.quorum_type),
-            platform_state.chain_lock_validating_quorums_mut(),
-        )?;
-        build_quorum_verification_set(
-            app,
-            &extended_quorum_list,
-            QuorumSetType::InstantLock(config.instant_lock.quorum_type),
-            platform_state.instant_lock_validating_quorums_mut(),
-        )?;
-
-        build_validators_list(
-            app,
-            &mut platform_state,
-            &mut extended_quorum_list,
-            &saved.quorum_positions,
-            config.validator_set.quorum_type,
-        )?;
-
-        update_validators_list(
-            app,
-            &mut platform_state,
-            extended_block_info.proposer_pro_tx_hash,
-        )?;
-    */
     let block_height = platform_state.last_committed_block_height();
-    log_apphash(app.platform(), "before store_platform_state")?;
 
+    log_apphash(app.platform(), "before store_platform_state")?;
     platform.store_platform_state(&platform_state, Some(&transaction), platform_version)?;
 
     log_apphash(app.platform(), "before update_state_cache")?;
 
     // Now, we must advance to new height in state
-    //
-    // We need an ExtendedBlockInfoV0 with app_hash filled; we don't have it as we save during proposal processing
-    // TODO: also signature (?) and maybe block hash(?)
-    let committed_block: ExtendedBlockInfo = match saved.current_block_info {
-        ExtendedBlockInfo::V0(block_info) => ExtendedBlockInfoV0 {
-            app_hash: app_hash.try_into().map_err(|_| {
-                AbciError::StateSyncBadRequest(format!(
-                    "app_hash {:?} has invalid legth",
-                    &app_hash
-                ))
-            })?,
-            ..block_info
-        }
-        .into(),
-    };
+
     platform.update_state_cache(
-        committed_block,
+        current_block_info,
         platform_state,
         &transaction,
         platform_version,

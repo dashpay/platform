@@ -16,7 +16,7 @@ pub struct ReducedPlatformStateForSavingV0 {
     /// The last committed block info (at height `H-1`)
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Currently processed block info (at height `H`)
-    pub current_block_info: ExtendedBlockInfo,
+    // pub current_block_info: ExtendedBlockInfo,
     /// Current Version
     pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
