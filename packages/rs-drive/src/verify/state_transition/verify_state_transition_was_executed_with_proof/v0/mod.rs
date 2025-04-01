@@ -356,9 +356,19 @@ impl Drive {
                                 platform_version,
                             )?;
 
+                            // Some fields are populated by the drive,
+                            // so we need to ignore them
+                            let ignore_fields = match token_transition {
+                                TokenTransition::DestroyFrozenFunds(_) => {
+                                    Some(vec!["destroyedAmount"])
+                                }
+                                TokenTransition::Claim(_) => Some(vec!["amount"]),
+                                _ => None,
+                            };
+
                             if !document.is_equal_ignoring_time_based_fields(
                                 &expected_document,
-                                Some(vec!["destroyedAmount"]),
+                                ignore_fields,
                                 platform_version,
                             )? {
                                 return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not show the correct historical document {}, {}", document, expected_document))));
