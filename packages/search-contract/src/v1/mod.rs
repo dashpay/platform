@@ -9,14 +9,6 @@ pub mod document_types {
             pub const KEY_INDEX: &str = "byKeyword";
         }
     }
-
-    pub mod token {
-        pub const NAME: &str = "token";
-
-        pub mod properties {
-            pub const KEY_INDEX: &str = "byKeyword";
-        }
-    }
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {

@@ -48,55 +48,5 @@
       "keyword"
     ],
     "additionalProperties": false
-  },
-  "token": {
-    "type": "object",
-    "documentsMutable": false,
-    "canBeDeleted": false,
-    "referenceType": "token",
-    "creationRestrictionMode": 2,
-    "indices": [
-      {
-        "name": "byKeyword",
-        "properties": [
-          {
-            "keyword": "asc"
-          }
-        ]
-      },
-      {
-        "name": "byKeywordAndTokenId",
-        "properties": [
-          {
-            "keyword": "asc"
-          },
-          {
-            "tokenId": "asc"
-          }
-        ],
-        "unique": true
-      }
-    ],
-    "properties": {
-      "keyword": {
-        "type": "string",
-        "minLength": 3,
-        "maxLength": 50,
-        "position": 0
-      },
-      "tokenId": {
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
-        "position": 1,
-        "contentMediaType": "application/x.dash.dpp.identifier"
-      }
-    },
-    "required": [
-      "tokenId",
-      "keyword"
-    ],
-    "additionalProperties": false
   }
 }
