@@ -32,10 +32,10 @@ impl Drive {
             .insert
             .insert_contract
         {
-            1 => Err(Error::Drive(DriveError::NotSupported(
+            0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",
             ))),
-            2 => self.add_new_contract_keywords_v0(
+            1 => self.add_new_contract_keywords_v0(
                 contract_id,
                 owner_id,
                 keywords,
@@ -71,10 +71,10 @@ impl Drive {
             .insert
             .insert_contract
         {
-            1 => Err(Error::Drive(DriveError::NotSupported(
+            0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",
             ))),
-            2 => self.add_new_contract_keywords_add_to_operations_v0(
+            1 => self.add_new_contract_keywords_add_to_operations_v0(
                 contract_id,
                 owner_id,
                 keywords,
@@ -112,10 +112,10 @@ impl Drive {
             .insert
             .insert_contract
         {
-            1 => Err(Error::Drive(DriveError::NotSupported(
+            0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",
             ))),
-            2 => self.add_new_contract_keywords_operations_v0(
+            1 => self.add_new_contract_keywords_operations_v0(
                 contract_id,
                 owner_id,
                 keywords,
