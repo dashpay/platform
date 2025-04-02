@@ -1854,6 +1854,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/search-contract@workspace:packages/search-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/search-contract@workspace:packages/search-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^8.53.0"
+    eslint-config-airbnb-base: "npm:^15.0.0"
+    eslint-plugin-import: "npm:^2.29.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^17.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/token-history-contract@workspace:*, @dashevo/token-history-contract@workspace:packages/token-history-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/token-history-contract@workspace:packages/token-history-contract"

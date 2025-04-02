@@ -308,7 +308,7 @@ impl Drive {
         }
 
         if !contract.keywords().is_empty() {
-            batch_operations.extend(self.add_new_keywords_operations(
+            batch_operations.extend(self.add_new_contract_keywords_operations(
                 contract.id(),
                 contract.owner_id(),
                 contract.keywords(),
