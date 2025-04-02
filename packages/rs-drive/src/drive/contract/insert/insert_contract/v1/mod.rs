@@ -307,6 +307,18 @@ impl Drive {
             )?);
         }
 
+        if !contract.keywords().is_empty() {
+            batch_operations.extend(self.add_new_keywords_operations(
+                contract.id(),
+                contract.owner_id(),
+                contract.keywords(),
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
         Ok(batch_operations)
     }
 }

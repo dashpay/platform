@@ -106,6 +106,7 @@ mod tests {
                 }),
             )]),
             tokens: Default::default(),
+            keywords: Vec::new(),
         });
 
         let contract_id = contract.id();
@@ -175,6 +176,7 @@ mod tests {
             updated_at_epoch: None,
             groups: Default::default(),
             tokens: Default::default(),
+            keywords: Vec::new(),
         });
 
         let contract_id = contract.id();

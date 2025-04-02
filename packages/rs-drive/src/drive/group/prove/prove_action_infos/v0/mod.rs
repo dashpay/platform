@@ -153,6 +153,7 @@ mod tests {
                     TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
                 ),
             ]),
+            keywords: Vec::new(),
         });
 
         drive
@@ -380,6 +381,7 @@ mod tests {
                     TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
                 ),
             ]),
+            keywords: Vec::new(),
         });
 
         drive

@@ -224,6 +224,16 @@ impl DataContractV1Getters for DataContractV1 {
     fn updated_at_epoch(&self) -> Option<EpochIndex> {
         self.updated_at_epoch
     }
+
+    /// Returns the keywords for the contract.
+    fn keywords(&self) -> &Vec<String> {
+        &self.keywords
+    }
+
+    /// Returns a mutable reference to the keywords for the contract.
+    fn keywords_mut(&mut self) -> Option<&mut Vec<String>> {
+        Some(&mut self.keywords)
+    }
 }
 
 impl DataContractV1Setters for DataContractV1 {
@@ -271,5 +281,10 @@ impl DataContractV1Setters for DataContractV1 {
     /// Sets the epoch at which the contract was last updated.
     fn set_updated_at_epoch(&mut self, epoch: Option<EpochIndex>) {
         self.updated_at_epoch = epoch;
+    }
+
+    /// Sets the keywords for the contract.
+    fn set_keywords(&mut self, keywords: Vec<String>) {
+        self.keywords = keywords;
     }
 }

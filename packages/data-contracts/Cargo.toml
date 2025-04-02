@@ -18,3 +18,4 @@ feature-flags-contract = { path = "../feature-flags-contract" }
 platform-value = { path = "../rs-platform-value" }
 wallet-utils-contract = { path = "../wallet-utils-contract" }
 token-history-contract = { path = "../token-history-contract" }
+search-contract = { path = "../search-contract" }

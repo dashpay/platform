@@ -9,6 +9,7 @@ pub use feature_flags_contract;
 pub use masternode_reward_shares_contract;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+pub use search_contract;
 pub use token_history_contract;
 pub use wallet_utils_contract;
 pub use withdrawals_contract;
@@ -23,6 +24,7 @@ pub enum SystemDataContract {
     Dashpay = 4,
     WalletUtils = 5,
     TokenHistory = 6,
+    Search = 7,
 }
 
 pub struct DataContractSource {
@@ -43,6 +45,7 @@ impl SystemDataContract {
             SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
             SystemDataContract::WalletUtils => wallet_utils_contract::ID_BYTES,
             SystemDataContract::TokenHistory => token_history_contract::ID_BYTES,
+            SystemDataContract::Search => search_contract::ID_BYTES,
         };
         Identifier::new(bytes)
     }
@@ -98,9 +101,16 @@ impl SystemDataContract {
             SystemDataContract::TokenHistory => DataContractSource {
                 id_bytes: token_history_contract::ID_BYTES,
                 owner_id_bytes: token_history_contract::OWNER_ID_BYTES,
-                version: platform_version.system_data_contracts.wallet as u32,
+                version: platform_version.system_data_contracts.token_history as u32,
                 definitions: token_history_contract::load_definitions(platform_version)?,
                 document_schemas: token_history_contract::load_documents_schemas(platform_version)?,
+            },
+            SystemDataContract::Search => DataContractSource {
+                id_bytes: search_contract::ID_BYTES,
+                owner_id_bytes: search_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.search as u32,
+                definitions: search_contract::load_definitions(platform_version)?,
+                document_schemas: search_contract::load_documents_schemas(platform_version)?,
             },
         };
 
