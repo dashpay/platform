@@ -102,11 +102,12 @@ impl Drive {
 
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        for keyword in keywords {
+        for (i, keyword) in keywords.iter().enumerate() {
             let document = self.build_contract_keyword_document_owned_v0(
                 contract_id,
                 owner_id,
                 keyword,
+                i as u64,
                 block_info,
             )?;
 
@@ -138,13 +139,14 @@ impl Drive {
         contract_id: Identifier,
         owner_id: Identifier,
         keyword: &String,
+        keyword_index: u64,
         block_info: &BlockInfo,
     ) -> Result<Document, Error> {
         let document_id = Document::generate_document_id_v0(
             &contract_id,
             &owner_id,
             "contract",
-            0u64.to_be_bytes().as_slice(),
+            keyword_index.to_be_bytes().as_slice(),
         );
 
         let properties = BTreeMap::from([
