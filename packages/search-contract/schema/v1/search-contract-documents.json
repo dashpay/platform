@@ -7,6 +7,14 @@
     "creationRestrictionMode": 2,
     "indices": [
       {
+        "name": "byKeyword",
+        "properties": [
+          {
+            "keyword": "asc"
+          }
+        ]
+      },
+      {
         "name": "byKeywordAndContractId",
         "properties": [
           {
@@ -48,6 +56,14 @@
     "referenceType": "token",
     "creationRestrictionMode": 2,
     "indices": [
+      {
+        "name": "byKeyword",
+        "properties": [
+          {
+            "keyword": "asc"
+          }
+        ]
+      },
       {
         "name": "byKeywordAndTokenId",
         "properties": [
