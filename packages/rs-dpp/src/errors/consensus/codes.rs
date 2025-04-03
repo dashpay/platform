@@ -106,6 +106,8 @@ impl ErrorWithCode for BasicError {
             Self::UnknownGasFeesPaidByError(_) => 10259,
             Self::UnknownDocumentActionTokenEffectError(_) => 10260,
             Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
+            Self::TooManyKeywordsError(_) => 10262,
+            Self::DuplicateKeywordsError(_) => 10263,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

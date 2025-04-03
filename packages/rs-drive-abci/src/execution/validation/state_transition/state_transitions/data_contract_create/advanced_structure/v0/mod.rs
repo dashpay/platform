@@ -1,15 +1,21 @@
+use std::collections::HashSet;
+
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use dpp::consensus::basic::data_contract::DuplicateKeywordsError;
+use dpp::consensus::basic::data_contract::TooManyKeywordsError;
 use dpp::consensus::basic::data_contract::{
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
     NonContiguousContractTokenPositionsError,
 };
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -144,6 +150,42 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     bump_action,
                     validation_result.errors,
+                ));
+            }
+        }
+
+        // Validate there are no more than 20 keywords
+        if self.data_contract().keywords().len() > 20 {
+            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                vec![ConsensusError::BasicError(
+                    BasicError::TooManyKeywordsError(TooManyKeywordsError::new(
+                        self.data_contract().id().to_string(Encoding::Base58),
+                        self.data_contract().keywords().len() as u8,
+                    )),
+                )],
+            ));
+        }
+        // Validate the keywords are all unique
+        let mut seen_keywords = HashSet::new();
+        for keyword in self.data_contract().keywords() {
+            if !seen_keywords.insert(keyword) {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![ConsensusError::BasicError(
+                        BasicError::DuplicateKeywordsError(DuplicateKeywordsError::new(
+                            self.data_contract().id().to_string(Encoding::Base58),
+                            keyword.to_string(),
+                        )),
+                    )],
                 ));
             }
         }

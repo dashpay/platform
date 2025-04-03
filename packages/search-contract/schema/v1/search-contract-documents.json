@@ -13,18 +13,6 @@
             "keyword": "asc"
           }
         ]
-      },
-      {
-        "name": "byKeywordAndContractId",
-        "properties": [
-          {
-            "keyword": "asc"
-          },
-          {
-            "contractId": "asc"
-          }
-        ],
-        "unique": true
       }
     ],
     "properties": {

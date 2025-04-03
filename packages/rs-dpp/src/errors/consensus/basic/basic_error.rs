@@ -75,6 +75,7 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
+use super::data_contract::{DuplicateKeywordsError, TooManyKeywordsError};
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::token::{
@@ -204,6 +205,12 @@ pub enum BasicError {
 
     #[error(transparent)]
     DataContractHaveNewUniqueIndexError(DataContractHaveNewUniqueIndexError),
+
+    #[error(transparent)]
+    TooManyKeywordsError(TooManyKeywordsError),
+
+    #[error(transparent)]
+    DuplicateKeywordsError(DuplicateKeywordsError),
 
     // Document
     #[error(transparent)]

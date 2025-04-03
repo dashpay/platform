@@ -2447,4 +2447,298 @@ mod tests {
             assert_eq!(token_balance, None);
         }
     }
+
+    mod keywords {
+        use super::*;
+        use dpp::{
+            data_contract::conversion::value::v0::DataContractValueConversionMethodsV0,
+            platform_value::string_encoding::Encoding,
+        };
+
+        #[test]
+        fn test_data_contract_creation_fails_with_more_than_twenty_keywords() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            // Create a test identity and keys
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // Load the base contract JSON and convert it to `DataContract`
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            // Convert the contract back to Value so we can mutate its fields
+            let mut contract_value = data_contract
+                .to_value(PlatformVersion::latest())
+                .expect("to_value failed");
+
+            // Insert 21 keywords to exceed the max limit
+            let mut excessive_keywords: Vec<Value> = vec![];
+            for i in 0..21 {
+                excessive_keywords.push(Value::Text(format!("keyword{}", i)));
+            }
+            contract_value["keywords"] = Value::Array(excessive_keywords);
+
+            // Build a new DataContract from the mutated Value
+            let data_contract_with_excessive_keywords =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract from Value");
+
+            // Create the DataContractCreateTransition
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract_with_excessive_keywords,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract transition");
+
+            // Serialize the transition
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected a serialized data contract transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Process the state transition
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // We expect a failure due to the JSON schema rejecting >20 keywords
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::TooManyKeywordsError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
+        fn test_data_contract_creation_fails_with_duplicate_keywords() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            // Create a test identity and keys
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // Load the base contract JSON and convert it to `DataContract`
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            // Convert to Value to mutate fields
+            let mut contract_value = data_contract
+                .to_value(PlatformVersion::latest())
+                .expect("to_value failed");
+
+            // Insert some duplicates
+            let duplicated_keywords = vec!["keyword1", "keyword2", "keyword2"];
+            contract_value["keywords"] = Value::Array(
+                duplicated_keywords
+                    .into_iter()
+                    .map(|str| Value::Text(str.to_string()))
+                    .collect(),
+            );
+
+            // Build a new DataContract from the mutated Value
+            let data_contract_with_duplicates =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract from Value");
+
+            // Create the DataContractCreateTransition
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract_with_duplicates,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract transition");
+
+            // Serialize the transition
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected a serialized data contract transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Process the state transition
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Expect failure
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::DuplicateKeywordsError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
+        fn test_data_contract_creation_succeeds_with_valid_keywords() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            // Create a test identity and keys
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // Load the base contract JSON and convert to `DataContract`
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            // Convert to Value so we can adjust fields if needed
+            let mut contract_value = data_contract
+                .to_value(PlatformVersion::latest())
+                .expect("to_value failed");
+
+            // Insert a valid set of keywords: all distinct, fewer than 20
+            let valid_keywords = vec!["k1", "k2", "k3"];
+            contract_value["keywords"] = Value::Array(
+                valid_keywords
+                    .into_iter()
+                    .map(|str| Value::Text(str.to_string()))
+                    .collect(),
+            );
+
+            // Build a new DataContract from the mutated Value
+            let data_contract_valid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract from Value");
+
+            // Create the DataContractCreateTransition
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract_valid,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract transition");
+
+            // Serialize the transition
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected a serialized data contract transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Process the state transition
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // This time we expect success
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit the transaction since it's valid
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Get the data contract ID from the transition
+            let unique_identifiers = data_contract_create_transition.unique_identifiers();
+            let unique_identifier = unique_identifiers
+                .first()
+                .expect("expected at least one unique identifier");
+            let unique_identifier_str = unique_identifier.as_str();
+            let data_contract_id_str = unique_identifier_str
+                .split('-')
+                .last()
+                .expect("expected to extract data contract id from unique identifier");
+            let data_contract_id = Identifier::from_string(data_contract_id_str, Encoding::Base58)
+                .expect("failed to create Identifier from string");
+
+            // Fetch the contract from the platform
+            let contract = platform
+                .drive
+                .fetch_contract(data_contract_id.into(), None, None, None, platform_version)
+                .value
+                .expect("expected to get contract")
+                .expect("expected to find the contract");
+
+            // Check the keywords in the contract
+            let keywords = contract.contract.keywords();
+            assert_eq!(keywords.len(), 3);
+            assert_eq!(keywords[0], "k1");
+            assert_eq!(keywords[1], "k2");
+            assert_eq!(keywords[2], "k3");
+        }
+    }
 }
