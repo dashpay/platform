@@ -630,7 +630,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488410);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488810);
 
         let check_result = platform
             .check_tx(
@@ -1141,7 +1141,7 @@ mod tests {
 
         // The processing fees should be twice as much as a fee multiplier of 0,
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4976820);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4977620);
 
         let check_result = platform
             .check_tx(
@@ -1613,7 +1613,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488410);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488810);
 
         platform
             .drive
@@ -2069,7 +2069,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488410);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2488810);
 
         platform
             .drive
