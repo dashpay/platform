@@ -2624,6 +2624,222 @@ mod tests {
         }
 
         #[test]
+        fn test_data_contract_creation_fails_with_keyword_too_short() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            // Create identity
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // Load the base contract JSON and convert it to `DataContract`
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            // Convert to Value for mutation
+            let mut contract_value = data_contract
+                .to_value(PlatformVersion::latest())
+                .expect("to_value failed");
+
+            // Insert a keyword with length < 3
+            contract_value["keywords"] = Value::Array(vec![Value::Text("hi".to_string())]);
+
+            // Build a new DataContract
+            let data_contract_invalid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract");
+
+            // Create DataContractCreateTransition
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract_invalid,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create transition");
+
+            // Process
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Assert that we get the correct error
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
+        fn test_data_contract_creation_fails_with_keyword_too_long() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
+
+            // Create a 51-char keyword
+            let too_long_keyword = "x".repeat(51);
+            contract_value["keywords"] = Value::Array(vec![Value::Text(too_long_keyword)]);
+
+            let data_contract_invalid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract");
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract_invalid,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
+        fn test_data_contract_creation_fails_with_non_ascii_keyword() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
+
+            // Insert a keyword with a non-ASCII char, e.g. ü
+            contract_value["keywords"] = Value::Array(vec![Value::Text("kü".to_string())]);
+
+            let data_contract_invalid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract");
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract_invalid,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::InvalidKeywordEncodingError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
         fn test_data_contract_creation_succeeds_with_valid_keywords() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -2651,7 +2867,7 @@ mod tests {
                 .expect("to_value failed");
 
             // Insert a valid set of keywords: all distinct, fewer than 20
-            let valid_keywords = vec!["k1", "k2", "k3"];
+            let valid_keywords = vec!["key1", "key2", "key3"];
             contract_value["keywords"] = Value::Array(
                 valid_keywords
                     .into_iter()
@@ -2737,9 +2953,9 @@ mod tests {
             // Check the keywords in the contract
             let keywords = contract.contract.keywords();
             assert_eq!(keywords.len(), 3);
-            assert_eq!(keywords[0], "k1");
-            assert_eq!(keywords[1], "k2");
-            assert_eq!(keywords[2], "k3");
+            assert_eq!(keywords[0], "key1");
+            assert_eq!(keywords[1], "key2");
+            assert_eq!(keywords[2], "key3");
         }
     }
 }
