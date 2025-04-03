@@ -88,7 +88,7 @@ mod perpetual_distribution_block {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![claim_serialized_transition.clone()],
+                &[claim_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo {
                     time_ms: 10_200_100_000,
@@ -156,7 +156,7 @@ mod perpetual_distribution_block {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![claim_serialized_transition.clone()],
+                &[claim_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo {
                     time_ms: 10_200_100_000,
@@ -226,7 +226,7 @@ mod perpetual_distribution_block {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![claim_serialized_transition.clone()],
+                &[claim_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo {
                     time_ms: 10_200_100_000,
@@ -337,7 +337,7 @@ mod perpetual_distribution_block {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![claim_serialized_transition.clone()],
+                &[claim_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo {
                     time_ms: 10_200_100_000,
@@ -459,7 +459,7 @@ mod perpetual_distribution_block {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![claim_serialized_transition.clone()],
+                &[claim_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo {
                     time_ms: 10_200_100_000,
@@ -1138,12 +1138,9 @@ mod block_based_perpetual_stepwise {
 }
 
 mod block_based_perpetual_linear {
-    use std::i64;
-
-    use super::{test_suite::check_heights, INITIAL_BALANCE};
+    use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-    use rust_decimal::prelude::ToPrimitive;
-    use test_case::{test_case, test_matrix};
+    use test_case::test_matrix;
 
     #[test_matrix(
         1,// a
@@ -1242,22 +1239,10 @@ mod block_based_perpetual_linear {
             min_value,
             max_value,
         };
-        // let steps = heights
-        //     .iter()
-        //     .scan((INITIAL_BALANCE, 1), |(balance, last_height), &h| {
-        //         if *last_height > start_step.unwrap_or(1) {
-        //             for i in (*last_height..=h).step_by(distribution_interval as usize) {
-        //                 *balance += expected_emission(i, a, d, start_step, starting_amount);
-        //             }
-        //         }
-        //         *last_height = h;
 
-        //         Some((h, *balance, true))
-        //     })
-        //     .collect::<Vec<_>>();
         check_heights(
             dist,
-            &steps,
+            steps,
             None, //Some(S),
             distribution_interval,
             None,
@@ -1269,6 +1254,358 @@ mod block_based_perpetual_linear {
     }
 }
 
+mod block_based_perpetual_polynomial {
+    use dpp::data_contract::{
+        associated_token::{
+            token_configuration::accessors::v0::TokenConfigurationV0Getters,
+            token_distribution_key::TokenDistributionType,
+            token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters,
+            token_perpetual_distribution::{
+                distribution_function::DistributionFunction::{self, Polynomial},
+                distribution_recipient::TokenDistributionRecipient,
+                reward_distribution_type::RewardDistributionType,
+                v0::TokenPerpetualDistributionV0,
+                TokenPerpetualDistribution,
+            },
+        },
+        TokenConfiguration,
+    };
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use super::test_suite::{check_heights, TestStep, TestSuite};
+
+    /// Calculates     f(x) = (a * (x - s + o)^(m/n)) / d + b
+
+    #[test_case::test_matrix([1,2,10,20])]
+
+    fn test_fx(x_max: i128) {
+        let a: i128 = 1;
+        let d: i128 = 1;
+        let m: i128 = 1;
+        let n: i128 = 1;
+        let o: i128 = 1;
+        let s: i128 = 0;
+        let b: i128 = 100_000;
+
+        let mut sum = 0;
+        for x in 1i128..=x_max {
+            // f(x) = (a * (x - s + o)^(m/n)) / d + b
+            let f_x = (a * (x - s + o).pow((m / n) as u32)) / d + b;
+            sum += f_x;
+            println!("f({}) = {}", x, f_x);
+        }
+
+        println!("SUM({}) = {}", n, sum);
+    }
+
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: 1,
+            start_moment: Some(1),
+            b: 100_000,
+            min_value: None,
+            max_value: None,
+        },
+        &[
+            (10,1_100_055,true),
+            (20,2_100_210,true),
+        ], // steps
+        1; // distribution_interval
+        "ones")]
+
+    /// Divide by 0
+    /// claim at height 10: claim failed: assertion 1 failed: expected SuccessfulExecution, got
+    /// [InternalError(\"storage: protocol: divide by zero error: Polynomial function: divisor d is 0\")]\nexpected balance Some(1100055) but got 100000\n\n-->
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 0,
+            m: 1,
+            n: 1,
+            o: 1,
+            start_moment: Some(1),
+            b: 100_000,
+            min_value: None,
+            max_value: None,
+        },
+        &[
+            (10,1_100_055,true),
+            (20,2_100_210,true),
+        ], // steps
+        1; // distribution_interval
+        "fails: divide by 0")]
+    #[test_case::test_case(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 100_000,
+                min_value: Some(100_000),
+                max_value: Some(10_000),
+            },
+            &[
+                (10,100_000,false),
+                (20,100_000,false),
+            ], // steps
+            1 // distribution_interval
+            ; "max < min should fail")]
+    #[test_case::test_case(
+        Polynomial {
+            a: -1,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: 1,
+            start_moment: Some(1),
+            b: 100_000,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,199_999,true),
+            (4,499_990,true),
+        ], // steps
+        1 // distribution_interval
+        ; "negative a")]
+
+    #[test_case::test_case(
+        Polynomial {
+            a: i64::MIN,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: 1,
+            start_moment: Some(1),
+            b: 100_000,
+            min_value: None,
+            max_value: None,
+        },
+        &[
+            (1,100_000,false),
+            (4,100_000,true),
+        ], // steps
+        1 // distribution_interval
+    ; "fails: a=i64::MIN")]
+
+    #[test_case::test_case(
+        Polynomial {
+            a: -1,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: 1,
+            start_moment: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,100_000,false),
+            (4,100_000,false),
+        ], // steps
+        1 // distribution_interval
+    ; "a=-1 b=0")]
+
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: i64::MIN,
+            start_moment: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,100_000,false),
+            (4,100_000,false),
+        ], // steps
+        1 // distribution_interval
+    ; "o=i64::MIN")]
+
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 1,
+            m: 1,
+            n: 1,
+            o: i64::MAX,
+            start_moment: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,100_000,false),
+            (4,100_000,false),
+        ], // steps
+        1 // distribution_interval
+    ; "o=i64::MAX")]
+
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 1,
+            m: -1,
+            n: 1,
+            o: 0,
+            start_moment: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,100_000,false), // this should fail, 0.pow(-1) is unspecified
+            (2,100_001,true), // it's 1.pow(-1) but not sure about handling of overflow at prev height
+        ], // steps
+        1 // distribution_interval
+    ; "0.pow(-1) at h=1")]   
+        
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 1,
+            m: 1,
+            n: 2,
+            o: 0,
+            start_moment: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,100_000,false), // this should fail, 0.pow(-1) is unspecified
+            (2,100_001,true), // it's 1.pow(1/2) == 1
+            (3,100_002,true), // 2.pow(1/2) == 1.41 - should round to 1
+            (4,100_004,true),  // 3.pow(1/2) == 1.73 - should round to 2; FAILS
+            (5,100_006,true), // 4.pow(1/2) == 2
+            (6,100_008,true), // 5.pow(1/2) == 2.23 - should round to 2
+        ], // steps
+        1 // distribution_interval
+    ; "0.pow(1/2) at h=1")]
+
+    #[test_case::test_case(
+        Polynomial {
+            a: 1,
+            d: 1,
+            m: 2,
+            n: 1,
+            o: i64::MAX,
+            start_moment: Some(1),
+            b: 0,
+            min_value: None,
+            max_value: None,
+        },
+        &[  
+            (1,100_000,false),
+            (10,100_000,false), 
+        ], // steps
+        1 // distribution_interval
+    ; "fails: o=i64::MAX m=2")]
+    /// Test polynomial distribution function.
+    ///
+    /// `f(x) = (a * (x - s + o)^(m/n)) / d + b`
+    fn test_polynomial(
+        dist: DistributionFunction,
+        steps: &[(u64, u64, bool)], // height, expected balance, expect pass
+        distribution_interval: u64,
+    ) -> Result<(), String> {
+        check_heights(
+            dist,
+            steps,
+            None, //Some(S),
+            distribution_interval,
+            None,
+        )
+        .inspect_err(|e| {
+            tracing::error!("{}", e);
+        })
+    }
+
+    #[test_case::test_matrix(
+        [i64::MIN,0,1,i64::MAX],// m
+        [0,1,u64::MAX] // n
+        ; "power m/n"
+    )]
+    // due to bug in test_matrix https://github.com/frondeus/test-case/issues/19, we need separate test for -1
+    #[test_case::test_matrix(
+        -1,// m
+        [0,1,u64::MAX] // n
+        ; "negative power -1/n"
+    )]
+    /// Test various combinations of `m/n` in [DistributionFunction::Polynomial] distribution.
+    ///
+    /// We expect this test not to end with InternalError.
+    fn test_poynomial_power(m: i64, n: u64) {
+        let dist = Polynomial {
+            a: 1,
+            d: 1,
+            m,
+            n,
+            o: 1,
+            start_moment: Some(1),
+            b: 100_000,
+            min_value: None,
+            max_value: None,
+        };
+
+        let mut suite = TestSuite::new(
+            10_200_000_000,
+            0,
+            TokenDistributionType::Perpetual,
+            Some(move |token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                        TokenPerpetualDistributionV0 {
+                            distribution_type: RewardDistributionType::BlockBasedDistribution {
+                                interval: 1,
+                                function: dist,
+                            },
+                            distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                        },
+                    )));
+            }),
+        );
+
+        suite = suite.with_contract_start_time(1);
+
+        let step = TestStep {
+            base_height: 10,
+            base_time_ms: Default::default(),
+            expected_balance: None,
+            claim_transition_assertions: vec![
+                |results: &[StateTransitionExecutionResult]| -> Result<(), String> {
+                    let err = results
+                        .iter()
+                        .find(|r| format!("{:?}", r).contains("InternalError"));
+
+                    if let Some(e) = err {
+                        Err(format!("InternalError: {:?}", e))
+                    } else {
+                        Ok(())
+                    }
+                },
+            ],
+            name: "test".to_string(),
+        };
+
+        suite
+            .execute(&[step])
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
+            .expect("test should pass");
+    }
+}
 mod test_suite {
     use super::*;
     use crate::rpc::core::MockCoreRPCLike;
@@ -1304,9 +1641,7 @@ mod test_suite {
             .map_err(|e| format!("join error: {:?}", e))?
     }
 
-    pub(super) fn contains<T: ToString>(a: T, text: &str) -> bool {
-        a.to_string().contains(text)
-    }
+    
     /// Check that claim results at provided heights are as expected, and that balances match expectations.
     ///
     /// Note we take i128 into expected_balances, as we want to be able to detect overflows.
