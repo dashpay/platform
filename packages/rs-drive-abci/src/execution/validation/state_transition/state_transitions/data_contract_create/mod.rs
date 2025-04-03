@@ -2713,6 +2713,7 @@ mod tests {
                 .expect("expected to commit transaction");
 
             // Get the data contract ID from the transition
+            // Is there a simpler way to get the ID?
             let unique_identifiers = data_contract_create_transition.unique_identifiers();
             let unique_identifier = unique_identifiers
                 .first()

@@ -108,6 +108,8 @@ impl ErrorWithCode for BasicError {
             Self::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_) => 10261,
             Self::TooManyKeywordsError(_) => 10262,
             Self::DuplicateKeywordsError(_) => 10263,
+            Self::InvalidKeywordLengthError(_) => 10264,
+            Self::InvalidKeywordEncodingError(_) => 10265,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
