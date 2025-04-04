@@ -3,6 +3,9 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
+use crate::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
+use crate::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
+use crate::query::token_status_drive_query::TokenStatusDriveQuery;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
 use itertools::{Either, Itertools};
@@ -18,6 +21,12 @@ impl Drive {
     ///   to be proven.
     /// - `vote_queries`: A list of [IdentityBasedVoteDriveQuery]. These would be to figure out the
     ///   result of votes based on identities making them.
+    /// - `token_balance_queries`: A slice of [IdentityTokenBalanceDriveQuery] objects specifying
+    ///   token balance queries for identities.
+    /// - `token_info_queries`: A slice of [IdentityTokenInfoDriveQuery] objects specifying
+    ///   token information queries for identities.
+    /// - `token_status_queries`: A slice of [TokenStatusDriveQuery] objects specifying token
+    ///   status queries.
     /// - `transaction`: An optional grovedb transaction
     /// - `platform_version`: A reference to the [PlatformVersion] object that specifies the version of
     ///   the function to call.
@@ -26,12 +35,16 @@ impl Drive {
     /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
     /// or an `Error` if the function fails.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn prove_multiple_state_transition_results_v0(
         &self,
         identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool is history
         document_queries: &[SingleDocumentDriveQuery],
         vote_queries: &[IdentityBasedVoteDriveQuery],
+        token_balance_queries: &[IdentityTokenBalanceDriveQuery],
+        token_info_queries: &[IdentityTokenInfoDriveQuery],
+        token_status_queries: &[TokenStatusDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -105,6 +118,36 @@ impl Drive {
                 let mut path_query = vote_query.construct_path_query().ok()?;
                 path_query.query.limit = None;
                 Some(path_query)
+            }));
+        }
+
+        if !token_balance_queries.is_empty() {
+            path_queries.extend(token_balance_queries.iter().map(|token_balance_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = token_balance_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
+        }
+
+        if !token_info_queries.is_empty() {
+            path_queries.extend(token_info_queries.iter().map(|token_info_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = token_info_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
+        }
+
+        if !token_status_queries.is_empty() {
+            path_queries.extend(token_status_queries.iter().map(|token_status_query| {
+                // The path query construction can only fail if the serialization fails.
+                // Because the serialization will pretty much never fail, we can do this.
+                let mut path_query = token_status_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
             }));
         }
 

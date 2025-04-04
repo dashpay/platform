@@ -9,16 +9,22 @@ class VerboseInternalGrpcError extends InternalGrpcError {
    */
   constructor(error) {
     const originalError = error.getError();
-    let [, errorPath] = originalError.stack.toString().split(/\r\n|\n/);
 
-    if (!errorPath) {
-      errorPath = originalError.stack;
-    }
-
-    const message = `${originalError.message} ${errorPath.trim()}`;
-
+    let { message } = originalError;
     const rawMetadata = error.getRawMetadata() || {};
-    rawMetadata['stack-bin'] = cbor.encode(originalError.stack);
+
+    if (originalError.stack) {
+      let [, errorPath] = originalError.stack.toString()
+        .split(/\r\n|\n/);
+
+      if (!errorPath) {
+        errorPath = originalError.stack;
+      }
+
+      message = `${message} ${errorPath.trim()}`;
+
+      rawMetadata['stack-bin'] = cbor.encode(originalError.stack);
+    }
 
     super(
       originalError,

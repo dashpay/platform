@@ -783,7 +783,7 @@ mod tests {
                     chain_lock: ChainLockConfig::default_100_67(),
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
-                        verify_sum_trees: true,
+                        verify_sum_trees: false, //faster without this
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -1369,7 +1369,7 @@ mod tests {
                     chain_lock: ChainLockConfig::default_100_67(),
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
-                        verify_sum_trees: true,
+                        verify_sum_trees: false,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },

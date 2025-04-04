@@ -19,6 +19,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Update revision for specific identity
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_identity_revision_v0(
         &self,
         identity_id: [u8; 32],

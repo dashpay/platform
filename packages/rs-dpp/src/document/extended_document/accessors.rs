@@ -4,6 +4,7 @@ use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
+use crate::tokens::token_payment_info::TokenPaymentInfo;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
@@ -149,6 +150,13 @@ impl ExtendedDocument {
     pub fn set_document(&mut self, document: Document) {
         match self {
             ExtendedDocument::V0(v0) => v0.document = document,
+        }
+    }
+
+    /// Returns a reference to the actual document object containing the data.
+    pub fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.token_payment_info,
         }
     }
 

@@ -1,10 +1,14 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -26,8 +30,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -35,6 +39,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -45,13 +50,14 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let action = self.transform_into_action_v0::<C>(
+            block_info,
             validation_mode,
             execution_context,
             platform_version,
@@ -61,9 +67,28 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             return Ok(action);
         }
 
+        // Validate token distribution rules
+        for (position, config) in self.data_contract().tokens() {
+            if let Some(distribution) = config.distribution_rules().pre_programmed_distribution() {
+                if let Some((timestamp, _)) = distribution.distributions().iter().next() {
+                    if timestamp < &block_info.time_ms {
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            StateTransitionAction::BumpIdentityNonceAction(
+                                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                            ),
+                            vec![StateError::PreProgrammedDistributionTimestampInPastError(
+                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), *position, *timestamp, block_info.time_ms),
+                            )
+                            .into()],
+                        ));
+                    }
+                }
+            }
+        }
+
         let contract_fetch_info = platform.drive.get_contract_with_fetch_info_and_fee(
             self.data_contract().id().to_buffer(),
-            Some(epoch),
+            Some(&block_info.epoch),
             false,
             tx,
             platform_version,
@@ -98,6 +123,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -108,6 +134,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         // The contract in serialized form into it's execution form
         let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
             self,
+            block_info,
             validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
@@ -161,8 +188,8 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_return_invalid_result_when_transform_into_action_failed() {
-            let platform_version = PlatformVersion::latest();
+        fn should_return_invalid_result_when_transform_into_action_failed_v7() {
+            let platform_version = PlatformVersion::get(7).expect("expected version 7");
             let identity_nonce = IdentityNonce::default();
 
             let platform = TestPlatformBuilder::new()
@@ -193,7 +220,10 @@ mod tests {
 
             // Make the contract invalid
             let DataContractInSerializationFormat::V0(ref mut contract) =
-                data_contract_for_serialization;
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 0")
+            };
 
             contract
                 .document_schemas
@@ -224,8 +254,101 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
+                    None,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )
+                )] if message == "document schema must be an object: structure error: value is not a map"
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityNonceAction(action)) if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
+            );
+
+            // We have tons of operations here so not sure we want to assert all of them
+            assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_transform_into_action_failed_latest() {
+            let platform_version = PlatformVersion::latest();
+            let identity_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            let identity_id = data_contract.owner_id();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            // Make the contract invalid
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
+
+            contract
+                .document_schemas
+                .insert("invalidType".to_string(), Value::Null);
+
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract_for_serialization,
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
                     None,
                     &mut execution_context,
                     platform_version,
@@ -307,8 +430,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -374,8 +497,8 @@ mod tests {
             let result = transition
                 .validate_state_v0::<MockCoreRPCLike>(
                     &platform_ref,
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
-                    &Epoch::default(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -413,8 +536,11 @@ mod tests {
                 .expect("failed to convert data contract");
 
             // Make the contract invalid
-            let DataContractInSerializationFormat::V0(ref mut contract) =
-                data_contract_for_serialization;
+            let DataContractInSerializationFormat::V1(ref mut contract) =
+                data_contract_for_serialization
+            else {
+                panic!("expected serialization version 1")
+            };
 
             contract
                 .document_schemas
@@ -435,6 +561,7 @@ mod tests {
 
             let result = transition
                 .transform_into_action_v0::<MockCoreRPCLike>(
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
                     platform_version,
@@ -489,6 +616,7 @@ mod tests {
 
             let result = transition
                 .transform_into_action_v0::<MockCoreRPCLike>(
+                    &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
                     platform_version,

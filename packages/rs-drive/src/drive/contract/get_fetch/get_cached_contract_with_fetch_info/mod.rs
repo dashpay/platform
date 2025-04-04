@@ -22,8 +22,8 @@ impl Drive {
     /// # Returns
     ///
     /// * `Option<Arc<DataContractFetchInfo>>` - An `Option` wrapping an `Arc` to the `ContractFetchInfo`.
-    /// If a contract with the given ID exists in the cache, the function returns `Some(Arc<DataContractFetchInfo>)`,
-    /// otherwise it returns `None`.
+    ///   If a contract with the given ID exists in the cache, the function returns `Some(Arc<DataContractFetchInfo>)`,
+    ///   otherwise it returns `None`.
     ///
     /// # Errors
     ///

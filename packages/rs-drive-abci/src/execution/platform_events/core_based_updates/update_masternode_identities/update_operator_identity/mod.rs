@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore::ProTxHash;
 
 use dpp::version::PlatformVersion;
 use drive::util::batch::DriveOperation;
@@ -41,6 +41,7 @@ where
     ///
     /// This function will return an error if the version of the `update_operator_identity` function
     /// does not match any of the known versions.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution::platform_events::core_based_updates::update_masternode_identities) fn update_operator_identity(
         &self,
         masternode_pro_tx_hash: &ProTxHash,

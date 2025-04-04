@@ -11,13 +11,15 @@ use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
     /// We add documents poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_documents_operations_v1(
         &self,
         vote_polls: &[(
@@ -56,10 +58,7 @@ impl Drive {
                                 Err(e) => return Some(Err(e.into())),
                             };
 
-                        match maybe_document_result {
-                            Some(document) => Some(Ok(document.id().to_vec())), // Assuming document.id holds the document key
-                            None => None, // Handle the case where no document is found
-                        }
+                        maybe_document_result.map(|document| Ok(document.id().to_vec()))
                     })
                     .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
@@ -70,7 +69,7 @@ impl Drive {
                         documents_storage_path.as_slice().into(),
                         document_key.as_slice(),
                         BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         batch_operations,
@@ -89,7 +88,7 @@ impl Drive {
                         contender_path.as_slice().into(),
                         vec![0].as_slice(),
                         BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         batch_operations,

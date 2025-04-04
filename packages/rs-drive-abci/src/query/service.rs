@@ -20,20 +20,27 @@ use dapi_grpc::platform::v0::{
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
+    GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
+    GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
-    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
-    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
-    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
-    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
+    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -63,7 +70,7 @@ impl QueryService {
         Self { platform }
     }
 
-    async fn handle_blocking_query<'a, RQ, RS>(
+    async fn handle_blocking_query<RQ, RS>(
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,
@@ -606,6 +613,138 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_current_quorums_info,
             "query_current_quorums_info",
+        )
+        .await
+    }
+
+    async fn get_identity_token_balances(
+        &self,
+        request: Request<GetIdentityTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentityTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_balances,
+            "query_identity_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identities_token_balances(
+        &self,
+        request: Request<GetIdentitiesTokenBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesTokenBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_balances,
+            "query_identities_token_balances",
+        )
+        .await
+    }
+
+    async fn get_identity_token_infos(
+        &self,
+        request: Request<GetIdentityTokenInfosRequest>,
+    ) -> Result<Response<GetIdentityTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_token_infos,
+            "query_identity_token_infos",
+        )
+        .await
+    }
+
+    async fn get_identities_token_infos(
+        &self,
+        request: Request<GetIdentitiesTokenInfosRequest>,
+    ) -> Result<Response<GetIdentitiesTokenInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_token_infos,
+            "query_identities_token_infos",
+        )
+        .await
+    }
+
+    async fn get_token_statuses(
+        &self,
+        request: Request<GetTokenStatusesRequest>,
+    ) -> Result<Response<GetTokenStatusesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_statuses,
+            "get_token_statuses",
+        )
+        .await
+    }
+
+    async fn get_token_pre_programmed_distributions(
+        &self,
+        request: Request<GetTokenPreProgrammedDistributionsRequest>,
+    ) -> Result<Response<GetTokenPreProgrammedDistributionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_pre_programmed_distributions,
+            "get_token_pre_programmed_distributions",
+        )
+        .await
+    }
+
+    async fn get_token_total_supply(
+        &self,
+        request: Request<GetTokenTotalSupplyRequest>,
+    ) -> Result<Response<GetTokenTotalSupplyResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_total_supply,
+            "get_token_total_supply",
+        )
+        .await
+    }
+
+    async fn get_group_info(
+        &self,
+        request: Request<GetGroupInfoRequest>,
+    ) -> Result<Response<GetGroupInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_info,
+            "get_group_info",
+        )
+        .await
+    }
+
+    async fn get_group_infos(
+        &self,
+        request: Request<GetGroupInfosRequest>,
+    ) -> Result<Response<GetGroupInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_infos,
+            "get_group_infos",
+        )
+        .await
+    }
+
+    async fn get_group_actions(
+        &self,
+        request: Request<GetGroupActionsRequest>,
+    ) -> Result<Response<GetGroupActionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_actions,
+            "get_group_actions",
+        )
+        .await
+    }
+
+    async fn get_group_action_signers(
+        &self,
+        request: Request<GetGroupActionSignersRequest>,
+    ) -> Result<Response<GetGroupActionSignersResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_group_action_signers,
+            "get_group_action_signers",
         )
         .await
     }

@@ -51,7 +51,7 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.83+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - [rust](https://www.rust-lang.org/tools/install) v1.85+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v27.3+
     - if needed, set PROTOC environment variable to location of `protoc` binary
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
@@ -61,7 +61,7 @@ this repository may be used on the following networks:
         in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
         You can find your default shell with `echo $SHELL`
       - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile`
-    - `cargo install wasm-bindgen-cli@0.2.99`
+    - `cargo install wasm-bindgen-cli@0.2.100`
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
   - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`

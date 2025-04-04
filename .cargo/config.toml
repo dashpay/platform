@@ -1,13 +1,27 @@
-# TODO: We shouldn't go with tokio_unstable to production
-
 [target.aarch64-unknown-linux-musl]
-rustflags = ["-C", "target-feature=-crt-static", "--cfg", "tokio_unstable"]
+rustflags = ["-C", "target-feature=-crt-static"]
 
 [target.x86_64-unknown-linux-musl]
-rustflags = ["-C", "target-feature=-crt-static", "--cfg", "tokio_unstable"]
+rustflags = [
+    "-C",
+    "target-feature=-crt-static",
+    "-C",
+    "target-cpu=x86-64",
+]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+    "-C",
+    "target-feature=-crt-static",
+    "-C",
+    "target-cpu=x86-64",
+]
 
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
 
-[build]
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+
+[target.'cfg(all())']
 rustflags = ["--cfg", "tokio_unstable"]

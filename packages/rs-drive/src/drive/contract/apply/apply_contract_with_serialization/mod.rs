@@ -44,6 +44,7 @@ impl Drive {
     ///
     /// This function returns an error if the contract application or fee calculation fails, or if
     /// the provided drive version does not match any known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_contract_with_serialization(
         &self,
         contract: &DataContract,
@@ -106,6 +107,7 @@ impl Drive {
     ///
     /// This function returns an error if the operation gathering fails, or if the provided drive version does not
     /// match any known versions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn apply_contract_with_serialization_operations(
         &self,
         contract: &DataContract,

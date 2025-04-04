@@ -76,13 +76,15 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = unpaid_epoch.into();
 
-        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
-            &unpaid_epoch,
-            core_block_rewards,
-            transaction,
-            batch,
-            platform_version,
-        )?;
+        let proposers_paid_count = self
+            .add_epoch_pool_to_proposers_payout_operations(
+                &unpaid_epoch,
+                core_block_rewards,
+                transaction,
+                batch,
+                platform_version,
+            )?
+            .1;
 
         let mut inner_batch = GroveDbOpBatch::new();
 
@@ -98,12 +100,12 @@ impl<C> Platform<C> {
 
         // We paid to all epoch proposers last block. Since proposers paid count
         // was equal to proposers limit, we paid to 0 proposers this block
-        if proposers_paid_count == 0 {
+        if proposers_paid_count.is_empty() {
             return Ok(None);
         }
 
         Ok(Some(proposer_payouts::v0::ProposersPayouts {
-            proposers_paid_count,
+            proposers_paid_count: proposers_paid_count.len() as u16,
             paid_epoch_index: unpaid_epoch.epoch_index(),
         }))
     }

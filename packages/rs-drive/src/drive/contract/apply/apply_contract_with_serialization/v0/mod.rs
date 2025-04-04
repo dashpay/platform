@@ -18,7 +18,7 @@ use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersion
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -26,6 +26,7 @@ impl Drive {
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_contract_with_serialization_v0(
         &self,
         contract: &DataContract,
@@ -75,6 +76,7 @@ impl Drive {
     /// Gets the operations for applying a contract with it's serialization
     /// If the contract already exists, we get operations for an update
     /// Otherwise we get operations for an insert
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(super) fn apply_contract_with_serialization_operations_v0(
         &self,
@@ -99,7 +101,7 @@ impl Drive {
             DirectQueryType::StatefulDirectQuery
         } else {
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 // we can ignore flags as this is just an approximation
                 // and it's doubtful that contracts will always be inserted at max size
                 query_target: QueryTargetValue(
@@ -208,6 +210,7 @@ impl Drive {
                 block_info,
                 estimated_costs_only_with_layer_info,
                 &mut drive_operations,
+                transaction,
                 platform_version,
             )?;
         }

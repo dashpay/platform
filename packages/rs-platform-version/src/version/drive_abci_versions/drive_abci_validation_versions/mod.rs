@@ -46,7 +46,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
+    pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,12 +92,34 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_transfer_transition_structure_validation: FeatureVersion,
     pub document_purchase_transition_structure_validation: FeatureVersion,
     pub document_update_price_transition_structure_validation: FeatureVersion,
+    pub document_base_transition_state_validation: FeatureVersion,
     pub document_create_transition_state_validation: FeatureVersion,
     pub document_delete_transition_state_validation: FeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,
     pub document_update_price_transition_state_validation: FeatureVersion,
+    pub token_mint_transition_structure_validation: FeatureVersion,
+    pub token_burn_transition_structure_validation: FeatureVersion,
+    pub token_transfer_transition_structure_validation: FeatureVersion,
+    pub token_mint_transition_state_validation: FeatureVersion,
+    pub token_burn_transition_state_validation: FeatureVersion,
+    pub token_transfer_transition_state_validation: FeatureVersion,
+    pub token_base_transition_structure_validation: FeatureVersion,
+    pub token_base_transition_state_validation: FeatureVersion,
+    pub token_freeze_transition_structure_validation: FeatureVersion,
+    pub token_unfreeze_transition_structure_validation: FeatureVersion,
+    pub token_freeze_transition_state_validation: FeatureVersion,
+    pub token_unfreeze_transition_state_validation: FeatureVersion,
+    pub token_destroy_frozen_funds_transition_structure_validation: FeatureVersion,
+    pub token_destroy_frozen_funds_transition_state_validation: FeatureVersion,
+    pub token_emergency_action_transition_structure_validation: FeatureVersion,
+    pub token_emergency_action_transition_state_validation: FeatureVersion,
+    pub token_config_update_transition_structure_validation: FeatureVersion,
+    pub token_config_update_transition_state_validation: FeatureVersion,
+    pub token_base_transition_group_action_validation: FeatureVersion,
+    pub token_claim_transition_structure_validation: FeatureVersion,
+    pub token_claim_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

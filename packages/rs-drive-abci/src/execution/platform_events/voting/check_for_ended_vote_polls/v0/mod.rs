@@ -3,8 +3,8 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::Network::Testnet;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network::Testnet;
 use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -310,6 +310,7 @@ where
         // This means removing it and also removing all current votes
         if !vote_polls_with_info.is_empty() {
             self.clean_up_after_vote_polls_end(
+                block_info,
                 &vote_polls_with_info,
                 clean_up_testnet_corrupted_reference_issue,
                 transaction,

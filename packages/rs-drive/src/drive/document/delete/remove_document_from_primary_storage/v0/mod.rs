@@ -1,6 +1,6 @@
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -24,6 +24,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Removes the document from primary storage.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_document_from_primary_storage_v0(
         &self,
         document_id: Identifier,
@@ -38,14 +39,14 @@ impl Drive {
     ) -> Result<(), Error> {
         let apply_type = if estimated_costs_only_with_layer_info.is_some() {
             StatelessBatchDelete {
-                is_sum_tree: false,
+                in_tree_type: TreeType::NormalTree,
                 estimated_key_size: DEFAULT_HASH_SIZE_U32,
                 estimated_value_size: document_type.estimated_size(platform_version)? as u32,
             }
         } else {
             // we know we are not deleting a subtree
             StatefulBatchDelete {
-                is_known_to_be_subtree_with_sum: Some((false, false)),
+                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
             }
         };
         self.batch_delete(

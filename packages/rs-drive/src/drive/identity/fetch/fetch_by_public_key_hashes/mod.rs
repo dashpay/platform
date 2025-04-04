@@ -21,7 +21,7 @@ mod tests {
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;
 
@@ -72,7 +72,7 @@ mod tests {
                     .fetch_identity_ids_by_non_unique_public_key_hash(
                         hash,
                         Some(&transaction),
-                        &drive_version,
+                        drive_version,
                     )
                     .expect("expected to get identity ids");
                 assert!(identity_ids.contains(&identity.id().to_buffer()));

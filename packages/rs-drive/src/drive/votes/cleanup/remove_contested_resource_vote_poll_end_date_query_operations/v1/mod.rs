@@ -12,13 +12,15 @@ use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_end_date_query_operations_v1(
         &self,
         vote_polls: &[(
@@ -38,7 +40,7 @@ impl Drive {
         //     VotePoll Info 1   VotePoll Info 2                 VotePoll Info 3
 
         let delete_apply_type = BatchDeleteApplyType::StatefulBatchDelete {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
 
         let mut by_end_date: BTreeMap<TimestampMillis, Vec<Identifier>> = BTreeMap::new();
@@ -59,7 +61,7 @@ impl Drive {
                 self.batch_delete(
                     time_path.as_slice().into(),
                     unique_id.as_bytes(),
-                    delete_apply_type.clone(),
+                    delete_apply_type,
                     transaction,
                     batch_operations,
                     &platform_version.drive,
@@ -92,18 +94,14 @@ impl Drive {
                         platform_version,
                     )?.len();
 
-                if total_count <= count {
-                    true
-                } else {
-                    false
-                }
+                total_count <= count
             };
 
             if should_delete_parent_time_tree {
                 self.batch_delete(
                     vote_end_date_queries_tree_path_vec().as_slice().into(),
                     encode_u64(end_date).as_slice(),
-                    delete_apply_type.clone(),
+                    delete_apply_type,
                     transaction,
                     batch_operations,
                     &platform_version.drive,

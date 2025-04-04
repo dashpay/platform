@@ -28,6 +28,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn batch_move_items_in_path_query_v0(
         &self,
         path_query: &PathQuery,
@@ -38,7 +39,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        if path_query.query.limit == None {
+        if path_query.query.limit.is_none() {
             return Err(Error::Drive(DriveError::NotSupported(
                 "Limits are required for path_query",
             )));
@@ -89,14 +90,14 @@ impl Drive {
             };
             let delete_operation = match apply_type {
                 BatchMoveApplyType::StatelessBatchMove {
-                    is_sum_tree,
+                    in_tree_type,
                     estimated_key_size,
                     estimated_value_size,
                     ..
                 } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
                     &KeyInfoPath::from_known_owned_path(path.to_vec()),
                     &KeyInfo::KnownKey(key.to_vec()),
-                    is_sum_tree,
+                    in_tree_type,
                     false,
                     true,
                     0,
@@ -107,7 +108,7 @@ impl Drive {
                 BatchMoveApplyType::StatefulBatchMove {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    (path.as_slice()).into(),
+                    path.as_slice().into(),
                     key.as_slice(),
                     &options,
                     is_known_to_be_subtree_with_sum,
@@ -142,14 +143,14 @@ mod tests {
         util::test_helpers::setup::setup_drive,
     };
     use assert_matches::assert_matches;
-    use grovedb::{Element, PathQuery, Query, SizedQuery};
+    use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_batch_move_items_in_path_query_success() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -218,7 +219,7 @@ mod tests {
 
         // Set up the apply type and drive operations vector
         let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
         let mut drive_operations = Vec::new();
 
@@ -305,7 +306,7 @@ mod tests {
     #[test]
     fn test_batch_move_items_in_path_query_no_elements() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -330,7 +331,7 @@ mod tests {
 
         // Set up the apply type and drive operations vector
         let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
         let mut drive_operations = Vec::new();
 
@@ -351,7 +352,7 @@ mod tests {
     #[test]
     fn test_batch_move_items_in_path_query_range_query() {
         // Set up a test drive instance and transaction
-        let drive = setup_drive(None);
+        let drive = setup_drive(None, None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -433,7 +434,7 @@ mod tests {
 
         // Set up the apply type and drive operations vector
         let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: Some((false, false)),
+            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
         };
         let mut drive_operations = Vec::new();
 

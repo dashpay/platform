@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -51,9 +52,12 @@ impl Drive {
             0 => {
                 self.insert_contract_v0(contract, block_info, apply, transaction, platform_version)
             }
+            1 => {
+                self.insert_contract_v1(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -77,6 +81,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function may return an `Error` if the addition process fails or if the drive version does not match any of the implemented method versions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn insert_contract_add_operations(
         &self,
         contract_element: Element,
@@ -86,6 +91,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
@@ -103,9 +109,18 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.insert_contract_add_operations_v1(
+                contract_element,
+                contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                drive_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_add_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

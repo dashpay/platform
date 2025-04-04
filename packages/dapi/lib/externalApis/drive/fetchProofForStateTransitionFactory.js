@@ -3,13 +3,51 @@ const {
     GetProofsRequest,
   },
 } = require('@dashevo/dapi-grpc');
-const { StateTransitionTypes } = require('@dashevo/wasm-dpp');
+
+const {
+  StateTransitionTypes,
+  TokenTransition,
+  DocumentTransition,
+  TokenTransitionType,
+} = require('@dashevo/wasm-dpp');
+const { GetDataContractRequest } = require('@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb');
+const { contractId: tokensHistoryContractIdString } = require('@dashevo/token-history-contract/lib/systemIds');
+const bs58 = require('bs58');
+
+function keepsHistory(batchedTransition, tokenConfiguration) {
+  switch (batchedTransition.getTransitionType()) {
+    case TokenTransitionType.Burn: {
+      return tokenConfiguration.keepsHistory().keepsBurningHistory();
+    }
+    case TokenTransitionType.Mint: {
+      return tokenConfiguration.keepsHistory().keepsMintingHistory();
+    }
+    case TokenTransitionType.Transfer: {
+      return tokenConfiguration.keepsHistory().keepsTransferHistory();
+    }
+    case TokenTransitionType.Freeze:
+    case TokenTransitionType.Unfreeze: {
+      return tokenConfiguration.keepsHistory().keepsFreezingHistory();
+    }
+    case TokenTransitionType.Claim:
+    case TokenTransitionType.ConfigUpdate:
+    case TokenTransitionType.EmergencyAction:
+    case TokenTransitionType.DestroyFrozenFunds: {
+      return true;
+    }
+    default:
+      return false;
+  }
+}
 
 /**
  * @param {PlatformPromiseClient} driveClient
+ * @param {DashPlatformProtocol} dpp
  * @return {fetchProofForStateTransition}
  */
-function fetchProofForStateTransitionFactory(driveClient) {
+function fetchProofForStateTransitionFactory(driveClient, dpp) {
+  const tokensHistoryContractIdBuffer = bs58.decode(tokensHistoryContractIdString);
+
   /**
    * @typedef {fetchProofForStateTransition}
    * @param {AbstractStateTransition} stateTransition
@@ -22,25 +60,157 @@ function fetchProofForStateTransitionFactory(driveClient) {
 
     const requestV0 = new GetProofsRequestV0();
 
+    const dataContractsCache = {};
+
     if (stateTransition.isDocumentStateTransition()) {
-      const { DocumentRequest } = GetProofsRequestV0;
+      const {
+        DocumentRequest,
+        IdentityTokenBalanceRequest,
+        IdentityTokenInfoRequest,
+        TokenStatusRequest,
+      } = GetProofsRequestV0;
 
-      const documentsList = stateTransition.getTransitions().map((documentTransition) => {
-        const documentRequest = new DocumentRequest();
-        documentRequest.setContractId(documentTransition.getDataContractId().toBuffer());
-        documentRequest.setDocumentType(documentTransition.getType());
-        documentRequest.setDocumentId(documentTransition.getId().toBuffer());
+      const documentsList = [];
+      const identityTokenBalancesList = [];
+      const identityTokenInfosList = [];
+      const tokenStatusesList = [];
 
-        const status = documentTransition.hasPrefundedBalance()
-          ? DocumentRequest.DocumentContestedStatus.CONTESTED
-          : DocumentRequest.DocumentContestedStatus.NOT_CONTESTED;
+      for (const batchedTransition of stateTransition.getTransitions()) {
+        // Fetch data contract to determine correct recipient identity
+        const dataContractId = batchedTransition.getDataContractId();
+        const dataContractIdString = dataContractId.toString();
 
-        documentRequest.setDocumentContestedStatus(status);
+        if (batchedTransition instanceof TokenTransition) {
+          if (!dataContractsCache[dataContractIdString]) {
+            const dataContractRequestV0 = new GetDataContractRequest.GetDataContractRequestV0();
+            dataContractRequestV0.setId(dataContractId.toBuffer());
 
-        return documentRequest;
-      });
+            const dataContractRequest = new GetDataContractRequest();
+            dataContractRequest.setV0(dataContractRequestV0);
 
-      requestV0.setDocumentsList(documentsList);
+            const dataContractResponse = await driveClient.getDataContract(dataContractRequest);
+
+            const dataContractBuffer = Buffer.from(
+              dataContractResponse.getV0().getDataContract_asU8(),
+            );
+
+            dataContractsCache[dataContractIdString] = await dpp.dataContract
+              .createFromBuffer(dataContractBuffer, { skipValidation: true });
+          }
+
+          const dataContract = dataContractsCache[dataContractIdString];
+
+          const tokenConfiguration = dataContract.getTokenConfiguration(
+            batchedTransition.getTokenContractPosition(),
+          );
+
+          // In case if we keep history for token events we can provide better proof
+          // for clients
+          if (keepsHistory(batchedTransition, tokenConfiguration)) {
+            const documentRequest = new DocumentRequest();
+            documentRequest.setContractId(tokensHistoryContractIdBuffer);
+            documentRequest.setDocumentType(batchedTransition.getHistoricalDocumentTypeName());
+
+            const documentId = batchedTransition.getHistoricalDocumentId(
+              stateTransition.getOwnerId(),
+              batchedTransition.getIdentityContractNonce(),
+            );
+
+            documentRequest.setDocumentId(documentId.toBuffer());
+
+            documentsList.push(documentRequest);
+          } else {
+            // If not we can provide only balance / supply proofs
+            switch (batchedTransition.getTransitionType()) {
+              case TokenTransitionType.Burn: {
+                const request = new IdentityTokenBalanceRequest();
+                request.setTokenId(batchedTransition.getTokenId().toBuffer());
+                request.setIdentityId(stateTransition.getOwnerId().toBuffer());
+
+                identityTokenBalancesList.push(request);
+                break;
+              }
+              case TokenTransitionType.Mint: {
+                const request = new IdentityTokenBalanceRequest();
+                request.setTokenId(batchedTransition.getTokenId().toBuffer());
+                request.setIdentityId(
+                  batchedTransition.toTransition().getRecipientId(tokenConfiguration).toBuffer(),
+                );
+
+                identityTokenBalancesList.push(request);
+                break;
+              }
+              case TokenTransitionType.Transfer: {
+                const requestSender = new IdentityTokenBalanceRequest();
+                requestSender.setTokenId(batchedTransition.getTokenId().toBuffer());
+                requestSender.setIdentityId(stateTransition.getOwnerId().toBuffer());
+
+                const requestRecipient = new IdentityTokenBalanceRequest();
+                requestRecipient.setTokenId(batchedTransition.getTokenId().toBuffer());
+                requestRecipient.setIdentityId(
+                  batchedTransition.toTransition().getRecipientId().toBuffer(),
+                );
+
+                identityTokenBalancesList.push(requestSender, requestRecipient);
+                break;
+              }
+              case TokenTransitionType.EmergencyAction:
+              {
+                const request = new TokenStatusRequest();
+
+                request.setTokenId(batchedTransition.getTokenId().toBuffer());
+
+                tokenStatusesList.push(request);
+                break;
+              }
+              case TokenTransitionType.Freeze:
+              case TokenTransitionType.Unfreeze: {
+                const request = new IdentityTokenInfoRequest();
+                request.setTokenId(batchedTransition.getTokenId().toBuffer());
+                request.setIdentityId(
+                  batchedTransition.toTransition().getFrozenIdentityId().toBuffer(),
+                );
+
+                identityTokenInfosList.push(request);
+                break;
+              }
+              default:
+                throw new Error(`Unsupported token transition type ${batchedTransition.getTransitionType()}`);
+            }
+          }
+        } else if (batchedTransition instanceof DocumentTransition) {
+          const documentRequest = new DocumentRequest();
+          documentRequest.setContractId(batchedTransition.getDataContractId().toBuffer());
+          documentRequest.setDocumentType(batchedTransition.getType());
+          documentRequest.setDocumentId(batchedTransition.getId().toBuffer());
+
+          const status = batchedTransition.hasPrefundedBalance()
+            ? DocumentRequest.DocumentContestedStatus.CONTESTED
+            : DocumentRequest.DocumentContestedStatus.NOT_CONTESTED;
+
+          documentRequest.setDocumentContestedStatus(status);
+
+          documentsList.push(documentRequest);
+        } else {
+          throw new Error(`Unsupported batched transition type ${batchedTransition.constructor.name}`);
+        }
+      }
+
+      if (documentsList.length > 0) {
+        requestV0.setDocumentsList(documentsList);
+      }
+
+      if (identityTokenBalancesList.length > 0) {
+        requestV0.setIdentityTokenBalancesList(identityTokenBalancesList);
+      }
+
+      if (identityTokenInfosList.length > 0) {
+        requestV0.setIdentityTokenInfosList(identityTokenInfosList);
+      }
+
+      if (tokenStatusesList.length > 0) {
+        requestV0.setTokenStatusesList(tokenStatusesList);
+      }
     } if (stateTransition.isIdentityStateTransition()) {
       const { IdentityRequest } = GetProofsRequestV0;
 

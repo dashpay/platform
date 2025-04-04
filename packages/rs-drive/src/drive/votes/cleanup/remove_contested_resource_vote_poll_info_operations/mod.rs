@@ -16,6 +16,8 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// We remove the entire vote poll
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub fn remove_contested_resource_info_operations(
         &self,
         vote_polls: &[(

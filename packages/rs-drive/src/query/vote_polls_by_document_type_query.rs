@@ -289,6 +289,8 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     }
 
     /// Creates the vectors of indexes
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     fn indexes_vectors<'b>(
         &self,
         index: &'b Index,
@@ -497,7 +499,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                         if result_is_in_key {
                             // the result is in the key because we did not provide any end index values
                             // like this  <------ start index values (path) --->    Key
-                            // properties ------- --------- --------- ----------  ------- 
+                            // properties ------- --------- --------- ----------  -------
                             document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), key.as_slice(), platform_version).map_err(Error::Protocol)
                         } else if path.len() < result_path_index.unwrap() {
 
@@ -505,7 +507,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                         } else {
                             // the result is in the path because we did provide end index values
                             // like this  <------ start index values (path) --->    Key
-                            // properties ------- --------- --------- ----------  ------- 
+                            // properties ------- --------- --------- ----------  -------
                             let inner_path_value_bytes = path.remove(result_path_index.unwrap());
                             document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice(), platform_version).map_err(Error::Protocol)
                         }

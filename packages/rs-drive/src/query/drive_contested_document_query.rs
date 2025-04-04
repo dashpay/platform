@@ -1,4 +1,5 @@
 use crate::drive::contract::paths::DataContractPaths;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::Error;
 #[cfg(feature = "server")]
@@ -6,6 +7,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -51,7 +53,7 @@ pub struct DriveContestedDocumentQuery<'a> {
     pub internal_clauses: PrimaryContestedInternalClauses,
 }
 
-impl<'a> DriveContestedDocumentQuery<'a> {
+impl DriveContestedDocumentQuery<'_> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn construct_path_query(

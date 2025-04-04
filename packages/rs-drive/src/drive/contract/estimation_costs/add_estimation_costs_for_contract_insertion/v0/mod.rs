@@ -16,9 +16,9 @@ use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
+use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -61,7 +61,7 @@ impl Drive {
                         ),
                     ),
                     EstimatedLayerInformation {
-                        is_sum_tree: false,
+                        tree_type: TreeType::NormalTree,
                         estimated_layer_count: ApproximateElements(2),
                         estimated_layer_sizes: AllSubtrees(
                             ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -80,7 +80,7 @@ impl Drive {
                     document_type_name.as_str(),
                 )),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: EstimatedLevel(0, true),
                     estimated_layer_sizes: AllSubtrees(
                         ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -103,15 +103,14 @@ impl Drive {
                     contract.id_ref().as_bytes(),
                 )),
                 EstimatedLayerInformation {
-                    is_sum_tree: false,
+                    tree_type: TreeType::NormalTree,
                     estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
                     estimated_layer_sizes: Mix {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             contract
-                                .serialize_to_bytes_with_platform_version(platform_version)
-                                .unwrap()
+                                .serialize_to_bytes_with_platform_version(platform_version)?
                                 .len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,

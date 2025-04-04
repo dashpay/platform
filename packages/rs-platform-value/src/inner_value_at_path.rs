@@ -1,28 +1,40 @@
 use crate::value_map::ValueMapHelper;
 use crate::{error, Error, Value, ValueMap};
-use lazy_static::lazy_static;
-use regex::Regex;
 use std::collections::BTreeMap;
 
 pub(crate) fn is_array_path(text: &str) -> Result<Option<(&str, Option<usize>)>, Error> {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"(\w+)\[(\d+)?\]").unwrap();
+    // 1. Find the last '[' character.
+    let Some(open_bracket_pos) = text.rfind('[') else {
+        return Ok(None);
+    };
+
+    // 2. Check if `text` ends with ']'.
+    if !text.ends_with(']') {
+        return Ok(None);
     }
-    RE.captures(text)
-        .map(|captures| {
-            Ok((
-                captures.get(1).unwrap().as_str(),
-                captures
-                    .get(2)
-                    .map(|m| {
-                        m.as_str()
-                            .parse::<usize>()
-                            .map_err(|_| Error::IntegerSizeError)
-                    })
-                    .transpose()?,
-            ))
-        })
-        .transpose()
+
+    // 3. Extract the portion before the '[' as the field name.
+    let field_name = &text[..open_bracket_pos];
+
+    // 4. Ensure the field name consists only of word characters
+    if field_name.is_empty() || !field_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Ok(None);
+    }
+
+    // 5. Extract the portion inside the brackets.
+    let inside_brackets = &text[open_bracket_pos + 1..text.len() - 1];
+
+    // 6. If the inside is empty, there is no index number
+    if inside_brackets.is_empty() {
+        return Ok(Some((field_name, None)));
+    }
+
+    // 7. Otherwise, parse the inside as a number (usize).
+    let index = inside_brackets
+        .parse::<usize>()
+        .map_err(|_| Error::IntegerSizeError)?;
+
+    Ok(Some((field_name, Some(index))))
 }
 
 impl Value {
@@ -90,9 +102,7 @@ impl Value {
                             )));
                         };
 
-                        let Some(array_value) = map.get_optional_key_mut(string_part) else {
-                            return None;
-                        };
+                        let array_value = map.get_optional_key_mut(string_part)?;
 
                         if array_value.is_null() {
                             return None;
@@ -139,9 +149,7 @@ impl Value {
                             }
                             None
                         } else {
-                            let Some(new_value) = map.get_optional_key_mut(path_component) else {
-                                return None;
-                            };
+                            let new_value = map.get_optional_key_mut(path_component)?;
                             Some(Ok(new_value))
                         }
                     })
@@ -371,7 +379,8 @@ impl Value {
     }
 }
 #[cfg(test)]
-mod test {
+mod tests {
+    use super::*;
     use crate::platform_value;
 
     #[test]
@@ -405,5 +414,77 @@ mod test {
             document["root"]["array"][0]["new_field"],
             platform_value!("new_value")
         );
+    }
+
+    mod is_array_path {
+        use super::*;
+
+        #[test]
+        fn test_valid_no_index() {
+            let result = is_array_path("array[]");
+            assert!(result.is_ok());
+            let maybe_tuple = result.unwrap();
+            assert!(maybe_tuple.is_some());
+            let (field_name, index) = maybe_tuple.unwrap();
+            assert_eq!(field_name, "array");
+            assert_eq!(index, None);
+        }
+
+        #[test]
+        fn test_valid_with_index() {
+            let result = is_array_path("arr[123]");
+            assert!(result.is_ok());
+            let maybe_tuple = result.unwrap();
+            assert!(maybe_tuple.is_some());
+            let (field_name, index) = maybe_tuple.unwrap();
+            assert_eq!(field_name, "arr");
+            assert_eq!(index, Some(123));
+        }
+
+        #[test]
+        fn test_no_brackets() {
+            let result = is_array_path("no_brackets");
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        #[test]
+        fn test_missing_closing_bracket() {
+            let result = is_array_path("array[");
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        #[test]
+        fn test_non_alphanumeric_field() {
+            let result = is_array_path("arr-test[123]");
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        #[test]
+        fn test_empty_field_name() {
+            let result = is_array_path("[123]");
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        #[test]
+        fn test_non_numeric_index() {
+            let result = is_array_path("array[abc]");
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), Error::IntegerSizeError);
+        }
+
+        #[test]
+        fn test_empty_index() {
+            let result = is_array_path("array[]");
+            assert!(result.is_ok());
+            let maybe_tuple = result.unwrap();
+            assert!(maybe_tuple.is_some());
+            let (field_name, index) = maybe_tuple.unwrap();
+            assert_eq!(field_name, "array");
+            assert_eq!(index, None);
+        }
     }
 }

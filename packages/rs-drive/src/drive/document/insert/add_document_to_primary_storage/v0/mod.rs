@@ -5,7 +5,7 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 use std::collections::HashMap;
 use std::option::Option::None;
@@ -34,7 +34,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
@@ -51,6 +51,7 @@ impl Drive {
     /// Adds a document to primary storage.
     /// If a document isn't sent to this function then we are just calling to know the query and
     /// insert operations
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_to_primary_storage_0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -125,8 +126,8 @@ impl Drive {
                 BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
                 BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                    in_tree_using_sums: false,
-                    is_sum_tree: false,
+                    in_tree_type: TreeType::NormalTree,
+                    tree_type: TreeType::NormalTree,
                     flags_len: storage_flags
                         .map(|s| s.serialized_size())
                         .unwrap_or_default(),
@@ -135,7 +136,7 @@ impl Drive {
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
-                false,
+                TreeType::NormalTree,
                 storage_flags,
                 apply_type,
                 transaction,
@@ -425,7 +426,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_using_sums: false,
+                    in_tree_type: TreeType::NormalTree,
                     target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
                 }
             };

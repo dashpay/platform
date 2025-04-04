@@ -9,7 +9,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, TransactionArg};
+use grovedb::{MaybeTree, PathQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
@@ -19,6 +19,8 @@ impl Drive {
     /// any vote polls should be closed.
     /// !!!!! THIS VERSION CONTAINED A SERIOUS ISSUE !!!!!
     /// However, it should never have made it to mainnet.
+    // TODO: Use type of struct
+    #[allow(clippy::type_complexity)]
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_documents_operations_v0(
         &self,
         vote_polls: &[(
@@ -54,7 +56,7 @@ impl Drive {
                     documents_storage_path.as_slice().into(),
                     document_key.as_slice(),
                     BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     },
                     transaction,
                     batch_operations,
@@ -72,7 +74,7 @@ impl Drive {
                         contender_path.as_slice().into(),
                         vec![0].as_slice(),
                         BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some((false, false)),
+                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },
                         transaction,
                         batch_operations,

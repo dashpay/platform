@@ -19,7 +19,7 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
     fn from(state_transition_type: StateTransitionType) -> Self {
         match state_transition_type {
             StateTransitionType::DataContractCreate => StateTransitionTypeWasm::DataContractCreate,
-            StateTransitionType::DocumentsBatch => StateTransitionTypeWasm::DocumentsBatch,
+            StateTransitionType::Batch => StateTransitionTypeWasm::DocumentsBatch,
             StateTransitionType::IdentityCreate => StateTransitionTypeWasm::IdentityCreate,
             StateTransitionType::IdentityTopUp => StateTransitionTypeWasm::IdentityTopUp,
             StateTransitionType::DataContractUpdate => StateTransitionTypeWasm::DataContractUpdate,

@@ -7,12 +7,16 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
     /// Returns the genesis time. Checks cache first, then storage.
-    pub fn get_genesis_time(&self, transaction: TransactionArg) -> Result<Option<u64>, Error> {
+    pub fn get_genesis_time(
+        &self,
+        transaction: TransactionArg,
+    ) -> Result<Option<TimestampMillis>, Error> {
         // let's first check the cache
         let genesis_time_ms = self.cache.genesis_time_ms.read();
 
@@ -24,21 +28,10 @@ impl Drive {
 
         drop(genesis_time_ms);
 
-        let epoch = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
+        let epoch = Epoch::new(GENESIS_EPOCH_INDEX)
+            .expect("expected to be able to create epoch with genesis time");
 
-        match self.get_epoch_start_time(&epoch, transaction, platform_version) {
-            Ok(genesis_time_ms) => {
-                let mut genesis_time_ms_cache = self.cache.genesis_time_ms.write();
-
-                *genesis_time_ms_cache = Some(genesis_time_ms);
-
-                Ok(Some(genesis_time_ms))
-            }
-            Err(Error::GroveDB(
-                grovedb::Error::PathParentLayerNotFound(_) | grovedb::Error::PathKeyNotFound(_),
-            )) => Ok(None),
-            Err(e) => Err(e),
-        }
+        self.get_epoch_start_time(&epoch, transaction, platform_version)
     }
 
     /// Sets genesis time
@@ -64,7 +57,7 @@ mod tests {
 
         #[test]
         fn should_return_none_if_cache_is_empty_and_start_time_is_not_persisted() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
 
             let result = drive
                 .get_genesis_time(None)
@@ -75,7 +68,7 @@ mod tests {
 
         #[test]
         fn should_return_some_if_cache_is_set() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
 
             let mut genesis_time_ms_cache = drive.cache.genesis_time_ms.write();
 
@@ -141,7 +134,7 @@ mod tests {
 
         #[test]
         fn should_set_genesis_time_to_cache() {
-            let drive = setup_drive(None);
+            let drive = setup_drive(None, None);
 
             let genesis_time_ms: u64 = 100;
 

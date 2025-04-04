@@ -1,7 +1,9 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::fee::Credits;
 
 use crate::execution::types::proposer_payouts::v0::ProposersPayouts;
 use crate::platform_types::platform::Platform;
@@ -29,11 +31,13 @@ impl<C> Platform<C> {
     /// # Returns
     ///
     /// * `Result<Option<proposer_payouts::ProposersPayouts>, Error>` - Returns a Result wrapping an optional ProposersPayouts value if the operation is successful, otherwise returns an Error.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution::platform_events) fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
+        total_distributed_storage_fees: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
@@ -48,6 +52,15 @@ impl<C> Platform<C> {
                 current_epoch_index,
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,
+                transaction,
+                batch,
+                platform_version,
+            ),
+            1 => self.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v1(
+                current_epoch_index,
+                cached_current_epoch_start_block_height,
+                cached_current_epoch_start_block_core_height,
+                total_distributed_storage_fees,
                 transaction,
                 batch,
                 platform_version,

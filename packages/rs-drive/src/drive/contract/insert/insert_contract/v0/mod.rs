@@ -12,7 +12,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use crate::drive::votes::paths::{
@@ -85,6 +85,7 @@ impl Drive {
 
     /// Adds a contract to storage using `add_contract_to_storage`
     /// and inserts the empty trees which will be necessary to later insert documents.
+    #[allow(clippy::too_many_arguments)]
     fn insert_contract_element_v0(
         &self,
         contract_element: Element,
@@ -145,7 +146,7 @@ impl Drive {
     /// The operations for adding a contract.
     /// These operations add a contract to storage using `add_contract_to_storage`
     /// and insert the empty trees which will be necessary to later insert documents.
-    fn insert_contract_operations_v0(
+    pub(in crate::drive::contract::insert::insert_contract) fn insert_contract_operations_v0(
         &self,
         contract_element: Element,
         contract: &DataContract,

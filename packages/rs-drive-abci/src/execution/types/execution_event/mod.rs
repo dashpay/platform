@@ -71,7 +71,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     },
 }
 
-impl<'a> ExecutionEvent<'a> {
+impl ExecutionEvent<'_> {
     pub(crate) fn create_from_state_transition_action(
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,
@@ -162,7 +162,7 @@ impl<'a> ExecutionEvent<'a> {
                     )))
                 }
             }
-            StateTransitionAction::DocumentsBatchAction(document_batch_action) => {
+            StateTransitionAction::BatchAction(document_batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
                 let removed_balance = document_batch_action.all_used_balances()?;
                 let operations =

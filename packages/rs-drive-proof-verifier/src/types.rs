@@ -5,7 +5,16 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-mod evonode_status;
+/// Evonode status
+pub mod evonode_status;
+/// Groups
+pub mod groups;
+/// Identity token balance
+pub mod identity_token_balance;
+/// Token info
+pub mod token_info;
+/// Token status
+pub mod token_status;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
@@ -35,15 +44,14 @@ use drive::grovedb::Element;
 pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{dashcore::hashes::Hash, version as platform_version, ProtocolError},
+    dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-
-pub use evonode_status::*;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -239,6 +247,7 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContestedResource(pub Value);
 
+#[cfg(feature = "mocks")]
 impl ContestedResource {
     /// Get the value.
     pub fn encode_to_vec(

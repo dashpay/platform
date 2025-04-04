@@ -1,6 +1,6 @@
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -36,6 +36,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Prepares the operations for deleting a document.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn delete_document_for_contract_operations_v0(
         &self,
         document_id: Identifier,
@@ -83,7 +84,7 @@ impl Drive {
                 &platform_version.drive,
             )?;
             DirectQueryType::StatelessDirectQuery {
-                in_tree_using_sums: false,
+                in_tree_type: TreeType::NormalTree,
                 query_target: QueryTargetValue(
                     document_type.estimated_size(platform_version)? as u32
                 ),

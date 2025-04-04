@@ -6,7 +6,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg};
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is
@@ -29,7 +29,7 @@ impl Drive {
                 vote_path_ref.as_slice().into(),
                 vote_identifier_to_remove.as_slice(),
                 BatchDeleteApplyType::StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum: Some((false, false)),
+                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
                 transaction,
                 batch_operations,

@@ -5,7 +5,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore::ProTxHash;
 
 use dpp::dashcore::hashes::Hash;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
@@ -31,6 +31,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_operator_identity_v0(
         &self,
         masternode_pro_tx_hash: &ProTxHash,
@@ -265,21 +266,19 @@ where
             let new_payout_address =
                 if let Some(operator_payout_address) = operator_payout_address_change {
                     operator_payout_address
+                } else if let Some((_, found_old_key)) = identity_to_enable_old_keys
+                    .iter()
+                    .find(|(_, key)| key.purpose() == Purpose::TRANSFER)
+                {
+                    Some(found_old_key.data().to_vec().try_into().map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "old payout address should be 20 bytes".to_string(),
+                        ))
+                    })?)
                 } else {
-                    if let Some((_, found_old_key)) = identity_to_enable_old_keys
-                        .iter()
-                        .find(|(_, key)| key.purpose() == Purpose::TRANSFER)
-                    {
-                        Some(found_old_key.data().to_vec().try_into().map_err(|_| {
-                            Error::Execution(ExecutionError::CorruptedDriveResponse(
-                                "old payout address should be 20 bytes".to_string(),
-                            ))
-                        })?)
-                    } else {
-                        // finally we just use the old masternode payout address
-                        // we need to use the old pub_key_operator
-                        old_masternode.state.operator_payout_address
-                    }
+                    // finally we just use the old masternode payout address
+                    // we need to use the old pub_key_operator
+                    old_masternode.state.operator_payout_address
                 };
 
             let new_platform_node_id = if let Some(platform_node_id) = platform_node_id_change {
@@ -320,7 +319,7 @@ where
                 if let Some(new_payout_address) = new_payout_address {
                     if let Some((key_id, found_old_key)) = identity_to_enable_old_keys
                         .iter()
-                        .find(|(_, key)| key.data().as_slice() == &new_payout_address)
+                        .find(|(_, key)| key.data().as_slice() == new_payout_address)
                     {
                         if found_old_key.is_disabled() {
                             key_ids_to_reenable.push(*key_id)
@@ -344,7 +343,7 @@ where
                 if let Some(new_platform_node_id) = new_platform_node_id {
                     if let Some((key_id, found_old_key)) = identity_to_enable_old_keys
                         .into_iter()
-                        .find(|(_, key)| key.data().as_slice() == &new_platform_node_id)
+                        .find(|(_, key)| key.data().as_slice() == new_platform_node_id)
                     {
                         if found_old_key.is_disabled() {
                             key_ids_to_reenable.push(key_id)
@@ -396,12 +395,12 @@ where
 mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dashcore_rpc::dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
     use dashcore_rpc::json::DMNState;
     use dpp::block::block_info::BlockInfo;
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
     use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::ProTxHash;
     use dpp::dashcore::Txid;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;

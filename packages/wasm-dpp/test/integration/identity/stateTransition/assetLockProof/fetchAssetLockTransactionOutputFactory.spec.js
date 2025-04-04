@@ -89,7 +89,7 @@ describe.skip('fetchAssetLockTransactionOutputFactory', () => {
       ([output] = transaction.outputs);
     });
 
-    it('should fetch output from state repository', async function () {
+    it('should fetch output from state repository', async function it() {
       const assetLockTransactionOutput = await fetchAssetLockTransactionOutput(
         assetLockProofFixture,
         executionContext,

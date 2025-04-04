@@ -4,7 +4,7 @@ use dashcore::{OutPoint, Transaction};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-pub use bincode::{Decode, Encode};
+use bincode::{Decode, Encode};
 
 pub use instant::*;
 use platform_value::Value;
@@ -23,8 +23,10 @@ pub mod instant;
 pub mod validate_asset_lock_transaction_structure;
 
 // TODO: Serialization with bincode
+// TODO: Consider use Box for InstantAssetLockProof
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(#[bincode(with_serde)] ChainAssetLockProof),

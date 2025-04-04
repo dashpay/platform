@@ -1,5 +1,7 @@
 use crate::error::ContextProviderError;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
@@ -43,6 +45,7 @@ pub trait ContextProvider: Send + Sync {
     /// # Arguments
     ///
     /// * `data_contract_id`: The ID of the data contract to fetch.
+    /// * `platform_version`: The platform version to use.
     ///
     /// # Returns
     ///
@@ -52,6 +55,7 @@ pub trait ContextProvider: Send + Sync {
     fn get_data_contract(
         &self,
         id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
 
     /// Gets the platform activation height from core. Once this has happened this can be hardcoded.
@@ -77,8 +81,9 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     fn get_data_contract(
         &self,
         id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        self.as_ref().get_data_contract(id)
+        self.as_ref().get_data_contract(id, platform_version)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
@@ -86,16 +91,17 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     }
 }
 
-impl<'a, T: ContextProvider + 'a> ContextProvider for std::sync::Mutex<T>
+impl<T: ContextProvider> ContextProvider for std::sync::Mutex<T>
 where
     Self: Sync + Send,
 {
     fn get_data_contract(
         &self,
         id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
-        lock.get_data_contract(id)
+        lock.get_data_contract(id, platform_version)
     }
     fn get_quorum_public_key(
         &self,
@@ -119,13 +125,19 @@ where
 /// It is used internally by the Drive proof verification functions to look up data contracts.
 pub trait DataContractProvider: Send + Sync {
     /// Returns [ContractLookupFn] function that can be used to look up a [DataContract] by its [Identifier].
-    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn>;
+    fn as_contract_lookup_fn<'a>(
+        &'a self,
+        platform_version: &'a PlatformVersion,
+    ) -> Box<ContractLookupFn<'a>>;
 }
 impl<C: ContextProvider + ?Sized> DataContractProvider for C {
     /// Returns function that uses [ContextProvider] to provide a [DataContract] to Drive proof verification functions
-    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn> {
+    fn as_contract_lookup_fn<'a>(
+        &'a self,
+        platform_version: &'a PlatformVersion,
+    ) -> Box<ContractLookupFn<'a>> {
         let f = |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
-            self.get_data_contract(id).map_err(|e| {
+            self.get_data_contract(id, platform_version).map_err(|e| {
                 drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
             })
         };
@@ -216,6 +228,7 @@ impl ContextProvider for MockContextProvider {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let path = match &self.quorum_keys_dir {
             Some(p) => p,
@@ -239,7 +252,25 @@ impl ContextProvider for MockContextProvider {
             }
         };
 
-        let dc: DataContract = serde_json::from_reader(f).expect("cannot parse data contract");
+        let serialized_form: DataContractInSerializationFormat = serde_json::from_reader(f)
+            .map_err(|e| {
+                ContextProviderError::DataContractFailure(format!(
+                    "cannot deserialized data contract with id {}: {}",
+                    data_contract_id, e
+                ))
+            })?;
+        let dc = DataContract::try_from_platform_versioned(
+            serialized_form,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .map_err(|e| {
+            ContextProviderError::DataContractFailure(format!(
+                "cannot use serialized version of data contract with id {}: {}",
+                data_contract_id, e
+            ))
+        })?;
 
         Ok(Some(Arc::new(dc)))
     }

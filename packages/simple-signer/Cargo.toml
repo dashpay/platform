@@ -1,13 +1,13 @@
 [package]
 name = "simple-signer"
-version = "1.8.0-dev.2"
+version = "2.0.0-dev.1"
 edition = "2021"
 rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "f14bd9048cbc1767541f25b28db5c9ad1236d0da" }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.38.0" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 base64 = { version = "0.22.1" }

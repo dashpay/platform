@@ -1,5 +1,6 @@
 use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPContractVersions {
@@ -22,6 +23,8 @@ pub struct DataContractMethodVersions {
     pub validate_document: FeatureVersion,
     pub validate_update: FeatureVersion,
     pub schema: FeatureVersion,
+    pub validate_groups: FeatureVersion,
+    pub equal_ignoring_time_fields: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

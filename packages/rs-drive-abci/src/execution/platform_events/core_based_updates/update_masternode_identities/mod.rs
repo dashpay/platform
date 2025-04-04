@@ -8,6 +8,7 @@ mod get_owner_identity_owner_key;
 mod get_owner_identity_withdrawal_key;
 mod get_voter_identifier;
 mod get_voter_identity_key;
+#[allow(clippy::module_inception)]
 mod update_masternode_identities;
 mod update_operator_identity;
 mod update_owner_withdrawal_address;
@@ -18,7 +19,7 @@ mod update_voter_identity;
 // mod tests {
 //     use crate::config::PlatformConfig;
 //     use crate::test::helpers::setup::TestPlatformBuilder;
-//     use dashcore_rpc::dashcore::ProTxHash;
+//     use dpp::dashcore::ProTxHash;
 //     use dashcore_rpc::dashcore_rpc_json::MasternodeListDiffWithMasternodes;
 //     use dashcore_rpc::json::MasternodeType::Regular;
 //     use dashcore_rpc::json::{DMNState, MasternodeListItem};

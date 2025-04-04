@@ -16,10 +16,11 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{bincode, ProtocolError};
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, MaybeTree, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn register_contested_resource_identity_vote_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
@@ -61,6 +62,7 @@ impl Drive {
         Ok(fees)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn register_contested_resource_identity_vote_operations_v0(
         &self,
         voter_pro_tx_hash: [u8; 32],
@@ -104,7 +106,7 @@ impl Drive {
                 previous_voting_path.as_slice().into(),
                 voter_pro_tx_hash.as_slice(),
                 BatchDeleteApplyType::StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum: Some((false, true)),
+                    is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                 },
                 transaction,
                 &mut drive_operations,
@@ -118,7 +120,7 @@ impl Drive {
 
         self.batch_insert_empty_tree_if_not_exists(
             PathKeyInfo::PathKey::<0>((votes_identities_path, voter_pro_tx_hash.to_vec())),
-            false,
+            TreeType::NormalTree,
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree, //todo this shouldn't always be stateful
             transaction,

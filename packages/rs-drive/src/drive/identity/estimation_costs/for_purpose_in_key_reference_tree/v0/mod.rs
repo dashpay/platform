@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
-use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
+use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::identity::identity_query_keys_purpose_tree_path_vec;
 
@@ -68,7 +68,7 @@ impl Drive {
                 purpose,
             )),
             EstimatedLayerInformation {
-                is_sum_tree: false,
+                tree_type: TreeType::NormalTree,
                 estimated_layer_count, // there are
                 //We can mark these as all subtrees, because the revision will be under
                 estimated_layer_sizes,

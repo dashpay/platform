@@ -28,6 +28,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn batch_delete_up_tree_while_empty(
         &self,
         path: KeyInfoPath,

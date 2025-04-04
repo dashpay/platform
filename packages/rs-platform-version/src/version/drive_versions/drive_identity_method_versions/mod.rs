@@ -58,6 +58,8 @@ pub struct DriveIdentityContractInfoMethodVersions {
 pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_authentication_keys_security_level_in_key_reference_tree: FeatureVersion,
     pub for_balances: FeatureVersion,
+    pub for_token_balances: FeatureVersion,
+    pub for_token_total_supply: FeatureVersion,
     pub for_contract_info: FeatureVersion,
     pub for_contract_info_group: FeatureVersion,
     pub for_contract_info_group_keys: FeatureVersion,
@@ -67,6 +69,10 @@ pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_purpose_in_key_reference_tree: FeatureVersion,
     pub for_root_key_reference_tree: FeatureVersion,
     pub for_update_revision: FeatureVersion,
+    pub for_token_identity_infos: FeatureVersion,
+    pub for_token_pre_programmed_distribution: FeatureVersion,
+    pub for_root_token_ms_interval_distribution: FeatureVersion,
+    pub for_token_perpetual_distribution: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

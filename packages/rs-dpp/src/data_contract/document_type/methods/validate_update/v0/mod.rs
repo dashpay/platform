@@ -8,7 +8,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-impl<'a> DocumentTypeRef<'a> {
+impl DocumentTypeRef<'_> {
     #[inline(always)]
     pub(super) fn validate_update_v0(
         &self,
@@ -247,6 +247,7 @@ mod tests {
 
     use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
+    use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
@@ -273,14 +274,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -299,14 +301,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -343,14 +346,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -369,14 +373,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -413,14 +418,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -439,14 +445,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -483,14 +490,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -509,14 +517,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -553,14 +562,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -579,14 +589,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -623,14 +634,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -649,14 +661,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -693,14 +706,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -724,9 +738,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -763,14 +775,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -794,9 +807,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -833,14 +844,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -864,9 +876,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -908,28 +918,30 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema.clone(),
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
             )
             .expect("failed to create old document type");
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -962,14 +974,15 @@ mod tests {
                 "additionalProperties": false,
             });
 
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
                 document_type_name,
                 schema.clone(),
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,
@@ -993,9 +1006,7 @@ mod tests {
                 document_type_name,
                 schema,
                 None,
-                false,
-                false,
-                false,
+                &config,
                 false,
                 &mut Vec::new(),
                 platform_version,

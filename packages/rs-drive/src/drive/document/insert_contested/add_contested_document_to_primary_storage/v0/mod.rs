@@ -1,7 +1,7 @@
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 use std::collections::HashMap;
 
@@ -26,7 +26,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
@@ -203,7 +203,7 @@ impl Drive {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_using_sums: false,
+                    in_tree_type: TreeType::NormalTree,
                     target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
                 }
             };

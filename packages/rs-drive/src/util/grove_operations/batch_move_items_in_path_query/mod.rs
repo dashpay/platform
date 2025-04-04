@@ -24,6 +24,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn batch_move_items_in_path_query(
         &self,
         path_query: &PathQuery,

@@ -1,10 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::rpc::core::{
-    CoreRPCLike, CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED, CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM,
-    CORE_RPC_TX_ALREADY_IN_CHAIN,
-};
+use crate::rpc::core::{CoreRPCLike, CORE_RPC_TX_ALREADY_IN_CHAIN};
 use dashcore_rpc::jsonrpc;
 use dashcore_rpc::Error as CoreRPCError;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
@@ -17,6 +14,14 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tenderdash_abci::proto::types::VoteExtension;
+
+// This error is returned when Core can't find a quorum for the asset unlock transaction in Core 21
+const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
+
+// This error replaced the previous since Core 22 to make it more verbose
+const CORE_RPC_ERROR_ASSET_UNLOCK_TOO_OLD_QUORUM: &str = "bad-assetunlock-too-old-quorum";
+
+const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
 impl<C> Platform<C>
 where
@@ -90,7 +95,8 @@ where
                 }
                 Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
                     if e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
-                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED =>
+                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED
+                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_TOO_OLD_QUORUM =>
                 {
                     tracing::debug!(
                         tx_id = transaction.txid().to_string(),

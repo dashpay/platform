@@ -10,6 +10,7 @@ use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v1::
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v1::STATE_TRANSITION_SERIALIZATION_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_versions::v1::STATE_TRANSITION_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v1::VOTING_VERSION_V1;
 use crate::version::dpp_versions::DPPVersion;
@@ -49,6 +50,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V1,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V1,
+        token_versions: TOKEN_VERSIONS_V1,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V1,
         factory_versions: DPP_FACTORY_VERSIONS_V1,

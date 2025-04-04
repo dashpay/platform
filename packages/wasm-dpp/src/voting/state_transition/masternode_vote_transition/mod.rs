@@ -220,60 +220,85 @@ impl MasternodeVoteTransitionWasm {
         self.0.is_voting_state_transition()
     }
 
+    #[wasm_bindgen(js_name=getUserFeeIncrease)]
+    pub fn get_user_fee_increase(&self) -> u16 {
+        self.0.user_fee_increase()
+    }
+
+    #[wasm_bindgen(js_name=setUserFeeIncrease)]
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
+        self.0.set_user_fee_increase(user_fee_increase);
+    }
+
+    #[wasm_bindgen(js_name=getIdentityContractNonce)]
+    pub fn get_identity_nonce(&self) -> u64 {
+        self.0.nonce()
+    }
+
     #[wasm_bindgen(js_name=getContestedDocumentResourceVotePoll)]
     pub fn contested_document_resource_vote_poll(&self) -> Option<Object> {
         match self.0.vote() {
-            Vote::ResourceVote(vote) => match vote.vote_poll() {
-                VotePoll::ContestedDocumentResourceVotePoll(
-                    contested_document_resource_vote_poll,
-                ) => {
-                    let js_object = Object::new();
+            Vote::ResourceVote(vote) => {
+                let js_object = Object::new();
 
-                    let contract_id = IdentifierWrapper::from(
-                        contested_document_resource_vote_poll.contract_id.clone(),
-                    );
+                Reflect::set(
+                    &js_object,
+                    &"choice".into(),
+                    &vote.resource_vote_choice().clone().to_string().into(),
+                )
+                .unwrap();
 
-                    Reflect::set(&js_object, &"contractId".into(), &contract_id.into()).unwrap();
-                    Reflect::set(
-                        &js_object,
-                        &"documentTypeName".into(),
-                        &contested_document_resource_vote_poll
-                            .document_type_name
-                            .clone()
-                            .into(),
-                    )
-                    .unwrap();
-                    Reflect::set(
-                        &js_object,
-                        &"indexName".into(),
-                        &contested_document_resource_vote_poll
-                            .index_name
-                            .clone()
-                            .into(),
-                    )
-                    .unwrap();
+                match vote.vote_poll() {
+                    VotePoll::ContestedDocumentResourceVotePoll(
+                        contested_document_resource_vote_poll,
+                    ) => {
+                        let contract_id = IdentifierWrapper::from(
+                            contested_document_resource_vote_poll.contract_id,
+                        );
 
-                    let config = bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit();
+                        Reflect::set(&js_object, &"contractId".into(), &contract_id.into())
+                            .unwrap();
+                        Reflect::set(
+                            &js_object,
+                            &"documentTypeName".into(),
+                            &contested_document_resource_vote_poll
+                                .document_type_name
+                                .clone()
+                                .into(),
+                        )
+                        .unwrap();
+                        Reflect::set(
+                            &js_object,
+                            &"indexName".into(),
+                            &contested_document_resource_vote_poll
+                                .index_name
+                                .clone()
+                                .into(),
+                        )
+                        .unwrap();
 
-                    let serialized_index_values = contested_document_resource_vote_poll
-                        .index_values
-                        .iter()
-                        .map(|value| {
-                            JsValue::from(Buffer::from_bytes_owned(
-                                bincode::encode_to_vec(value, config)
-                                    .expect("expected to encode value in path"),
-                            ))
-                        });
+                        let config = bincode::config::standard()
+                            .with_big_endian()
+                            .with_no_limit();
 
-                    let js_array = Array::from_iter(serialized_index_values);
+                        let serialized_index_values = contested_document_resource_vote_poll
+                            .index_values
+                            .iter()
+                            .map(|value| {
+                                JsValue::from(Buffer::from_bytes_owned(
+                                    bincode::encode_to_vec(value, config)
+                                        .expect("expected to encode value in path"),
+                                ))
+                            });
 
-                    Reflect::set(&js_object, &"indexValues".into(), &js_array.into()).unwrap();
+                        let js_array = Array::from_iter(serialized_index_values);
 
-                    Some(js_object)
+                        Reflect::set(&js_object, &"indexValues".into(), &js_array.into()).unwrap();
+
+                        Some(js_object)
+                    }
                 }
-            },
+            }
         }
     }
 
