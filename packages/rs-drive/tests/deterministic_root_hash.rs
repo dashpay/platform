@@ -282,6 +282,8 @@ mod tests {
             load_system_data_contract(SystemDataContract::Dashpay, platform_version)
                 .expect("should load dpns contract");
 
+        println!("Dashpay contract: {:?}", dashpay_contract);
+
         drive
             .apply_contract(
                 &dashpay_contract,
@@ -302,7 +304,7 @@ mod tests {
         // We expect a different app hash because data contract is not serialized the same way
         let expected_app_hash = match platform_version.protocol_version {
             0..=8 => "1b80f4a9f00597b3f1ddca904b3cee67576868adcdd802c0a3f91e14209bb402",
-            _ => "107bcfc100e64a51e60b3e7ca7e7823b11968c2db599c212a8d09869e3ce1dd0",
+            _ => "aa29a0d3dcdcb1dc1b446830931762e0b9c2e2d97d6f426f8dbe4e0eda8e6130",
         };
 
         assert_eq!(

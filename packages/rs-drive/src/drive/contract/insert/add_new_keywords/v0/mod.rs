@@ -89,7 +89,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &Vec<String>,
+        keywords: &[String],
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
