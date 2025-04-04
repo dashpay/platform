@@ -2794,7 +2794,7 @@ mod tests {
                 .expect("to_value failed");
 
             // Insert a keyword with a non-ASCII char, e.g. ü
-            contract_value["keywords"] = Value::Array(vec![Value::Text("kü".to_string())]);
+            contract_value["keywords"] = Value::Array(vec![Value::Text("keü".to_string())]);
 
             let data_contract_invalid =
                 DataContract::from_value(contract_value, true, platform_version)

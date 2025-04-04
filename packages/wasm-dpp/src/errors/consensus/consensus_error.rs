@@ -767,11 +767,11 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::DuplicateKeywordsError(e) => {
             generic_consensus_error!(DuplicateKeywordsError, e).into()
         }
-        BasicError::InvalidKeywordEncodingError(e) => {
-            generic_consensus_error!(InvalidKeywordEncodingError, e).into()
-        }
         BasicError::InvalidKeywordLengthError(e) => {
             generic_consensus_error!(InvalidKeywordLengthError, e).into()
+        }
+        BasicError::InvalidKeywordEncodingError(e) => {
+            generic_consensus_error!(InvalidKeywordEncodingError, e).into()
         }
     }
 }

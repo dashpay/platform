@@ -209,18 +209,6 @@ pub enum BasicError {
     #[error(transparent)]
     DataContractHaveNewUniqueIndexError(DataContractHaveNewUniqueIndexError),
 
-    #[error(transparent)]
-    TooManyKeywordsError(TooManyKeywordsError),
-
-    #[error(transparent)]
-    DuplicateKeywordsError(DuplicateKeywordsError),
-
-    #[error(transparent)]
-    InvalidKeywordLengthError(InvalidKeywordLengthError),
-
-    #[error(transparent)]
-    InvalidKeywordEncodingError(InvalidKeywordEncodingError),
-
     // Document
     #[error(transparent)]
     DataContractNotPresentError(DataContractNotPresentError),
@@ -531,6 +519,18 @@ pub enum BasicError {
     TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
         TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
     ),
+
+    #[error(transparent)]
+    TooManyKeywordsError(TooManyKeywordsError),
+
+    #[error(transparent)]
+    DuplicateKeywordsError(DuplicateKeywordsError),
+
+    #[error(transparent)]
+    InvalidKeywordLengthError(InvalidKeywordLengthError),
+
+    #[error(transparent)]
+    InvalidKeywordEncodingError(InvalidKeywordEncodingError),
 }
 
 impl From<BasicError> for ConsensusError {
