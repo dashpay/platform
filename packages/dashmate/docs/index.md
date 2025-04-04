@@ -4,9 +4,13 @@ Welcome to the Dashmate documentation. This documentation provides a comprehensi
 
 ## Contents
 
+- [Installation](./installation.md)
+- [Update Guide](./update.md)
+- [Usage Guide](./usage.md)
 - [Services](services/index.md)
 - [Configuration](./config/index.md)
 - [Commands](./commands/index.md)
+- [Troubleshooting](./troubleshooting.md)
 
 ## Introduction to Dash Platform
 
@@ -24,6 +28,10 @@ The platform consists of several key components:
 
 ## Getting Started
 
-To run your own Dash Platform node, refer to the main [README.md](../README.md) for setup instructions.
+To get started with Dashmate, follow these steps:
+
+1. [Install Dashmate](./installation.md)
+2. [Set up your node](./commands/setup.md)
+3. [Start your node](./commands/start.md)
 
 For developers looking to build applications on Dash Platform, check out the [Dash Platform SDK documentation](https://docs.dash.org/projects/platform/en/stable/docs/index.html).
