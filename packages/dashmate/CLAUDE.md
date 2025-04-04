@@ -1,0 +1,2 @@
+- split into separate sections core.p2p core.rpc core.spork core.indexes and core.log. Make sure they are explained in details
+- update config documentation: split into separate sections core.p2p core.rpc core.spork core.indexes and core.log. Make sure they are explained in details
