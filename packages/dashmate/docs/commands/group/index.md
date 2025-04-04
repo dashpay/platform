@@ -4,6 +4,7 @@ These commands let you manage groups of Dashmate nodes as a single unit.
 
 ## Available Commands
 
+- [default](./default.md) - Set/display default group
 - [list](./list.md) - List all node groups
 - [start](./start.md) - Start all nodes in a group
 - [stop](./stop.md) - Stop all nodes in a group

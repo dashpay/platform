@@ -18,8 +18,9 @@ dashmate status [OPTIONS]
 
 ## Description
 
-This command provides a comprehensive overview of your Dash node's status, including both Core and Platform components. It displays information such as:
+This command provides a comprehensive overview of your Dash node's status, including both Core and Platform components.
 
+It displays information such as:
 - Network (mainnet, testnet, local)
 - Core version and status
 - Core blockchain height and sync progress

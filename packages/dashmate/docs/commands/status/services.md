@@ -17,8 +17,9 @@ dashmate status services [OPTIONS]
 
 ## Description
 
-This command provides a comprehensive view of all Docker containers and services running as part of your Dash node. For each service, it displays:
+This command provides a comprehensive view of all Docker containers and services running as part of your Dash node.
 
+For each service, it displays:
 - Service name and title
 - Container ID (abbreviated to 12 characters in plain format)
 - Docker image being used
@@ -28,7 +29,8 @@ The status information is color-coded for easier interpretation:
 - Running services are shown in green
 - Stopped services are shown in red
 
-This command is useful for getting a quick overview of which services are running and which may be experiencing issues. It can help diagnose configuration problems, Docker-related issues, or service failures.
+This command is useful for getting a quick overview of which services are running and which may be experiencing issues.
+It can help diagnose configuration problems, Docker-related issues, or service failures.
 
 ## Examples
 
