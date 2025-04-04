@@ -46,7 +46,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keywords".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -86,7 +86,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keywords_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -126,7 +126,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keywords_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

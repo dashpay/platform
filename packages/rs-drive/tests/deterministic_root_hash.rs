@@ -282,8 +282,6 @@ mod tests {
             load_system_data_contract(SystemDataContract::Dashpay, platform_version)
                 .expect("should load dpns contract");
 
-        println!("Dashpay contract: {:?}", dashpay_contract);
-
         drive
             .apply_contract(
                 &dashpay_contract,
