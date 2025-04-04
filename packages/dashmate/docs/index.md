@@ -4,10 +4,9 @@ Welcome to the Dashmate documentation. This documentation provides a comprehensi
 
 ## Contents
 
-- [Services](./services.md) - Overview of all dashmate services and their responsibilities
-- [Service Communication](./service-communication.md) - Detailed explanation of how services communicate with each other
-- [Configuration](./config/index.md) - Comprehensive guide to Dashmate configuration options
-- [Commands](./commands/index.md) - Detailed documentation of all Dashmate CLI commands
+- [Services](services/index.md)
+- [Configuration](./config/index.md)
+- [Commands](./commands/index.md)
 
 ## Introduction to Dash Platform
 
@@ -27,45 +26,4 @@ The platform consists of several key components:
 
 To run your own Dash Platform node, refer to the main [README.md](../README.md) for setup instructions.
 
-For developers looking to build applications on Dash Platform, check out the [Dash Platform SDK documentation](https://dashplatform.readme.io/).
-
-## Architecture Overview
-
-```
-                                 ┌─────────────────┐
-                                 │                 │
-                                 │    Dashmate     │
-                                 │    CLI & Helper │
-                                 │                 │
-                                 └─────────────────┘
-                                         │
-                                         │ manages
-                                         ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                                                                      │
-│  ┌─────────────┐                 ┌───────────┐                       │
-│  │             │                 │  Clients  │                       │
-│  │   Core      │◄──────┐         └─────┬─────┘                       │
-│  │  (Dash      │       │               │                             │
-│  │  Blockchain)│       │               │ HTTP/gRPC                   │
-│  │             │       │               ▼                             │
-│  └─────────────┘       │       ┌───────────────┐                     │
-│                        │       │               │                     │
-│                        │       │    Gateway    │◄────────────────────┼── User HTTP
-│                ┌───────┴───────┤               │                     │   Requests
-│                │               └───────┬───────┘                     │
-│                │              Platform │Layer                        │
-│                │                       │                             │
-│                │  ┌────────┐  ┌────────┐  ┌────────┐                │
-│                │  │        │  │        │  │        │                │
-│                │  │ Drive  │  │ Tender │  │ DAPI   │                │
-│                │  │ ABCI   │  │ dash   │  │ API/   │                │
-│                │  │        │  │        │  │ Streams│                │
-│                │  └────────┘  └────────┘  └────────┘                │
-│                │                                                     │
-│                └─────────────────────────────────────────────────────┘
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-This architecture provides a robust and scalable platform for decentralized applications, with clear separation of concerns between different components.
+For developers looking to build applications on Dash Platform, check out the [Dash Platform SDK documentation](https://docs.dash.org/projects/platform/en/stable/docs/index.html).
