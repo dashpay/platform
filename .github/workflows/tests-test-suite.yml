@@ -58,5 +58,5 @@ jobs:
           BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
 
       - name: Show Docker logs
-        #if: ${{ failure() }}
+        if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
