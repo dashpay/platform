@@ -248,6 +248,7 @@ impl<C> Platform<C> {
             updated_at_epoch: None,
             groups,
             tokens,
+            keywords: vec!["key1".into(), "key2".into()],
         });
 
         self.drive.apply_contract(
@@ -275,6 +276,7 @@ impl<C> Platform<C> {
                 IDENTITY_ID_1.to_buffer(),
                 mint_amount,
                 false,
+                false,
                 block_info,
                 true,
                 transaction,
@@ -287,6 +289,7 @@ impl<C> Platform<C> {
                 token_id.to_buffer(),
                 IDENTITY_ID_2.to_buffer(),
                 mint_amount,
+                false,
                 false,
                 block_info,
                 true,
@@ -301,6 +304,7 @@ impl<C> Platform<C> {
                 token_id.to_buffer(),
                 IDENTITY_ID_3.to_buffer(),
                 mint_amount,
+                false,
                 false,
                 block_info,
                 true,
