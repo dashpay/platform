@@ -7,6 +7,7 @@ Welcome to the Dashmate documentation. This documentation provides a comprehensi
 - [Services](./services.md) - Overview of all dashmate services and their responsibilities
 - [Service Communication](./service-communication.md) - Detailed explanation of how services communicate with each other
 - [Configuration](./config/index.md) - Comprehensive guide to Dashmate configuration options
+- [Commands](./commands/index.md) - Detailed documentation of all Dashmate CLI commands
 
 ## Introduction to Dash Platform
 
