@@ -26,6 +26,8 @@ pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;
 pub mod token_unfreeze_transition;
+pub mod token_direct_purchase_transition;
+pub mod token_set_price_for_direct_purchase_transition;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;

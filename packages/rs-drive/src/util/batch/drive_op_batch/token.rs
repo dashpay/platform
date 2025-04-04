@@ -13,6 +13,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 /// Operations on Tokens
 #[derive(Clone, Debug)]
@@ -115,6 +116,14 @@ pub enum TokenOperationType {
         /// The token event
         event: TokenEvent,
     },
+    /// Sets the price of a token for direct purchase
+    TokenSetPriceForDirectPurchase {
+        /// The token id
+        token_id: Identifier,
+        /// The price we are setting to
+        /// None means it's not currently for sale
+        price: Option<TokenPricingSchedule>,
+    }
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {

@@ -26,6 +26,7 @@ use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::tokens::SharedEncryptedNote;
 use crate::ProtocolError;
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 pub type RecipientIdentifier = Identifier;
 pub type FrozenIdentifier = Identifier;
@@ -54,6 +55,7 @@ pub enum TokenEvent {
     ),
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
+    SetPriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote)
 }
 
 impl TokenEvent {
@@ -68,6 +70,7 @@ impl TokenEvent {
             TokenEvent::Claim(..) => "claim",
             TokenEvent::EmergencyAction(..) => "emergencyAction",
             TokenEvent::ConfigUpdate(..) => "configUpdate",
+            TokenEvent::SetPriceForDirectPurchase(..) => "setPriceForDirectPurchase",
         }
     }
 
@@ -243,6 +246,24 @@ impl TokenEvent {
                 if let Some(note) = public_note {
                     properties.insert("note".to_string(), note.into());
                 }
+                properties
+            }
+            TokenEvent::SetPriceForDirectPurchase(price, note) => {
+                let mut properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                ]);
+
+                if let Some(price_schedule) = price {
+                    properties.insert(
+                        "priceSchedule".to_string(),
+                        price_schedule.serialize_consume_to_bytes_with_platform_version(platform_version)?.into(),
+                    );
+                }
+
+                if let Some(note) = note {
+                    properties.insert("note".to_string(), note.into());
+                }
+
                 properties
             }
         };

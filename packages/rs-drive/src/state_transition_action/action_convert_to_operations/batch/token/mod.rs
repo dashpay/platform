@@ -8,3 +8,4 @@ mod token_mint_transition;
 mod token_transfer_transition;
 mod token_transition;
 mod token_unfreeze_transition;
+mod token_set_price_for_direct_purchase_transition;

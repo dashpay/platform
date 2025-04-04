@@ -27,6 +27,8 @@ pub use self::batched_transition::{
     token_mint_transition::TokenMintTransition, token_transfer_transition,
     token_transfer_transition::TokenTransferTransition, token_unfreeze_transition,
     token_unfreeze_transition::TokenUnfreezeTransition,
+    token_direct_purchase_transition, token_direct_purchase_transition::TokenBuyTransition,
+    token_set_price_for_direct_purchase_transition, token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransition
 };
 
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
