@@ -2,7 +2,7 @@
 
 Drive ABCI contains the application logic for Dash Platform. Its configuration is divided into several functional areas.
 
-## Drive ABCI Docker Configuration
+## Docker
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
@@ -11,32 +11,99 @@ Drive ABCI contains the application logic for Dash Platform. Its configuration i
 
 The `docker.build` object allows for custom build settings:
 ```json
-"platform.drive.abci.docker.build": {
-  "enabled": true,
-  "path": "/path/to/drive/source"
+{
+  "build": {
+    "enabled": true,
+    "context": "/path/to/build/context",
+    "dockerFile": "/path/to/Dockerfile",
+    "target": "dapi"
+  }
 }
 ```
 
 It allows you to specify a custom build path for the Drive ABCI Docker image. If `enabled` is set to `true`, Dashmate will build the Docker image from the specified path.
 
-## Drive ABCI Logging Configuration
+## Logging
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.drive.abci.logs` | Drive logging configuration | Object | See below |
 
-The logs object includes logging settings:
+The `logs` object supports multiple named log configurations with detailed settings:
+
 ```json
-"platform.drive.abci.logs": {
-  "level": "info",
-  "stdout": true,
-  "colorize": true
+{
+  "logs": {
+    "default": {
+      "destination": "stdout",
+      "level": "info",
+      "format": "full",
+      "color": true
+    },
+    "database": {
+      "destination": "/var/log/drive/db.log",
+      "level": "error",
+      "format": "json",
+      "color": null
+    }
+  }
 }
 ```
 
-Available log levels: `trace`, `debug`, `info`, `warn`, `error`
+Each log configuration has the following properties:
+- `destination`: Where logs are sent - `stdout`, `stderr`, or an absolute file path
+- `level`: Log level - `error`, `warn`, `info`, `debug`, `trace`, `silent`, or a RUST_LOG format string
+- `format`: Log format - `full`, `compact`, `pretty`, or `json`
+- `color`: Whether to use colored output (`true`, `false`, or `null` to autodetect)
 
-## Drive ABCI Debug Tool Configuration
+You can define multiple named logging configurations to route different types of logs to different destinations.
+
+## LLMQ Configuration
+
+These settings control quorum validation requirements:
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.drive.abci.validatorSet.quorum` | Validator set quorum configuration | Object | See below |
+| `platform.drive.abci.chainLock.quorum` | Chain lock quorum configuration | Object | See below |
+| `platform.drive.abci.instantLock.quorum` | Instant lock quorum configuration | Object | See below |
+
+Quorum configuration properties:
+
+```json
+{
+  "quorum": {
+    "llmqType": 105,
+    "dkgInterval": 24,
+    "activeSigners": 300,
+    "rotation": true
+  }
+}
+```
+
+Each quorum has the following properties:
+- `llmqType`: Quorum type ID number (integer)
+- `dkgInterval`: Distributed key generation interval
+- `activeSigners`: Number of active signers in the quorum
+- `rotation`: Whether quorum rotation is enabled
+
+Available quorum type IDs correspond to the following LLMQ types:
+- 1-6: Testnet/local quorums
+- 100-107: Mainnet quorums like llmq_50_60, llmq_60_75, llmq_400_60, llmq_400_85, llmq_100_67, etc.
+
+##  Metrics
+
+These settings control the metrics endpoint for monitoring Drive ABCI:
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.drive.abci.metrics.enabled` | Enable metrics | `false` | `true` |
+| `platform.drive.abci.metrics.host` | Host binding for metrics | `127.0.0.1` | `0.0.0.0` |
+| `platform.drive.abci.metrics.port` | Port for metrics | `29090` | `29091` |
+
+Metrics provide performance and health information about the Drive ABCI service. When enabled, the metrics server will be accessible at the specified host and port.
+
+## Debug Tools
 
 These settings control developer and debugging tools:
 
@@ -51,27 +118,7 @@ These settings control developer and debugging tools:
 - Tokio Console: A debugging tool for Rust's async runtime
 - GroveDB Visualizer: A visualization tool for the GroveDB database structure
 
-## Drive ABCI Quorum Configuration
-
-These settings control quorum validation requirements:
-
-| Option | Description | Default | Example |
-|--------|-------------|---------|---------|
-| `platform.drive.abci.validatorSet.quorum` | Validator set quorum configuration | Object | See below |
-| `platform.drive.abci.chainLock.quorum` | Chain lock quorum configuration | Object | See below |
-| `platform.drive.abci.instantLock.quorum` | Instant lock quorum configuration | Object | See below |
-
-Quorum configuration example:
-```json
-"platform.drive.abci.validatorSet.quorum": {
-  "llmqType": "llmq_100_67",
-  "requestTimeout": "2s"
-}
-```
-
-## Drive ABCI Performance Configuration
-
-These settings control performance aspects:
+## Other options
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
@@ -79,16 +126,5 @@ These settings control performance aspects:
 | `platform.drive.abci.epochTime` | Epoch time in seconds | `788400` | `1576800` |
 
 - Transaction processing time limit: Maximum time allowed for processing a transaction before timeout
-- Epoch time: Length of a single epoch in seconds (affects validator set rotation frequency)
+- Epoch time: Length of a single epoch in seconds
 
-## Drive ABCI Metrics Configuration
-
-These settings control the metrics endpoint for monitoring Drive ABCI:
-
-| Option | Description | Default | Example |
-|--------|-------------|---------|---------|
-| `platform.drive.abci.metrics.enabled` | Enable metrics | `false` | `true` |
-| `platform.drive.abci.metrics.host` | Host binding for metrics | `127.0.0.1` | `0.0.0.0` |
-| `platform.drive.abci.metrics.port` | Port for metrics | `29090` | `29091` |
-
-Metrics provide performance and health information about the Drive ABCI service.

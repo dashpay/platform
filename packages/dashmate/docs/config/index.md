@@ -3,7 +3,7 @@
 This document provides information about Dashmate configuration system.
 Dashmate supports multiple configs and uses a hierarchical configuration system with various sections that control different aspects of a Dash Platform node.
 
-## Configuration Overview
+## Overview
 
 Dashmate configuration is organized into a hierarchical structure with the following main sections:
 
@@ -15,15 +15,25 @@ Dashmate configuration is organized into a hierarchical structure with the follo
 - **network**: Network selection (mainnet, testnet, etc.)
 - **environment**: Environment type (production, development)
 
-## Configuration Documentation Sections
+## Components
 
-- [Core Configuration](./core.md) - Dash Core node settings
-- [Gateway Configuration](./gateway.md) - Platform Gateway settings
-- [Drive ABCI Configuration](./drive-abci.md) - Drive ABCI application logic
-- [Tenderdash Configuration](./tenderdash.md) - Consensus engine settings
-- [DAPI Configuration](./dapi.md) - Platform API services
-- [Dashmate Helper Configuration](./dashmate.md) - Dashmate helper service
-- [Miscellaneous Configuration](./misc.md) - Docker, Network, and Environment settings
+- [Core](./core.md) - Dash Core node settings
+- [Gateway](./gateway.md) - Platform Gateway settings
+- [Drive ABCI](./drive-abci.md) - Drive ABCI application logic
+- [Tenderdash](./tenderdash.md) - Consensus engine settings
+- [DAPI](./dapi.md) - Platform API services
+- [Dashmate Helper](./dashmate.md) - Dashmate helper service
+- [Docker](./docker.md) - Docker configuration
+- [Miscellaneous configuration](./misc.md) - Network, Config and Environment settings
+
+## Setting Up a Node
+
+To setup a new node use the `dashmate setup` command.
+This interactive command will guide you through the process of creating a new configuration.
+
+```bash
+dashmate setup
+```
 
 ## Configuration Basics
 
@@ -70,7 +80,7 @@ dashmate config envs [--output-file]
 dashmate config render
 ```
 
-When running dashmate commands, you can specify which config to use:
+When running dashmate commands, you can specify, which config to use:
 
 ```bash
 dashmate start --config=<preset>
@@ -84,26 +94,6 @@ Configuration files are stored in the Dashmate home directory:
 
 - Default location: `~/.dashmate/config.json`
 - Can be changed with the `DASHMATE_HOME_DIR` environment variable
-
-## Config Presets
-
-Dashmate provides several presets for quick configuration:
-
-- **local**: Local development setup with all services
-- **local_core**: Local Core-only setup
-- **local_drive**: Local Drive setup (no Core)
-- **fullnode**: Fullnode setup (with Core)
-- **masternode**: Masternode setup for producing blocks
-- **evonode**: Evonode setup (with Platform services)
-
-
-## Setting Up a Node
-
-To setup a new node use the `setup` command:
-
-```bash
-dashmate setup
-```
 
 ## Configuration Migration
 

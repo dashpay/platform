@@ -2,14 +2,16 @@
 
 The `core` section contains options for configuring the Dash Core node. The configuration is organized into several subsections, each controlling specific aspects of the Core node operation.
 
-## Docker Options
+## Docker
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `core.docker.image` | Docker image for Dash Core | `dashpay/dashd:22` | `dashpay/dashd:latest` |
 | `core.docker.commandArgs` | Additional command arguments for Core | `[]` | `["--reindex"]` |
 
-## Core P2P Configuration
+With `core.docker.commandArgs` you can pass additional command-line arguments to the Dash Core Docker container. This is useful for customizing the behavior of the Core node.
+
+## P2P
 
 The `core.p2p` section controls the peer-to-peer network settings for Dash Core, which are essential for node communication within the Dash network.
 
@@ -24,7 +26,7 @@ These settings control how your Dash Core node connects to the network:
 - Setting the host to 0.0.0.0 makes your node accessible from any network interface
 - Seed nodes help your node discover other peers on the network during initial startup
 
-## Core RPC Configuration
+## RPC
 
 The `core.rpc` section configures the Remote Procedure Call interface, which allows other applications to interact with your Dash Core node.
 
@@ -44,22 +46,18 @@ The `core.rpc.users` section defines RPC users and their permissions:
 
 ```json
 {
-  "core": {
-    "rpc": {
-      "users": {
-        "dashmate": {
-          "password": "rpcpassword",
-          "whitelist": null,
-          "lowPriority": false
-        },
-        "dapi": {
-          "password": "rpcpassword",
-          "whitelist": ["getbestblockhash", "getblockhash", "sendrawtransaction", ...],
-          "lowPriority": true
-        },
-        // More users...
-      }
-    }
+  "users": {
+    "dashmate": {
+      "password": "rpcpassword",
+      "whitelist": null,
+      "lowPriority": false
+    },
+    "dapi": {
+      "password": "rpcpassword",
+      "whitelist": ["getbestblockhash", "getblockhash", "sendrawtransaction", ...],
+      "lowPriority": true
+    },
+    // More users...
   }
 }
 ```
@@ -69,7 +67,7 @@ Each user has:
 - `whitelist`: List of allowed RPC methods (null means all methods)
 - `lowPriority`: Whether the user's requests have low priority and processed in a separate low priority RPC queue
 
-## Core Spork Configuration
+## Sporks
 
 The `core.spork` section configures spork functionality. Sporks are a governance mechanism in Dash that allow network parameters to be changed without requiring a node software update.
 
@@ -83,26 +81,28 @@ Spork configuration notes:
 - The spork address and private key must be kept secure
 - For most users running regular nodes, these fields should remain null
 
-## Core Indexes Configuration
+## Indexes
 
 The `core.indexes` setting controls which blockchain indexes are maintained by the node, enabling various lookup functionalities.
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `core.indexes` | List of enabled indexes | `[]` | `["txindex", "addressindex", "spentindex"]` |
+| `core.indexes` | List of enabled indexes | `[]` | `["tx", "address", "spent", "timestamp"]` |
 
 Available indexes include:
-- `txindex`: Maintains an index of all transactions, allowing lookup by TXID
-- `addressindex`: Maintains an index of all addresses and their transactions
-- `spentindex`: Tracks spent transaction outputs
-- `timestampindex`: Indexes blocks by timestamp
+- `tx`: Maintains an index of all transactions, allowing lookup by TXID
+- `address`: Maintains an index of all addresses and their transactions
+- `spent`: Tracks spent transaction outputs
+- `timestamp`: Indexes blocks by timestamp
 
 Enabling indexes:
 - Increases disk space usage and initial sync time
-- Improves query performance for specific operations
+- Enables or improves query performance for specific operations
 - Is required for certain applications like block explorers
 
-## Core Masternode Configuration
+Note: Some features like `platform.enable`, `core.masternode.enable`, and `core.insight.enabled` automatically add required indexes.
+
+## Masternode
 
 The `core.masternode` section configures masternode settings, which are essential for running a masternode on the Dash network.
 
@@ -114,15 +114,17 @@ The `core.masternode` section configures masternode settings, which are essentia
 Masternode configuration example:
 
 ```json
-"core.masternode": {
-  "enable": true,
-  "operator": {
-    "privateKey": "6789abcdef..."
+{
+  "masternode": {
+    "enable": true,
+    "operator": {
+      "privateKey": "6789abcdef..."
+    }
   }
 }
 ```
 
-## Core Miner Configuration
+## Miner
 
 The `core.miner` section configures mining settings for Dash Core. This is primarily used in development and testing environments.
 
@@ -135,21 +137,16 @@ The `core.miner` section configures mining settings for Dash Core. This is prima
 Mining configuration example:
 
 ```json
-"core.miner": {
-  "enable": true,
-  "address": "XYZ...",
-  "interval": 1000
+{
+  "miner": {
+    "enable": true,
+    "address": "XYZ...",
+    "interval": 1000
+  }
 }
 ```
 
-Important mining notes:
-- Internal mining is primarily for development and testing
-- Mining on mainnet typically requires specialized hardware (ASICs)
-- The mining address should be a valid Dash address you control
-- Mining interval controls the frequency of block generation attempts
-- In local development networks, mining is used to generate blocks for testing
-
-## Core Log Configuration
+## Logging
 
 The `core.log` section controls how Dash Core logs its activities, which is essential for monitoring and troubleshooting.
 
@@ -161,15 +158,21 @@ The `core.log` section controls how Dash Core logs its activities, which is esse
 Debug logging can be configured with the following options:
 
 ```json
-"core.log.debug": {
-  "enabled": true,
-  "ips": false,
-  "sourceLocations": false,
-  "threadNames": false,
-  "timeMicros": false,
-  "includeOnly": [],
-  "exclude": [],
-  "categories": ["net", "mempool", "governance", "masternode"]
+{
+  "debug": {
+    "enabled": true,
+    "ips": false,
+    "sourceLocations": false,
+    "threadNames": false,
+    "timeMicros": false,
+    "includeOnly": [
+      "net",
+      "mempool",
+      "governance",
+      "masternode"
+    ],
+    "exclude": []
+  }
 }
 ```
 
@@ -180,72 +183,64 @@ The debug logging options include:
 - `sourceLocations`: When true, shows source code file and line information in logs
 - `threadNames`: When true, includes thread names in log entries for multi-threading analysis
 - `timeMicros`: When true, shows microsecond precision in timestamps for detailed timing analysis
-- `includeOnly`: If specified, only these categories will be logged (overrides categories)
-- `exclude`: Categories to exclude from logging
-- `categories`: Array of logging categories to enable (described below)
+- `includeOnly`: Array of categories to include in logging (leave empty to log all except excluded)
+- `exclude`: Array of categories to exclude from logging
 
 These options allow you to fine-tune logging output based on your needs:
 - For privacy-sensitive environments, keep `ips` disabled
 - For development and debugging, enable `sourceLocations` to pinpoint issues
 - For performance analysis, enable `timeMicros` and `threadNames`
-- Use `includeOnly` and `exclude` to focus logging on specific components
+- Use `includeOnly` and `exclude` to focus debugging on specific components
 
 ### Available Debug Categories
 
-You can enable specific debugging categories to focus on particular aspects of Dash Core:
+You can select specific debugging categories to focus on particular aspects of Dash Core by adding them to the `includeOnly` array:
 
-**Network-related categories:**
-- `net`: Network activity, P2P message handling, and peer connections
-- `addrman`: Address manager operations and peer address management
-- `cmpct`: Compact block relay and processing
+**Available debug categories include:**
+
+- `net`: Network activity and peer connections
+- `tor`: Tor connection and routing
+- `mempool`: Memory pool operations and transaction validation
 - `http`: HTTP server activity for RPC over HTTP
-- `libevent`: LibEvent library operations (low-level event handling)
-- `tor`: Tor connection and routing if Tor is enabled
-- `zmq`: ZeroMQ notification interface events
-
-**Core functionality categories:**
-- `mempool`: Memory pool operations, transaction validation and fee calculation
-- `mempoolrej`: Memory pool rejection reasons - why transactions were rejected
-- `coindb`: Coin database activity (UTXO set management)
-- `db`: General database operations
-- `leveldb`: LevelDB database operations (low-level storage)
-- `reindex`: Block reindexing process details during reindexing operations
-- `rpc`: Remote procedure call activity, methods and parameters
-- `selectcoins`: Coin selection algorithm details for transaction creation
-- `estimatefee`: Fee estimation mechanisms
 - `bench`: Benchmarking information
-- `txindex`: Transaction index operations
+- `zmq`: ZeroMQ notification interface
+- `walletdb`: Wallet database operations
+- `rpc`: Remote procedure call activity
+- `estimatefee`: Fee estimation mechanisms
+- `addrman`: Address manager operations and peer management
+- `selectcoins`: Coin selection algorithm
+- `reindex`: Block reindexing process
+- `cmpctblock` (or `cmpct`): Compact block relay
+- `rand`: Random number generation
 - `prune`: Block and data pruning operations
-- `rand`: Random number generation (useful for security auditing)
-
-**Masternode and governance categories:**
-- `masternode`: Masternode operations, payments, and status updates
-- `mnpayments`: Masternode payment verification and voting
-- `mnbudget`: Budget system operations (legacy governance system)
-- `mnsync`: Masternode synchronization process details
-- `gobject`: Governance object handling, proposals and votes
-- `privsend`: PrivateSend operations and mixing
-- `instantsend`: InstantSend transaction processing and locking
-- `coinjoin`: CoinJoin mixing process (privacy feature)
-
-**Quorum and consensus categories:**
-- `governance`: Governance proposals and voting process
-- `spork`: Spork activity and updates (network-wide settings)
-- `llmq`: Long-Living Masternode Quorum activities and general operations
-- `llmq-dkg`: Distributed Key Generation in LLMQ (key creation phase)
-- `llmq-sigs`: LLMQ signature operations (threshold signing)
-- `llmq-inst`: LLMQ InstantSend operations
-- `llmq-chainlocks`: LLMQ ChainLocks operations
+- `proxy`: Network proxy operations
+- `mempoolrej`: Memory pool rejection reasons
+- `libevent`: LibEvent library operations
+- `coindb`: Coin database activity (UTXO set)
+- `qt`: Qt GUI related operations (when applicable)
+- `leveldb`: LevelDB database operations
 - `chainlocks`: ChainLocks validation and processing
-- `quorum`: General quorum-related activities
-- `signing`: Signature creation and verification operations
+- `gobject`: Governance object handling
+- `instantsend`: InstantSend transaction processing
+- `llmq`: Long-Living Masternode Quorum activities
+- `llmq-dkg`: Distributed Key Generation in LLMQ
+- `llmq-sigs`: LLMQ signature operations
+- `mnpayments`: Masternode payment verification
+- `mnsync`: Masternode synchronization process
+- `coinjoin`: CoinJoin mixing process
+- `spork`: Spork activity and updates
+- `netconn`: Network connection details
+
+**Special debugging options:**
+- You can use `includeOnly` to specify only the categories you want to debug
+- Leave `includeOnly` empty and use `exclude` to log everything except specific categories
 
 For complex debugging scenarios, you might want to:
 - Start with a few key categories related to your issue
 - Add more specific categories if needed to narrow down the problem
 - Be aware that some categories (like `net`) can be extremely verbose
 
-## Core Insight Configuration
+## Insight
 
 Insight provides a block explorer for Dash Core:
 
@@ -256,7 +251,7 @@ Insight provides a block explorer for Dash Core:
 | `core.insight.port` | Port for Insight API/UI | `3001` | `3002` |
 
 
-## Devnet Configuration
+## Devnet
 
 For custom devnets (custom blockchain networks for development):
 
@@ -268,15 +263,25 @@ For custom devnets (custom blockchain networks for development):
 | `core.devnet.llmq` | LLMQ configurations for different purposes | Object | See below |
 
 LLMQ devnet configuration example:
-```javascript
-"core.devnet.llmq": {
-  "llmq_50_60": {
-    "size": 50,
-    "threshold": 30,
-    "lifetime": 24
-  },
-  "chainLocks": "llmq_50_60",
-  "instantSend": "llmq_50_60",
-  "platform": "llmq_50_60"
+
+```json
+{
+  "llmq": {
+    "chainLocks": "llmq_50_60",
+    "instantSend": "llmq_50_60",
+    "platform": "llmq_50_60",
+    "mnhf": "llmq_50_60"
+  }
 }
 ```
+
+Available LLMQ types:
+ - llmq_devnet
+ - llmq_devnet_dip0024
+ - llmq_devnet_platform 
+ - llmq_50_60
+ - llmq_60_75
+ - llmq_400_60
+ - llmq_400_85
+ - llmq_100_67
+ - llmq_25_67

@@ -2,13 +2,13 @@
 
 The `platform.gateway` section configures the Dash Platform Gateway, which serves as the entry point for external clients to access Dash Platform services.
 
-## Gateway Docker Configuration
+## Docker
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.30.2-impr.1` | `dashpay/envoy:latest` |
 
-## Gateway Listeners Configuration
+## Listeners
 
 The listener configuration controls the API endpoints exposed by the Gateway:
 
@@ -23,7 +23,7 @@ Host binding notes:
 - Setting `0.0.0.0` allows connections from any IP address
 - Setting `127.0.0.1` restricts connections to localhost only
 
-## Gateway Resource Configuration
+## Performance
 
 These settings control resource allocation and limits for the Gateway:
 
@@ -32,7 +32,7 @@ These settings control resource allocation and limits for the Gateway:
 | `platform.gateway.maxConnections` | Maximum connections from clients | `1000` | `2000` |
 | `platform.gateway.maxHeapSizeInBytes` | Maximum heap size in bytes | `125000000` | `250000000` |
 
-## Gateway Upstream Configuration
+## Upstream
 
 The upstreams configuration controls connections to backend services:
 
@@ -43,7 +43,7 @@ The upstreams configuration controls connections to backend services:
 | `platform.gateway.upstreams.dapiCoreStreams.maxRequests` | Maximum parallel requests to DAPI Core streams | `100` | `200` |
 | `platform.gateway.upstreams.dapiJsonRpc.maxRequests` | Maximum parallel requests to DAPI JSON-RPC | `100` | `200` |
 
-## Gateway Metrics Configuration
+## Metrics
 
 These settings control the metrics endpoint for monitoring the Gateway:
 
@@ -54,8 +54,9 @@ These settings control the metrics endpoint for monitoring the Gateway:
 | `platform.gateway.metrics.port` | Port for metrics server | `9090` | `9091` |
 
 Metrics provide performance and health information about the Gateway service.
+Admin must be enabled to access the metrics endpoint.
 
-## Gateway Admin Configuration
+## Admin
 
 These settings control the admin interface for the Gateway:
 
@@ -67,7 +68,7 @@ These settings control the admin interface for the Gateway:
 
 The admin interface allows for runtime configuration and statistics retrieval.
 
-## Gateway Logging Configuration
+## Logging
 
 These settings control logging for the Gateway:
 
@@ -76,7 +77,24 @@ These settings control logging for the Gateway:
 | `platform.gateway.log.level` | Log level for gateway logs | `info` | `debug` |
 | `platform.gateway.log.accessLogs` | Access log configuration | `[]` | See example below |
 
-Access logs example:
+The `accessLogs` array can contain multiple log configurations with different destinations and formats.
+
+### Access Logs Configuration
+
+Each log entry in the `accessLogs` array has the following properties:
+
+**For stdout/stderr outputs:**
+- `type`: Output destination - `stdout` or `stderr`
+- `format`: Log format - `text` or `json`
+- `template`: Template string or object for formatting logs
+
+**For file outputs:**
+- `type`: Output destination - `file`
+- `format`: Log format - `text` or `json`
+- `path`: Absolute path to log file on host machine
+- `template`: Template string or object for formatting logs
+
+Access logs example for text and JSON formats:
 ```json
 "platform.gateway.log.accessLogs": [
   {
@@ -87,14 +105,29 @@ Access logs example:
   {
     "type": "file",
     "format": "json",
-    "path": "/var/log/envoy/access.log"
+    "path": "/var/log/envoy/access.log",
+    "template": {
+      "timestamp": "%START_TIME%",
+      "method": "%REQ(:METHOD)%",
+      "path": "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%",
+      "protocol": "%PROTOCOL%",
+      "responseCode": "%RESPONSE_CODE%",
+      "bytesReceived": "%BYTES_RECEIVED%",
+      "bytesSent": "%BYTES_SENT%",
+      "duration": "%DURATION%",
+      "upstream": "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%",
+      "client": "%REQ(X-FORWARDED-FOR)%",
+      "userAgent": "%REQ(USER-AGENT)%"
+    }
   }
 ]
 ```
 
+See the [Envoy access log documentation](https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage) for more information on available template variables.
+
 Available log levels: `trace`, `debug`, `info`, `warn`, `error`, `critical`, `off`
 
-## Gateway SSL Configuration
+## SSL
 
 These settings control SSL/TLS for secure connections:
 
@@ -102,15 +135,20 @@ These settings control SSL/TLS for secure connections:
 |--------|-------------|---------|---------|
 | `platform.gateway.ssl.enabled` | Enable SSL | `false` | `true` |
 | `platform.gateway.ssl.provider` | SSL provider | `zerossl` | `selfSigned` |
+
+### ZeroSSL Provider Configuration
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
 | `platform.gateway.ssl.providerConfigs.zerossl.apiKey` | ZeroSSL API key | `null` | `"your-api-key"` |
 | `platform.gateway.ssl.providerConfigs.zerossl.id` | ZeroSSL certificate ID | `null` | `"certificate_id"` |
 
 Available SSL providers:
 - `zerossl`: Commercial certificate provider with automated issuance
 - `selfSigned`: Self-signed certificates (not trusted by browsers)
-- `file`: Use existing certificate files
+- `file`: Use existing certificate files (requires certificate and key files to be manually provided)
 
-## Gateway Rate Limiter Configuration
+## Rate Limiter
 
 The rate limiter protects the Platform from excessive requests:
 
@@ -129,7 +167,7 @@ Available time units:
 - `hour`: Per-hour rate limiting
 - `day`: Per-day rate limiting
 
-## Gateway Rate Limiter Metrics Configuration
+## Rate Limiter Metrics
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|

@@ -2,29 +2,36 @@
 
 The `dashmate` section configures the Dashmate helper service that assists with various operations.
 
-## Dashmate Helper API Configuration
+## Dashmate API
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `dashmate.helper.api.enable` | Enable helper API | `false` | `true` |
 | `dashmate.helper.api.port` | Helper API port | `9100` | `9101` |
-| `dashmate.helper.api.host` | Host binding for helper API | `127.0.0.1` | `0.0.0.0` |
 
-The helper API provides auxiliary endpoints for monitoring and management.
+The helper JSON RPC API provides auxiliary endpoints for monitoring and management.
+When enabled, it will listen on the specified port for API requests.
+RPC accepts dashmate command names and arguments as parameters.
 
-## Dashmate Helper Docker Configuration
+## Docker
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `dashmate.helper.docker.build.enabled` | Enable custom build | `false` | `true` |
-| `dashmate.helper.docker.build.path` | Path to source code | `null` | `"/path/to/source"` |
+| `dashmate.helper.docker.build.context` | Build context directory | `null` | `"/path/to/context"` |
+| `dashmate.helper.docker.build.dockerFile` | Path to Dockerfile | `null` | `"/path/to/Dockerfile"` |
+| `dashmate.helper.docker.build.target` | Target build stage in multi-stage builds | `null` | `"dashmate_helper"` |
 
 Docker build configuration example:
 ```json
-"dashmate.helper.docker.build": {
-  "enabled": true,
-  "path": "/path/to/dashmate/helper/source"
+{
+  "build": {
+    "enabled": true,
+    "context": "/path/to/build/context",
+    "dockerFile": "/path/to/Dockerfile",
+    "target": "dashmate_helper"
+  }
 }
 ```
 
-It allows you to specify a custom build path for the Dashmate helper Docker image. If `enabled` is set to `true`, Dashmate will build the Docker image from the specified path.
+These settings allow you to build the Dashmate helper Docker image from source. If `enabled` is set to `true`, Dashmate will build the Docker image using the specified context directory and Dockerfile.
