@@ -5,7 +5,8 @@ Welcome to the Dashmate documentation. This documentation provides a comprehensi
 ## Contents
 
 - [Services](./services.md) - Overview of all dashmate services and their responsibilities
-- [Networking](./networking.md) - Detailed explanation of how services communicate with each other
+- [Service Communication](./service-communication.md) - Detailed explanation of how services communicate with each other
+- [Configuration](./config.md) - Comprehensive guide to Dashmate configuration options
 
 ## Introduction to Dash Platform
 
