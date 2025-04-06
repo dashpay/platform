@@ -14,6 +14,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use crate::fee::Credits;
 
 pub type TokenEventPublicNote = Option<String>;
 pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;
@@ -29,6 +30,8 @@ use crate::ProtocolError;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 pub type RecipientIdentifier = Identifier;
+
+pub type PurchaserIdentifier = Identifier;
 pub type FrozenIdentifier = Identifier;
 
 #[derive(
@@ -55,7 +58,8 @@ pub enum TokenEvent {
     ),
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
-    SetPriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote)
+    SetPriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote),
+    DirectPurchase(PurchaserIdentifier, TokenAmount, Credits),
 }
 
 impl TokenEvent {

@@ -19,6 +19,8 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
                 TokenTransitionActionType::DestroyFrozenFunds
             }
             TokenTransitionAction::ConfigUpdateAction(_) => TokenTransitionActionType::ConfigUpdate,
+            TokenTransitionAction::DirectPurchaseAction(_) => {}
+            TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => {}
         }
     }
 }

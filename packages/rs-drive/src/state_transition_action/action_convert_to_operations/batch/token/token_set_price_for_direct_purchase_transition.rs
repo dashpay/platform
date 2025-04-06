@@ -29,7 +29,7 @@ impl DriveHighLevelBatchOperationConverter for TokenSetPriceForDirectPurchaseTra
             .methods
             .state_transitions
             .convert_to_high_level_operations
-            .token_mint_transition
+            .token_set_price_for_direct_purchase_transition
         {
             0 => {
                 let data_contract_id = self.base().data_contract_id();

@@ -29,6 +29,10 @@ pub struct TokenKeepsHistoryRulesV0 {
     /// Whether direct pricing history is recorded.
     #[serde(default = "default_true")]
     pub keeps_direct_pricing_history: bool,
+
+    /// Whether direct purchase history is recorded.
+    #[serde(default = "default_true")]
+    pub keeps_direct_purchase_history: bool,
 }
 
 impl Default for TokenKeepsHistoryRulesV0 {
@@ -39,6 +43,7 @@ impl Default for TokenKeepsHistoryRulesV0 {
             keeps_minting_history: true,
             keeps_burning_history: true,
             keeps_direct_pricing_history: true,
+            keeps_direct_purchase_history: true,
         }
     }
 }
@@ -52,12 +57,13 @@ impl fmt::Display for TokenKeepsHistoryRulesV0 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenKeepsHistoryRulesV0 {{\n  keeps_transfer_history: {},\n  keeps_freezing_history: {},\n  keeps_minting_history: {},\n  keeps_burning_history: {},\n  keeps_direct_pricing_history: {}\n}}",
+            "TokenKeepsHistoryRulesV0 {{\n  keeps_transfer_history: {},\n  keeps_freezing_history: {},\n  keeps_minting_history: {},\n  keeps_burning_history: {},\n  keeps_direct_pricing_history: {}, \n keeps_direct_purchase_history: {}\n",
             self.keeps_transfer_history,
             self.keeps_freezing_history,
             self.keeps_minting_history,
             self.keeps_burning_history,
             self.keeps_direct_pricing_history,
+            self.keeps_direct_purchase_history,
         )
     }
 }

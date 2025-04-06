@@ -30,7 +30,7 @@ impl TokenBaseTransitionAccessors for TokenSetPriceForDirectPurchaseTransition {
 }
 
 impl TokenSetPriceForDirectPurchaseTransitionV0Methods for TokenSetPriceForDirectPurchaseTransition {
-    fn price(&self) -> Option<Credits> {
+    fn price(&self) -> Option<&TokenPricingSchedule> {
         match self {
             TokenSetPriceForDirectPurchaseTransition::V0(v0) => v0.price(),
         }

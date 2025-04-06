@@ -1,3 +1,5 @@
+use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+
 /// Accessor trait for getters of `TokenKeepsHistoryRulesV0`
 pub trait TokenKeepsHistoryRulesV0Getters {
     /// Returns whether transfer history is kept.
@@ -14,6 +16,7 @@ pub trait TokenKeepsHistoryRulesV0Getters {
 
     /// Returns whether direct pricing history is kept.
     fn keeps_direct_pricing_history(&self) -> bool;
+    fn keeps_direct_purchase_history(&self) -> bool;
 }
 
 /// Accessor trait for setters of `TokenKeepsHistoryRulesV0`
@@ -32,4 +35,5 @@ pub trait TokenKeepsHistoryRulesV0Setters {
 
     /// Sets whether direct pricing history is kept.
     fn set_keeps_direct_pricing_history(&mut self, value: bool);
+    fn set_keeps_direct_purchase_history(&mut self, value: bool);
 }

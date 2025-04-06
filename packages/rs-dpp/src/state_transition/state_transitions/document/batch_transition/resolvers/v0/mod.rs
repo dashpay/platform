@@ -2,12 +2,8 @@ use crate::state_transition::batch_transition::batched_transition::token_unfreez
 use crate::state_transition::batch_transition::batched_transition::{
     DocumentPurchaseTransition, DocumentTransferTransition,
 };
-use crate::state_transition::batch_transition::{
-    DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
-    TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition,
-    TokenMintTransition, TokenTransferTransition,
-};
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition};
+use crate::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
 
 pub trait BatchTransitionResolversV0 {
     fn as_transition_create(&self) -> Option<&DocumentCreateTransition>;
@@ -28,4 +24,6 @@ pub trait BatchTransitionResolversV0 {
     fn as_transition_token_emergency_action(&self) -> Option<&TokenEmergencyActionTransition>;
 
     fn as_transition_token_config_update(&self) -> Option<&TokenConfigUpdateTransition>;
+    fn as_transition_token_direct_purchase(&self) -> Option<&TokenDirectPurchaseTransition>;
+    fn as_transition_token_set_price_for_direct_purchase(&self) -> Option<&TokenSetPriceForDirectPurchaseTransition>;
 }

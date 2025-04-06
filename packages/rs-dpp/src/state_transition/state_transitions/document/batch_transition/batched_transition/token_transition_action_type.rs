@@ -14,6 +14,8 @@ pub enum TokenTransitionActionType {
     Claim,
     EmergencyAction,
     ConfigUpdate,
+    DirectPurchase,
+    SetPriceForDirectPurchase,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -28,6 +30,8 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::Claim => "Claim",
             TokenTransitionActionType::EmergencyAction => "EmergencyAction",
             TokenTransitionActionType::ConfigUpdate => "ConfigUpdate",
+            TokenTransitionActionType::DirectPurchase => "DirectPurchase",
+            TokenTransitionActionType::SetPriceForDirectPurchase => "SetPriceForDirectPurchase",
         };
         write!(f, "{}", action_str)
     }
@@ -49,6 +53,7 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::Claim(_) => TokenTransitionActionType::Claim,
             TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionActionType::ConfigUpdate,
+            TokenTransition::Di
         }
     }
 }
