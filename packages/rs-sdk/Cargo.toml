@@ -44,7 +44,7 @@ bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter",
 zeroize = { version = "1.8", features = ["derive"] }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
-ferment-macro = { git = "https://github.com/dashpay/ferment", package = "ferment-macro" }
+ferment-macro = { git = "https://github.com/dashpay/ferment", package = "ferment-macro", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
