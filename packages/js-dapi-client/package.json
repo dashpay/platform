@@ -28,7 +28,7 @@
   "dependencies": {
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dash-spv": "workspace:*",
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111",
+    "@dashevo/dashcore-lib": "~0.24.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "bs58": "^4.0.1",

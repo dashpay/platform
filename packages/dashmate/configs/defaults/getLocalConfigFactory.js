@@ -63,30 +63,37 @@ export default function getLocalConfigFactory(getBaseConfig) {
             metrics: {
               port: 46660,
             },
+            genesis: {
+              consensus_params: {
+                validator: {
+                  voting_power_threshold: '100',
+                },
+              },
+            },
           },
           abci: {
             epochTime: 1200,
             validatorSet: {
               quorum: {
-                llmqType: 111,
+                llmqType: 106,
                 dkgInterval: 24,
-                activeSigners: 2,
+                activeSigners: 1,
                 rotation: false,
               },
             },
             chainLock: {
               quorum: {
-                llmqType: 111,
+                llmqType: 100,
                 dkgInterval: 24,
-                activeSigners: 2,
+                activeSigners: 1,
                 rotation: false,
               },
             },
             instantLock: {
               quorum: {
-                llmqType: 111,
+                llmqType: 104,
                 dkgInterval: 24,
-                activeSigners: 2,
+                activeSigners: 1,
                 rotation: false,
               },
             },

@@ -1411,7 +1411,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
@@ -1444,7 +1444,7 @@ __metadata:
     "@babel/core": "npm:^7.26.10"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     assert-browserify: "npm:^2.0.0"
@@ -1526,7 +1526,7 @@ __metadata:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/dashd-rpc": "npm:^19.0.0"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
@@ -1576,7 +1576,7 @@ __metadata:
   dependencies:
     "@dashevo/dark-gravity-wave": "npm:^1.1.1"
     "@dashevo/dash-util": "npm:^2.0.3"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     chai: "npm:^4.3.10"
     eslint: "npm:^8.53.0"
     eslint-config-airbnb-base: "npm:^15.0.0"
@@ -1600,9 +1600,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@github:dashpay/dashcore-lib#feat/add-quourm-111":
-  version: 0.21.3
-  resolution: "@dashevo/dashcore-lib@https://github.com/dashpay/dashcore-lib.git#commit=a61df6ae212647a31b3d58fd78bdf544abc5743a"
+"@dashevo/dashcore-lib@npm:~0.24.0":
+  version: 0.24.0
+  resolution: "@dashevo/dashcore-lib@npm:0.24.0"
   dependencies:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/x11-hash-js": "npm:^1.0.2"
@@ -1616,7 +1616,7 @@ __metadata:
     ripemd160: "npm:^2.0.2"
     tsd: "npm:^0.28.1"
     unorm: "npm:^1.6.0"
-  checksum: be3f570988f091c5fe69584cc976726e73664e10e95d2171cde0000e326867d8a24c21581929d7fe77c213b256ab8789d3eb41459e18f664d73ffca8e41bcea7
+  checksum: 90e723b7700303ebd7f31ddc6bc71ad3a8b88764e4fbbef0d5939775c39fd7dff5b4762a43adbe275c010213ce17514dce792ca26e241d1ca4dfa19e03dc7e8b
   languageName: node
   linkType: hard
 
@@ -1756,7 +1756,7 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
@@ -1876,7 +1876,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
@@ -1952,7 +1952,7 @@ __metadata:
     "@babel/core": "npm:^7.26.10"
     "@babel/preset-env": "npm:^7.26.9"
     "@dashevo/bls": "npm:~1.2.9"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/dpns-contract": "workspace:*"
     "@types/bs58": "npm:^4.0.1"
     "@types/node": "npm:^14.6.0"
@@ -6411,7 +6411,7 @@ __metadata:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
@@ -6487,7 +6487,7 @@ __metadata:
     "@babel/eslint-parser": "npm:^7.26.10"
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#feat/add-quourm-111"
+    "@dashevo/dashcore-lib": "npm:~0.24.0"
     "@dashevo/dashd-rpc": "npm:^19.0.0"
     "@dashevo/docker-compose": "npm:^0.24.4"
     "@dashevo/wallet-lib": "workspace:*"

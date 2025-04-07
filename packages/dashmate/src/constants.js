@@ -29,7 +29,6 @@ export const NODE_TYPE_FULLNODE = 'fullnode';
 
 export const LLMQ_TYPE_TEST = 'llmq_test';
 export const LLMQ_TYPE_TEST_PLATFORM = 'llmq_test_platform';
-export const LLMQ_TYPE_1 = 'llmq_1_100';
 
 export const QUORUM_TYPES = {
   LLMQ_TYPE_TEST: 100,

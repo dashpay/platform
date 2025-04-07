@@ -148,26 +148,18 @@ export default function setupLocalPresetTaskFactory(
                 // We use single node quorums by default
                 // Set multi node quorums if we have more than 1 node
                 if (ctx.nodeCount > 1) {
-                  config.set('platform.drive.abci.validatorSet.quorum', {
-                    llmqType: 106,
-                    dkgInterval: 24,
-                    activeSigners: 2,
-                    rotation: false,
-                  });
+                  config.set('platform.drive.abci.validatorSet.quorum.activeSigners', 2);
 
-                  config.set('platform.drive.abci.chainLock.quorum', {
-                    llmqType: 100,
-                    dkgInterval: 24,
-                    activeSigners: 2,
-                    rotation: false,
-                  });
+                  config.set('platform.drive.abci.chainLock.quorum.activeSigners', 2);
 
-                  config.set('platform.drive.abci.instantLock.quorum', {
-                    llmqType: 104,
-                    dkgInterval: 24,
-                    activeSigners: 2,
-                    rotation: false,
-                  });
+                  config.set('platform.drive.abci.instantLock.quorum.activeSigners', 2);
+
+                  // Bring default behavior for validator set quorum back
+                  const validatorParams = config.get('platform.drive.tenderdash.genesis.consensus_params.validator', true);
+
+                  delete validatorParams.voting_power_threshold;
+
+                  config.set('platform.drive.tenderdash.genesis.consensus_params.validator', validatorParams);
                 }
 
                 if (config.getName() === 'local_seed') {

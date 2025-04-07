@@ -1,5 +1,5 @@
 import { Listr } from 'listr2';
-import { LLMQ_TYPE_1, NETWORK_LOCAL } from '../../../../constants.js';
+import { LLMQ_TYPE_TEST, NETWORK_LOCAL } from '../../../../constants.js';
 import wait from '../../../../util/wait.js';
 /**
  * @param {generateBlocks} generateBlocks
@@ -22,7 +22,7 @@ export default function enableSingleCoreQuorumTaskFactory(generateBlocks) {
 
           let llmq1 = [];
           do {
-            ({ result: { [LLMQ_TYPE_1]: llmq1 } } = await seedRpcClient.quorum('list'));
+            ({ result: { [LLMQ_TYPE_TEST]: llmq1 } } = await seedRpcClient.quorum('list'));
 
             await generateBlocks(
               seedCoreService,

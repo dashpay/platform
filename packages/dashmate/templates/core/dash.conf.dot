@@ -95,16 +95,11 @@ regtest=1
 testactivationheight=mn_rr@1000 
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
-{{? it.platform.drive.abci.instantLock.quorum.llmqType == 111 }}
-llmqtestinstantsenddip0024=llmq_1_100
-{{??}}
 llmqtestinstantsenddip0024=llmq_test_instantsend
-{{?}}
-{{? it.platform.drive.abci.validatorSet.quorum.llmqType == 111 }}
-llmqtestplatform=llmq_1_100
-{{?}}
-{{? it.platform.drive.abci.chainLock.quorum.llmqType == 111 }}
-llmqtestchainlocks=llmq_1_100
+{{? it.platform.drive.abci.validatorSet.quorum.activeSigners == 1 }} 
+llmqtestparams=1:1
+llmqtestinstantsendparams=1:1
+llmqtestplatformparams=1:1
 {{?}}
 
 {{?? it.network === 'devnet'}}

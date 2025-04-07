@@ -75,7 +75,7 @@ filter-peers = false
 # If zero or empty, the default value is used.
 #
 # Default: 60s
-{{? it.platform.drive.abci.validatorSet.quorum.llmqType == 111 }}
+{{? it.network == "local" }}
 sync-timeout = "1s"
 {{?}}
 
