@@ -1026,6 +1026,42 @@ mod block_based_perpetual_step_decreasing {
         })
     }
 
+    /// Just a workaround for lack of support in JetBrains IDE for this test
+    /// which starts "fails: 1% increase, claim every 500 blocks" test.
+    ///
+    /// TODO: remove when not needed anymore
+    #[test]
+    fn test_1_percent_increase_claim() {
+        // first, we run test claiming every 100 blocks
+        run_test(
+            1,
+            101,
+            100,
+            None,
+            100_000,
+            Some(1),
+            Some((1..1000).step_by(100).collect()),
+            1,
+        )
+        .expect("claiming every 100 blocks should pass");
+
+        // The same, but claim every 500 blocks, fails:
+        //
+        // * when we claim every 100 blocks, at height 501 we get 100_510
+        // * when we claim every 500 blocks, at height 501 we get 100_138
+        run_test(
+            1,
+            101,
+            100,
+            None,
+            100_000,
+            Some(1),
+            Some((1..1000).step_by(500).collect()),
+            1,
+        )
+        .expect("claiming every 500 blocks should also pass, but it fails");
+    }
+
     // ===== HELPER FUNCTIONS ===== //
 
     /// Calculate expected emission at provided height.
