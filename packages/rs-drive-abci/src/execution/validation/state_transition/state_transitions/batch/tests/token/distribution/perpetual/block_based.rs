@@ -814,11 +814,21 @@ mod block_based_perpetual_random {
 
 mod block_based_perpetual_step_decreasing {
     use dpp::balances::credits::TokenAmount;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+    use dpp::data_contract::TokenConfiguration;
     use rust_decimal::prelude::ToPrimitive;
     use test_case::test_case;
-    use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights;
+    use crate::{execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights, platform_types::state_transitions_processing_result::StateTransitionExecutionResult};
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::INITIAL_BALANCE;
+
+    use super::test_suite::{TestStep, TestSuite};
 
     #[test_case(
         1,// step_count
@@ -830,17 +840,6 @@ mod block_based_perpetual_step_decreasing {
       Some((1..1000).step_by(100).collect()),// claim_heights
         1; // distribution_interval
         "claim every 100 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-      Some((1..1000).step_by(500).collect()),// claim_heights
-        1; // distribution_interval
-        "fails: claim every 500 blocks"
     )]
     #[test_case(
         1,// step_count
@@ -861,8 +860,9 @@ mod block_based_perpetual_step_decreasing {
         100_000,// n
         Some(1),// min_value
         Some((1..1000).step_by(500).collect()),// claim_heights
-        1; // distribution_interval
-        "fails: 1% increase, claim every 500 blocks"
+        1 // distribution_interval
+        => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("claim at height 501: expected balance Some(100510) but got 100138")))
+        ; "1% increase, claim every 500 blocks fails due to max_token_redemption_cycles"
     )]
     #[test_case(
         1,// step_count
@@ -1026,40 +1026,85 @@ mod block_based_perpetual_step_decreasing {
         })
     }
 
-    /// Just a workaround for lack of support in JetBrains IDE for this test
-    /// which starts "fails: 1% increase, claim every 500 blocks" test.
-    ///
-    /// TODO: remove when not needed anymore
+    /// Given that we have a distribution function distributing some tokens,
+    /// When I claim tokens with delay bigger than [platform_version.system_limits.max_token_redemption_cycles],
+    /// Then I need to run the claim more than once to get correct balance.
     #[test]
-    fn test_1_percent_increase_claim() {
-        // first, we run test claiming every 100 blocks
-        run_test(
-            1,
-            101,
-            100,
-            None,
-            100_000,
-            Some(1),
-            Some((1..1000).step_by(100).collect()),
-            1,
-        )
-        .expect("claiming every 100 blocks should pass");
+    fn test_claim_more_than_max_token_redemption_cycles() {
+        let dist = DistributionFunction::StepDecreasingAmount {
+            step_count: 1,
+            decrease_per_interval_numerator: 101,
+            decrease_per_interval_denominator: 100,
+            s: None,
+            n: 100_000,
+            min_value: Some(1),
+        };
 
-        // The same, but claim every 500 blocks, fails:
-        //
-        // * when we claim every 100 blocks, at height 501 we get 100_510
-        // * when we claim every 500 blocks, at height 501 we get 100_138
-        run_test(
+        let dist_clone = dist.clone();
+        let mut suite = TestSuite::new(
+            10_200_000_000,
             1,
-            101,
-            100,
-            None,
-            100_000,
-            Some(1),
-            Some((1..1000).step_by(500).collect()),
-            1,
-        )
-        .expect("claiming every 500 blocks should also pass, but it fails");
+            TokenDistributionType::Perpetual,
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                        TokenPerpetualDistributionV0 {
+                            distribution_type: RewardDistributionType::BlockBasedDistribution {
+                                interval: 1,
+                                function: dist_clone,
+                            },
+                            distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                        },
+                    )));
+            }),
+        );
+
+        for (height, balance) in [(1, 100_001), (101, 100_110), (501, 100_510)] {
+            // claim at height 500;loop until we have no more coins
+            let step = TestStep {
+                name: format!("height {}", height),
+                base_height: height - 1,
+                base_time_ms: 10_200_000_000,
+                expected_balance: None,
+                claim_transition_assertions: vec![|v| match v {
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
+                    _ => Err(format!("got {:?}", v)),
+                }],
+            };
+
+            let mut loops = 0;
+            let err = loop {
+                if let Err(err) = suite.execute_step(&step) {
+                    break err;
+                }
+                loops += 1;
+            };
+
+            // max_token_redemption_cycles is 128
+            if height == 501 {
+                assert_eq!(loops, (501 - 101) / 128 + 1);
+            } else {
+                assert_eq!(loops, 1);
+            }
+
+            assert!(
+                err.contains("InvalidTokenClaimNoCurrentRewards"),
+                "expected InvalidTokenClaimNoCurrentRewards error, got {}",
+                err
+            );
+
+            assert_eq!(
+                suite
+                    .get_balance()
+                    .expect("get balance")
+                    .unwrap_or_default(),
+                balance,
+                "expected balance at height {}: {}",
+                height,
+                balance
+            );
+        }
     }
 
     // ===== HELPER FUNCTIONS ===== //
@@ -1498,6 +1543,7 @@ mod block_based_perpetual_polynomial {
             (2,100_001,true), // it's 1.pow(-1) but not sure about handling of overflow at prev height
         ], // steps
         1 // distribution_interval
+        => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("invalid distribution function: Overflow")))
     ; "0.pow(-1) at h=1")]
     #[test_case::test_case(
         Polynomial {
@@ -1520,7 +1566,7 @@ mod block_based_perpetual_polynomial {
             (6,100_008,true), // 5.pow(1/2) == 2.23 - should round to 2
         ], // steps
         1 // distribution_interval
-    ; "0.pow(1/2) at h=1")]
+    ; "0.pow(1/2) at h=1 fails dist fn validation")]
     #[test_case::test_case(
         Polynomial {
             a: 1,
@@ -2385,7 +2431,7 @@ mod test_suite {
                         token_configuration,
                         self.start_time.unwrap_or(0),
                     ) {
-                        panic!("failed to validate distribution function: {}", e);
+                        panic!("{}", e);
                     };
                 };
                 Some(closure)
@@ -2666,7 +2712,7 @@ mod test_suite {
             .distribution_type
             .function()
             .validate(contract_start_time)
-            .map_err(|e| format!("distribution function validation failed: {:?}", e))?;
+            .map_err(|e| format!("invalid distribution function: {:?}", e))?;
 
         Ok(())
     }
