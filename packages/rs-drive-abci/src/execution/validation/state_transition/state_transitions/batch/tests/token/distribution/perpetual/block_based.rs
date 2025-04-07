@@ -2129,6 +2129,8 @@ mod test_suite {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+    use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
@@ -2200,7 +2202,7 @@ mod test_suite {
             }),
         );
         if let Some(max_supply) = max_supply {
-            suite = suite.with_max_suppy(max_supply);
+            suite = suite.with_max_supply(max_supply);
         }
 
         suite = suite.with_contract_start_time(contract_start_time.unwrap_or(1));
@@ -2309,7 +2311,7 @@ mod test_suite {
             self
         }
         /// Appends a token configuration modification that will change max supply.
-        pub(crate) fn with_max_suppy(self, max_supply: Option<u64>) -> Self {
+        pub(crate) fn with_max_supply(self, max_supply: Option<u64>) -> Self {
             self.with_token_configuration_modification_fn(
                 move |token_configuration: &mut TokenConfiguration| {
                     token_configuration.set_max_supply(max_supply);
@@ -2339,7 +2341,16 @@ mod test_suite {
             // the contract and token id initialized so it should never happen
             let token_config_fn = if let Some(tc) = self.token_configuration_modification.take() {
                 let closure = |token_configuration: &mut TokenConfiguration| {
+                    // call previous token configuration modification
                     tc(token_configuration);
+
+                    // execute distribution function validation
+                    if let Err(e) = validate_distribution_function(
+                        token_configuration,
+                        self.start_time.unwrap_or(0),
+                    ) {
+                        panic!("failed to validate distribution function: {}", e);
+                    };
                 };
                 Some(closure)
             } else {
@@ -2354,6 +2365,7 @@ mod test_suite {
                 None,
                 self.platform_version,
             );
+
             self.token_id = Some(token_id);
             self.contract = Some(contract.clone());
 
@@ -2418,7 +2430,7 @@ mod test_suite {
                 .platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![claim_serialized_transition.clone()],
+                    &[claim_serialized_transition.clone()],
                     &platform_state,
                     &new_block_info,
                     &transaction,
@@ -2599,6 +2611,28 @@ mod test_suite {
                 Err(result.join("\n"))
             }
         }
+    }
+
+    /// dyn FnOnce(&mut TokenConfiguration) + Send + Sync;
+    fn validate_distribution_function(
+        token_configuration: &mut TokenConfiguration,
+        contract_start_time: u64,
+    ) -> Result<(), String> {
+        let TokenConfiguration::V0(token_config) = token_configuration;
+
+        let TokenDistributionRules::V0(dist_rules) = token_config.distribution_rules();
+
+        let TokenPerpetualDistribution::V0(perpetual_distribution) = dist_rules
+            .perpetual_distribution()
+            .expect("expected perpetual distribution");
+
+        perpetual_distribution
+            .distribution_type
+            .function()
+            .validate(contract_start_time)
+            .map_err(|e| format!("distribution function validation failed: {:?}", e))?;
+
+        Ok(())
     }
 
     pub(crate) type AssertionFn = fn(&[StateTransitionExecutionResult]) -> Result<(), String>;
