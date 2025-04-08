@@ -157,7 +157,7 @@ export default function setupLocalPresetTaskFactory(
                   // Bring default behavior for validator set quorum back
                   const validatorParams = config.get('platform.drive.tenderdash.genesis.consensus_params.validator', true);
 
-                  delete validatorParams.voting_power_threshold;
+                  delete validatorParams.threshold;
 
                   config.set('platform.drive.tenderdash.genesis.consensus_params.validator', validatorParams);
                 }

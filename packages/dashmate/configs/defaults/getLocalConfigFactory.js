@@ -66,7 +66,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
             genesis: {
               consensus_params: {
                 validator: {
-                  voting_power_threshold: '100',
+                  threshold: 100,
                 },
               },
             },
