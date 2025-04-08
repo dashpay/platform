@@ -510,14 +510,31 @@ mod fixed_amount {
         data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction,
     };
 
+    #[test]
+    fn fixed_amount_1_interval_1() -> Result<(), String> {
+        super::test_suite::check_heights(
+            DistributionFunction::FixedAmount { amount: 1 },
+            &[
+                TestStep::new(1, 100_001, true),
+                TestStep::new(2, 100_002, true),
+                TestStep::new(3, 100_003, true),
+                TestStep::new(50, 100_050, true),
+            ],
+            None,
+            1,
+            None,
+        )
+    }
+
     // Given some token configuration,
     // When a claim is made at block 42,
     // Then the claim should be successful.
     #[test]
-    fn test_block_based_perpetual_fixed_amount_50() {
+    fn fixed_amount_50_interval_10() {
         super::test_suite::check_heights(
             DistributionFunction::FixedAmount { amount: 50 },
             &[
+                TestStep::new(1, 100_000, true),
                 TestStep::new(41, 100_200, true),
                 TestStep::new(46, 100_200, false),
                 TestStep::new(50, 100_250, true),
@@ -537,7 +554,7 @@ mod fixed_amount {
     /// claim at height 1000000000000: claim failed: assertion 0 failed: expected SuccessfulExecution,
     /// got [InternalError(\"storage: protocol: overflow error: Overflow in FixedAmount evaluation\")]"
     #[test]
-    fn fail_test_block_based_perpetual_fixed_amount_1_000_000_000() {
+    fn fail_fixed_amount_1_000_000_000() {
         check_heights(
             DistributionFunction::FixedAmount {
                 amount: 1_000_000_000,
@@ -564,7 +581,7 @@ mod fixed_amount {
     /// Given a fixed amount distribution with value of 0,
     /// When we try to claim,
     /// Then we always fail and the balance remains unchanged.
-    fn test_block_based_perpetual_fixed_amount_0() {
+    fn fixed_amount_0() {
         check_heights(
             DistributionFunction::FixedAmount { amount: 0 },
             &[
@@ -584,7 +601,7 @@ mod fixed_amount {
     /// Given a fixed amount distribution with value of 1_000_000 and max_supply of 200_000,
     /// When we try to claim,
     /// Then we always fail and the balance remains unchanged.
-    fn test_fixed_amount_above_max_supply() {
+    fn fixed_amount_gt_max_supply() {
         let test = TestStep {
             name: "test_fixed_amount_above_max_supply".to_string(),
             base_height: 41,
@@ -1182,16 +1199,16 @@ mod stepwise {
 
     #[test]
     fn fails_stepwise_correct() {
+        let distribution_interval = 10;
         let periods = BTreeMap::from([
-            (0, 10_000),
-            (20, 20_000),
+            (0, 10_000), // h 1-30
+            (2, 20_000), // h 31+
             (45, 30_000),
             (50, 40_000),
             (70, 50_000),
         ]);
 
         let dist = DistributionFunction::Stepwise(periods);
-        let distribution_interval = 10;
 
         // claims: height, balance, expect_pass
         let steps = [
@@ -1436,8 +1453,11 @@ mod polynomial {
         )
     }
 
+    /// Given max_value < min_value,
+    /// When I try to use the token distribution function,
+    /// Then the token distribution function validation fails.
     #[test]
-    fn max_lt_min_should_fail() -> Result<(), String> {
+    fn fails_max_lt_min_should_fail() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1511,8 +1531,11 @@ mod polynomial {
         )
     }
 
+    ///  Given a polynomial distribution function with o=i64::MIN,
+    /// When I try to use the token distribution function,
+    /// Then the token distribution function validation fails on creation.
     #[test]
-    fn o_min() -> Result<(), String> {
+    fn fails_o_min() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1550,7 +1573,8 @@ mod polynomial {
     }
 
     #[test]
-    fn zero_pow_minus_1_at_h_1() -> Result<(), String> {
+    #[should_panic(expected = "invalid distribution function")]
+    fn zero_pow_minus_1_at_h_1_invalid() {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1566,6 +1590,8 @@ mod polynomial {
             &[(1, 100_000, false), (2, 100_001, true)],
             1,
         )
+        .expect("should panic");
+        unreachable!("should panic");
     }
     #[test]
     fn fails_zero_pow_minus_1_at_h_2() -> Result<(), String> {
@@ -1594,7 +1620,7 @@ mod polynomial {
     }
 
     #[test]
-    fn o_max_m_2() -> Result<(), String> {
+    fn fails_o_max_m_2() -> Result<(), String> {
         test_polynomial(
             Polynomial {
                 a: 1,
@@ -1635,7 +1661,7 @@ mod polynomial {
     ///
     /// We expect this test not to end with InternalError.
     #[test]
-    fn test_poynomial_power() -> Result<(), String> {
+    fn fails_poynomial_power() -> Result<(), String> {
         for m in [i64::MIN, -1, 0, 1, i64::MAX] {
             for n in [0, 1, u64::MAX] {
                 let dist = Polynomial {
@@ -1712,7 +1738,7 @@ mod logarithmic {
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
 
     #[test]
-    fn zeros() -> Result<(), String> {
+    fn fails_zeros() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
                 a: 0,                  // a: i64,
@@ -1860,16 +1886,23 @@ mod logarithmic {
                 min_value: None,       // min_value: Option<u64>,
                 max_value: None,       // max_value: Option<u64>,
             },
+            // f(x) = (a * log(m * (x - s + o) / n)) / d + b
             &[
-                (1, 100_000, false), // f(1) should be < 0, is 1
-                (9, 100_000, false),
-                (10, 100_000, false),
+                (1, 100_000, false), // should be false, as the balance after claim == initial balance
+                (2, 100_001, true),
+                (9, 100_001, false),
+                (10, 100_001, false),
             ],
             1,
         )
     }
+    /// Given a logarithmic distribution function with a=MAX,
+    /// When I try to claim tokens,
+    /// Then I get an error different than InternalError.
+    ///
+    ///
     #[test]
-    fn a_max_overflows() -> Result<(), String> {
+    fn fails_a_max_overflows() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
                 a: i64::MAX,           // a: i64,
@@ -2511,6 +2544,8 @@ mod test_suite {
                     ) {
                         panic!("{}", e);
                     };
+
+                    tracing::trace!("token configuration validated");
                 };
                 Some(closure)
             } else {
