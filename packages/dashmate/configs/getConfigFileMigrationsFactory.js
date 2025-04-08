@@ -1061,8 +1061,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
-            options.core.log.debug.exclude.push('libevent', 'leveldb');
-
             options.platform.drive.abci.docker.image = 'dashpay/drive:1';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
           });
@@ -1079,9 +1077,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '2.0.0': (configFile) => {
+        configFile.configs.local.platform.drive.abci.validatorSet.quorum.activeSigners = 1;
+        configFile.configs.local.platform.drive.abci.chainLock.quorum.activeSigners = 1;
+        configFile.configs.local.platform.drive.abci.instantLock.quorum.activeSigners = 1;
+        configFile.configs.local.platform.drive.tenderdash.genesis.consensus_params.validator.voting_power_threshold = '100';
+
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            delete options.core.miner.mediantime;
+            options.core.log.debug.exclude.push('libevent', 'leveldb');
 
             options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
