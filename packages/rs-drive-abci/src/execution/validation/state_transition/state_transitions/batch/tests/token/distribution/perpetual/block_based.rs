@@ -501,7 +501,7 @@ mod perpetual_distribution_block {
 }
 
 #[cfg(test)]
-mod block_based_perpetual_fixed_amount {
+mod fixed_amount {
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 
     use super::{test_suite::*, INITIAL_BALANCE};
@@ -623,7 +623,7 @@ mod block_based_perpetual_fixed_amount {
         .expect("\nfixed amount u64::MAX should pass\n");
     }
 }
-mod block_based_perpetual_random {
+mod random {
     use std::{
         collections::BTreeMap,
         sync::{Arc, Mutex},
@@ -810,7 +810,7 @@ mod block_based_perpetual_random {
     }
 }
 
-mod block_based_perpetual_step_decreasing {
+mod step_decreasing {
     use dpp::balances::credits::TokenAmount;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
@@ -1175,7 +1175,7 @@ mod block_based_perpetual_step_decreasing {
     }
 }
 
-mod block_based_perpetual_stepwise {
+mod stepwise {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use std::collections::BTreeMap;
@@ -1231,7 +1231,7 @@ mod block_based_perpetual_stepwise {
     }
 }
 
-mod block_based_perpetual_linear {
+mod linear {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 
@@ -1376,7 +1376,7 @@ mod block_based_perpetual_linear {
     }
 }
 
-mod block_based_perpetual_polynomial {
+mod polynomial {
     use super::test_suite::{check_heights, TestStep, TestSuite};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use dpp::data_contract::{
@@ -1706,7 +1706,7 @@ mod block_based_perpetual_polynomial {
     }
 }
 
-mod block_based_perpetual_logarithmic {
+mod logarithmic {
 
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
@@ -1997,7 +1997,7 @@ mod block_based_perpetual_logarithmic {
     }
 }
 
-mod block_based_perpetual_inverted_logarithmic {
+mod inverted_logarithmic {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
 
