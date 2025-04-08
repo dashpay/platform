@@ -1,9 +1,8 @@
 {
-  "contract": {
+  "contractKeywords": {
     "type": "object",
     "documentsMutable": false,
     "canBeDeleted": false,
-    "referenceType": "contract",
     "creationRestrictionMode": 2,
     "indices": [
       {
@@ -29,12 +28,57 @@
         "maxItems": 32,
         "position": 1,
         "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "shortDescription": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 100,
+        "position": 2
       }
     },
     "required": [
       "contractId",
       "keyword"
     ],
+    "additionalProperties": false
+  },
+  "longDescription": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byContractId",
+        "properties": [
+          {
+            "contractId": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "contractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "description": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 10000,
+        "position": 1
+      }
+    },
+    "required": [
+      "contractId",
+      "description"
+    ],
+    "description": "Long description of the contract. This document type is mutable by contract owner but creation is not allowed. Creation occurs automatically on DataContractCreate",
     "additionalProperties": false
   }
 }

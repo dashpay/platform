@@ -110,4 +110,7 @@ pub struct DataContractV1 {
 
     /// The contract's keywords for searching
     pub keywords: Vec<String>,
+
+    /// The contract's description
+    pub description: Option<String>,
 }

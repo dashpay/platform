@@ -63,6 +63,10 @@ pub struct DataContractInSerializationFormatV1 {
     /// The contract's keywords for searching
     #[serde(default)]
     pub keywords: Vec<String>,
+
+    /// The contract's description
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 fn deserialize_u16_group_map<'de, D>(
@@ -129,6 +133,7 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     groups: Default::default(),
                     tokens: Default::default(),
                     keywords: Default::default(),
+                    description: None,
                 }
             }
             DataContract::V1(v1) => {
@@ -148,6 +153,7 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     groups,
                     tokens,
                     keywords,
+                    description,
                 } = v1;
 
                 DataContractInSerializationFormatV1 {
@@ -169,6 +175,7 @@ impl From<DataContract> for DataContractInSerializationFormatV1 {
                     groups,
                     tokens,
                     keywords,
+                    description,
                 }
             }
         }

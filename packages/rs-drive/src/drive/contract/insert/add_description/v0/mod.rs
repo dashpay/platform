@@ -14,22 +14,22 @@ use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
-    /// Adds a keyword by inserting a new keyword subtree structure to the `Identities` subtree.
-    pub(super) fn add_new_contract_keywords_v0(
+    /// Adds a contract description by inserting a new description subtree structure to the `Identities` subtree.
+    pub(super) fn add_new_contract_description_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &[String],
+        description: &String,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.add_new_contract_keywords_add_to_operations_v0(
+        self.add_new_contract_description_add_to_operations_v0(
             contract_id,
             owner_id,
-            keywords,
+            description,
             block_info,
             apply,
             transaction,
@@ -47,12 +47,12 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Adds keyword creation operations to drive operations
-    pub(super) fn add_new_contract_keywords_add_to_operations_v0(
+    /// Adds contract description creation operations to drive operations
+    pub(super) fn add_new_contract_description_add_to_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &[String],
+        description: &String,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -65,10 +65,10 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let batch_operations = self.add_new_contract_keywords_operations(
+        let batch_operations = self.add_new_contract_description_operations(
             contract_id,
             owner_id,
-            keywords,
+            description,
             block_info,
             &mut estimated_costs_only_with_layer_info,
             transaction,
@@ -84,12 +84,12 @@ impl Drive {
         )
     }
 
-    /// The operations needed to create a keyword
-    pub(super) fn add_new_contract_keywords_operations_v0(
+    /// The operations needed to create a description
+    pub(super) fn add_new_contract_description_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &[String],
+        description: &String,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -98,60 +98,64 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let contract = self.cache.system_data_contracts.load_search();
-        let document_type = contract.document_type_for_name("contractKeywords")?;
+        let document_type = contract.document_type_for_name("longDescription")?;
 
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        for (i, keyword) in keywords.iter().enumerate() {
-            let document = self.build_contract_keyword_document_owned_v0(
-                contract_id,
-                owner_id,
-                keyword,
-                i as u64,
-                block_info,
-            )?;
+        let document = self.build_contract_long_description_document_owned_v0(
+            contract_id,
+            owner_id,
+            description,
+            block_info,
+        )?;
 
-            let ops = self.add_document_for_contract_operations(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentOwnedInfo((document, None)),
-                        owner_id: Some(owner_id.to_buffer()),
-                    },
-                    contract: &contract,
-                    document_type,
+        let ops = self.add_document_for_contract_operations(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentOwnedInfo((document, None)),
+                    owner_id: Some(owner_id.to_buffer()),
                 },
-                true,
-                block_info,
-                &mut None,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            )?;
+                contract: &contract,
+                document_type,
+            },
+            true,
+            block_info,
+            &mut None,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?;
 
-            operations.extend(ops);
-        }
+        operations.extend(ops);
 
         Ok(operations)
     }
 
-    pub(super) fn build_contract_keyword_document_owned_v0(
+    pub(super) fn build_contract_long_description_document_owned_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keyword: &String,
-        keyword_index: u64,
+        description: &String,
         block_info: &BlockInfo,
     ) -> Result<Document, Error> {
+        // Fetch the identity nonce for the owner or use 1
+        let owner_nonce =
+            match self.fetch_identity_nonce(owner_id.into(), true, None, PlatformVersion::latest())
+            {
+                Ok(maybe_nonce) => maybe_nonce.unwrap_or(1),
+                Err(e) => return Err(e),
+            };
+
         let document_id = Document::generate_document_id_v0(
             &contract_id,
             &owner_id,
-            "contract",
-            keyword_index.to_be_bytes().as_slice(),
+            "longDescription",
+            &owner_nonce.to_be_bytes(),
         );
 
         let properties = BTreeMap::from([
-            ("keyword".to_string(), keyword.into()),
             ("contractId".to_string(), contract_id.into()),
+            ("description".to_string(), description.into()),
         ]);
 
         let document: Document = DocumentV0 {

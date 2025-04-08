@@ -1,0 +1,134 @@
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::version::PlatformVersion;
+
+use dpp::prelude::Identifier;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
+
+mod v0;
+
+impl Drive {
+    /// Adds contract description to the state.
+    pub fn add_new_contract_description(
+        &self,
+        contract_id: Identifier,
+        owner_id: Identifier,
+        description: &String,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
+            0 => Err(Error::Drive(DriveError::NotSupported(
+                "Contract descriptions are not supported in this version",
+            ))),
+            1 => self.add_new_contract_description_v0(
+                contract_id,
+                owner_id,
+                description,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_new_contract_description".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
+    /// Adds contract description creation operations to drive operations
+    pub fn add_new_contract_description_add_to_operations(
+        &self,
+        contract_id: Identifier,
+        owner_id: Identifier,
+        description: &String,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
+            0 => Err(Error::Drive(DriveError::NotSupported(
+                "Contract descriptions are not supported in this version",
+            ))),
+            1 => self.add_new_contract_description_add_to_operations_v0(
+                contract_id,
+                owner_id,
+                description,
+                block_info,
+                apply,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_new_contract_description_add_to_operations".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
+    /// The operations needed to create a description
+    pub fn add_new_contract_description_operations(
+        &self,
+        contract_id: Identifier,
+        owner_id: Identifier,
+        description: &String,
+        block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
+            0 => Err(Error::Drive(DriveError::NotSupported(
+                "Contract descriptions are not supported in this version",
+            ))),
+            1 => self.add_new_contract_description_operations_v0(
+                contract_id,
+                owner_id,
+                description,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_new_contract_description_operations".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+}

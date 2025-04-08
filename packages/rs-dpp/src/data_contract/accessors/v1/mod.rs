@@ -69,6 +69,12 @@ pub trait DataContractV1Getters: DataContractV0Getters {
 
     /// Returns a mutable reference to the keywords for the contract.
     fn keywords_mut(&mut self) -> Option<&mut Vec<String>>;
+
+    /// Returns the description for the contract.
+    fn description(&self) -> Option<&String>;
+
+    /// Returns a mutable reference to the description for the contract.
+    fn description_mut(&mut self) -> Option<&mut String>;
 }
 
 pub trait DataContractV1Setters: DataContractV0Setters {
@@ -104,4 +110,7 @@ pub trait DataContractV1Setters: DataContractV0Setters {
 
     /// Sets the keywords for the contract.
     fn set_keywords(&mut self, keywords: Vec<String>);
+
+    /// Sets the description for the contract.
+    fn set_description(&mut self, description: Option<String>);
 }

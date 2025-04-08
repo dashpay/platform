@@ -2504,8 +2504,8 @@ mod creation_tests {
 
         // Get the document type from the search contract.
         let doc_type = search_contract
-            .document_type_for_name("contract")
-            .expect("expected to find 'contract' in Search contract");
+            .document_type_for_name("contractKeywords")
+            .expect("expected to find 'contractKeywords' in Search contract");
 
         // Verify that the document type has the restrictive creation mode
         assert_eq!(

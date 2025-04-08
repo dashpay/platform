@@ -154,6 +154,7 @@ mod tests {
                 ),
             ]),
             keywords: Vec::new(),
+            description: None,
         });
 
         drive
@@ -382,6 +383,7 @@ mod tests {
                 ),
             ]),
             keywords: Vec::new(),
+            description: None,
         });
 
         drive

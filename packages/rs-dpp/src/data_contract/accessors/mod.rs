@@ -284,6 +284,20 @@ impl DataContractV1Getters for DataContract {
         }
     }
 
+    fn description(&self) -> Option<&String> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.description.as_ref(),
+        }
+    }
+
+    fn description_mut(&mut self) -> Option<&mut String> {
+        match self {
+            DataContract::V0(_) => None,
+            DataContract::V1(v1) => v1.description.as_mut(),
+        }
+    }
+
     /// Returns the timestamp in milliseconds when the contract was created.
     fn created_at(&self) -> Option<TimestampMillis> {
         match self {
@@ -420,6 +434,13 @@ impl DataContractV1Setters for DataContract {
     fn set_keywords(&mut self, keywords: Vec<String>) {
         if let DataContract::V1(v1) = self {
             v1.keywords = keywords;
+        }
+    }
+
+    /// Sets the description for the contract.
+    fn set_description(&mut self, description: Option<String>) {
+        if let DataContract::V1(v1) = self {
+            v1.description = description;
         }
     }
 }

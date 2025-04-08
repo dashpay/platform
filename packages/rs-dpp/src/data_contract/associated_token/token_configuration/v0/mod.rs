@@ -57,6 +57,8 @@ pub struct TokenConfigurationV0 {
     pub main_control_group: Option<GroupContractPosition>,
     #[serde(default)]
     pub main_control_group_can_be_modified: AuthorizedActionTakers,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 // Default function for `keeps_history`
@@ -265,6 +267,7 @@ impl TokenConfigurationV0 {
             .into(),
             main_control_group: None,
             main_control_group_can_be_modified: AuthorizedActionTakers::NoOne,
+            description: None,
         }
     }
 
