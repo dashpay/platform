@@ -16,7 +16,11 @@ export default function enableSingleCoreQuorumTaskFactory(generateBlocks) {
         title: 'Wait for quorum',
         task: async (ctx) => {
           const seedCoreService = ctx.coreServices
-            .filter((coreService) => coreService.getConfig().getName() === 'local_seed')[0];
+            .find((coreService) => coreService.getConfig().getName() === 'local_seed');
+          
+          if (!seedCoreService) {
+            throw new Error('Local seed core service not found');
+          }
 
           const seedRpcClient = seedCoreService.getRpcClient();
 
