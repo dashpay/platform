@@ -24,7 +24,6 @@ service Platform {
       returns (GetEvonodesProposedEpochBlocksResponse);
   rpc getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest)
       returns (GetEvonodesProposedEpochBlocksResponse);
-  rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
       returns (GetDataContractHistoryResponse);
@@ -402,86 +401,6 @@ message GetIdentitiesBalancesResponse {
   }
 
   oneof version { GetIdentitiesBalancesResponseV0 v0 = 1; }
-}
-
-message GetProofsRequest {
-  message GetProofsRequestV0 {
-    // DocumentRequest specifies a request for a document proof
-    message DocumentRequest {
-      enum DocumentContestedStatus {
-        NOT_CONTESTED = 0;
-        MAYBE_CONTESTED = 1;
-        CONTESTED = 2;
-      }
-      bytes contract_id = 1;                 // ID of the contract the document belongs to
-      string document_type = 2;              // Type of document being requested
-      bool document_type_keeps_history = 3;  // Indicates if the document type keeps a history of changes
-      bytes document_id = 4;                 // ID of the specific document being requested
-      DocumentContestedStatus document_contested_status = 5;
-    }
-
-    // IdentityRequest specifies a request for an identity proof
-    message IdentityRequest {
-      enum Type {
-        FULL_IDENTITY = 0;  // Request for the full identity
-        BALANCE = 1;        // Request for the identity's balance
-        KEYS = 2;           // Request for the identity's keys
-        REVISION = 3;       // Request for the identity's revision
-      }
-      bytes identity_id = 1;  // ID of the identity for which the proof is requested
-      Type request_type = 2;  // Type of identity request
-    }
-
-    // ContractRequest specifies a request for a data contract proof.
-    message ContractRequest { bytes contract_id = 1; }  // ID of the contract for which the proof is requested
-
-    message VoteStatusRequest {
-      message ContestedResourceVoteStatusRequest {
-        bytes contract_id = 1;
-        string document_type_name = 2;
-        string index_name = 3;
-        repeated bytes index_values = 4;
-        bytes voter_identifier = 5;
-      }
-
-      oneof request_type { ContestedResourceVoteStatusRequest contested_resource_vote_status_request = 1; }
-    }
-
-    message IdentityTokenBalanceRequest {
-      bytes token_id = 1;
-      bytes identity_id = 2;
-    }
-
-    message IdentityTokenInfoRequest {
-      bytes token_id = 1;
-      bytes identity_id = 2;
-    }
-
-    message TokenStatusRequest {
-      bytes token_id = 1;
-    }
-
-    repeated IdentityRequest identities = 1;  // List of identity requests
-    repeated ContractRequest contracts = 2;   // List of contract requests
-    repeated DocumentRequest documents = 3;   // List of document requests
-    repeated VoteStatusRequest votes = 4;
-    repeated IdentityTokenBalanceRequest identity_token_balances = 5;
-    repeated IdentityTokenInfoRequest identity_token_infos = 6;
-    repeated TokenStatusRequest token_statuses = 7;
-  }
-
-  oneof version { GetProofsRequestV0 v0 = 1; }
-}
-
-message GetProofsResponse {
-  message GetProofsResponseV0 {
-    oneof result {
-      Proof proof = 1;  // Cryptographic proof for the requested data
-    }
-
-    ResponseMetadata metadata = 2;  // Metadata about the blockchain state
-  }
-  oneof version { GetProofsResponseV0 v0 = 1; }
 }
 
 message GetDataContractRequest {
@@ -1584,7 +1503,7 @@ message GetGroupActionsRequest {
     bytes start_action_id = 1;
     bool start_action_id_included = 2;
   }
-    
+
   message GetGroupActionsRequestV0 {
     bytes contract_id = 1;
     uint32 group_contract_position = 2;

@@ -3,51 +3,351 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
-use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
-    IdentityTokenBalanceRequest, IdentityTokenInfoRequest, TokenStatusRequest,
-};
-use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
-use dapi_grpc::platform::v0::get_proofs_response::{get_proofs_response_v0, GetProofsResponseV0};
-use dpp::check_validation_result_with_data;
-use dpp::platform_value::Bytes32;
+use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
+use dpp::balances::credits::TokenAmount;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::TokenConfiguration;
+use dpp::data_contracts::SystemDataContract;
+use dpp::document::property_names::PRICE;
+use dpp::document::Document;
+use dpp::fee::Credits;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::Identifier;
-use dpp::validation::ValidationResult;
-use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::serialization::PlatformDeserializable;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::proof_result::StateTransitionProofResult::{
+    VerifiedDocuments, VerifiedPartialIdentity, VerifiedTokenActionWithDocument,
+    VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo,
+};
+use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::system_data_contracts::load_system_data_contract;
+use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
+use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::votes::Vote;
+use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
-use drive::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
-use drive::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
-use drive::query::token_status_drive_query::TokenStatusDriveQuery;
-use drive::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
+use drive::drive::Drive;
+use drive::error::proof::ProofError;
+use drive::query::{PathQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+use drive::verify::RootHash;
+use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
+
+fn contract_ids_to_non_historical_path_query(contract_ids: &[Identifier]) -> PathQuery {
+    let contract_ids = contract_ids.iter().map(|id| id.0).collect();
+
+    let mut path_query = Drive::fetch_non_historical_contracts_query(contract_ids);
+    path_query.query.limit = None;
+    path_query
+}
 
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
         &self,
-        GetProofsRequestV0 {
-            identities,
-            contracts,
-            documents,
-            votes,
-            identity_token_balances,
-            identity_token_infos,
-            token_statuses,
-        }: GetProofsRequestV0,
+        GetProofsRequest {
+            state_transition: state_transition_bytes,
+        }: GetProofsRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetProofsResponseV0>, Error> {
-        let contract_ids = check_validation_result_with_data!(contracts
-            .into_iter()
-            .map(|contract_request| {
-                Bytes32::from_vec(contract_request.contract_id)
-                    .map(|bytes| (bytes.0, None))
-                    .map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })
-            })
-            .collect::<Result<Vec<([u8; 32], Option<bool>)>, QueryError>>());
+    ) -> Result<QueryValidationResult<GetProofsResponse>, Error> {
+        let state_transition: StateTransition =
+            StateTransition::deserialize_from_bytes(&state_transition_bytes)?;
+
+        let path_query = match state_transition {
+            StateTransition::DataContractCreate(st) => {
+                contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+            }
+            StateTransition::DataContractUpdate(st) => {
+                contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+            }
+            StateTransition::Batch(st) => {
+                if st.transitions_len() > 1 {
+                    return Err(QueryError::Proof(ProofError::InvalidTransition(
+                        "batch state transition must have only one batched transition".to_string(),
+                    ))
+                    .into());
+                }
+                let Some(transition) = st.first_transition() else {
+                    return Err(QueryError::Proof(ProofError::InvalidTransition(
+                        "batch state transition must have one batched transition".to_string(),
+                    ))
+                    .into());
+                };
+
+                let owner_id = st.owner_id();
+
+                match transition {
+                    BatchedTransitionRef::Document(document_transition) => {
+                        let data_contract_id = document_transition.data_contract_id();
+
+                        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+                            data_contract_id.to_buffer(),
+                            false,
+                            None,
+                            platform_version,
+                        )?
+                        else {
+                            return Err(drive::error::Error::Proof(ProofError::UnknownContract(
+                                format!("unknown contract with id {}", data_contract_id),
+                            ))
+                            .into());
+                        };
+
+                        let contract = &contract_fetch_info.contract;
+
+                        let document_type = contract
+                            .document_type_for_name(document_transition.document_type_name())
+                            .map_err(|e| {
+                                drive::error::Error::Proof(ProofError::UnknownContract(format!(
+                                    "cannot fetch contract for document {} with id {}: {}",
+                                    document_transition.document_type_name(),
+                                    document_transition.data_contract_id(),
+                                    e
+                                )))
+                            })?;
+
+                        let contested_status =
+                            if let DocumentTransition::Create(create_transition) =
+                                document_transition
+                            {
+                                if create_transition.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested
+                                }
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested
+                            };
+
+                        let query = SingleDocumentDriveQuery {
+                            contract_id: document_transition.data_contract_id().into_buffer(),
+                            document_type_name: document_transition.document_type_name().clone(),
+                            document_type_keeps_history: document_type.documents_keep_history(),
+                            document_id: document_transition.base().id().into_buffer(),
+                            block_time_ms: None, //None because we want latest
+                            contested_status,
+                        };
+
+                        let mut path_query = query.construct_path_query(platform_version).ok()?;
+                        path_query.query.limit = None;
+                        path_query
+                    }
+                    BatchedTransitionRef::Token(token_transition) => {
+                        //todo group actions
+                        let data_contract_id = token_transition.data_contract_id();
+                        let token_id = token_transition.token_id();
+
+                        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+                            data_contract_id.to_buffer(),
+                            false,
+                            None,
+                            platform_version,
+                        )?
+                        else {
+                            return Err(drive::error::Error::Proof(ProofError::UnknownContract(
+                                format!("unknown contract with id {}", data_contract_id),
+                            ))
+                            .into());
+                        };
+
+                        let contract = &contract_fetch_info.contract;
+
+                        let identity_contract_nonce =
+                            token_transition.base().identity_contract_nonce();
+
+                        let token_history_document_type_name =
+                            token_transition.historical_document_type_name().to_string();
+
+                        let token_history_contract =
+                            self.drive.cache.system_data_contracts.load_token_history();
+
+                        let token_history_document_type =
+                            token_transition.historical_document_type(&token_history_contract)?;
+
+                        let token_config = contract.expected_token_configuration(
+                            token_transition.base().token_contract_position(),
+                        )?;
+
+                        let keeps_historical_document = token_config.keeps_history();
+
+                        match token_transition {
+                            TokenTransition::Burn(_) => {
+                                if keeps_historical_document.keeps_burning_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_balance_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::Mint(token_mint_transition) => {
+                                if keeps_historical_document.keeps_minting_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    let recipient_id =
+                                        token_mint_transition.recipient_id(token_config)?;
+
+                                    Drive::token_balance_for_identity_id_query(
+                                        token_id.into_buffer(),
+                                        recipient_id.into_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::Transfer(token_transfer_transition) => {
+                                if keeps_historical_document.keeps_transfer_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    let recipient_id = token_transfer_transition.recipient_id();
+                                    let identity_ids =
+                                        [owner_id.to_buffer(), recipient_id.to_buffer()];
+
+                                    Drive::token_balances_for_identity_ids_query(
+                                        token_id.into_buffer(),
+                                        &identity_ids,
+                                    )
+                                }
+                            }
+                            TokenTransition::Freeze(token_freeze_transition) => {
+                                if keeps_historical_document.keeps_freezing_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_info_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::Unfreeze(token_unfreeze_transition) => {
+                                if keeps_historical_document.keeps_freezing_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        token_config,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_info_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::DestroyFrozenFunds(_)
+                            | TokenTransition::EmergencyAction(_)
+                            | TokenTransition::ConfigUpdate(_)
+                            | TokenTransition::Claim(_) => create_token_historical_document_query(
+                                token_transition,
+                                token_config,
+                                owner_id,
+                                platform_version,
+                            )?,
+                        }
+                    }
+                }
+            }
+            StateTransition::IdentityCreate(st) => Drive::full_identity_query(
+                &st.identity_id().into_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
+            StateTransition::IdentityTopUp(st) => {
+                // we expect to get a new balance and revision
+                Drive::revision_and_balance_path_query(
+                    st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                Drive::identity_balance_query(&st.identity_id().to_buffer())
+            }
+            StateTransition::IdentityUpdate(st) => Drive::identity_all_keys_query(
+                &st.identity_id().to_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
+            StateTransition::IdentityCreditTransfer(st) => {
+                let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());
+                let recipient_query =
+                    Drive::identity_balance_query(&st.recipient_id().into_buffer());
+
+                PathQuery::merge(
+                    vec![&sender_query, &recipient_query],
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::MasternodeVote(st) => {
+                let pro_tx_hash = masternode_vote.pro_tx_hash();
+                let vote = masternode_vote.vote();
+                let contract = match vote {
+                    Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
+                        VotePoll::ContestedDocumentResourceVotePoll(
+                            contested_document_resource_vote_poll,
+                        ) => known_contracts_provider_fn(
+                            &contested_document_resource_vote_poll.contract_id,
+                        )?
+                        .ok_or(drive::error::Error::Proof(
+                            ProofError::UnknownContract(format!(
+                                "unknown contract with id {}",
+                                contested_document_resource_vote_poll.contract_id
+                            )),
+                        ))?,
+                    },
+                };
+
+                Drive::
+
+                // we expect to get a vote that matches the state transition
+                πlet(root_hash, vote) = Drive::verify_masternode_vote(
+                    proof,
+                    pro_tx_hash.to_buffer(),
+                    vote,
+                    &contract,
+                    false,
+                    platform_version,
+                )?;
+            }
+        };
 
         let identity_requests = check_validation_result_with_data!(identities
             .into_iter()
@@ -75,37 +375,6 @@ impl<C> Platform<C> {
                 })
             })
             .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
-
-        let document_queries = check_validation_result_with_data!(documents
-            .into_iter()
-            .map(|document_proof_request| {
-                let contract_id: Identifier =
-                    document_proof_request.contract_id.try_into().map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?;
-                let document_id: Identifier =
-                    document_proof_request.document_id.try_into().map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?;
-
-                let contested_status = document_proof_request
-                    .document_contested_status
-                    .try_into()?;
-
-                Ok(SingleDocumentDriveQuery {
-                    contract_id: contract_id.into_buffer(),
-                    document_type_name: document_proof_request.document_type,
-                    document_type_keeps_history: document_proof_request.document_type_keeps_history,
-                    document_id: document_id.into_buffer(),
-                    block_time_ms: None, //None because we want latest
-                    contested_status,
-                })
-            })
-            .collect::<Result<Vec<SingleDocumentDriveQuery>, QueryError>>());
 
         let vote_queries = check_validation_result_with_data!(votes
             .into_iter()
@@ -233,6 +502,37 @@ impl<C> Platform<C> {
 
         Ok(QueryValidationResult::new_with_data(response))
     }
+}
+
+fn create_token_historical_document_query(
+    token_transition: &TokenTransition,
+    token_config: &TokenConfiguration,
+    owner_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Result<PathQuery, Error> {
+    let token_history_contract =
+        load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+
+    let Some(token_event) = token_transition.associated_token_event(token_config, owner_id)? else {
+        unreachable!("verify_token_historical_event must be called only for token transitions that have an associated token event");
+    };
+
+    let token_id = token_transition.token_id();
+    let owner_nonce = token_transition.base().identity_contract_nonce();
+
+    let query = SingleDocumentDriveQuery {
+        contract_id: token_history_contract.id().into_buffer(),
+        document_type_name: token_event.associated_document_type_name().to_string(),
+        document_type_keeps_history: false,
+        document_id: token_event
+            .associated_document_id(token_id, owner_id, owner_nonce)
+            .to_buffer(),
+        block_time_ms: None, //None because we want latest
+        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+    };
+
+    let token_history_document_type = token_history_contract
+        .document_type_for_name(token_event.associated_document_type_name())?;
 }
 
 #[cfg(test)]

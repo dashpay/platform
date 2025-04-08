@@ -14,8 +14,12 @@ CORE_CLIENTS_PATH="$PWD/clients/core/v0"
 PLATFORM_PROTO_PATH="$PWD/protos/platform/v0"
 PLATFORM_CLIENTS_PATH="$PWD/clients/platform/v0"
 
+DRIVE_PROTO_PATH="$PWD/protos/drive/v0"
+DRIVE_CLIENTS_PATH="$PWD/clients/drive/v0"
+
 CORE_WEB_OUT_PATH="$CORE_CLIENTS_PATH/web"
 PLATFORM_WEB_OUT_PATH="$PLATFORM_CLIENTS_PATH/web"
+DRIVE_WEB_OUT_PATH="$DRIVE_CLIENTS_PATH/web"
 
 CORE_JAVA_OUT_PATH="$CORE_CLIENTS_PATH/java"
 PLATFORM_JAVA_OUT_PATH="$PLATFORM_CLIENTS_PATH/java"
@@ -61,6 +65,40 @@ pbjs \
   -r core_root \
   -o "$CORE_CLIENTS_PATH/nodejs/core_pbjs.js" \
   "$CORE_PROTO_PATH/core.proto"
+
+#####################################################
+# Generate JavaScript client for `DriveInternal` service #
+#####################################################
+
+rm -rf "${DRIVE_WEB_OUT_PATH:?}/*" || true
+
+docker run -v "$DRIVE_PROTO_PATH:$DRIVE_PROTO_PATH" \
+  -v "$DRIVE_WEB_OUT_PATH:$DRIVE_WEB_OUT_PATH" \
+  -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --js_out="import_style=commonjs:$DRIVE_WEB_OUT_PATH" \
+  --ts_out="service=grpc-web:$DRIVE_WEB_OUT_PATH" \
+  -I="$DRIVE_PROTO_PATH" \
+  -I="$PLATFORM_PROTO_PATH" \
+  "drive.proto"
+
+# Clean node message classes
+
+rm -rf "$DRIVE_CLIENTS_PATH/nodejs/*_protoc.js" || true
+rm -rf "$DRIVE_CLIENTS_PATH/nodejs/*_pbjs.js" || true
+
+# Copy compiled modules with message classes
+
+cp "$DRIVE_WEB_OUT_PATH/drive_pb.js" "$DRIVE_CLIENTS_PATH/nodejs/drive_protoc.js"
+
+pbjs \
+  -t static-module \
+  -w commonjs \
+  -r platform_root \
+  -p "$PLATFORM_PROTO_PATH" \
+  -o "$DRIVE_CLIENTS_PATH/nodejs/drive_pbjs.js" \
+  "$DRIVE_PROTO_PATH/drive.proto"
 
 #####################################################
 # Generate JavaScript client for `Platform` service #
