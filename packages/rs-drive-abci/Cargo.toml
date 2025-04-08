@@ -103,8 +103,6 @@ assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "1.3.3" }
 mockall = { version = "0.13" }
-test-case = { version = "3.3.1" }
-
 # For tests of grovedb verify
 rocksdb = { version = "0.23.0" }
 integer-encoding = { version = "4.0.0" }
@@ -121,4 +119,7 @@ name = "drive-abci"
 path = "src/main.rs"
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)', 'cfg(create_sdk_test_data)'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(tokio_unstable)',
+  'cfg(create_sdk_test_data)',
+] }

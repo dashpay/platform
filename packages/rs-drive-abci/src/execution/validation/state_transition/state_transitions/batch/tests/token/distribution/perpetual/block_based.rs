@@ -649,32 +649,30 @@ mod block_based_perpetual_random {
         },
         TokenConfiguration,
     };
-    use test_case::test_matrix;
 
-    /// <Given a random distribution function with min=0, max=100,
+    /// Given a random distribution function with min=0, max=100,
     /// When I claim tokens at various heights,
     /// Then I get deterministic balances at those heights.
-    #[test_matrix(
-        0, //min
-        100,//max,
-        [None,Some(1_000_000)], // max_supply
-        &[
+    #[test]
+    fn test_random_max_supply() -> Result<(), String> {
+        let steps = [
             TestStep::new(41, 100_192, true),
             TestStep::new(46, 100_192, false),
             TestStep::new(50, 100_263, true),
             TestStep::new(59, 100_263, false),
             TestStep::new(60, 100_310, true),
-        ]
-    )]
-    fn test_random(min: u64, max: u64, max_supply: Option<u64>, steps: &[TestStep]) {
-        check_heights(
-            DistributionFunction::Random { min, max },
-            steps,
-            None,
-            10,
-            Some(max_supply),
-        )
-        .expect("correct case 1");
+        ];
+
+        for max_supply in [None, Some(1_000_000)] {
+            check_heights(
+                DistributionFunction::Random { min: 0, max: 100 },
+                &steps,
+                None,
+                10,
+                Some(max_supply),
+            )?;
+        }
+        Ok(())
     }
 
     /// Given a random distribution function with min=0, max=0,
@@ -824,151 +822,166 @@ mod block_based_perpetual_step_decreasing {
     use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::data_contract::TokenConfiguration;
     use rust_decimal::prelude::ToPrimitive;
-    use test_case::test_case;
     use crate::{execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights, platform_types::state_transitions_processing_result::StateTransitionExecutionResult};
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::INITIAL_BALANCE;
 
     use super::test_suite::{TestStep, TestSuite};
 
-    #[test_case(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-      Some((1..1000).step_by(100).collect()),// claim_heights
-        1; // distribution_interval
-        "claim every 100 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        101,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-        Some((1..1000).step_by(100).collect()),// claim_heights
-        1; // distribution_interval
-        "1% increase, claim every 100 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        101,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-        Some((1..1000).step_by(500).collect()),// claim_heights
-        1 // distribution_interval
-        => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("claim at height 501: expected balance Some(100510) but got 100138")))
-        ; "1% increase, claim every 500 blocks fails due to max_token_redemption_cycles"
-    )]
-    #[test_case(
-        1,// step_count
-        1000,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-        Some(vec![1,7]), // claim_heights
-        1; // distribution_interval
-        "fails: 1000x increase, overflow"
-    )]
-    #[test_matrix(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        [Some(1), Some(100)],// min_value
-        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "100% decrease, various min values"
-    )]
-    #[test_case(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(u64::MAX),// min_value
-        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "fails: full decrease, min is u64::MAX"
-    )]
-    #[test_matrix(
-        1,// step_count
-        0,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        [None,Some(0),Some(1),Some(100)],// min_value
-        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "no decrease, irrelevant min values"
-    )]
-    /// Given 100% decrease with step 10, when I claim below 10th block, then the claim is successful.
-    #[test_case(
-        10,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        None,// min_value
-        Some(vec![2,7,9]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "full decrease, step 10 interval 1"
-    )]
-    /// Given 100% decrease with step 10 starting at 5, when I claim below 15th block, then the claim is successful.
-    #[test_case(
-        10,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        Some(5),// s
-        100_000,// n
-        None,// min_value
-        Some(vec![2,7,9,13,14]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "full decrease, start 5 step 10 interval 1"
-    )]
-    /// Given 100% decrease with step 10 starting at 5, when I claim at height 15, there are no new coins.
-    #[test_case(
-            10,// step_count
-            1,// decrease_per_interval_numerator
-            1,// decrease_per_interval_denominator
-            Some(5),// s
-            100_000,// n
-            None,// min_value
-            Some(vec![14,15]), // claim_heights // at 14 we zero out, at 15 nothing to claim
-            1 // distribution_interval
-            => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("claim at height 15: claim failed")))
-            ;"full decrease, start 5 step 10 interval 1 err at 15"
-        )]
-    #[test_matrix(
-        [5,10],// step_count
-        1,// decrease_per_interval_numerator
-        2,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        None,// min_value
-        Some(vec![5,10,18,22,100]), // claim_heights
-        [1,5]; // distribution_interval
-        "fails: 1/2 decrease, changing step"
-    )]
-    #[test_matrix(
-        1,// step_count
-        10,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        [None,Some(1),Some(5)],// s
-        100_000,// n
-        None,// min_value
-        Some(vec![5,10,15,20]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "1/2 decrease, changing S"
-    )]
+    #[test]
+    fn claim_every_100_blocks() -> Result<(), String> {
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            100_000,
+            Some(1),
+            Some((1..1000).step_by(100).collect()),
+            1,
+        )
+    }
+
+    #[test]
+    fn claim_every_100_blocks_with_1_percent_increase() -> Result<(), String> {
+        run_test(
+            1,
+            101,
+            100,
+            None,
+            100_000,
+            Some(1),
+            Some((1..1000).step_by(100).collect()),
+            1,
+        )
+    }
+
+    #[test]
+    fn claim_every_500_blocks_fails_due_to_max_token_redemption_cycles() -> Result<(), String> {
+        let result = run_test(
+            1,
+            101,
+            100,
+            None,
+            100_000,
+            Some(1),
+            Some((1..1000).step_by(500).collect()),
+            1,
+        );
+        assert!(result.is_err_and(
+            |s| s.contains("claim at height 501: expected balance Some(100510) but got 100138")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn fails_with_1000x_increase_overflow() -> Result<(), String> {
+        run_test(1, 1000, 1, None, 100_000, Some(1), Some(vec![1, 7]), 1)
+    }
+
+    #[test]
+    fn full_decrease_min_1_100() -> Result<(), String> {
+        for min in [1, 100] {
+            run_test(
+                1,
+                1,
+                1,
+                None,
+                100_000,
+                Some(min),
+                Some(vec![1, 2, 3, 10, 100]),
+                1,
+            )
+            .map_err(|e| format!("failed with min {}: {}", min, e))?;
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn fails_full_decrease_min_eq_u64_max() -> Result<(), String> {
+        run_test(
+            1,
+            1,
+            1,
+            None,
+            100_000,
+            Some(u64::MAX),
+            Some(vec![1, 2, 3, 10, 100]),
+            1,
+        )
+    }
+    #[test]
+    fn no_decrease_changing_min() -> Result<(), String> {
+        for min in [None, Some(0), Some(1), Some(100)] {
+            run_test(1, 0, 1, None, 100_000, min, Some(vec![1, 2, 3, 10, 100]), 1)
+                .map_err(|e| format!("failed with min {:?}: {}", min, e))?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn full_decrease_step_10_interval_1() -> Result<(), String> {
+        run_test(10, 1, 1, None, 100_000, None, Some(vec![2, 7, 9]), 1)
+    }
+
+    #[test]
+    fn full_decrease_start_5_step_10_interval_1() -> Result<(), String> {
+        run_test(
+            10,
+            1,
+            1,
+            Some(5),
+            100_000,
+            None,
+            Some(vec![2, 7, 9, 13, 14]),
+            1,
+        )
+    }
+
+    #[test]
+    fn full_decrease_start_5_step_10_interval_1_err_at_15() -> Result<(), String> {
+        let result = run_test(10, 1, 1, Some(5), 100_000, None, Some(vec![14, 15]), 1);
+        assert!(result.is_err_and(|s| s.contains("claim at height 15: claim failed")));
+        Ok(())
+    }
+
+    #[test]
+    fn fails_half_decrease_changing_step_and_interval() -> Result<(), String> {
+        for step in [5, 10] {
+            for distribution_interval in [1, 5] {
+                run_test(
+                    step,
+                    1,
+                    2,
+                    None,
+                    100_000,
+                    None,
+                    Some(vec![5, 10, 18, 22, 100]),
+                    distribution_interval,
+                )
+                .map_err(|e| {
+                    format!(
+                        "failed with step {} interval {}: {}",
+                        step, distribution_interval, e
+                    )
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn half_decrease_chainging_s() -> Result<(), String> {
+        for s in [None, Some(1), Some(5)] {
+            run_test(1, 10, 100, s, 100_000, None, Some(vec![5, 10, 15, 20]), 1)
+                .map_err(|e| format!("failed with s {:?}: {}", s, e))?;
+        }
+        Ok(())
+    }
 
     /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
+    #[allow(clippy::too_many_arguments)]
     fn run_test(
         step_count: u32,
         decrease_per_interval_numerator: u16,
@@ -1221,78 +1234,107 @@ mod block_based_perpetual_stepwise {
 mod block_based_perpetual_linear {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-    use test_case::test_matrix;
-
-    #[test_matrix(
-        1,// a
-        1, // d
-        [None,Some(0)], // start_step
-        0, // starting_amount
-        [None,Some(0),Some(1)],// min_value
-        [None,Some(1000)],// max_value
-        &[(1,100_001,true),(2,100_003,true),(3,100_006,true),(10,100_055,true)], // heights
-        1 // distribution_interval
-    ; "f(x)=x")]
 
     /// Given linear distribution with d=0,
     /// When I create a token,
     /// Then I get an error.
-    #[test_case(
-        1,// a
-        0, // d
-        None, // start_step
-        100_000, // starting_amount
-        None, // min_value
-        None, // max_value
-        &[(10,100_000,false)], // heights
-        1 // distribution_interval
-    ; "fails: divide by 0")]
+    #[test]
+    fn fails_divide_by_0() -> Result<(), String> {
+        test_linear(
+            1,                       // a
+            0,                       // d
+            None,                    // start_step
+            100_000,                 // starting_amount
+            None,                    // min_value
+            None,                    // max_value
+            &[(10, 100_000, false)], // heights
+            1,                       // distribution_interval
+        )
+    }
     /// Given linear distribution with d=MAX and starting amount of 1,
     /// When I claim tokens,
     /// Then I have only one success, and subsequent claims fail because the calculated distribution is lower than 1
-    #[test_case(
-        1,// a
-        u64::MAX, // d
-        None, // start_step
-        0, // starting_amount
-        Some(0), // min_value
-        None, // max_value
-        &[(1,100_000,false),(20,100_000,false)], // heights
-        1 // distribution_interval
-    ; "divide by u64::MAX")]
-    #[test_matrix(
-        [-1,-100000,i64::MIN],// a
-        1, // d
-        None, // start_step
-        0, // starting_amount
-        None, // min_value
-        None, // max_value
-        &[(1,100_000,false),(20,100_000,false)], // heights
-        1 // distribution_interval
-    ; "negative a")]
+    #[test]
+    fn divide_my_max() -> Result<(), String> {
+        test_linear(
+            1,                                            // a
+            u64::MAX,                                     // d
+            None,                                         // start_step
+            0,                                            // starting_amount
+            Some(0),                                      // min_value
+            None,                                         // max_value
+            &[(1, 100_000, false), (20, 100_000, false)], // heights
+            1,
+        )
+    }
 
-    /// We expect failure when max < min
-    #[test_matrix(
-        1,// a
-        1, // d
-        None, // start_step
-        0, // starting_amount
-        Some(100), // min_value
-        [Some(0),Some(99)], // max_value
-        &[(1,100_000,false),(20,100_000,false)], // heights
-        1 // distribution_interval
-    ; "fails: max less than min")]
-    #[test_case(
-        1,// a
-        1, // d
-        None, // start_step
-        0, // starting_amount
-        Some(10), // min_value
-        Some(10), // max_value
-        &[(1,100_010,true),(2,100_020,true),(10,100_100,true)], // heights
-        1 // distribution_interval
-    ; "min eq max")]
+    #[test]
+    fn min_eq_max() -> Result<(), String> {
+        test_linear(
+            1,
+            1,
+            None,
+            0,
+            Some(10),
+            Some(10),
+            &[(1, 100_010, true), (2, 100_020, true)],
+            1,
+        )
+    }
 
+    #[test]
+    fn fx_eq_x_matrix() -> Result<(), String> {
+        let steps = [
+            (1, 100_001, true),
+            (2, 100_003, true),
+            (3, 100_006, true),
+            (10, 100_055, true),
+        ];
+
+        for start_step in [None, Some(0)] {
+            for min_value in [None, Some(0), Some(1)] {
+                for max_value in [None, Some(1000)] {
+                    test_linear(1, 1, start_step, 0, min_value, max_value, &steps, 1)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    #[test]
+    fn negative_a() -> Result<(), String> {
+        for a in [-1, -100_000, i64::MIN] {
+            test_linear(
+                a,
+                1,
+                None,
+                0,
+                None,
+                None,
+                &[(1, 100_000, false), (20, 100_000, false)],
+                1,
+            )?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn fails_max_lt_min() -> Result<(), String> {
+        for max in [0, 99] {
+            test_linear(
+                1,
+                1,
+                None,
+                0,
+                Some(100),
+                Some(max),
+                &[(1, 100_000, false), (20, 100_000, false)],
+                1,
+            )?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn test_linear(
         a: i64,
         d: u64,
@@ -1302,7 +1344,7 @@ mod block_based_perpetual_linear {
         max_value: Option<u64>,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,
-    ) {
+    ) -> Result<(), String> {
         // Linear distribution function
         //
         // # Formula
@@ -1331,7 +1373,6 @@ mod block_based_perpetual_linear {
         .inspect_err(|e| {
             tracing::error!("{}", e);
         })
-        .expect("stepwise should pass");
     }
 }
 
@@ -1354,71 +1395,50 @@ mod block_based_perpetual_polynomial {
         TokenConfiguration,
     };
 
-    /// Calculates     f(x) = (a * (x - s + o)^(m/n)) / d + b
-
-    #[test_case::test_matrix([1,2,10,20])]
-
-    fn test_fx(x_max: i128) {
-        let a: i128 = 1;
-        let d: i128 = 1;
-        let m: i128 = 1;
-        let n: i128 = 1;
-        let o: i128 = 1;
-        let s: i128 = 0;
-        let b: i128 = 100_000;
-
-        let mut sum = 0;
-        for x in 1i128..=x_max {
-            // f(x) = (a * (x - s + o)^(m/n)) / d + b
-            let f_x = (a * (x - s + o).pow((m / n) as u32)) / d + b;
-            sum += f_x;
-            println!("f({}) = {}", x, f_x);
-        }
-
-        println!("SUM({}) = {}", n, sum);
+    #[test]
+    fn ones() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 100_000,
+                min_value: None,
+                max_value: None,
+            },
+            &[(10, 1_100_055, true), (20, 2_100_210, true)],
+            1,
+        )
     }
-
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (10,1_100_055,true),
-            (20,2_100_210,true),
-        ], // steps
-        1; // distribution_interval
-        "ones")]
 
     /// Divide by 0
     /// claim at height 10: claim failed: assertion 1 failed: expected SuccessfulExecution, got
     /// [InternalError(\"storage: protocol: divide by zero error: Polynomial function: divisor d is 0\")]\nexpected balance Some(1100055) but got 100000\n\n-->
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 0,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (10,1_100_055,true),
-            (20,2_100_210,true),
-        ], // steps
-        1; // distribution_interval
-        "fails: divide by 0")]
-    #[test_case::test_case(
+    #[test]
+    fn fails_divide_by_0() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 0,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 100_000,
+                min_value: None,
+                max_value: None,
+            },
+            &[(10, 1_100_055, true), (20, 2_100_210, true)],
+            1,
+        )
+    }
+
+    #[test]
+    fn max_lt_min_should_fail() -> Result<(), String> {
+        test_polynomial(
             Polynomial {
                 a: 1,
                 d: 1,
@@ -1430,161 +1450,167 @@ mod block_based_perpetual_polynomial {
                 min_value: Some(100_000),
                 max_value: Some(10_000),
             },
+            &[(10, 100_000, false), (20, 100_000, false)],
+            1,
+        )
+    }
+
+    #[test]
+    fn negative_a() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: -1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 100_000,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 199_999, true), (4, 499_990, true)],
+            1,
+        )
+    }
+
+    #[test]
+    fn fails_a_min() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: i64::MIN,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 100_000,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (4, 100_000, true)],
+            1,
+        )
+    }
+    #[test]
+    fn a_minus_1_b_0() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: -1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (4, 100_000, false)],
+            1,
+        )
+    }
+
+    #[test]
+    fn o_min() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: i64::MIN,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (4, 100_000, false)],
+            1,
+        )
+    }
+
+    #[test]
+    fn o_max() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: i64::MAX,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (4, 100_000, false)],
+            1,
+        )
+    }
+
+    #[test]
+    fn zero_pow_minus_1_at_h_1() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: -1,
+                n: 1,
+                o: 0,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (2, 100_001, true)],
+            1,
+        )
+    }
+    #[test]
+    fn fails_zero_pow_minus_1_at_h_2() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 2,
+                o: 0,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
             &[
-                (10,100_000,false),
-                (20,100_000,false),
-            ], // steps
-            1 // distribution_interval
-            ; "max < min should fail")]
-    #[test_case::test_case(
-        Polynomial {
-            a: -1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,199_999,true),
-            (4,499_990,true),
-        ], // steps
-        1 // distribution_interval
-        ; "negative a")]
-    #[test_case::test_case(
-        Polynomial {
-            a: i64::MIN,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,true),
-        ], // steps
-        1 // distribution_interval
-    ; "fails: a=i64::MIN")]
-    #[test_case::test_case(
-        Polynomial {
-            a: -1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "a=-1 b=0")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: i64::MIN,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "o=i64::MIN")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: i64::MAX,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "o=i64::MAX")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: -1,
-            n: 1,
-            o: 0,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false), // this should fail, 0.pow(-1) is unspecified
-            (2,100_001,true), // it's 1.pow(-1) but not sure about handling of overflow at prev height
-        ], // steps
-        1 // distribution_interval
-        => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("invalid distribution function: Overflow")))
-    ; "0.pow(-1) at h=1")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 2,
-            o: 0,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false), // this should fail, 0.pow(-1) is unspecified
-            (2,100_001,true), // it's 1.pow(1/2) == 1
-            (3,100_002,true), // 2.pow(1/2) == 1.41 - should round to 1
-            (4,100_004,true),  // 3.pow(1/2) == 1.73 - should round to 2; FAILS
-            (5,100_006,true), // 4.pow(1/2) == 2
-            (6,100_008,true), // 5.pow(1/2) == 2.23 - should round to 2
-        ], // steps
-        1 // distribution_interval
-    ; "0.pow(1/2) at h=1 fails dist fn validation")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: i64::MAX,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (10,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "fails: o=i64::MAX m=2")]
+                (1, 100_000, false), // this should fail, 0.pow(-1) is unspecified
+                (2, 100_001, true),  // it's 1.pow(1/2) == 1
+                (3, 100_002, true),  // 2.pow(1/2) == 1.41 - should round to 1
+                (4, 100_004, true),  // 3.pow(1/2) == 1.73 - should round to 2; FAILS
+                (5, 100_006, true),  // 4.pow(1/2) == 2
+                (6, 100_008, true),  // 5.pow(1/2) == 2.23 - should round to 2
+            ],
+            1,
+        )
+    }
+
+    #[test]
+    fn o_max_m_2() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: i64::MAX,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (10, 100_000, false)],
+            1,
+        )
+    }
     /// Test polynomial distribution function.
     ///
     /// `f(x) = (a * (x - s + o)^(m/n)) / d + b`
@@ -1605,80 +1631,78 @@ mod block_based_perpetual_polynomial {
         })
     }
 
-    #[test_case::test_matrix(
-        [i64::MIN,0,1,i64::MAX],// m
-        [0,1,u64::MAX] // n
-        ; "power m/n"
-    )]
-    // due to bug in test_matrix https://github.com/frondeus/test-case/issues/19, we need separate test for -1
-    #[test_case::test_matrix(
-        -1,// m
-        [0,1,u64::MAX] // n
-        ; "negative power -1/n"
-    )]
     /// Test various combinations of `m/n` in [DistributionFunction::Polynomial] distribution.
     ///
     /// We expect this test not to end with InternalError.
-    fn test_poynomial_power(m: i64, n: u64) {
-        let dist = Polynomial {
-            a: 1,
-            d: 1,
-            m,
-            n,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        };
+    #[test]
+    fn test_poynomial_power() -> Result<(), String> {
+        for m in [i64::MIN, -1, 0, 1, i64::MAX] {
+            for n in [0, 1, u64::MAX] {
+                let dist = Polynomial {
+                    a: 1,
+                    d: 1,
+                    m,
+                    n,
+                    o: 1,
+                    start_moment: Some(1),
+                    b: 100_000,
+                    min_value: None,
+                    max_value: None,
+                };
 
-        let mut suite = TestSuite::new(
-            10_200_000_000,
-            0,
-            TokenDistributionType::Perpetual,
-            Some(move |token_configuration: &mut TokenConfiguration| {
-                token_configuration
-                    .distribution_rules_mut()
-                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
-                        TokenPerpetualDistributionV0 {
-                            distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                interval: 1,
-                                function: dist,
-                            },
-                            distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                let mut suite = TestSuite::new(
+                    10_200_000_000,
+                    0,
+                    TokenDistributionType::Perpetual,
+                    Some(move |token_configuration: &mut TokenConfiguration| {
+                        token_configuration
+                            .distribution_rules_mut()
+                            .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                                TokenPerpetualDistributionV0 {
+                                    distribution_type:
+                                        RewardDistributionType::BlockBasedDistribution {
+                                            interval: 1,
+                                            function: dist,
+                                        },
+                                    distribution_recipient:
+                                        TokenDistributionRecipient::ContractOwner,
+                                },
+                            )));
+                    }),
+                );
+
+                suite = suite.with_contract_start_time(1);
+
+                let step = TestStep {
+                    base_height: 10,
+                    base_time_ms: Default::default(),
+                    expected_balance: None,
+                    claim_transition_assertions: vec![
+                        |results: &[StateTransitionExecutionResult]| -> Result<(), String> {
+                            let err = results
+                                .iter()
+                                .find(|r| format!("{:?}", r).contains("InternalError"));
+
+                            if let Some(e) = err {
+                                Err(format!("InternalError: {:?}", e))
+                            } else {
+                                Ok(())
+                            }
                         },
-                    )));
-            }),
-        );
+                    ],
+                    name: "test".to_string(),
+                };
 
-        suite = suite.with_contract_start_time(1);
+                suite
+                    .execute(&[step])
+                    .inspect_err(|e| {
+                        tracing::error!("{}", e);
+                    })
+                    .map_err(|e| format!("failed with m {} n {}: {}", m, n, e))?;
+            }
+        }
 
-        let step = TestStep {
-            base_height: 10,
-            base_time_ms: Default::default(),
-            expected_balance: None,
-            claim_transition_assertions: vec![
-                |results: &[StateTransitionExecutionResult]| -> Result<(), String> {
-                    let err = results
-                        .iter()
-                        .find(|r| format!("{:?}", r).contains("InternalError"));
-
-                    if let Some(e) = err {
-                        Err(format!("InternalError: {:?}", e))
-                    } else {
-                        Ok(())
-                    }
-                },
-            ],
-            name: "test".to_string(),
-        };
-
-        suite
-            .execute(&[step])
-            .inspect_err(|e| {
-                tracing::error!("{}", e);
-            })
-            .expect("test should pass");
+        Ok(())
     }
 }
 
@@ -1686,244 +1710,274 @@ mod block_based_perpetual_logarithmic {
 
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
-    use test_case::{test_matrix,test_case};
-    #[test_case(
-        Logarithmic{
-            a: 0, // a: i64,
-            d: 0, // d: u64,
-            m: 0, // m: u64,
-            n: 0, // n: u64,
-            o: 0, // o: i64,
-            start_moment:Some(0), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(4,100_000,true)],
-        1
-        ; "zeros"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_001,true), // log(0)+1 = 1
-            (2,100_002,true), // log(1)+1 = 1
-            (3,100_003,true), // log(3)+1 = 1
-            (4,100_005,true), // log(4)+1 = 2 (log(4) == 0.6, rounded up to 1)
-        ],
-        1
-        ; "fails: ones - use of ln instead of log as documented"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 0, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(2,100_002,false)],
-        1
-        ; "fails: divide by 0"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 0, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(1,100_001,true),(5,100_001,true)],
-        1
-        ; "fails: log(0)"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(1,100_010,true),(5,100_050,true)],
-        1
-        ; "min eq max means linear"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(5,100_010,true),(10,100_020,true)],
-        5
-        ; "min eq max means linear, interval 5"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(5), // max_value: Option<u64>,
-        },
-        &[(5,100_000,false),(10,100_000,false)],
-        5
-        ; "fails: min gt max"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: i64::MIN, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),  // f(1) should be < 0, is 1
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: a=i64::MIN"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: i64::MAX, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: a=i64::MAX overflows"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 0, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "a=0 b=0"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: -10, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: log(negative)"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: i64::MIN, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: o=i64::MIN"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: u64::MAX, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: b=u64::MAX"
-    )]
+
+    #[test]
+    fn zeros() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 0,                  // a: i64,
+                d: 0,                  // d: u64,
+                m: 0,                  // m: u64,
+                n: 0,                  // n: u64,
+                o: 0,                  // o: i64,
+                start_moment: Some(0), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[(4, 100_000, true)],
+            1,
+        )
+    }
+
+    /// "fails: ones - use of ln instead of log as documented
+    #[test]
+    fn fails_ones() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_001, true), // log(0)+1 = 1
+                (2, 100_002, true), // log(1)+1 = 1
+                (3, 100_003, true), // log(3)+1 = 1
+                (4, 100_005, true), // log(4)+1 = 2 (log(4) == 0.6, rounded up to 1)
+            ],
+            1,
+        )
+    }
+    #[test]
+    fn fails_div_by_0() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 0,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[(2, 100_002, false)],
+            1,
+        )
+    }
+    #[test]
+    fn fails_log_0() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 0,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[(1, 100_001, true), (5, 100_001, true)],
+            1,
+        )
+    }
+
+    /// min == max means linear
+    #[test]
+    fn min_eq_max() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: Some(10),   // min_value: Option<u64>,
+                max_value: Some(10),   // max_value: Option<u64>,
+            },
+            &[(1, 100_010, true), (5, 100_050, true)],
+            1,
+        )
+    }
+    #[test]
+    fn min_eq_max_interval_5() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: Some(10),   // min_value: Option<u64>,
+                max_value: Some(10),   // max_value: Option<u64>,
+            },
+            &[(5, 100_010, true), (10, 100_020, true)],
+            5,
+        )
+    }
+    #[test]
+    fn fails_min_gt_max() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: Some(10),   // min_value: Option<u64>,
+                max_value: Some(5),    // max_value: Option<u64>,
+            },
+            &[(5, 100_000, false), (10, 100_000, false)],
+            5,
+        )
+    }
+    #[test]
+    fn fails_a_min() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: i64::MIN,           // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_000, false), // f(1) should be < 0, is 1
+                (9, 100_000, false),
+                (10, 100_000, false),
+            ],
+            1,
+        )
+    }
+    #[test]
+    fn a_max_overflows() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: i64::MAX,           // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_000, false),
+                (9, 100_000, false),
+                (10, 100_000, false),
+            ],
+            1,
+        )
+    }
+    #[test]
+    fn a_0_b_0() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 0,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_000, false),
+                (9, 100_000, false),
+                (10, 100_000, false),
+            ],
+            1,
+        )
+    }
+    #[test]
+    fn fails_log_negative() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: -10,                // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_000, false),
+                (9, 100_000, false),
+                (10, 100_000, false),
+            ],
+            1,
+        )
+    }
+    #[test]
+    fn fails_o_min() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: i64::MIN,           // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_000, false),
+                (9, 100_000, false),
+                (10, 100_000, false),
+            ],
+            1,
+        )
+    }
+    #[test]
+    fn fails_b_max() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: u64::MAX,           // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_000, false),
+                (9, 100_000, false),
+                (10, 100_000, false),
+            ],
+            1,
+        )
+    }
     /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
     fn test_logarithmic(
         dist: DistributionFunction,
@@ -1946,247 +2000,271 @@ mod block_based_perpetual_logarithmic {
 mod block_based_perpetual_inverted_logarithmic {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
-    use test_case::{test_matrix,test_case};
 
-    #[test_case(
-        InvertedLogarithmic{
-            a: 0, // a: i64,
-            d: 0, // d: u64,
-            m: 0, // m: u64,
-            n: 0, // n: u64,
-            o: 0, // o: i64,
-            start_moment:Some(0), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(4,100_000,true)],
-        1
-        ; "fails: zeros"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_001,true),
-            (2,100_002,true),
-            (3,100_003,true),
-            (4,100_005,true), // [InternalError("storage: protocol: divide by zero error: InvertedLogarithmic: divisor d is 0")]
-        ],
-        1
-        ; "fails: ones"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 0, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(2,100_002,false)],
-        1
-        ; "fails: divide by 0"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 0, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(1,100_001,true),(5,100_001,true)],
-        1
-        ; "n=0 log(0)"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(1,100_010,true),(5,100_050,true)],
-        1
-        ; "min eq max means linear"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(5,100_010,true),(10,100_020,true)],
-        5
-        ; "min eq max means linear, interval 5"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(5), // max_value: Option<u64>,
-        },
-        &[(5,100_000,false),(10,100_000,false)],
-        5
-        ; "fails: min gt max"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: i64::MIN, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),  // f(1) should be < 0, is 1
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: a=i64::MIN"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: i64::MAX, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_001,true), // f(x) = 0 for x>1
-            (9,100_001,false),
-            (10,100_001,false),
-        ],
-        1
-        ; "a=i64::MAX"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 0, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "a=0 b=0"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: -10, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: log(negative)"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: i64::MIN, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: o=i64::MIN"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: u64::MAX, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: b=u64::MAX"
-    )]
+    #[test]
+    fn fails_zeros() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 0,                  // a: i64,
+            d: 0,                  // d: u64,
+            m: 0,                  // m: u64,
+            n: 0,                  // n: u64,
+            o: 0,                  // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [(4, 100_000, true)];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_ones() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_001, true),
+            (2, 100_002, true),
+            (3, 100_003, true),
+            (4, 100_005, true),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_divide_by_zero() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 0,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [(2, 100_002, false)];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_n_zero_log_zero() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 0,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [(1, 100_001, true), (5, 100_001, true)];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn min_eq_max_means_linear() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: Some(10),   // min_value: Option<u64>,
+            max_value: Some(10),   // max_value: Option<u64>,
+        };
+        let steps = [(1, 100_010, true), (5, 100_050, true)];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn min_eq_max_means_linear_interval_5() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: Some(10),   // min_value: Option<u64>,
+            max_value: Some(10),   // max_value: Option<u64>,
+        };
+        let steps = [(5, 100_010, true), (10, 100_020, true)];
+
+        run_test(dist, &steps, 5)
+    }
+
+    #[test]
+    fn fails_min_gt_max() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: Some(10),   // min_value: Option<u64>,
+            max_value: Some(5),    // max_value: Option<u64>,
+        };
+        let steps = [(5, 100_000, false), (10, 100_000, false)];
+
+        run_test(dist, &steps, 5)
+    }
+
+    #[test]
+    fn fails_a_min() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: i64::MIN,           // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_000, false), // f(1) should be < 0, is 1
+            (9, 100_000, false),
+            (10, 100_000, false),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_a_max() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: i64::MAX,           // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_001, true), // f(x) = 0 for x>1
+            (9, 100_001, false),
+            (10, 100_001, false),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_a_zero_b_zero() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 0,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_000, false),
+            (9, 100_000, false),
+            (10, 100_000, false),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_log_negative() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: -10,                // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_000, false),
+            (9, 100_000, false),
+            (10, 100_000, false),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_o_min() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: i64::MIN,           // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_000, false),
+            (9, 100_000, false),
+            (10, 100_000, false),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn fails_b_max() -> Result<(), String> {
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: u64::MAX,           // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_000, false),
+            (9, 100_000, false),
+            (10, 100_000, false),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
     /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
-    fn test_inverted_logarithmic(
+    fn run_test(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,

@@ -1611,7 +1611,6 @@ dependencies = [
  "strategy-tests",
  "tempfile",
  "tenderdash-abci",
- "test-case",
  "thiserror 1.0.64",
  "tokio",
  "tokio-util",
