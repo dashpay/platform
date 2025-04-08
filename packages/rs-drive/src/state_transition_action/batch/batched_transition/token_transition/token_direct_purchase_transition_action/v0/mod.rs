@@ -14,9 +14,9 @@ pub struct TokenDirectPurchaseTransitionActionV0 {
     pub base: TokenBaseTransitionAction,
     /// How many tokens should we buy.
     pub token_count: TokenAmount,
-    /// Agreed price per token
-    /// The user will pay this amount times the token count
-    pub agreed_price_per_token: Credits,
+    /// Agreed price
+    /// The user will pay this amount
+    pub total_agreed_price: Credits,
 }
 
 /// Accessors for `TokenIssuanceTransitionActionV0`
@@ -33,11 +33,11 @@ pub trait TokenDirectPurchaseTransitionActionAccessorsV0 {
     /// Sets the amount of tokens to purchase
     fn set_token_count(&mut self, amount: TokenAmount);
 
-    /// The agreed price per token
-    fn agreed_price_per_token(&self) -> Credits;
+    /// The agreed price
+    fn total_agreed_price(&self) -> Credits;
 
-    /// Sets the agreed price per token
-    fn set_agreed_price_per_token(&mut self, agreed_price: Credits);
+    /// Sets the agreed price
+    fn set_total_agreed_price(&mut self, agreed_price: Credits);
 
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
@@ -82,11 +82,11 @@ impl TokenDirectPurchaseTransitionActionAccessorsV0 for TokenDirectPurchaseTrans
         self.token_count = amount;
     }
 
-    fn agreed_price_per_token(&self) -> Credits {
-        self.agreed_price_per_token
+    fn total_agreed_price(&self) -> Credits {
+        self.total_agreed_price
     }
 
-    fn set_agreed_price_per_token(&mut self, agreed_price: Credits) {
-        self.agreed_price_per_token = agreed_price;
+    fn set_total_agreed_price(&mut self, agreed_price: Credits) {
+        self.total_agreed_price = agreed_price;
     }
 }

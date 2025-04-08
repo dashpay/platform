@@ -6,6 +6,7 @@ use crate::data_contract::associated_token::token_distribution_key::TokenDistrib
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
@@ -14,7 +15,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use crate::fee::Credits;
 
 pub type TokenEventPublicNote = Option<String>;
 pub type TokenEventSharedEncryptedNote = Option<SharedEncryptedNote>;
@@ -25,9 +25,9 @@ pub type TokenEventPersonalEncryptedNote = Option<(
 )>;
 use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::tokens::emergency_action::TokenEmergencyAction;
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::tokens::SharedEncryptedNote;
 use crate::ProtocolError;
-use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 pub type RecipientIdentifier = Identifier;
 
@@ -59,7 +59,7 @@ pub enum TokenEvent {
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
     SetPriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote),
-    DirectPurchase(PurchaserIdentifier, TokenAmount, Credits),
+    DirectPurchase(TokenAmount, Credits),
 }
 
 impl TokenEvent {
@@ -74,6 +74,7 @@ impl TokenEvent {
             TokenEvent::Claim(..) => "claim",
             TokenEvent::EmergencyAction(..) => "emergencyAction",
             TokenEvent::ConfigUpdate(..) => "configUpdate",
+            TokenEvent::DirectPurchase(..) => "directPurchase",
             TokenEvent::SetPriceForDirectPurchase(..) => "setPriceForDirectPurchase",
         }
     }
@@ -253,20 +254,29 @@ impl TokenEvent {
                 properties
             }
             TokenEvent::SetPriceForDirectPurchase(price, note) => {
-                let mut properties = BTreeMap::from([
-                    ("tokenId".to_string(), token_id.into()),
-                ]);
+                let mut properties = BTreeMap::from([("tokenId".to_string(), token_id.into())]);
 
                 if let Some(price_schedule) = price {
                     properties.insert(
                         "priceSchedule".to_string(),
-                        price_schedule.serialize_consume_to_bytes_with_platform_version(platform_version)?.into(),
+                        price_schedule
+                            .serialize_consume_to_bytes_with_platform_version(platform_version)?
+                            .into(),
                     );
                 }
 
                 if let Some(note) = note {
                     properties.insert("note".to_string(), note.into());
                 }
+
+                properties
+            }
+            TokenEvent::DirectPurchase(amount, total_cost) => {
+                let properties = BTreeMap::from([
+                    ("tokenId".to_string(), token_id.into()),
+                    ("tokenAmount".to_string(), amount.into()),
+                    ("purchaseCost".to_string(), total_cost.into()),
+                ]);
 
                 properties
             }

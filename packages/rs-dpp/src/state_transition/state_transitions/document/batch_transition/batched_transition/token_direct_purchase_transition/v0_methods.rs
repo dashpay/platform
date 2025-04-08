@@ -26,7 +26,6 @@ impl TokenBaseTransitionAccessors for TokenDirectPurchaseTransition {
 }
 
 impl TokenDirectPurchaseTransitionV0Methods for TokenDirectPurchaseTransition {
-
     fn token_count(&self) -> TokenAmount {
         match self {
             TokenDirectPurchaseTransition::V0(v0) => v0.token_count(),
@@ -39,15 +38,15 @@ impl TokenDirectPurchaseTransitionV0Methods for TokenDirectPurchaseTransition {
         }
     }
 
-    fn agreed_price_per_token(&self) -> Credits {
+    fn total_agreed_price(&self) -> Credits {
         match self {
-            TokenDirectPurchaseTransition::V0(v0) => v0.agreed_price_per_token(),
+            TokenDirectPurchaseTransition::V0(v0) => v0.total_agreed_price(),
         }
     }
 
-    fn set_agreed_price_per_token(&mut self, credits: Credits) {
+    fn set_total_agreed_price(&mut self, credits: Credits) {
         match self {
-            TokenDirectPurchaseTransition::V0(v0) => v0.set_agreed_price_per_token(credits),
+            TokenDirectPurchaseTransition::V0(v0) => v0.set_total_agreed_price(credits),
         }
     }
 }

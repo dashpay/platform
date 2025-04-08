@@ -24,7 +24,7 @@ impl TokenBaseTransitionAccessors for TokenSetPriceForDirectPurchaseTransitionV0
 pub trait TokenSetPriceForDirectPurchaseTransitionV0Methods:
     TokenBaseTransitionAccessors + AllowedAsMultiPartyAction
 {
-    fn price(&self) -> Option<TokenPricingSchedule>;
+    fn price(&self) -> Option<&TokenPricingSchedule>;
 
     fn set_price(&mut self, price: Option<TokenPricingSchedule>);
 
@@ -38,7 +38,9 @@ pub trait TokenSetPriceForDirectPurchaseTransitionV0Methods:
     fn set_public_note(&mut self, public_note: Option<String>);
 }
 
-impl TokenSetPriceForDirectPurchaseTransitionV0Methods for TokenSetPriceForDirectPurchaseTransitionV0 {
+impl TokenSetPriceForDirectPurchaseTransitionV0Methods
+    for TokenSetPriceForDirectPurchaseTransitionV0
+{
     fn price(&self) -> Option<&TokenPricingSchedule> {
         self.price.as_ref()
     }

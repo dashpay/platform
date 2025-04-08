@@ -34,6 +34,7 @@ use crate::state_transition::batch_transition::token_freeze_transition::v0::v0_m
 use crate::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use crate::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use crate::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransition;
+use crate::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use crate::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
@@ -185,7 +186,9 @@ impl BatchTransitionResolversV0 for TokenTransition {
         }
     }
 
-    fn as_transition_token_set_price_for_direct_purchase(&self) -> Option<&TokenSetPriceForDirectPurchaseTransition> {
+    fn as_transition_token_set_price_for_direct_purchase(
+        &self,
+    ) -> Option<&TokenSetPriceForDirectPurchaseTransition> {
         if let Self::SetPriceForDirectPurchase(ref t) = self {
             Some(t)
         } else {
@@ -305,7 +308,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::EmergencyAction(_)
             | TokenTransition::ConfigUpdate(_)
             | TokenTransition::SetPriceForDirectPurchase(_) => true,
-            TokenTransition::Transfer(_) | TokenTransition::Claim(_) | TokenTransition::DirectPurchase(_) => false,
+            TokenTransition::Transfer(_)
+            | TokenTransition::Claim(_)
+            | TokenTransition::DirectPurchase(_) => false,
         }
     }
 
@@ -471,11 +476,15 @@ impl TokenTransitionV0Methods for TokenTransition {
                     claim.public_note().cloned(),
                 )
             }
-            TokenTransition::DirectPurchase(direct_purchase) => {
-                TokenEvent::DirectPurchase(owner_id, direct_purchase.amount(), )
-            }
+            TokenTransition::DirectPurchase(direct_purchase) => TokenEvent::DirectPurchase(
+                direct_purchase.token_count(),
+                direct_purchase.total_agreed_price(),
+            ),
             TokenTransition::SetPriceForDirectPurchase(set_price_transition) => {
-                TokenEvent::SetPriceForDirectPurchase(set_price_transition.price().cloned(), set_price_transition.public_note().cloned())
+                TokenEvent::SetPriceForDirectPurchase(
+                    set_price_transition.price().cloned(),
+                    set_price_transition.public_note().cloned(),
+                )
             }
         })
     }

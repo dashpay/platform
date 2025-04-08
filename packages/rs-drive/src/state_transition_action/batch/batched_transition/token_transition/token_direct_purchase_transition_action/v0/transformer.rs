@@ -59,7 +59,9 @@ impl TokenDirectPurchaseTransitionActionV0 {
         Error,
     > {
         let TokenDirectPurchaseTransitionV0 {
-            base, token_count, agreed_price_per_token
+            base,
+            token_count,
+            total_agreed_price,
         } = value;
 
         let mut drive_operations = vec![];
@@ -111,7 +113,7 @@ impl TokenDirectPurchaseTransitionActionV0 {
                 TokenDirectPurchaseTransitionActionV0 {
                     base: base_action,
                     token_count,
-                    agreed_price_per_token,
+                    total_agreed_price,
                 }
                 .into(),
             ))
@@ -166,7 +168,9 @@ impl TokenDirectPurchaseTransitionActionV0 {
         Error,
     > {
         let TokenDirectPurchaseTransitionV0 {
-            base, token_count, agreed_price_per_token
+            base,
+            token_count,
+            total_agreed_price,
         } = value;
 
         let mut drive_operations = vec![];
@@ -195,11 +199,12 @@ impl TokenDirectPurchaseTransitionActionV0 {
         let base_action = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
-                let bump_action = BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    base,
-                    owner_id,
-                    user_fee_increase,
-                );
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
                 let batched_action =
                     BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
 
@@ -218,11 +223,11 @@ impl TokenDirectPurchaseTransitionActionV0 {
                 TokenDirectPurchaseTransitionActionV0 {
                     base: base_action,
                     token_count: *token_count,
-                    agreed_price_per_token: *agreed_price_per_token,
+                    total_agreed_price: *total_agreed_price,
                 }
-                    .into(),
-            ))
                 .into(),
+            ))
+            .into(),
             fee_result,
         ))
     }

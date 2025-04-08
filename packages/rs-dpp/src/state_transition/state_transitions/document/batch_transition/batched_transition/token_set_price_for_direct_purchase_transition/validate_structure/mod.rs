@@ -13,7 +13,9 @@ pub trait TokenSetPriceForDirectPurchaseTransitionStructureValidation {
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
-impl TokenSetPriceForDirectPurchaseTransitionStructureValidation for TokenSetPriceForDirectPurchaseTransition {
+impl TokenSetPriceForDirectPurchaseTransitionStructureValidation
+    for TokenSetPriceForDirectPurchaseTransition
+{
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,

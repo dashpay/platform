@@ -1,13 +1,13 @@
 pub mod v0_methods;
 
+/// The Identifier fields in [`TokenSetPriceForDirectPurchaseTransition`]
+pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use bincode::{Decode, Encode};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
-/// The Identifier fields in [`TokenSetPriceForDirectPurchaseTransition`]
-pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
 #[cfg_attr(
@@ -49,9 +49,7 @@ impl fmt::Display for TokenSetPriceForDirectPurchaseTransitionV0 {
         write!(
             f,
             "Token Set Price for Direct Purchase, base: {}, price: {}, public note: {}",
-            self.base,
-            price_str,
-            note_str
+            self.base, price_str, note_str
         )
     }
 }

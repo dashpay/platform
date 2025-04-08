@@ -53,7 +53,10 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::Claim(_) => TokenTransitionActionType::Claim,
             TokenTransition::EmergencyAction(_) => TokenTransitionActionType::EmergencyAction,
             TokenTransition::ConfigUpdate(_) => TokenTransitionActionType::ConfigUpdate,
-            TokenTransition::Di
+            TokenTransition::SetPriceForDirectPurchase(_) => {
+                TokenTransitionActionType::SetPriceForDirectPurchase
+            }
+            TokenTransition::DirectPurchase(_) => TokenTransitionActionType::DirectPurchase,
         }
     }
 }
@@ -76,6 +79,10 @@ impl TryFrom<&str> for TokenTransitionActionType {
                 Ok(TokenTransitionActionType::EmergencyAction)
             }
             "config_update" | "configUpdate" => Ok(TokenTransitionActionType::ConfigUpdate),
+            "direct_purchase" | "directPurchase" => Ok(TokenTransitionActionType::DirectPurchase),
+            "set_price_for_direct_purchase" | "setPriceForDirectPurchase" => {
+                Ok(TokenTransitionActionType::SetPriceForDirectPurchase)
+            }
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"
             ))),

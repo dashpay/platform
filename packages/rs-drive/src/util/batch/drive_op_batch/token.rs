@@ -123,7 +123,7 @@ pub enum TokenOperationType {
         /// The price we are setting to
         /// None means it's not currently for sale
         price: Option<TokenPricingSchedule>,
-    }
+    },
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {
@@ -296,6 +296,17 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                         transaction,
                         platform_version,
                     )?;
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenSetPriceForDirectPurchase { token_id, price } => {
+                let batch_operations = drive.set_token_direct_purchase_price_operations(
+                    token_id,
+                    price,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
                 Ok(batch_operations)
             }
         }

@@ -75,6 +75,8 @@ fn default_token_keeps_history_rules() -> TokenKeepsHistoryRules {
         keeps_freezing_history: true,
         keeps_minting_history: true,
         keeps_burning_history: true,
+        keeps_direct_pricing_history: true,
+        keeps_direct_purchase_history: true,
     })
 }
 
@@ -175,6 +177,8 @@ impl TokenConfigurationV0 {
                 keeps_freezing_history: true,
                 keeps_minting_history: true,
                 keeps_burning_history: true,
+                keeps_direct_pricing_history: true,
+                keeps_direct_purchase_history: true,
             }),
             start_as_paused: false,
             max_supply_change_rules: ChangeControlRulesV0 {

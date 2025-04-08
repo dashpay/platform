@@ -5,7 +5,7 @@ use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::TokenSetPriceForDirectPurchaseTransitionV0;
 use dpp::ProtocolError;
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::v0::TokenSetPriceForDirectPurchaseTransitionActionV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
@@ -60,9 +60,10 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
     > {
         let TokenSetPriceForDirectPurchaseTransitionV0 {
             base,
-            price, public_note,
+            price,
+            public_note,
         } = value;
-        
+
         let mut drive_operations = vec![];
 
         let base_action_validation_result =
@@ -108,14 +109,16 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
         };
 
         Ok((
-            BatchedTransitionAction::TokenAction(TokenTransitionAction::SetPriceForDirectPurchaseAction(
-                TokenSetPriceForDirectPurchaseTransitionActionV0 {
-                    base: base_action,
-                    price,
-                    public_note,
-                }
-                .into(),
-            ))
+            BatchedTransitionAction::TokenAction(
+                TokenTransitionAction::SetPriceForDirectPurchaseAction(
+                    TokenSetPriceForDirectPurchaseTransitionActionV0 {
+                        base: base_action,
+                        price,
+                        public_note,
+                    }
+                    .into(),
+                ),
+            )
             .into(),
             fee_result,
         ))
@@ -168,7 +171,8 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
     > {
         let TokenSetPriceForDirectPurchaseTransitionV0 {
             base,
-            price, public_note,
+            price,
+            public_note,
         } = value;
 
         let mut drive_operations = vec![];
@@ -197,11 +201,12 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
         let base_action = match base_action_validation_result.is_valid() {
             true => base_action_validation_result.into_data()?,
             false => {
-                let bump_action = BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                    base,
-                    owner_id,
-                    user_fee_increase,
-                );
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                        base,
+                        owner_id,
+                        user_fee_increase,
+                    );
                 let batched_action =
                     BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
 
@@ -216,15 +221,17 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
         };
 
         Ok((
-            BatchedTransitionAction::TokenAction(TokenTransitionAction::SetPriceForDirectPurchaseAction(
-                TokenSetPriceForDirectPurchaseTransitionActionV0 {
-                    base: base_action,
-                    price: price.clone(),
-                    public_note: public_note.clone(),
-                }
+            BatchedTransitionAction::TokenAction(
+                TokenTransitionAction::SetPriceForDirectPurchaseAction(
+                    TokenSetPriceForDirectPurchaseTransitionActionV0 {
+                        base: base_action,
+                        price: price.clone(),
+                        public_note: public_note.clone(),
+                    }
                     .into(),
-            ))
-                .into(),
+                ),
+            )
+            .into(),
             fee_result,
         ))
     }

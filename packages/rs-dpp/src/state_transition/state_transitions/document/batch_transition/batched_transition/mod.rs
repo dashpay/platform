@@ -19,15 +19,15 @@ pub mod token_burn_transition;
 pub mod token_claim_transition;
 pub mod token_config_update_transition;
 pub mod token_destroy_frozen_funds_transition;
+pub mod token_direct_purchase_transition;
 pub mod token_emergency_action_transition;
 pub mod token_freeze_transition;
 pub mod token_mint_transition;
+pub mod token_set_price_for_direct_purchase_transition;
 pub mod token_transfer_transition;
 pub mod token_transition;
 pub mod token_transition_action_type;
 pub mod token_unfreeze_transition;
-pub mod token_direct_purchase_transition;
-pub mod token_set_price_for_direct_purchase_transition;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;

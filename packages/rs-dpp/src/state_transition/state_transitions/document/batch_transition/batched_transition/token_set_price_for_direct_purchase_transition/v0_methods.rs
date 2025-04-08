@@ -1,5 +1,4 @@
 use platform_value::Identifier;
-use crate::fee::Credits;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -29,14 +28,16 @@ impl TokenBaseTransitionAccessors for TokenSetPriceForDirectPurchaseTransition {
     }
 }
 
-impl TokenSetPriceForDirectPurchaseTransitionV0Methods for TokenSetPriceForDirectPurchaseTransition {
+impl TokenSetPriceForDirectPurchaseTransitionV0Methods
+    for TokenSetPriceForDirectPurchaseTransition
+{
     fn price(&self) -> Option<&TokenPricingSchedule> {
         match self {
             TokenSetPriceForDirectPurchaseTransition::V0(v0) => v0.price(),
         }
     }
 
-    fn set_price(&mut self, price: Option<Credits>) {
+    fn set_price(&mut self, price: Option<TokenPricingSchedule>) {
         match self {
             TokenSetPriceForDirectPurchaseTransition::V0(v0) => v0.set_price(price),
         }
@@ -81,7 +82,12 @@ impl TokenSetPriceForDirectPurchaseTransition {
         bytes.extend_from_slice(owner_id);
         bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
         if let Some(price_per_token) = price_per_token {
-            bytes.extend_from_slice(&price_per_token.minimum_purchase_amount_and_price().1.to_be_bytes());
+            bytes.extend_from_slice(
+                &price_per_token
+                    .minimum_purchase_amount_and_price()
+                    .1
+                    .to_be_bytes(),
+            );
         }
 
         hash_double(bytes).into()

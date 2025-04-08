@@ -40,43 +40,55 @@ impl DriveHighLevelBatchOperationConverter for TokenDirectPurchaseTransitionActi
                         nonce: identity_contract_nonce,
                     },
                 )];
-                
-                    ops.push(TokenOperation(TokenOperationType::TokenMint {
-                        token_id: self.token_id(),
-                        identity_balance_holder_id: owner_id,
-                        mint_amount: self.token_count(),
-                        allow_first_mint: true,
-                        allow_saturation: false,
-                    }));
 
-                ops.push(IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
-                    identity_id: owner_id.to_buffer(),
-                    balance_to_remove: self.token_count()*self.agreed_price_per_token(),
+                ops.push(TokenOperation(TokenOperationType::TokenMint {
+                    token_id: self.token_id(),
+                    identity_balance_holder_id: owner_id,
+                    mint_amount: self.token_count(),
+                    allow_first_mint: true,
+                    allow_saturation: false,
                 }));
-                ops.push(IdentityOperation(IdentityOperationType::AddToIdentityBalance {
-                    identity_id: self.base().data_contract_fetch_info().contract.owner_id().to_buffer(),
-                    added_balance: self.token_count()*self.agreed_price_per_token(),
-                }));
+
+                ops.push(IdentityOperation(
+                    IdentityOperationType::RemoveFromIdentityBalance {
+                        identity_id: owner_id.to_buffer(),
+                        balance_to_remove: self.total_agreed_price(),
+                    },
+                ));
+                ops.push(IdentityOperation(
+                    IdentityOperationType::AddToIdentityBalance {
+                        identity_id: self
+                            .base()
+                            .data_contract_fetch_info()
+                            .contract
+                            .owner_id()
+                            .to_buffer(),
+                        added_balance: self.total_agreed_price(),
+                    },
+                ));
 
                 let token_configuration = self.base().token_configuration()?;
-                    if token_configuration.keeps_history().keeps_direct_purchase_history() {
-                        ops.push(TokenOperation(TokenOperationType::TokenHistory {
-                            token_id: self.token_id(),
-                            owner_id,
-                            nonce: identity_contract_nonce,
-                            event: TokenEvent::DirectPurchase(
-                                owner_id,
-                                self.token_count(),
-                                self.agreed_price_per_token(),
-                            ),
-                        }));
-                    }
+                if token_configuration
+                    .keeps_history()
+                    .keeps_direct_purchase_history()
+                {
+                    ops.push(TokenOperation(TokenOperationType::TokenHistory {
+                        token_id: self.token_id(),
+                        owner_id,
+                        nonce: identity_contract_nonce,
+                        event: TokenEvent::DirectPurchase(
+                            self.token_count(),
+                            self.total_agreed_price(),
+                        ),
+                    }));
+                }
 
                 Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "TokenDirectPurchaseTransitionAction::into_high_level_document_drive_operations"
-                    .to_string(),
+                method:
+                    "TokenDirectPurchaseTransitionAction::into_high_level_document_drive_operations"
+                        .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

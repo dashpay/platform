@@ -1,5 +1,5 @@
 use derive_more::From;
-use dpp::identifier::Identifier;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 /// transformer module for token issuance transition action
 pub mod transformer;
@@ -16,7 +16,9 @@ pub enum TokenSetPriceForDirectPurchaseTransitionAction {
     V0(TokenSetPriceForDirectPurchaseTransitionActionV0),
 }
 
-impl TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0 for TokenSetPriceForDirectPurchaseTransitionAction {
+impl TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0
+    for TokenSetPriceForDirectPurchaseTransitionAction
+{
     fn base(&self) -> &TokenBaseTransitionAction {
         match self {
             TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => &v0.base,
@@ -29,27 +31,15 @@ impl TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0 for TokenSetPrice
         }
     }
 
-    fn set_price_for_direct_purchase_amount(&self) -> u64 {
+    fn price(&self) -> Option<&TokenPricingSchedule> {
         match self {
-            TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => v0.set_price_for_direct_purchase_amount,
+            TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => v0.price.as_ref(),
         }
     }
 
-    fn set_set_price_for_direct_purchase_amount(&mut self, amount: u64) {
+    fn set_price(&mut self, price: Option<TokenPricingSchedule>) {
         match self {
-            TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => v0.set_price_for_direct_purchase_amount = amount,
-        }
-    }
-
-    fn identity_balance_holder_id(&self) -> Identifier {
-        match self {
-            TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => v0.identity_balance_holder_id,
-        }
-    }
-
-    fn set_identity_balance_holder_id(&mut self, id: Identifier) {
-        match self {
-            TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => v0.identity_balance_holder_id = id,
+            TokenSetPriceForDirectPurchaseTransitionAction::V0(v0) => v0.price = price,
         }
     }
 

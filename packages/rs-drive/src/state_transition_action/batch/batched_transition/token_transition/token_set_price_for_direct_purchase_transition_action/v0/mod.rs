@@ -1,7 +1,6 @@
 mod transformer;
 
 use std::sync::Arc;
-use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::drive::contract::DataContractFetchInfo;
@@ -28,11 +27,11 @@ pub trait TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0 {
     fn base_owned(self) -> TokenBaseTransitionAction;
 
     /// Returns the price
-    fn price(&self) -> Option<TokenPricingSchedule>;
+    fn price(&self) -> Option<&TokenPricingSchedule>;
 
     /// Sets the amount of tokens to issuance
     fn set_price(&mut self, price: Option<TokenPricingSchedule>);
-    
+
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
         self.base().token_position()
@@ -68,7 +67,9 @@ pub trait TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0 {
     fn set_public_note(&mut self, public_note: Option<String>);
 }
 
-impl TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0 for TokenSetPriceForDirectPurchaseTransitionActionV0 {
+impl TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0
+    for TokenSetPriceForDirectPurchaseTransitionActionV0
+{
     fn base(&self) -> &TokenBaseTransitionAction {
         &self.base
     }

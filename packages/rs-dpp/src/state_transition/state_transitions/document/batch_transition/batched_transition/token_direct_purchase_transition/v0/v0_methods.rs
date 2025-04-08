@@ -18,16 +18,14 @@ impl TokenBaseTransitionAccessors for TokenDirectPurchaseTransitionV0 {
     }
 }
 
-pub trait TokenDirectPurchaseTransitionV0Methods:
-    TokenBaseTransitionAccessors
-{
+pub trait TokenDirectPurchaseTransitionV0Methods: TokenBaseTransitionAccessors {
     fn token_count(&self) -> TokenAmount;
 
     fn set_token_count(&mut self, token_count: TokenAmount);
 
-    fn agreed_price_per_token(&self) -> Credits;
+    fn total_agreed_price(&self) -> Credits;
 
-    fn set_agreed_price_per_token(&mut self, credits: Credits);
+    fn set_total_agreed_price(&mut self, credits: Credits);
 }
 
 impl TokenDirectPurchaseTransitionV0Methods for TokenDirectPurchaseTransitionV0 {
@@ -39,11 +37,11 @@ impl TokenDirectPurchaseTransitionV0Methods for TokenDirectPurchaseTransitionV0 
         self.token_count = token_count;
     }
 
-    fn agreed_price_per_token(&self) -> Credits {
-        self.agreed_price_per_token
+    fn total_agreed_price(&self) -> Credits {
+        self.total_agreed_price
     }
 
-    fn set_agreed_price_per_token(&mut self, credits: Credits) {
-        self.agreed_price_per_token = credits;
+    fn set_total_agreed_price(&mut self, credits: Credits) {
+        self.total_agreed_price = credits;
     }
 }

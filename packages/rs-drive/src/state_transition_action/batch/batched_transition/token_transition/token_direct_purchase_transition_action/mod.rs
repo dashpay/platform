@@ -41,15 +41,15 @@ impl TokenDirectPurchaseTransitionActionAccessorsV0 for TokenDirectPurchaseTrans
         }
     }
 
-    fn agreed_price_per_token(&self) -> Credits {
+    fn total_agreed_price(&self) -> Credits {
         match self {
-            TokenDirectPurchaseTransitionAction::V0(v0) => v0.agreed_price_per_token,
+            TokenDirectPurchaseTransitionAction::V0(v0) => v0.total_agreed_price,
         }
     }
 
-    fn set_agreed_price_per_token(&mut self, agreed_price: Credits) {
+    fn set_total_agreed_price(&mut self, agreed_price: Credits) {
         match self {
-            TokenDirectPurchaseTransitionAction::V0(v0) => v0.agreed_price_per_token = agreed_price,
+            TokenDirectPurchaseTransitionAction::V0(v0) => v0.total_agreed_price = agreed_price,
         }
     }
 }

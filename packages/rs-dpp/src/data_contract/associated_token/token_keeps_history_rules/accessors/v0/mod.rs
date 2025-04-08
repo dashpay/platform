@@ -1,5 +1,3 @@
-use crate::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
-
 /// Accessor trait for getters of `TokenKeepsHistoryRulesV0`
 pub trait TokenKeepsHistoryRulesV0Getters {
     /// Returns whether transfer history is kept.

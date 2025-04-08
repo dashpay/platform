@@ -10,10 +10,12 @@ use crate::ProtocolError;
 pub(super) trait TokenSetPriceForDirectPurchaseTransitionActionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
-impl TokenSetPriceForDirectPurchaseTransitionActionStructureValidationV0 for TokenSetPriceForDirectPurchaseTransition {
+impl TokenSetPriceForDirectPurchaseTransitionActionStructureValidationV0
+    for TokenSetPriceForDirectPurchaseTransition
+{
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // There is no need to validate the price because setting a price that is too high just makes the token non purchasable
-        
+
         if let Some(public_note) = self.public_note() {
             if public_note.len() > MAX_TOKEN_NOTE_LEN {
                 return Ok(SimpleConsensusValidationResult::new_with_error(

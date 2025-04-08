@@ -19,6 +19,8 @@ pub enum TokenSetPriceForDirectPurchaseTransition {
 }
 impl Default for TokenSetPriceForDirectPurchaseTransition {
     fn default() -> Self {
-        TokenSetPriceForDirectPurchaseTransition::V0(TokenSetPriceForDirectPurchaseTransitionV0::default()) // since only v0
+        TokenSetPriceForDirectPurchaseTransition::V0(
+            TokenSetPriceForDirectPurchaseTransitionV0::default(),
+        ) // since only v0
     }
 }
