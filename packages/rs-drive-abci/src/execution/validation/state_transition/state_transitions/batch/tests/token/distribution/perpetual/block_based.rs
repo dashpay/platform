@@ -2188,7 +2188,7 @@ mod inverted_logarithmic {
     }
 
     #[test]
-    fn fails_a_max() -> Result<(), String> {
+    fn a_max() -> Result<(), String> {
         let dist = InvertedLogarithmic {
             a: i64::MAX,           // a: i64,
             d: 1,                  // d: u64,
@@ -2210,7 +2210,7 @@ mod inverted_logarithmic {
     }
 
     #[test]
-    fn fails_a_zero_b_zero() -> Result<(), String> {
+    fn a_zero_b_zero() -> Result<(), String> {
         let dist = InvertedLogarithmic {
             a: 0,                  // a: i64,
             d: 1,                  // d: u64,
