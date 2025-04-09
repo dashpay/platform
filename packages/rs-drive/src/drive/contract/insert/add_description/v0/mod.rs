@@ -174,12 +174,11 @@ impl Drive {
                 Err(e) => return Err(e),
             };
 
-        let document_type_name;
-        if full_description {
-            document_type_name = "fullDescription".to_string();
+        let document_type_name = if full_description {
+            "fullDescription".to_string()
         } else {
-            document_type_name = "shortDescription".to_string();
-        }
+            "shortDescription".to_string()
+        };
 
         let document_id = Document::generate_document_id_v0(
             &contract_id,
