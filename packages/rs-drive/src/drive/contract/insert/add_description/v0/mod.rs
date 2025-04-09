@@ -97,26 +97,53 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let contract = self.cache.system_data_contracts.load_search();
-        let document_type = contract.document_type_for_name("longDescription")?;
-
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let document = self.build_contract_long_description_document_owned_v0(
+        let contract = self.cache.system_data_contracts.load_search();
+
+        let short_description_document_type =
+            contract.document_type_for_name("shortDescription")?;
+        let full_description_document_type = contract.document_type_for_name("fullDescription")?;
+
+        let short_description_document = self.build_contract_description_document_owned_v0(
             contract_id,
             owner_id,
             description,
+            false,
+            block_info,
+        )?;
+        let full_description_document = self.build_contract_description_document_owned_v0(
+            contract_id,
+            owner_id,
+            description,
+            true,
             block_info,
         )?;
 
-        let ops = self.add_document_for_contract_operations(
+        let short_description_ops = self.add_document_for_contract_operations(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentOwnedInfo((document, None)),
+                    document_info: DocumentOwnedInfo((short_description_document, None)),
                     owner_id: Some(owner_id.to_buffer()),
                 },
                 contract: &contract,
-                document_type,
+                document_type: short_description_document_type,
+            },
+            true,
+            block_info,
+            &mut None,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?;
+        let full_description_ops = self.add_document_for_contract_operations(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentOwnedInfo((full_description_document, None)),
+                    owner_id: Some(owner_id.to_buffer()),
+                },
+                contract: &contract,
+                document_type: full_description_document_type,
             },
             true,
             block_info,
@@ -126,19 +153,20 @@ impl Drive {
             platform_version,
         )?;
 
-        operations.extend(ops);
+        operations.extend(short_description_ops);
+        operations.extend(full_description_ops);
 
         Ok(operations)
     }
 
-    pub(super) fn build_contract_long_description_document_owned_v0(
+    pub(super) fn build_contract_description_document_owned_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
         description: &String,
+        full_description: bool,
         block_info: &BlockInfo,
     ) -> Result<Document, Error> {
-        // Fetch the identity nonce for the owner or use 1
         let owner_nonce =
             match self.fetch_identity_nonce(owner_id.into(), true, None, PlatformVersion::latest())
             {
@@ -146,10 +174,17 @@ impl Drive {
                 Err(e) => return Err(e),
             };
 
+        let document_type_name;
+        if full_description {
+            document_type_name = "fullDescription".to_string();
+        } else {
+            document_type_name = "shortDescription".to_string();
+        }
+
         let document_id = Document::generate_document_id_v0(
             &contract_id,
             &owner_id,
-            "longDescription",
+            &document_type_name,
             &owner_nonce.to_be_bytes(),
         );
 

@@ -10,8 +10,16 @@ pub mod document_types {
         }
     }
 
-    pub mod long_description {
-        pub const NAME: &str = "longDescription";
+    pub mod short_description {
+        pub const NAME: &str = "shortDescription";
+
+        pub mod properties {
+            pub const KEY_INDEX: &str = "byContractId";
+        }
+    }
+
+    pub mod full_description {
+        pub const NAME: &str = "fullDescription";
 
         pub mod properties {
             pub const KEY_INDEX: &str = "byContractId";

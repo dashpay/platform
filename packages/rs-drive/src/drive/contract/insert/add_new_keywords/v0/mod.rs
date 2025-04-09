@@ -145,7 +145,7 @@ impl Drive {
         let document_id = Document::generate_document_id_v0(
             &contract_id,
             &owner_id,
-            "contract",
+            "contractKeywords",
             keyword_index.to_be_bytes().as_slice(),
         );
 

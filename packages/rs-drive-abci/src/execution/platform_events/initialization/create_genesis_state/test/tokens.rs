@@ -224,6 +224,7 @@ impl<C> Platform<C> {
             emergency_action_rules: ChangeControlRulesV0::default().into(),
             main_control_group: None,
             main_control_group_can_be_modified: Default::default(),
+            description: Some("some token description".to_string()),
         });
 
         let tokens = [
@@ -249,6 +250,7 @@ impl<C> Platform<C> {
             groups,
             tokens,
             keywords: vec!["key1".into(), "key2".into()],
+            description: Some("some contract description".to_string()),
         });
 
         self.drive.apply_contract(

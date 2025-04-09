@@ -106,6 +106,13 @@ impl DataContractInSerializationFormat {
         }
     }
 
+    pub fn description(&self) -> &Option<String> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &None,
+            DataContractInSerializationFormat::V1(v1) => &v1.description,
+        }
+    }
+
     pub fn eq_without_auto_fields(&self, other: &Self) -> bool {
         match (self, other) {
             (

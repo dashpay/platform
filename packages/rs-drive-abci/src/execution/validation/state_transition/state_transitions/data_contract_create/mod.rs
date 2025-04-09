@@ -2452,7 +2452,12 @@ mod tests {
         use super::*;
         use dpp::{
             data_contract::conversion::value::v0::DataContractValueConversionMethodsV0,
+            data_contracts::SystemDataContract, document::DocumentV0Getters,
             platform_value::string_encoding::Encoding,
+            system_data_contracts::load_system_data_contract,
+        };
+        use drive::{
+            drive::document::query::QueryDocumentsOutcomeV0Methods, query::DriveDocumentQuery,
         };
 
         #[test]
@@ -2956,6 +2961,366 @@ mod tests {
             assert_eq!(keywords[0], "key1");
             assert_eq!(keywords[1], "key2");
             assert_eq!(keywords[2], "key3");
+
+            // Now check the Search Contract has the keyword documents
+            let search_contract =
+                load_system_data_contract(SystemDataContract::Search, PlatformVersion::latest())
+                    .expect("expected to load search contract");
+            let document_type = search_contract
+                .document_type_for_name("contractKeywords")
+                .expect("expected to get document type");
+
+            let drive_query =
+                DriveDocumentQuery::all_items_query(&search_contract, document_type, None);
+
+            let documents_result = platform
+                .drive
+                .query_documents(drive_query, None, false, None, None)
+                .expect("expected to query documents");
+
+            let documents = documents_result.documents();
+
+            assert_eq!(documents.len(), 3);
+
+            let mut valid_keywords_for_verification = vec!["key1", "key2", "key3"];
+            for document in documents {
+                let keyword = document
+                    .get("keyword")
+                    .expect("expected to get keyword")
+                    .as_str()
+                    .expect("expected to get string");
+
+                assert!(valid_keywords_for_verification.contains(&keyword));
+                assert_eq!(
+                    document
+                        .get("contractId")
+                        .expect("expected to get data contract id")
+                        .clone()
+                        .into_identifier()
+                        .expect("expected to get identifier")
+                        .to_string(Encoding::Base58),
+                    data_contract_id_str
+                );
+                valid_keywords_for_verification.retain(|&x| x != keyword);
+            }
+        }
+    }
+
+    mod descriptions {
+        use dpp::{
+            data_contract::conversion::value::v0::DataContractValueConversionMethodsV0,
+            data_contracts::SystemDataContract, document::DocumentV0Getters,
+            platform_value::string_encoding::Encoding,
+            system_data_contracts::load_system_data_contract,
+        };
+        use drive::{
+            drive::document::query::QueryDocumentsOutcomeV0Methods, query::DriveDocumentQuery,
+        };
+
+        use super::*;
+
+        /// Returns a `DataContract` value that already contains at least one keyword
+        fn base_contract_value_with_keyword(platform_version: &PlatformVersion) -> Value {
+            let data_contract = json_document_to_contract_with_ids(
+                // Re‑use the same fixture you already have; it doesn’t need
+                // to contain a description field – we mutate it below.
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            let mut contract_value = data_contract
+                .to_value(PlatformVersion::latest())
+                .expect("to_value failed");
+
+            // Ensure the `keywords` array is not empty so that Drive will attempt
+            // to create the description documents.
+            contract_value["keywords"] = Value::Array(vec![Value::Text("key1".to_string())]);
+
+            contract_value
+        }
+
+        #[test]
+        fn test_data_contract_creation_fails_with_description_too_short() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // --- mutate the contract ---
+            let mut contract_value = base_contract_value_with_keyword(platform_version);
+            contract_value["description"] = Value::Text("hi".to_string()); // < 3 chars
+
+            let data_contract_invalid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract from Value");
+
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract_invalid,
+                1,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expected to create transition");
+
+            let serialized = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let tx = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected processing");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
+        fn test_data_contract_creation_fails_with_description_too_long() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let mut contract_value = base_contract_value_with_keyword(platform_version);
+            // 101 chars – valid for the contract (max 10 000) but exceeds the
+            // 100‑char limit of the autogenerated **shortDescription** document.
+            let too_long = "x".repeat(101);
+            contract_value["description"] = Value::Text(too_long);
+
+            let data_contract_invalid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract");
+
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract_invalid,
+                1,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expected to create transition");
+
+            let serialized = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let tx = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected processing");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(_)),
+                    _
+                )]
+            );
+        }
+
+        #[test]
+        fn test_data_contract_creation_succeeds_with_valid_description() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let mut contract_value = base_contract_value_with_keyword(platform_version);
+            contract_value["description"] =
+                Value::Text("A perfectly valid description.".to_string());
+
+            let data_contract_valid =
+                DataContract::from_value(contract_value, true, platform_version)
+                    .expect("failed to create DataContract");
+
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract_valid,
+                1,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expected to create transition");
+
+            let serialized = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let tx = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected processing");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit so we can query the state afterwards
+            platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("expected commit");
+
+            // ---- Verify description persisted in the contract ----
+            let unique_identifiers = transition.unique_identifiers();
+            let unique_identifier = unique_identifiers
+                .first()
+                .expect("expected at least one unique identifier");
+            let data_contract_id_str = unique_identifier
+                .as_str()
+                .split('-')
+                .last()
+                .expect("split contract id");
+            let data_contract_id = Identifier::from_string(data_contract_id_str, Encoding::Base58)
+                .expect("identifier");
+
+            let contract = platform
+                .drive
+                .fetch_contract(data_contract_id.into(), None, None, None, platform_version)
+                .value
+                .expect("expected contract")
+                .expect("contract exists");
+
+            let desc = contract
+                .contract
+                .description()
+                .expect("description should exist");
+
+            assert_eq!(desc, "A perfectly valid description.");
+
+            // Now check the Search Contract has the short and full description documents
+            let search_contract =
+                load_system_data_contract(SystemDataContract::Search, PlatformVersion::latest())
+                    .expect("expected to load search contract");
+            let short_description_document_type = search_contract
+                .document_type_for_name("shortDescription")
+                .expect("expected to get document type");
+            let full_description_document_type = search_contract
+                .document_type_for_name("fullDescription")
+                .expect("expected to get document type");
+
+            let drive_query_short_description = DriveDocumentQuery::all_items_query(
+                &search_contract,
+                short_description_document_type,
+                None,
+            );
+
+            let short_description_documents_result = platform
+                .drive
+                .query_documents(drive_query_short_description, None, false, None, None)
+                .expect("expected to query documents");
+
+            let short_description_documents = short_description_documents_result.documents();
+
+            assert_eq!(short_description_documents.len(), 1);
+            let short_description_document = short_description_documents
+                .first()
+                .expect("expected to get first document");
+            let short_description = short_description_document
+                .get("description")
+                .expect("expected to get description")
+                .as_str()
+                .expect("expected to get string");
+            assert_eq!(short_description, "A perfectly valid description.");
+            assert_eq!(
+                short_description_document
+                    .get("contractId")
+                    .expect("expected to get data contract id")
+                    .clone()
+                    .into_identifier()
+                    .expect("expected to get identifier")
+                    .to_string(Encoding::Base58),
+                data_contract_id_str
+            );
+
+            let drive_query_full_description = DriveDocumentQuery::all_items_query(
+                &search_contract,
+                full_description_document_type,
+                None,
+            );
+            let full_description_documents_result = platform
+                .drive
+                .query_documents(drive_query_full_description, None, false, None, None)
+                .expect("expected to query documents");
+
+            let full_description_documents = full_description_documents_result.documents();
+
+            assert_eq!(full_description_documents.len(), 1);
+            let full_description_document = full_description_documents
+                .first()
+                .expect("expected to get first document");
+            let full_description = full_description_document
+                .get("description")
+                .expect("expected to get description")
+                .as_str()
+                .expect("expected to get string");
+            assert_eq!(full_description, "A perfectly valid description.");
+            assert_eq!(
+                full_description_document
+                    .get("contractId")
+                    .expect("expected to get data contract id")
+                    .clone()
+                    .into_identifier()
+                    .expect("expected to get identifier")
+                    .to_string(Encoding::Base58),
+                data_contract_id_str
+            );
         }
     }
 }
