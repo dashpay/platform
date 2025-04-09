@@ -47,6 +47,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_token_status: 0,
         verify_token_pre_programmed_distributions: 0,
         verify_token_direct_selling_price: 0,
+        verify_token_direct_selling_prices: 0,
     },
     single_document: DriveVerifySingleDocumentMethodVersions {
         verify_proof: 0,
