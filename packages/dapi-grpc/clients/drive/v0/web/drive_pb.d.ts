@@ -2,7 +2,7 @@
 // file: drive.proto
 
 import * as jspb from "google-protobuf";
-import * as platform_pb from "./platform_pb";
+import * as platform_v0_platform_pb from "./platform/v0/platform_pb";
 
 export class GetProofsRequest extends jspb.Message {
   getStateTransition(): Uint8Array | string;
@@ -29,13 +29,13 @@ export namespace GetProofsRequest {
 export class GetProofsResponse extends jspb.Message {
   hasProof(): boolean;
   clearProof(): void;
-  getProof(): platform_pb.Proof | undefined;
-  setProof(value?: platform_pb.Proof): void;
+  getProof(): platform_v0_platform_pb.Proof | undefined;
+  setProof(value?: platform_v0_platform_pb.Proof): void;
 
   hasMetadata(): boolean;
   clearMetadata(): void;
-  getMetadata(): platform_pb.ResponseMetadata | undefined;
-  setMetadata(value?: platform_pb.ResponseMetadata): void;
+  getMetadata(): platform_v0_platform_pb.ResponseMetadata | undefined;
+  setMetadata(value?: platform_v0_platform_pb.ResponseMetadata): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GetProofsResponse.AsObject;
@@ -49,8 +49,8 @@ export class GetProofsResponse extends jspb.Message {
 
 export namespace GetProofsResponse {
   export type AsObject = {
-    proof?: platform_pb.Proof.AsObject,
-    metadata?: platform_pb.ResponseMetadata.AsObject,
+    proof?: platform_v0_platform_pb.Proof.AsObject,
+    metadata?: platform_v0_platform_pb.ResponseMetadata.AsObject,
   }
 }
 

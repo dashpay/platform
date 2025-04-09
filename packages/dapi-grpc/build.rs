@@ -219,8 +219,6 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 }
 
 fn configure_drive(drive: MappingConfig) -> MappingConfig {
-    let platform_proto_path = abs_path(&PathBuf::from("protos/platform/v0"));
-
     drive
         .message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#)
         .type_attribute(
@@ -231,7 +229,6 @@ fn configure_drive(drive: MappingConfig) -> MappingConfig {
             ".",
             r#"#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]"#,
         )
-        .includes(&[platform_proto_path])
 }
 
 /// Check for duplicate messages in the list.

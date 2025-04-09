@@ -23,7 +23,6 @@ const TransactionErrorResult = require('../../../externalApis/tenderdash/waitFor
  * @param {fetchProofForStateTransition} fetchProofForStateTransition
  * @param {waitForTransactionToBeProvable} waitForTransactionToBeProvable
  * @param {BlockchainListener} blockchainListener
- * @param {DashPlatformProtocol} dpp
  * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
  * @param {number} stateTransitionWaitTimeout
  * @return {waitForStateTransitionResultHandler}
@@ -32,7 +31,6 @@ function waitForStateTransitionResultHandlerFactory(
   fetchProofForStateTransition,
   waitForTransactionToBeProvable,
   blockchainListener,
-  dpp,
   createGrpcErrorFromDriveResponse,
   stateTransitionWaitTimeout,
 ) {

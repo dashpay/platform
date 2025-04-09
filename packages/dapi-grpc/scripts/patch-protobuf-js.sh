@@ -27,4 +27,6 @@ for file in $files; do
     echo "Error: global still present"
   fi
 
+  replace_in_file 's/require('\''.\/platform\/v0\/platform_pb.js'\'')/require('\''..\/..\/..\/platform\/v0\/web\/platform_pb.js'\'')/g' "$file"
+
 done

@@ -3,20 +3,13 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
-use dpp::balances::credits::TokenAmount;
-use dpp::block::block_info::BlockInfo;
+use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::TokenConfiguration;
 use dpp::data_contracts::SystemDataContract;
-use dpp::document::property_names::PRICE;
-use dpp::document::Document;
-use dpp::fee::Credits;
-use dpp::identity::PartialIdentity;
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -37,28 +30,23 @@ use dpp::state_transition::identity_credit_transfer_transition::accessors::Ident
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{
-    VerifiedDocuments, VerifiedPartialIdentity, VerifiedTokenActionWithDocument,
-    VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo,
-};
+use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 use dpp::system_data_contracts::load_system_data_contract;
-use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
-use dpp::voting::vote_polls::VotePoll;
+use dpp::version::PlatformVersion;
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
-use drive::drive::identity::key::fetch::IdentityKeysRequest;
-use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
-use drive::query::{PathQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
-use drive::verify::RootHash;
-use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
+use drive::query::{
+    IdentityBasedVoteDriveQuery, PathQuery, SingleDocumentDriveQuery,
+    SingleDocumentDriveQueryContestedStatus,
+};
 
 fn contract_ids_to_non_historical_path_query(contract_ids: &[Identifier]) -> PathQuery {
-    let contract_ids = contract_ids.iter().map(|id| id.0).collect();
+    let contract_ids: Vec<_> = contract_ids.iter().map(|id| id.to_buffer()).collect();
 
-    let mut path_query = Drive::fetch_non_historical_contracts_query(contract_ids);
+    let mut path_query = Drive::fetch_non_historical_contracts_query(&contract_ids);
     path_query.query.limit = None;
     path_query
 }
@@ -84,16 +72,19 @@ impl<C> Platform<C> {
             }
             StateTransition::Batch(st) => {
                 if st.transitions_len() > 1 {
-                    return Err(QueryError::Proof(ProofError::InvalidTransition(
-                        "batch state transition must have only one batched transition".to_string(),
-                    ))
-                    .into());
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Proof(
+                        ProofError::InvalidTransition(
+                            "batch state transition must have only one batched transition"
+                                .to_string(),
+                        ),
+                    )));
                 }
                 let Some(transition) = st.first_transition() else {
-                    return Err(QueryError::Proof(ProofError::InvalidTransition(
-                        "batch state transition must have one batched transition".to_string(),
-                    ))
-                    .into());
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Proof(
+                        ProofError::InvalidTransition(
+                            "batch state transition must have one batched transition".to_string(),
+                        ),
+                    )));
                 };
 
                 let owner_id = st.owner_id();
@@ -150,7 +141,7 @@ impl<C> Platform<C> {
                             contested_status,
                         };
 
-                        let mut path_query = query.construct_path_query(platform_version).ok()?;
+                        let mut path_query = query.construct_path_query(platform_version)?;
                         path_query.query.limit = None;
                         path_query
                     }
@@ -166,25 +157,15 @@ impl<C> Platform<C> {
                             platform_version,
                         )?
                         else {
-                            return Err(drive::error::Error::Proof(ProofError::UnknownContract(
-                                format!("unknown contract with id {}", data_contract_id),
-                            ))
-                            .into());
+                            return Ok(QueryValidationResult::new_with_error(QueryError::Proof(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {}",
+                                    data_contract_id
+                                )),
+                            )));
                         };
 
                         let contract = &contract_fetch_info.contract;
-
-                        let identity_contract_nonce =
-                            token_transition.base().identity_contract_nonce();
-
-                        let token_history_document_type_name =
-                            token_transition.historical_document_type_name().to_string();
-
-                        let token_history_contract =
-                            self.drive.cache.system_data_contracts.load_token_history();
-
-                        let token_history_document_type =
-                            token_transition.historical_document_type(&token_history_contract)?;
 
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
@@ -197,7 +178,6 @@ impl<C> Platform<C> {
                                 if keeps_historical_document.keeps_burning_history() {
                                     create_token_historical_document_query(
                                         token_transition,
-                                        token_config,
                                         owner_id,
                                         platform_version,
                                     )?
@@ -212,7 +192,6 @@ impl<C> Platform<C> {
                                 if keeps_historical_document.keeps_minting_history() {
                                     create_token_historical_document_query(
                                         token_transition,
-                                        token_config,
                                         owner_id,
                                         platform_version,
                                     )?
@@ -230,7 +209,6 @@ impl<C> Platform<C> {
                                 if keeps_historical_document.keeps_transfer_history() {
                                     create_token_historical_document_query(
                                         token_transition,
-                                        token_config,
                                         owner_id,
                                         platform_version,
                                     )?
@@ -245,11 +223,10 @@ impl<C> Platform<C> {
                                     )
                                 }
                             }
-                            TokenTransition::Freeze(token_freeze_transition) => {
+                            TokenTransition::Freeze(_) => {
                                 if keeps_historical_document.keeps_freezing_history() {
                                     create_token_historical_document_query(
                                         token_transition,
-                                        token_config,
                                         owner_id,
                                         platform_version,
                                     )?
@@ -260,11 +237,10 @@ impl<C> Platform<C> {
                                     )
                                 }
                             }
-                            TokenTransition::Unfreeze(token_unfreeze_transition) => {
+                            TokenTransition::Unfreeze(_) => {
                                 if keeps_historical_document.keeps_freezing_history() {
                                     create_token_historical_document_query(
                                         token_transition,
-                                        token_config,
                                         owner_id,
                                         platform_version,
                                     )?
@@ -280,7 +256,6 @@ impl<C> Platform<C> {
                             | TokenTransition::ConfigUpdate(_)
                             | TokenTransition::Claim(_) => create_token_historical_document_query(
                                 token_transition,
-                                token_config,
                                 owner_id,
                                 platform_version,
                             )?,
@@ -317,186 +292,34 @@ impl<C> Platform<C> {
                 )?
             }
             StateTransition::MasternodeVote(st) => {
-                let pro_tx_hash = masternode_vote.pro_tx_hash();
-                let vote = masternode_vote.vote();
-                let contract = match vote {
-                    Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
-                        VotePoll::ContestedDocumentResourceVotePoll(
-                            contested_document_resource_vote_poll,
-                        ) => known_contracts_provider_fn(
-                            &contested_document_resource_vote_poll.contract_id,
-                        )?
-                        .ok_or(drive::error::Error::Proof(
-                            ProofError::UnknownContract(format!(
-                                "unknown contract with id {}",
-                                contested_document_resource_vote_poll.contract_id
-                            )),
-                        ))?,
-                    },
-                };
+                let pro_tx_hash = st.pro_tx_hash();
 
-                Drive::
+                match st.vote_owned() {
+                    Vote::ResourceVote(resource_vote) => {
+                        let query = IdentityBasedVoteDriveQuery {
+                            identity_id: pro_tx_hash,
+                            vote_poll: resource_vote.vote_poll_owned(),
+                        };
 
-                // we expect to get a vote that matches the state transition
-                πlet(root_hash, vote) = Drive::verify_masternode_vote(
-                    proof,
-                    pro_tx_hash.to_buffer(),
-                    vote,
-                    &contract,
-                    false,
-                    platform_version,
-                )?;
+                        // The path query construction can only fail if the serialization fails.
+                        // Because the serialization will pretty much never fail, we can do this.
+                        let mut path_query = query.construct_path_query()?;
+                        path_query.query.limit = None;
+                        path_query
+                    }
+                }
             }
         };
 
-        let identity_requests = check_validation_result_with_data!(identities
-            .into_iter()
-            .map(|identity_request| {
-                Ok(IdentityDriveQuery {
-                    identity_id: Bytes32::from_vec(identity_request.identity_id)
-                        .map(|bytes| bytes.0)
-                        .map_err(|_| {
-                            QueryError::InvalidArgument(
-                                "id must be a valid identifier (32 bytes long)".to_string(),
-                            )
-                        })?,
-                    prove_request_type: IdentityProveRequestType::try_from(
-                        identity_request.request_type as u8,
-                    )
-                    .map_err(|_| {
-                        QueryError::InvalidArgument(
-                            format!(
-                                "invalid prove request type '{}'",
-                                identity_request.request_type
-                            )
-                            .to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
-
-        let vote_queries = check_validation_result_with_data!(votes
-            .into_iter()
-            .filter_map(|vote_proof_request| {
-                if let Some(request_type) = vote_proof_request.request_type {
-                    match request_type {
-                        RequestType::ContestedResourceVoteStatusRequest(contested_resource_vote_status_request) => {
-                            let identity_id = match contested_resource_vote_status_request.voter_identifier.try_into() {
-                                Ok(identity_id) => identity_id,
-                                Err(_) => return Some(Err(QueryError::InvalidArgument(
-                                    "voter_identifier must be a valid identifier (32 bytes long)".to_string(),
-                                ))),
-                            };
-                            let contract_id = match contested_resource_vote_status_request.contract_id.try_into() {
-                                Ok(contract_id) => contract_id,
-                                Err(_) => return Some(Err(QueryError::InvalidArgument(
-                                    "contract_id must be a valid identifier (32 bytes long)".to_string(),
-                                ))),
-                            };
-                            let document_type_name = contested_resource_vote_status_request.document_type_name;
-                            let index_name = contested_resource_vote_status_request.index_name;
-                            let index_values = match contested_resource_vote_status_request.index_values.into_iter().enumerate().map(|(pos, serialized_value)|
-                                Ok(bincode::decode_from_slice(serialized_value.as_slice(), bincode::config::standard().with_big_endian()
-                                    .with_no_limit()).map_err(|_| QueryError::InvalidArgument(
-                                    format!("could not convert {:?} to a value in the index values at position {}", serialized_value, pos),
-                                ))?.0)
-                            ).collect::<Result<Vec<_>, QueryError>>() {
-                                Ok(index_values) => index_values,
-                                Err(e) => return Some(Err(e)),
-                            };
-                            let vote_poll = ContestedDocumentResourceVotePoll {
-                                contract_id,
-                                document_type_name,
-                                index_name,
-                                index_values,
-                            }.into();
-                            Some(Ok(IdentityBasedVoteDriveQuery {
-                                identity_id,
-                                vote_poll,
-                            }))
-                        }
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect::<Result<Vec<IdentityBasedVoteDriveQuery>, QueryError>>());
-
-        let token_balance_queries = check_validation_result_with_data!(identity_token_balances
-            .into_iter()
-            .map(|identity_token_balance_request| {
-                let IdentityTokenBalanceRequest {
-                    token_id,
-                    identity_id,
-                } = identity_token_balance_request;
-                Ok(IdentityTokenBalanceDriveQuery {
-                    identity_id: Identifier::try_from(identity_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "identity_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                    token_id: Identifier::try_from(token_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "token_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<IdentityTokenBalanceDriveQuery>, QueryError>>());
-
-        let token_info_queries = check_validation_result_with_data!(identity_token_infos
-            .into_iter()
-            .map(|identity_token_info_request| {
-                let IdentityTokenInfoRequest {
-                    token_id,
-                    identity_id,
-                } = identity_token_info_request;
-                Ok(IdentityTokenInfoDriveQuery {
-                    identity_id: Identifier::try_from(identity_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "identity_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                    token_id: Identifier::try_from(token_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "token_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<IdentityTokenInfoDriveQuery>, QueryError>>());
-
-        let token_status_queries = check_validation_result_with_data!(token_statuses
-            .into_iter()
-            .map(|token_status_request| {
-                let TokenStatusRequest { token_id } = token_status_request;
-                Ok(TokenStatusDriveQuery {
-                    token_id: Identifier::try_from(token_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "token_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<TokenStatusDriveQuery>, QueryError>>());
-
-        let proof = self.drive.prove_multiple_state_transition_results(
-            &identity_requests,
-            &contract_ids,
-            &document_queries,
-            &vote_queries,
-            &token_balance_queries,
-            &token_info_queries,
-            &token_status_queries,
+        let proof = self.drive.grove_get_proved_path_query(
+            &path_query,
             None,
-            platform_version,
+            &mut vec![],
+            &platform_version.drive,
         )?;
 
-        let response = GetProofsResponseV0 {
-            result: Some(get_proofs_response_v0::Result::Proof(
-                self.response_proof_v0(platform_state, proof),
-            )),
+        let response = GetProofsResponse {
+            proof: Some(self.response_proof_v0(platform_state, proof)),
             metadata: Some(self.response_metadata_v0(platform_state)),
         };
 
@@ -506,33 +329,26 @@ impl<C> Platform<C> {
 
 fn create_token_historical_document_query(
     token_transition: &TokenTransition,
-    token_config: &TokenConfiguration,
     owner_id: Identifier,
     platform_version: &PlatformVersion,
 ) -> Result<PathQuery, Error> {
     let token_history_contract =
         load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
 
-    let Some(token_event) = token_transition.associated_token_event(token_config, owner_id)? else {
-        unreachable!("verify_token_historical_event must be called only for token transitions that have an associated token event");
-    };
-
-    let token_id = token_transition.token_id();
-    let owner_nonce = token_transition.base().identity_contract_nonce();
-
     let query = SingleDocumentDriveQuery {
         contract_id: token_history_contract.id().into_buffer(),
-        document_type_name: token_event.associated_document_type_name().to_string(),
+        document_type_name: token_transition.historical_document_type_name().to_string(),
         document_type_keeps_history: false,
-        document_id: token_event
-            .associated_document_id(token_id, owner_id, owner_nonce)
+        document_id: token_transition
+            .historical_document_id(owner_id)
             .to_buffer(),
         block_time_ms: None, //None because we want latest
         contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
     };
 
-    let token_history_document_type = token_history_contract
-        .document_type_for_name(token_event.associated_document_type_name())?;
+    query
+        .construct_path_query(platform_version)
+        .map_err(Error::Drive)
 }
 
 #[cfg(test)]

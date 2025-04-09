@@ -1,11 +1,9 @@
-use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
-use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;

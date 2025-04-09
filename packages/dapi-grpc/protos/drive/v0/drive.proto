@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package org.dash.platform.drive.v0;
 
-import "platform.proto";
+import "platform/v0/platform.proto";
 
 service DriveInternal {
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);

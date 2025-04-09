@@ -15,8 +15,8 @@ var jspb = require('google-protobuf');
 var goog = jspb;
 const proto = {};
 
-var platform_pb = require('./platform_pb.js');
-goog.object.extend(proto, platform_pb);
+var platform_v0_platform_pb = require('../../../platform/v0/web/platform_pb.js');
+goog.object.extend(proto, platform_v0_platform_pb);
 goog.exportSymbol('proto.org.dash.platform.drive.v0.GetProofsRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.drive.v0.GetProofsResponse', null, { proto });
 /**
@@ -247,8 +247,8 @@ proto.org.dash.platform.drive.v0.GetProofsResponse.prototype.toObject = function
  */
 proto.org.dash.platform.drive.v0.GetProofsResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    proof: (f = msg.getProof()) && platform_pb.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && platform_pb.ResponseMetadata.toObject(includeInstance, f)
+    proof: (f = msg.getProof()) && platform_v0_platform_pb.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && platform_v0_platform_pb.ResponseMetadata.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -286,13 +286,13 @@ proto.org.dash.platform.drive.v0.GetProofsResponse.deserializeBinaryFromReader =
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new platform_pb.Proof;
-      reader.readMessage(value,platform_pb.Proof.deserializeBinaryFromReader);
+      var value = new platform_v0_platform_pb.Proof;
+      reader.readMessage(value,platform_v0_platform_pb.Proof.deserializeBinaryFromReader);
       msg.setProof(value);
       break;
     case 2:
-      var value = new platform_pb.ResponseMetadata;
-      reader.readMessage(value,platform_pb.ResponseMetadata.deserializeBinaryFromReader);
+      var value = new platform_v0_platform_pb.ResponseMetadata;
+      reader.readMessage(value,platform_v0_platform_pb.ResponseMetadata.deserializeBinaryFromReader);
       msg.setMetadata(value);
       break;
     default:
@@ -329,7 +329,7 @@ proto.org.dash.platform.drive.v0.GetProofsResponse.serializeBinaryToWriter = fun
     writer.writeMessage(
       1,
       f,
-      platform_pb.Proof.serializeBinaryToWriter
+      platform_v0_platform_pb.Proof.serializeBinaryToWriter
     );
   }
   f = message.getMetadata();
@@ -337,7 +337,7 @@ proto.org.dash.platform.drive.v0.GetProofsResponse.serializeBinaryToWriter = fun
     writer.writeMessage(
       2,
       f,
-      platform_pb.ResponseMetadata.serializeBinaryToWriter
+      platform_v0_platform_pb.ResponseMetadata.serializeBinaryToWriter
     );
   }
 };
@@ -349,7 +349,7 @@ proto.org.dash.platform.drive.v0.GetProofsResponse.serializeBinaryToWriter = fun
  */
 proto.org.dash.platform.drive.v0.GetProofsResponse.prototype.getProof = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
-    jspb.Message.getWrapperField(this, platform_pb.Proof, 1));
+    jspb.Message.getWrapperField(this, platform_v0_platform_pb.Proof, 1));
 };
 
 
@@ -386,7 +386,7 @@ proto.org.dash.platform.drive.v0.GetProofsResponse.prototype.hasProof = function
  */
 proto.org.dash.platform.drive.v0.GetProofsResponse.prototype.getMetadata = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
-    jspb.Message.getWrapperField(this, platform_pb.ResponseMetadata, 2));
+    jspb.Message.getWrapperField(this, platform_v0_platform_pb.ResponseMetadata, 2));
 };
 
 
