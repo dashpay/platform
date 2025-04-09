@@ -224,8 +224,17 @@ impl<C> Platform<C> {
             emergency_action_rules: ChangeControlRulesV0::default().into(),
             main_control_group: None,
             main_control_group_can_be_modified: Default::default(),
-            description: Some("some token description".to_string()),
+            description: Some("Some token description".to_string()),
         });
+
+        token_configuration.conventions.localizations.insert(
+            "en".to_string(),
+            TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                should_capitalize,
+                singular_form: "cat".to_string(),
+                plural_form: "cats".to_string(),
+            }),
+        );
 
         let tokens = [
             (0, token_configuration.clone()),
@@ -249,8 +258,8 @@ impl<C> Platform<C> {
             updated_at_epoch: None,
             groups,
             tokens,
-            keywords: vec!["key1".into(), "key2".into()],
-            description: Some("some contract description".to_string()),
+            keywords: vec!["cat".into(), "white".into()],
+            description: Some("Some contract description".to_string()),
         });
 
         self.drive.apply_contract(
