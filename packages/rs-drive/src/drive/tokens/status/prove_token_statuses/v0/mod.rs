@@ -95,6 +95,7 @@ mod tests {
                 ),
             ]),
             keywords: Vec::new(),
+            description: None,
         });
 
         let token_id_1 = contract.token_id(0).expect("expected token at position 0");

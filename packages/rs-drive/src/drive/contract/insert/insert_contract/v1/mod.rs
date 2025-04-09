@@ -319,6 +319,18 @@ impl Drive {
             )?);
         }
 
+        if let Some(description) = contract.description() {
+            batch_operations.extend(self.add_new_contract_description_operations(
+                contract.id(),
+                contract.owner_id(),
+                description,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
         Ok(batch_operations)
     }
 }

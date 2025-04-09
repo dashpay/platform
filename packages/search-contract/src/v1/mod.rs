@@ -2,11 +2,27 @@ use crate::Error;
 use serde_json::Value;
 
 pub mod document_types {
-    pub mod contract {
-        pub const NAME: &str = "contract";
+    pub mod contract_keywords {
+        pub const NAME: &str = "contractKeywords";
 
         pub mod properties {
             pub const KEY_INDEX: &str = "byKeyword";
+        }
+    }
+
+    pub mod short_description {
+        pub const NAME: &str = "shortDescription";
+
+        pub mod properties {
+            pub const KEY_INDEX: &str = "byContractId";
+        }
+    }
+
+    pub mod full_description {
+        pub const NAME: &str = "fullDescription";
+
+        pub mod properties {
+            pub const KEY_INDEX: &str = "byContractId";
         }
     }
 }

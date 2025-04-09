@@ -149,6 +149,7 @@ mod tests {
                 ),
             ]),
             keywords: Vec::new(),
+            description: None,
         });
 
         drive
@@ -318,6 +319,7 @@ mod tests {
             )]),
             tokens: BTreeMap::new(),
             keywords: Vec::new(),
+            description: None,
         });
 
         drive
@@ -412,6 +414,7 @@ mod tests {
             )]),
             tokens: BTreeMap::new(),
             keywords: Vec::new(),
+            description: None,
         });
 
         drive

@@ -234,6 +234,16 @@ impl DataContractV1Getters for DataContractV1 {
     fn keywords_mut(&mut self) -> Option<&mut Vec<String>> {
         Some(&mut self.keywords)
     }
+
+    /// Returns the description of the contract.
+    fn description(&self) -> Option<&String> {
+        self.description.as_ref()
+    }
+
+    /// Returns a mutable reference to the description of the contract.
+    fn description_mut(&mut self) -> Option<&mut String> {
+        self.description.as_mut()
+    }
 }
 
 impl DataContractV1Setters for DataContractV1 {
@@ -286,5 +296,10 @@ impl DataContractV1Setters for DataContractV1 {
     /// Sets the keywords for the contract.
     fn set_keywords(&mut self, keywords: Vec<String>) {
         self.keywords = keywords;
+    }
+
+    /// Sets the description for the contract.
+    fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
     }
 }

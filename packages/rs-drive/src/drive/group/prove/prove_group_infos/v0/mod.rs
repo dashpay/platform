@@ -135,6 +135,7 @@ mod tests {
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
             )]),
             keywords: Vec::new(),
+            description: None,
         });
 
         let contract_id = contract.id();
@@ -280,6 +281,7 @@ mod tests {
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
             )]),
             keywords: Vec::new(),
+            description: None,
         });
 
         let contract_id = contract.id();

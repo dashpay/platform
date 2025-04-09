@@ -5,7 +5,9 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use dpp::consensus::basic::data_contract::{DuplicateKeywordsError, InvalidKeywordLengthError};
+use dpp::consensus::basic::data_contract::{
+    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
+};
 use dpp::consensus::basic::data_contract::{
     InvalidDataContractIdError, InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
     NonContiguousContractTokenPositionsError,
@@ -221,6 +223,27 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                             self.data_contract().id().to_string(Encoding::Base58),
                             keyword.to_string(),
                         )),
+                    )],
+                ));
+            }
+        }
+
+        // Validate the description is between 3 and 100 characters
+        if let Some(description) = self.data_contract().description() {
+            if !(description.len() >= 3 && description.len() <= 100) {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![ConsensusError::BasicError(
+                        BasicError::InvalidDescriptionLengthError(
+                            InvalidDescriptionLengthError::new(
+                                self.data_contract().id().to_string(Encoding::Base58),
+                                description.to_string(),
+                            ),
+                        ),
                     )],
                 ));
             }
