@@ -37,7 +37,8 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetStatusRequest, GetStatusResponse, GetTokenPreProgrammedDistributionsRequest,
+    GetStatusRequest, GetStatusResponse, GetTokenDirectPurchasePricesRequest,
+    GetTokenDirectPurchasePricesResponse, GetTokenPreProgrammedDistributionsRequest,
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
@@ -747,6 +748,13 @@ impl PlatformService for QueryService {
             "get_group_action_signers",
         )
         .await
+    }
+
+    async fn get_token_direct_purchase_prices(
+        &self,
+        request: Request<GetTokenDirectPurchasePricesRequest>,
+    ) -> Result<Response<GetTokenDirectPurchasePricesResponse>, Status> {
+        todo!()
     }
 }
 

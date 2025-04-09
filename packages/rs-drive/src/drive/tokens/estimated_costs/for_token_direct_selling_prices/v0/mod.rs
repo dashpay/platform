@@ -5,7 +5,7 @@ use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
 
-use crate::drive::tokens::paths::{token_direct_selling_root_path, tokens_root_path};
+use crate::drive::tokens::paths::{token_direct_purchase_root_path, tokens_root_path};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
@@ -89,7 +89,7 @@ impl Drive {
         );
 
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_path(token_direct_selling_root_path()),
+            KeyInfoPath::from_known_path(token_direct_purchase_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(10, false), // we can estimate 10 levels deep

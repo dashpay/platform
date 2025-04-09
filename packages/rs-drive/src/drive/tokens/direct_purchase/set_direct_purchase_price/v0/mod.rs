@@ -1,4 +1,4 @@
-use crate::drive::tokens::paths::token_direct_selling_root_path_vec;
+use crate::drive::tokens::paths::token_direct_purchase_root_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -28,7 +28,7 @@ impl Drive {
             )?;
         }
 
-        let direct_selling_path = token_direct_selling_root_path_vec();
+        let direct_selling_path = token_direct_purchase_root_path_vec();
 
         if let Some(price) = price {
             let serialized_price =

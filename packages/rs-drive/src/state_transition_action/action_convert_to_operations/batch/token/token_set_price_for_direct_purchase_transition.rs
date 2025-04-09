@@ -52,7 +52,7 @@ impl DriveHighLevelBatchOperationConverter for TokenSetPriceForDirectPurchaseTra
                     ..
                 }) = self.base().store_in_group()
                 {
-                    let event = TokenEvent::SetPriceForDirectPurchase(
+                    let event = TokenEvent::ChangePriceForDirectPurchase(
                         self.price().cloned(),
                         self.public_note().cloned(),
                     );
@@ -87,7 +87,7 @@ impl DriveHighLevelBatchOperationConverter for TokenSetPriceForDirectPurchaseTra
                             token_id: self.token_id(),
                             owner_id,
                             nonce: identity_contract_nonce,
-                            event: TokenEvent::SetPriceForDirectPurchase(
+                            event: TokenEvent::ChangePriceForDirectPurchase(
                                 self.price().cloned(),
                                 self.public_note_owned(),
                             ),

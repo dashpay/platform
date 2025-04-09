@@ -1,4 +1,4 @@
-use crate::drive::tokens::paths::token_direct_selling_root_path_vec;
+use crate::drive::tokens::paths::token_direct_purchase_root_path_vec;
 use crate::drive::Drive;
 use crate::query::Query;
 use grovedb::{PathQuery, SizedQuery};
@@ -6,7 +6,7 @@ use grovedb::{PathQuery, SizedQuery};
 impl Drive {
     /// The query getting many tokens direct selling price
     pub fn token_direct_purchase_prices_query(token_ids: &[[u8; 32]]) -> PathQuery {
-        let tokens_root = token_direct_selling_root_path_vec();
+        let tokens_root = token_direct_purchase_root_path_vec();
 
         let mut query = Query::new();
 
@@ -22,7 +22,7 @@ impl Drive {
 
     /// The query getting a token direct selling price
     pub fn token_direct_purchase_price_query(token_id: [u8; 32]) -> PathQuery {
-        let tokens_root = token_direct_selling_root_path_vec();
+        let tokens_root = token_direct_purchase_root_path_vec();
 
         let mut query = Query::new();
 

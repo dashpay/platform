@@ -129,7 +129,7 @@ impl TokenTransitionAction {
                 )
             }
             TokenTransitionAction::SetPriceForDirectPurchaseAction(set_price_action) => {
-                TokenEvent::SetPriceForDirectPurchase(
+                TokenEvent::ChangePriceForDirectPurchase(
                     set_price_action.price().cloned(),
                     set_price_action.public_note().cloned(),
                 )

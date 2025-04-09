@@ -15,57 +15,6 @@ use crate::state_transition_action::batch::BatchedTransitionAction;
 
 /// Implement methods to transform a `TokenDirectPurchaseTransition` into a `TokenDirectPurchaseTransitionAction`.
 impl TokenDirectPurchaseTransitionAction {
-    /// Transform a `TokenDirectPurchaseTransition` into a `TokenDirectPurchaseTransitionAction` using the provided data contract lookup.
-    ///
-    /// # Arguments
-    ///
-    /// * `drive` - A reference to the `Drive` instance used for accessing the system.
-    /// * `owner_id` - The identifier of the owner initiating the direct_purchase transition.
-    /// * `transaction` - The transaction argument used for state changes.
-    /// * `value` - A `TokenDirectPurchaseTransition` instance.
-    /// * `approximate_without_state_for_costs` - A flag indicating whether to approximate state costs without full state.
-    /// * `drive_operations` - A mutable reference to the vector of low-level operations that need to be performed.
-    /// * `get_data_contract` - A closure that fetches the `DataContractFetchInfo` given a contract ID.
-    /// * `platform_version` - The platform version for the context in which the transition is being executed.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(ConsensusValidationResult<BatchedTransitionAction>, FeeResult), Error>` - A `TokenDirectPurchaseTransitionAction` if successful, otherwise `ProtocolError`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_from_token_direct_purchase_transition_with_contract_lookup(
-        drive: &Drive,
-        owner_id: Identifier,
-        value: TokenDirectPurchaseTransition,
-        approximate_without_state_for_costs: bool,
-        transaction: TransactionArg,
-        block_info: &BlockInfo,
-        user_fee_increase: UserFeeIncrease,
-        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-        platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            ConsensusValidationResult<BatchedTransitionAction>,
-            FeeResult,
-        ),
-        Error,
-    > {
-        match value {
-            TokenDirectPurchaseTransition::V0(v0) => {
-                TokenDirectPurchaseTransitionActionV0::try_from_token_direct_purchase_transition_with_contract_lookup(
-                    drive,
-                    owner_id,
-                    v0,
-                    approximate_without_state_for_costs,
-                    transaction,
-                    block_info,
-                    user_fee_increase,
-                    get_data_contract,
-                    platform_version,
-                )
-            }
-        }
-    }
-
     /// Transform a borrowed `TokenDirectPurchaseTransition` into a `TokenDirectPurchaseTransitionAction` using the provided data contract lookup.
     ///
     /// # Arguments

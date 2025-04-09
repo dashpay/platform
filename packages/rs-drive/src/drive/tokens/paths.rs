@@ -88,7 +88,7 @@ pub fn token_balances_root_path_vec() -> Vec<Vec<u8>> {
 }
 
 /// The root path of token direct selling price tree
-pub fn token_direct_selling_root_path() -> [&'static [u8]; 2] {
+pub fn token_direct_purchase_root_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Tokens),
         &[TOKEN_DIRECT_SELL_PRICE_KEY],
@@ -96,7 +96,7 @@ pub fn token_direct_selling_root_path() -> [&'static [u8]; 2] {
 }
 
 /// The root path of token direct selling price tree
-pub fn token_direct_selling_root_path_vec() -> Vec<Vec<u8>> {
+pub fn token_direct_purchase_root_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Tokens as u8],
         vec![TOKEN_DIRECT_SELL_PRICE_KEY],

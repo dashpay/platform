@@ -58,7 +58,7 @@ pub enum TokenEvent {
     ),
     EmergencyAction(TokenEmergencyAction, TokenEventPublicNote),
     ConfigUpdate(TokenConfigurationChangeItem, TokenEventPublicNote),
-    SetPriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote),
+    ChangePriceForDirectPurchase(Option<TokenPricingSchedule>, TokenEventPublicNote),
     DirectPurchase(TokenAmount, Credits),
 }
 
@@ -75,7 +75,7 @@ impl TokenEvent {
             TokenEvent::EmergencyAction(..) => "emergencyAction",
             TokenEvent::ConfigUpdate(..) => "configUpdate",
             TokenEvent::DirectPurchase(..) => "directPurchase",
-            TokenEvent::SetPriceForDirectPurchase(..) => "setPriceForDirectPurchase",
+            TokenEvent::ChangePriceForDirectPurchase(..) => "directPricing",
         }
     }
 
@@ -253,7 +253,7 @@ impl TokenEvent {
                 }
                 properties
             }
-            TokenEvent::SetPriceForDirectPurchase(price, note) => {
+            TokenEvent::ChangePriceForDirectPurchase(price, note) => {
                 let mut properties = BTreeMap::from([("tokenId".to_string(), token_id.into())]);
 
                 if let Some(price_schedule) = price {

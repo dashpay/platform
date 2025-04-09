@@ -197,7 +197,7 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
-                                        TokenEvent::SetPriceForDirectPurchase(pricing_schedule, public_note) => {
+                                        TokenEvent::ChangePriceForDirectPurchase(pricing_schedule, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::UpdatePrice(UpdateDirectPurchasePriceEvent {
                                                     price: pricing_schedule.map(|pricing_schedule| {

@@ -481,7 +481,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                 direct_purchase.total_agreed_price(),
             ),
             TokenTransition::SetPriceForDirectPurchase(set_price_transition) => {
-                TokenEvent::SetPriceForDirectPurchase(
+                TokenEvent::ChangePriceForDirectPurchase(
                     set_price_transition.price().cloned(),
                     set_price_transition.public_note().cloned(),
                 )
