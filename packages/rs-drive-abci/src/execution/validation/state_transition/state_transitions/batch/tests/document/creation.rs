@@ -2599,7 +2599,7 @@ mod creation_tests {
             format!(
                 "Document Creation on {}:{} is not allowed because of the document type's creation restriction mode No Creation Allowed",
                 search_contract.id().to_string(Encoding::Base58),
-                "contract"
+                "contractKeywords"
             ),
             "Mismatch in error message"
         );
