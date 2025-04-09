@@ -107,6 +107,13 @@ fn default_token_distribution_rules() -> TokenDistributionRules {
             changing_admin_action_takers_to_no_one_allowed: false,
             self_changing_admin_action_takers_allowed: false,
         }),
+        change_direct_purchase_pricing_rules: ChangeControlRules::V0(ChangeControlRulesV0 {
+            authorized_to_make_change: AuthorizedActionTakers::NoOne,
+            admin_action_takers: AuthorizedActionTakers::NoOne,
+            changing_authorized_action_takers_to_no_one_allowed: false,
+            changing_admin_action_takers_to_no_one_allowed: false,
+            self_changing_admin_action_takers_allowed: false,
+        }),
     })
 }
 
@@ -218,6 +225,15 @@ impl TokenConfigurationV0 {
                     self_changing_admin_action_takers_allowed: false,
                 }
                 .into(),
+                change_direct_purchase_pricing_rules: ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::NoOne,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ),
             }),
             manual_minting_rules: ChangeControlRulesV0 {
                 authorized_to_make_change: AuthorizedActionTakers::NoOne,

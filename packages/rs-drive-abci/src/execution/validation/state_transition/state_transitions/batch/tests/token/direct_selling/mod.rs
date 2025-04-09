@@ -1,5 +1,8 @@
+use super::*;
+
 mod token_selling_tests {
     use super::*;
+    use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     #[test]
     fn test_successful_direct_purchase_single_price() {
         let platform_version = PlatformVersion::latest();
@@ -23,14 +26,17 @@ mod token_selling_tests {
             platform_version,
         );
 
+        let platform_state = platform.state.load();
+
         // Seller sets single price
         let set_price_transition =
-            BatchTransition::new_token_set_price_for_direct_purchase_transition(
+            BatchTransition::new_token_change_direct_purchase_price_transition(
                 token_id,
                 seller.id(),
                 contract.id(),
                 0,
-                Some(TokenPricingSchedule::SinglePrice(500)), // Price per token
+                Some(TokenPricingSchedule::SinglePrice(dash_to_credits!(1))), // Price per token
+                None,
                 None,
                 &seller_key,
                 2,
@@ -43,10 +49,10 @@ mod token_selling_tests {
             )
             .unwrap();
 
-        process_state_transition(
+        process_test_state_transition(
             &mut platform,
             set_price_transition,
-            &platform.state.load(),
+            &platform_state,
             platform_version,
         );
 
@@ -56,8 +62,8 @@ mod token_selling_tests {
             buyer.id(),
             contract.id(),
             0,
-            10,  // Buying 10 tokens
-            500, // Agreed price per token
+            10, // Buying 10 tokens
+            500,
             &buyer_key,
             2,
             0,
@@ -69,10 +75,10 @@ mod token_selling_tests {
         )
         .unwrap();
 
-        process_state_transition(
+        process_test_state_transition(
             &mut platform,
             purchase_transition,
-            &platform.state.load(),
+            &platform_state,
             platform_version,
         );
 
@@ -91,7 +97,7 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, dash_to_credits!(5.0)); // 10.0 - 5.0 spent (10 tokens * 500 credits)
+        assert_eq!(buyer_credit_balance, Some(dash_to_credits!(9.0))); // 10.0 - 1.0 spent (10 tokens * 500 credits)
     }
 
     #[test]
@@ -117,13 +123,17 @@ mod token_selling_tests {
             platform_version,
         );
 
+        let platform_state = platform.state.load();
+
+        // Seller sets single price
         let set_price_transition =
-            BatchTransition::new_token_set_price_for_direct_purchase_transition(
+            BatchTransition::new_token_change_direct_purchase_price_transition(
                 token_id,
                 seller.id(),
                 contract.id(),
                 0,
-                Some(TokenPricingSchedule::SinglePrice(5000)), // High price
+                Some(TokenPricingSchedule::SinglePrice(5000)), // Price per token
+                None,
                 None,
                 &seller_key,
                 2,
@@ -136,10 +146,10 @@ mod token_selling_tests {
             )
             .unwrap();
 
-        process_state_transition(
+        process_test_state_transition(
             &mut platform,
             set_price_transition,
-            &platform.state.load(),
+            &platform_state,
             platform_version,
         );
 
@@ -161,17 +171,17 @@ mod token_selling_tests {
         )
         .unwrap();
 
-        let processing_result = process_state_transition(
+        let processing_result = process_test_state_transition(
             &mut platform,
             purchase_transition,
-            &platform.state.load(),
+            &platform_state,
             platform_version,
         );
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::BasicError(BasicError::InsufficientBalanceError(_)),
+                ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_)),
                 _
             )]
         );

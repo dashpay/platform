@@ -40,7 +40,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -496,6 +496,45 @@ impl Drive {
                                     Ok((
                                         root_hash,
                                         VerifiedTokenIdentityInfo(owner_id, identity_token_info),
+                                    ))
+                                }
+                            }
+                            TokenTransition::DirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_purchase_history() {
+                                    historical_query()
+                                } else {
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_balance_for_identity_id(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            owner_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
+                                    };
+                                    Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                                }
+                            }
+                            TokenTransition::SetPriceForDirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_pricing_history() {
+                                    historical_query()
+                                } else {
+                                    let (root_hash, token_pricing_schedule) =
+                                        Drive::verify_token_direct_selling_price(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            false,
+                                            platform_version,
+                                        )?;
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenPricingSchedule(
+                                            owner_id,
+                                            token_pricing_schedule,
+                                        ),
                                     ))
                                 }
                             }

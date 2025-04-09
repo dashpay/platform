@@ -131,7 +131,6 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
-    use crate::platform_types::platform::Platform;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -2471,15 +2470,15 @@ pub(in crate::execution) mod tests {
         basic_token_contract
     }
 
-    pub(in crate::execution) fn process_state_transition<S: PlatformSerializable>(
+    pub(in crate::execution) fn process_test_state_transition<S: PlatformSerializable>(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         state_transition: S,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> StateTransitionsProcessingResult {
-        let serialized_state_transition = state_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        let Ok(serialized_state_transition) = state_transition.serialize_to_bytes() else {
+            panic!("expected documents batch serialized state transition")
+        };
 
         let transaction = platform.drive.grove.start_transaction();
 

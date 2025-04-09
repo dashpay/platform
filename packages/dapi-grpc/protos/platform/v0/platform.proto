@@ -1664,6 +1664,23 @@ message GetGroupActionsResponse {
       optional string public_note = 2; // Public note
     }
 
+    // UpdatePrice event
+    message UpdateDirectPurchasePriceEvent {
+      message PriceForQuantity {
+        uint64 quantity = 1;
+        uint64 price = 2;
+      }
+
+      message PricingSchedule {
+        repeated PriceForQuantity price_for_quantity = 1;
+      }
+      oneof price {
+        uint64 fixed_price = 1;
+        PricingSchedule variable_price = 2;
+      }
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -1702,7 +1719,8 @@ message GetGroupActionsResponse {
         UnfreezeEvent unfreeze = 4;     // Unfreeze event details
         DestroyFrozenFundsEvent destroy_frozen_funds = 5; // Destroy frozen funds
         EmergencyActionEvent emergency_action = 6; // Emergency action details
-        TokenConfigUpdateEvent  token_config_update = 7; // Token configuration update details
+        TokenConfigUpdateEvent token_config_update = 7; // Token configuration update details
+        UpdateDirectPurchasePriceEvent update_price = 8; // Updating the token direct selling price
       }
     }
 

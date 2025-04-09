@@ -27,7 +27,7 @@ use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransi
 use std::iter::Map;
 use std::slice::Iter;
 
-use crate::state_transition::batch_transition::BatchTransitionV1;
+use crate::state_transition::batch_transition::{BatchTransitionV1, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::{TokenClaimTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenTransferTransition, TokenUnfreezeTransition};
 #[cfg(feature = "state-transition-signing")]
@@ -71,12 +71,14 @@ use crate::state_transition::batch_transition::token_claim_transition::TokenClai
 use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransitionV0;
+use crate::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
@@ -87,6 +89,7 @@ use crate::tokens::emergency_action::TokenEmergencyAction;
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 #[cfg(feature = "state-transition-signing")]
 use crate::tokens::token_payment_info::TokenPaymentInfo;
+use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
     type IterType<'a>
@@ -1037,6 +1040,126 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
             identity_public_key,
             signer,
             Some(|_, _| Ok(SecurityLevel::CRITICAL)),
+        )?;
+        Ok(state_transition)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn new_token_direct_purchase_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        agreed_total_cost: Credits,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _config_update_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let claim_transition = TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce,
+                token_contract_position,
+                data_contract_id,
+                token_id,
+                using_group_info: None,
+            }),
+            token_count: amount,
+            total_agreed_price: agreed_total_cost,
+        });
+
+        let batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(claim_transition.into())],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = batch_transition.into();
+        state_transition.sign_external(
+            identity_public_key,
+            signer,
+            Some(|_, _| Ok(SecurityLevel::HIGH)),
+        )?;
+        Ok(state_transition)
+    }
+
+    fn new_token_change_direct_purchase_price_transition<S: Signer>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        token_pricing_schedule: Option<TokenPricingSchedule>,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        _platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        _config_update_feature_version: Option<FeatureVersion>,
+        _base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let mut change_direct_purchase_price_transition =
+            TokenSetPriceForDirectPurchaseTransition::V0(
+                TokenSetPriceForDirectPurchaseTransitionV0 {
+                    base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                        identity_contract_nonce,
+                        token_contract_position,
+                        data_contract_id,
+                        token_id,
+                        using_group_info: None,
+                    }),
+                    price: token_pricing_schedule,
+                    public_note,
+                },
+            );
+
+        if let Some(using_group_info_status) = using_group_info {
+            match using_group_info_status {
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
+                    group_contract_position,
+                ) => {
+                    let action_id =
+                        change_direct_purchase_price_transition.calculate_action_id(owner_id);
+                    change_direct_purchase_price_transition
+                        .base_mut()
+                        .set_using_group_info(Some(GroupStateTransitionInfo {
+                            group_contract_position,
+                            action_id,
+                            action_is_proposer: true,
+                        }))
+                }
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info) => {
+                    change_direct_purchase_price_transition
+                        .base_mut()
+                        .set_using_group_info(Some(info))
+                }
+            }
+        }
+
+        let batch_transition: BatchTransition = BatchTransitionV1 {
+            owner_id,
+            transitions: vec![BatchedTransition::Token(
+                change_direct_purchase_price_transition.into(),
+            )],
+            user_fee_increase,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut state_transition: StateTransition = batch_transition.into();
+        state_transition.sign_external(
+            identity_public_key,
+            signer,
+            Some(|_, _| Ok(SecurityLevel::HIGH)),
         )?;
         Ok(state_transition)
     }

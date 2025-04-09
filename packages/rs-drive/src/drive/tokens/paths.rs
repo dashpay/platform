@@ -15,6 +15,8 @@ pub const TOKEN_STATUS_INFO_KEY: u8 = 64;
 pub const TOKEN_IDENTITY_INFO_KEY: u8 = 192;
 /// Key for accessing token balances tree.
 pub const TOKEN_BALANCES_KEY: u8 = 128;
+/// Key that sets the pricing schedule for directly buying the token.
+pub const TOKEN_DIRECT_SELL_PRICE_KEY: u8 = 92;
 
 /// Key for token distributions sub level
 pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
@@ -83,6 +85,22 @@ pub fn token_balances_root_path() -> [&'static [u8]; 2] {
 /// The root path of token balances tree, this refers to a big sum tree
 pub fn token_balances_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Tokens as u8], vec![TOKEN_BALANCES_KEY]]
+}
+
+/// The root path of token direct selling price tree
+pub fn token_direct_selling_root_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_DIRECT_SELL_PRICE_KEY],
+    ]
+}
+
+/// The root path of token direct selling price tree
+pub fn token_direct_selling_root_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_DIRECT_SELL_PRICE_KEY],
+    ]
 }
 
 /// Returns the root path for token identity information as a fixed-size array of byte slices.

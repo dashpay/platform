@@ -299,12 +299,10 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 Ok(batch_operations)
             }
             TokenOperationType::TokenSetPriceForDirectPurchase { token_id, price } => {
-                let batch_operations = drive.set_token_direct_purchase_price_operations(
-                    token_id,
+                let batch_operations = drive.token_set_direct_purchase_price_operations(
+                    token_id.to_buffer(),
                     price,
-                    block_info,
                     estimated_costs_only_with_layer_info,
-                    transaction,
                     platform_version,
                 )?;
                 Ok(batch_operations)
