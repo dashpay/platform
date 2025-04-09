@@ -230,7 +230,7 @@ impl<C> Platform<C> {
         token_configuration.conventions.localizations.insert(
             "en".to_string(),
             TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
-                should_capitalize,
+                should_capitalize: false,
                 singular_form: "cat".to_string(),
                 plural_form: "cats".to_string(),
             }),
