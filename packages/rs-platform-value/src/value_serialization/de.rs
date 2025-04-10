@@ -471,7 +471,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
 
 struct ArrayDeserializer<'a>(slice::Iter<'a, Value>);
 
-impl<'a, 'de> de::SeqAccess<'de> for ArrayDeserializer<'a> {
+impl<'de> de::SeqAccess<'de> for ArrayDeserializer<'_> {
     type Error = Error;
 
     fn next_element_seed<U: de::DeserializeSeed<'de>>(
@@ -487,7 +487,7 @@ impl<'a, 'de> de::SeqAccess<'de> for ArrayDeserializer<'a> {
 
 struct ValueMapDeserializer<'a>(Peekable<slice::Iter<'a, (Value, Value)>>);
 
-impl<'a, 'de> de::MapAccess<'de> for ValueMapDeserializer<'a> {
+impl<'de> de::MapAccess<'de> for ValueMapDeserializer<'_> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>

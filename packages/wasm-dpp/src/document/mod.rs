@@ -127,12 +127,12 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: Option<u64>) {
-        self.0.set_revision(revision.map(|r| r as u64));
+        self.0.set_revision(revision);
     }
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> Option<u64> {
-        self.0.revision().map(|r| r)
+        self.0.revision()
     }
 
     #[wasm_bindgen(js_name=setData)]
@@ -342,8 +342,8 @@ impl DocumentWasm {
     }
 }
 
-/// document's dynamic data, regardless they are identifiers or binary, they should
-/// be stored as arrays of int
+// /// document's dynamic data, regardless they are identifiers or binary, they should
+// /// be stored as arrays of int
 // pub(crate) fn document_data_to_bytes(
 //     document: &mut Document,
 //     contract: &DataContract,

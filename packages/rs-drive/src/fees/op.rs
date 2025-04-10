@@ -597,7 +597,7 @@ impl DriveCost for OperationCost {
                 .checked_mul(epoch_cost_for_processing_credit_per_byte)
                 .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         // not accessible
-        let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
+        let storage_loaded_bytes_cost = { *storage_loaded_bytes }
             .checked_mul(fee_version.storage.storage_load_credit_per_byte)
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
 

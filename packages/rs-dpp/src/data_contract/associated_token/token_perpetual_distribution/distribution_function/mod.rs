@@ -85,6 +85,8 @@ pub enum DistributionFunction {
     /// f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
     /// ```
     ///
+    /// For `x <= s`, `f(x) = n`
+    ///
     /// # Parameters
     /// - `step_count`: The number of periods between each step.
     /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.

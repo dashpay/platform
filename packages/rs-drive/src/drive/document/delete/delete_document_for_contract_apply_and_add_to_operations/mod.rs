@@ -28,6 +28,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn delete_document_for_contract_apply_and_add_to_operations(
         &self,
         document_id: Identifier,

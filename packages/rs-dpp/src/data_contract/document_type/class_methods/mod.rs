@@ -34,6 +34,6 @@ fn consensus_or_protocol_value_error(platform_value_error: platform_value::Error
     }
     #[cfg(not(feature = "validation"))]
     {
-        ProtocolError::ValueError(platform_value_error.into())
+        ProtocolError::ValueError(platform_value_error)
     }
 }

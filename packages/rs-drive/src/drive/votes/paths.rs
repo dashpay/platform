@@ -1,3 +1,14 @@
+/// The votes tree structure looks like this
+///
+/// ```text
+/// Votes
+///
+/// |- End date Queries [key: "e"]
+/// |- Decisions [key: "d"]
+/// |- Contested Resource [key: "c"]
+///    |- Active polls [key: "p"]
+///    |- Identifier Votes Query [key: "i"]
+/// ```
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
     ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
@@ -12,19 +23,6 @@ use dpp::data_contract::document_type::IndexProperty;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use platform_version::version::PlatformVersion;
-
-/// The votes tree structure looks like this
-///
-/// ```text
-/// Votes
-///
-/// |- End date Queries [key: "e"]
-/// |- Decisions [key: "d"]
-/// |- Contested Resource [key: "c"]
-///    |- Active polls [key: "p"]
-///    |- Identifier Votes Query [key: "i"]
-/// ```
-///
 
 /// A subtree made for polls to the network that represent decisions.
 pub const VOTE_DECISIONS_TREE_KEY: char = 'd';
@@ -89,6 +87,8 @@ pub trait VotePollPaths {
     fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error>;
 
     /// the last index path as a path vec and a key
+    // TODO: Use type alias or struct
+    #[allow(clippy::type_complexity)]
     fn last_index_path(
         &self,
         platform_version: &PlatformVersion,
@@ -203,7 +203,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
     }
 }
 
-impl<'a> VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'a> {
+impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
     fn contract_path(&self) -> [&[u8]; 4] {
         vote_contested_resource_active_polls_contract_tree_path(
             self.contract.as_ref().id_ref().as_slice(),

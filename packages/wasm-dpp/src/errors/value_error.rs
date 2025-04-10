@@ -26,6 +26,7 @@ impl PlatformValueErrorWasm {
     }
 
     #[wasm_bindgen(js_name=toString)]
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         format!("PlatformValueError: {}", self.message)
     }

@@ -43,7 +43,6 @@ pub trait ProposedBlockCountEx<K: Ord> {
     /// ## See also
     ///
     /// - [`ProposerBlockCounts`](crate::ProposerBlockCounts): The data structure holding the result of this operation.
-
     async fn fetch_proposed_blocks_by_range(
         sdk: &Sdk,
         epoch: Option<EpochIndex>,

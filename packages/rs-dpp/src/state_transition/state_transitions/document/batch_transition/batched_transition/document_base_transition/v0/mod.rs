@@ -46,7 +46,7 @@ pub struct DocumentBaseTransitionV0 {
     pub id: Identifier,
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(rename = "$identity-contract-nonce")
+        serde(rename = "$identityContractNonce")
     )]
     pub identity_contract_nonce: IdentityNonce,
     /// Name of document type found int the data contract associated with the `data_contract_id`
@@ -68,17 +68,11 @@ impl DocumentBaseTransitionV0 {
         identity_contract_nonce: IdentityNonce,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         Ok(DocumentBaseTransitionV0 {
-            id: Identifier::from(
-                map.remove_hash256_bytes(property_names::ID)
-                    .map_err(ProtocolError::ValueError)?,
-            ),
+            id: Identifier::from(map.remove_hash256_bytes(property_names::ID)?),
             identity_contract_nonce,
-            document_type_name: map
-                .remove_string(property_names::DOCUMENT_TYPE)
-                .map_err(ProtocolError::ValueError)?,
+            document_type_name: map.remove_string(property_names::DOCUMENT_TYPE)?,
             data_contract_id: Identifier::new(
-                map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
-                    .map_err(ProtocolError::ValueError)?
+                map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
                     .unwrap_or(data_contract.id().to_buffer()),
             ),
         })
@@ -94,7 +88,7 @@ pub trait DocumentTransitionObjectLike {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
-        Self: std::marker::Sized;
+        Self: Sized;
     #[cfg(feature = "state-transition-value-conversion")]
     /// Creates the document transition from Raw Object
     fn from_object(
@@ -102,14 +96,14 @@ pub trait DocumentTransitionObjectLike {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
-        Self: std::marker::Sized;
+        Self: Sized;
     #[cfg(feature = "state-transition-value-conversion")]
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
-        Self: std::marker::Sized;
+        Self: Sized;
 
     #[cfg(feature = "state-transition-value-conversion")]
     /// Object is an [`platform::Value`] instance that preserves the `Vec<u8>` representation

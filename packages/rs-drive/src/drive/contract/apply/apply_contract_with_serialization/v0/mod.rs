@@ -26,6 +26,7 @@ impl Drive {
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_contract_with_serialization_v0(
         &self,
         contract: &DataContract,
@@ -75,6 +76,7 @@ impl Drive {
     /// Gets the operations for applying a contract with it's serialization
     /// If the contract already exists, we get operations for an update
     /// Otherwise we get operations for an insert
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(super) fn apply_contract_with_serialization_operations_v0(
         &self,

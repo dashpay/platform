@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds a contract to storage.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::contract) fn add_contract_to_storage(
         &self,
         contract_element: Element,

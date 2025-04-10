@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV0Setters, DocumentTypeV1Getters,
+    DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
 };
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -7,19 +7,24 @@ use crate::data_contract::document_type::property::DocumentProperty;
 
 use platform_value::{Identifier, Value};
 
-use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::data_contract::TokenContractPosition;
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
+use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
+
+impl DocumentTypeV0MutGetters for DocumentTypeV1 {
+    fn schema_mut(&mut self) -> &mut Value {
+        &mut self.schema
+    }
+}
 
 impl DocumentTypeV0Getters for DocumentTypeV1 {
     fn name(&self) -> &String {
@@ -125,27 +130,27 @@ impl DocumentTypeV0Setters for DocumentTypeV1 {
 }
 
 impl DocumentTypeV1Getters for DocumentTypeV1 {
-    fn document_creation_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_creation_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_creation_token_cost()
     }
 
-    fn document_replacement_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_replacement_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_replacement_token_cost()
     }
 
-    fn document_deletion_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_deletion_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_deletion_token_cost()
     }
 
-    fn document_transfer_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_transfer_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_transfer_token_cost()
     }
 
-    fn document_update_price_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_update_price_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_price_update_token_cost()
     }
 
-    fn document_purchase_token_cost(&self) -> Option<(TokenContractPosition, TokenAmount)> {
+    fn document_purchase_token_cost(&self) -> Option<DocumentActionTokenCost> {
         self.token_costs.document_purchase_token_cost()
     }
 }

@@ -1,11 +1,14 @@
-use crate::consensus::basic::json_schema_error::json_schema_error_data::JsonSchemaErrorData;
+#[cfg(feature = "json-schema-validation")]
+use crate::consensus::basic::json_schema_error::error_data::JsonSchemaErrorData;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
+#[cfg(feature = "json-schema-validation")]
 use jsonschema::ValidationError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
+#[cfg(feature = "json-schema-validation")]
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
@@ -28,6 +31,7 @@ pub struct JsonSchemaError {
     property_name: String,
 }
 
+#[cfg(feature = "json-schema-validation")]
 impl<'a> From<ValidationError<'a>> for JsonSchemaError {
     fn from(validation_error: ValidationError<'a>) -> Self {
         let JsonSchemaErrorData {
@@ -48,6 +52,7 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
     }
 }
 
+#[cfg(feature = "json-schema-validation")]
 impl<'a> From<ValidationError<'a>> for ConsensusError {
     fn from(validation_error: ValidationError<'a>) -> Self {
         Self::BasicError(BasicError::JsonSchemaError(JsonSchemaError::from(

@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds token transaction history
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_token_transaction_history_operations_v0(
         &self,
         token_id: Identifier,
@@ -32,7 +33,6 @@ impl Drive {
         let document_type = event.associated_document_type(&contract)?;
 
         let document = event.build_historical_document_owned(
-            &contract,
             token_id,
             owner_id,
             owner_nonce,

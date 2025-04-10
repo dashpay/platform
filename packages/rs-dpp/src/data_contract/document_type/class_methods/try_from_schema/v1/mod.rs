@@ -8,7 +8,9 @@ use crate::consensus::basic::data_contract::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::property::DocumentProperty;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
@@ -27,14 +29,20 @@ use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexE
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::TokenPaymentByBurningOnlyAllowedOnInternalTokenError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
-    insert_values, insert_values_nested, MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
-    MAX_INDEXED_STRING_PROPERTY_LENGTH, NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
+    insert_values, insert_values_nested,
+};
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::try_from_schema::{
+    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
+    NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
 };
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
@@ -50,6 +58,10 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::TokenContractPosition;
 use crate::identity::SecurityLevel;
+use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+use crate::tokens::token_amount_on_contract_token::{
+    DocumentActionTokenCost, DocumentActionTokenEffect,
+};
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::validation::operations::ProtocolValidationOperation;
@@ -60,6 +72,7 @@ use platform_value::{Identifier, Value};
 impl DocumentTypeV1 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
         name: &str,
@@ -543,19 +556,64 @@ impl DocumentTypeV1 {
 
         let token_costs_value = schema.get_optional_value("tokenCost")?;
 
-        let extract_cost =
-            |key: &str| -> Result<Option<(TokenContractPosition, TokenAmount)>, ProtocolError> {
-                token_costs_value
-                    .and_then(|v| v.get_optional_value(key).transpose())
-                    .transpose()?
-                    .map(|action_cost| {
-                        Ok((
-                            action_cost.get_integer::<TokenContractPosition>("tokenPosition")?,
-                            action_cost.get_integer::<TokenAmount>("amount")?,
-                        ))
+        let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
+            token_costs_value
+                .and_then(|v| v.get_optional_value(key).transpose())
+                .transpose()?
+                .map(|action_cost| {
+                    // Extract an optional contract_id. Adjust the key if necessary.
+                    let contract_id = action_cost.get_optional_identifier("contractId")?;
+                    // Extract token_contract_position as an integer, then convert it.
+                    let token_contract_position =
+                        action_cost.get_integer::<TokenContractPosition>("tokenPosition")?;
+                    // Extract the token amount.
+                    let token_amount = action_cost.get_integer::<TokenAmount>("amount")?;
+                    // Extract the token effect
+                    let effect = action_cost
+                        .get_optional_integer::<u64>("effect")?
+                        .map(|int| int.try_into())
+                        .transpose()?
+                        .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
+
+                    #[cfg(feature = "validation")]
+                    if full_validation {
+
+                        // If contractId is present and user tries to burn, bail out:
+                        if let Some(contract_id) = contract_id {
+                            if effect == DocumentActionTokenEffect::BurnToken {
+                                return Err(ProtocolError::ConsensusError(
+                                    ConsensusError::BasicError(
+                                        BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(
+                                            TokenPaymentByBurningOnlyAllowedOnInternalTokenError::new(
+                                                contract_id,
+                                                token_contract_position,
+                                                key.to_string(),
+                                            ),
+                                        ),
+                                    )
+                                        .into(),
+                                ));
+                            }
+                        }
+                    }
+
+                    // Extract an optional string and map it to the enum, defaulting if missing or unrecognized.
+                    let gas_fees_paid_by = action_cost
+                        .get_optional_integer::<u64>("gasFeesPaidBy")?
+                        .map(|int| int.try_into())
+                        .transpose()?
+                        .unwrap_or(GasFeesPaidBy::DocumentOwner);
+
+                    Ok(DocumentActionTokenCost {
+                        contract_id,
+                        token_contract_position,
+                        token_amount,
+                        effect,
+                        gas_fees_paid_by,
                     })
-                    .transpose()
-            };
+                })
+                .transpose()
+        };
 
         let token_costs = TokenCostsV0 {
             create: extract_cost("create")?,

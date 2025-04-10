@@ -71,7 +71,7 @@ impl QueryService {
         Self { platform }
     }
 
-    async fn handle_blocking_query<'a, RQ, RS>(
+    async fn handle_blocking_query<RQ, RS>(
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,

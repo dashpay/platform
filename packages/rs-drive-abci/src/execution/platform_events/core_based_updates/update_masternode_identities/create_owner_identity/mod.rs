@@ -26,7 +26,7 @@ where
     /// # Returns
     ///
     /// * Result<Identity, Error> - Returns the constructed identity for the owner if successful.
-    /// Otherwise, returns an error.
+    ///   Otherwise, returns an error.
     pub(crate) fn create_owner_identity(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,

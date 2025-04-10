@@ -9,6 +9,8 @@ use dpp::block::epoch::Epoch;
 
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -35,6 +37,8 @@ impl DriveHighLevelBatchOperationConverter for DocumentUpdatePriceTransitionActi
                 let identity_contract_nonce = self.base().identity_contract_nonce();
                 let fetch_info = self.base().data_contract_fetch_info();
                 let document_update_price_token_cost = self.base().token_cost();
+                let contract_owner_id = fetch_info.contract.owner_id();
+
                 let document = self.document_owned();
 
                 let storage_flags =
@@ -59,12 +63,24 @@ impl DriveHighLevelBatchOperationConverter for DocumentUpdatePriceTransitionActi
                     }),
                 ];
 
-                if let Some((token_id, cost)) = document_update_price_token_cost {
-                    ops.push(TokenOperation(TokenOperationType::TokenBurn {
-                        token_id,
-                        identity_balance_holder_id: owner_id,
-                        burn_amount: cost,
-                    }));
+                if let Some((token_id, effect, cost)) = document_update_price_token_cost {
+                    match effect {
+                        DocumentActionTokenEffect::TransferTokenToContractOwner => {
+                            ops.push(TokenOperation(TokenOperationType::TokenTransfer {
+                                token_id,
+                                sender_id: owner_id,
+                                recipient_id: contract_owner_id,
+                                amount: cost,
+                            }));
+                        }
+                        DocumentActionTokenEffect::BurnToken => {
+                            ops.push(TokenOperation(TokenOperationType::TokenBurn {
+                                token_id,
+                                identity_balance_holder_id: owner_id,
+                                burn_amount: cost,
+                            }));
+                        }
+                    }
                 }
 
                 Ok(ops)

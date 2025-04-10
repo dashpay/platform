@@ -121,6 +121,125 @@ pub trait DocumentFromCreateTransitionActionV0 {
 }
 
 impl DocumentFromCreateTransitionActionV0 for Document {
+    fn try_from_owned_create_transition_action_v0(
+        v0: DocumentCreateTransitionActionV0,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentCreateTransitionActionV0 {
+            base,
+            block_info,
+            mut data,
+            ..
+        } = v0;
+
+        match base {
+            DocumentBaseTransitionAction::V0(base_v0) => {
+                let DocumentBaseTransitionActionV0 {
+                    id,
+                    document_type_name,
+                    data_contract,
+                    ..
+                } = base_v0;
+
+                let document_type = data_contract
+                    .contract
+                    .document_type_for_name(document_type_name.as_str())?;
+
+                let required_fields = document_type.required_fields();
+
+                let transient_fields = document_type.transient_fields();
+
+                if !transient_fields.is_empty() {
+                    data.retain(|key, _| !transient_fields.contains(key));
+                }
+
+                let is_created_at_required = required_fields.contains(CREATED_AT);
+                let is_updated_at_required = required_fields.contains(UPDATED_AT);
+                let is_transferred_at_required = required_fields.contains(TRANSFERRED_AT);
+
+                let is_created_at_block_height_required =
+                    required_fields.contains(CREATED_AT_BLOCK_HEIGHT);
+                let is_updated_at_block_height_required =
+                    required_fields.contains(UPDATED_AT_BLOCK_HEIGHT);
+                let is_transferred_at_block_height_required =
+                    required_fields.contains(TRANSFERRED_AT_BLOCK_HEIGHT);
+
+                let is_created_at_core_block_height_required =
+                    required_fields.contains(CREATED_AT_CORE_BLOCK_HEIGHT);
+                let is_updated_at_core_block_height_required =
+                    required_fields.contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
+                let is_transferred_at_core_block_height_required =
+                    required_fields.contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT);
+
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_structure_version
+                {
+                    0 => Ok(DocumentV0 {
+                        id,
+                        owner_id,
+                        properties: data,
+                        revision: document_type.initial_revision(),
+                        created_at: if is_created_at_required {
+                            Some(block_info.time_ms)
+                        } else {
+                            None
+                        },
+                        updated_at: if is_updated_at_required {
+                            Some(block_info.time_ms)
+                        } else {
+                            None
+                        },
+                        transferred_at: if is_transferred_at_required {
+                            Some(block_info.time_ms)
+                        } else {
+                            None
+                        },
+                        created_at_block_height: if is_created_at_block_height_required {
+                            Some(block_info.height)
+                        } else {
+                            None
+                        },
+                        updated_at_block_height: if is_updated_at_block_height_required {
+                            Some(block_info.height)
+                        } else {
+                            None
+                        },
+                        transferred_at_block_height: if is_transferred_at_block_height_required {
+                            Some(block_info.height)
+                        } else {
+                            None
+                        },
+                        created_at_core_block_height: if is_created_at_core_block_height_required {
+                            Some(block_info.core_height)
+                        } else {
+                            None
+                        },
+                        updated_at_core_block_height: if is_updated_at_core_block_height_required {
+                            Some(block_info.core_height)
+                        } else {
+                            None
+                        },
+                        transferred_at_core_block_height:
+                            if is_transferred_at_core_block_height_required {
+                                Some(block_info.core_height)
+                            } else {
+                                None
+                            },
+                    }
+                    .into()),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_owned_create_transition_v0".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
+    }
+
     fn try_from_create_transition_action_v0(
         v0: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
@@ -234,125 +353,6 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "Document::try_from_create_transition_v0".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
-            }
-        }
-    }
-
-    fn try_from_owned_create_transition_action_v0(
-        v0: DocumentCreateTransitionActionV0,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        let DocumentCreateTransitionActionV0 {
-            base,
-            block_info,
-            mut data,
-            ..
-        } = v0;
-
-        match base {
-            DocumentBaseTransitionAction::V0(base_v0) => {
-                let DocumentBaseTransitionActionV0 {
-                    id,
-                    document_type_name,
-                    data_contract,
-                    ..
-                } = base_v0;
-
-                let document_type = data_contract
-                    .contract
-                    .document_type_for_name(document_type_name.as_str())?;
-
-                let required_fields = document_type.required_fields();
-
-                let transient_fields = document_type.transient_fields();
-
-                if !transient_fields.is_empty() {
-                    data.retain(|key, _| !transient_fields.contains(key));
-                }
-
-                let is_created_at_required = required_fields.contains(CREATED_AT);
-                let is_updated_at_required = required_fields.contains(UPDATED_AT);
-                let is_transferred_at_required = required_fields.contains(TRANSFERRED_AT);
-
-                let is_created_at_block_height_required =
-                    required_fields.contains(CREATED_AT_BLOCK_HEIGHT);
-                let is_updated_at_block_height_required =
-                    required_fields.contains(UPDATED_AT_BLOCK_HEIGHT);
-                let is_transferred_at_block_height_required =
-                    required_fields.contains(TRANSFERRED_AT_BLOCK_HEIGHT);
-
-                let is_created_at_core_block_height_required =
-                    required_fields.contains(CREATED_AT_CORE_BLOCK_HEIGHT);
-                let is_updated_at_core_block_height_required =
-                    required_fields.contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
-                let is_transferred_at_core_block_height_required =
-                    required_fields.contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT);
-
-                match platform_version
-                    .dpp
-                    .document_versions
-                    .document_structure_version
-                {
-                    0 => Ok(DocumentV0 {
-                        id,
-                        owner_id,
-                        properties: data,
-                        revision: document_type.initial_revision(),
-                        created_at: if is_created_at_required {
-                            Some(block_info.time_ms)
-                        } else {
-                            None
-                        },
-                        updated_at: if is_updated_at_required {
-                            Some(block_info.time_ms)
-                        } else {
-                            None
-                        },
-                        transferred_at: if is_transferred_at_required {
-                            Some(block_info.time_ms)
-                        } else {
-                            None
-                        },
-                        created_at_block_height: if is_created_at_block_height_required {
-                            Some(block_info.height)
-                        } else {
-                            None
-                        },
-                        updated_at_block_height: if is_updated_at_block_height_required {
-                            Some(block_info.height)
-                        } else {
-                            None
-                        },
-                        transferred_at_block_height: if is_transferred_at_block_height_required {
-                            Some(block_info.height)
-                        } else {
-                            None
-                        },
-                        created_at_core_block_height: if is_created_at_core_block_height_required {
-                            Some(block_info.core_height)
-                        } else {
-                            None
-                        },
-                        updated_at_core_block_height: if is_updated_at_core_block_height_required {
-                            Some(block_info.core_height)
-                        } else {
-                            None
-                        },
-                        transferred_at_core_block_height:
-                            if is_transferred_at_core_block_height_required {
-                                Some(block_info.core_height)
-                            } else {
-                                None
-                            },
-                    }
-                    .into()),
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "Document::try_from_owned_create_transition_v0".to_string(),
                         known_versions: vec![0],
                         received: version,
                     }),

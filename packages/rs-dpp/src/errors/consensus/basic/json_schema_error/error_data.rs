@@ -1,9 +1,14 @@
+#[cfg(feature = "json-schema-validation")]
 use jsonschema::error::{TypeKind, ValidationErrorKind};
+#[cfg(feature = "json-schema-validation")]
 use jsonschema::paths::PathChunk;
+#[cfg(feature = "json-schema-validation")]
 use jsonschema::ValidationError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(feature = "json-schema-validation")]
 use std::fmt::Write;
+#[cfg(feature = "json-schema-validation")]
 use std::ops::Deref;
 
 #[derive(Debug, Serialize, Default, Deserialize)]
@@ -19,6 +24,7 @@ pub struct JsonSchemaErrorData {
     pub error_message: String,
 }
 
+#[cfg(feature = "json-schema-validation")]
 impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
     fn from(validation_error: &ValidationError<'a>) -> Self {
         let mut error_message = String::new();
@@ -187,10 +193,12 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
     }
 }
 
+#[cfg(feature = "json-schema-validation")]
 struct DataBuilder {
     data: JsonSchemaErrorData,
 }
 
+#[cfg(feature = "json-schema-validation")]
 impl DataBuilder {
     fn new() -> Self {
         Self {

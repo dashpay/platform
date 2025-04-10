@@ -108,6 +108,7 @@ impl Drive {
     ///
     /// This function returns an error if the contract element update fails, or if
     /// the provided drive version does not match any known versions.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_contract_element(
         &self,
         contract_element: Element,
@@ -179,6 +180,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract add operations update fails, or if
+    #[allow(clippy::too_many_arguments)]
     /// the provided drive version does not match any known versions.
     pub(crate) fn update_contract_add_operations(
         &self,

@@ -200,11 +200,7 @@ pub trait TokenTransitionV0Methods {
         token_history_contract: &'a DataContract,
     ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
     /// Historical document id
-    fn historical_document_id(
-        &self,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-    ) -> Identifier;
+    fn historical_document_id(&self, owner_id: Identifier) -> Identifier;
     fn associated_token_event(
         &self,
         token_configuration: &TokenConfiguration,
@@ -213,7 +209,6 @@ pub trait TokenTransitionV0Methods {
     /// Historical document id
     fn build_historical_document(
         &self,
-        token_historical_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -327,16 +322,14 @@ impl TokenTransitionV0Methods for TokenTransition {
     }
 
     /// Historical document id
-    fn historical_document_id(
-        &self,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-    ) -> Identifier {
+    fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
+        let token_id = self.token_id();
         let name = self.historical_document_type_name();
+        let owner_nonce = self.identity_contract_nonce();
         Document::generate_document_id_v0(
-            &(TOKEN_HISTORY_ID_BYTES.into()),
+            &token_id,
             &owner_id,
-            name,
+            format!("history_{}", name).as_str(),
             owner_nonce.to_be_bytes().as_slice(),
         )
     }
@@ -344,7 +337,6 @@ impl TokenTransitionV0Methods for TokenTransition {
     /// Historical document id
     fn build_historical_document(
         &self,
-        token_historical_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -354,7 +346,6 @@ impl TokenTransitionV0Methods for TokenTransition {
     ) -> Result<Document, ProtocolError> {
         self.associated_token_event(token_configuration, owner_id)?
             .build_historical_document_owned(
-                token_historical_contract,
                 token_id,
                 owner_id,
                 owner_nonce,
@@ -431,9 +422,7 @@ impl TokenTransitionV0Methods for TokenTransition {
                                 TokenDistributionResolvedRecipient::ContractOwnerIdentity(owner_id)
                             }
                             TokenDistributionRecipient::Identity(identifier) => {
-                                TokenDistributionResolvedRecipient::ContractOwnerIdentity(
-                                    identifier,
-                                )
+                                TokenDistributionResolvedRecipient::Identity(identifier)
                             }
                             TokenDistributionRecipient::EvonodesByParticipation => {
                                 TokenDistributionResolvedRecipient::Evonode(owner_id)

@@ -14,6 +14,12 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct NewAuthorizedActionTakerMainGroupNotSetError {}
 
+impl Default for NewAuthorizedActionTakerMainGroupNotSetError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NewAuthorizedActionTakerMainGroupNotSetError {
     pub fn new() -> Self {
         Self {}

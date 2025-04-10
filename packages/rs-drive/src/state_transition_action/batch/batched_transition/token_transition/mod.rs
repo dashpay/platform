@@ -29,7 +29,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contracts::SystemDataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::prelude::{DataContract, IdentityNonce};
@@ -128,24 +127,21 @@ impl TokenTransitionAction {
     }
 
     /// Historical document id
-    pub fn historical_document_id(
-        &self,
-        owner_id: Identifier,
-        owner_nonce: IdentityNonce,
-    ) -> Identifier {
+    pub fn historical_document_id(&self, owner_id: Identifier) -> Identifier {
+        let token_id = self.base().token_id();
         let name = self.historical_document_type_name();
+        let owner_nonce = self.base().identity_contract_nonce();
         Document::generate_document_id_v0(
-            &SystemDataContract::TokenHistory.id(),
+            &token_id,
             &owner_id,
-            name,
+            format!("history_{}", name).as_str(),
             owner_nonce.to_be_bytes().as_slice(),
         )
     }
 
-    /// Historical document id
+    /// Historical document
     pub fn build_historical_document(
         &self,
-        token_historical_contract: &DataContract,
         token_id: Identifier,
         owner_id: Identifier,
         owner_nonce: IdentityNonce,
@@ -154,7 +150,6 @@ impl TokenTransitionAction {
     ) -> Result<Document, Error> {
         self.associated_token_event()
             .build_historical_document_owned(
-                token_historical_contract,
                 token_id,
                 owner_id,
                 owner_nonce,
