@@ -76,7 +76,7 @@ use crate::consensus::basic::{
 use crate::consensus::ConsensusError;
 
 use super::data_contract::{
-    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordEncodingError,
+    DuplicateKeywordsError, InvalidDescriptionLengthError,
     InvalidKeywordLengthError, TooManyKeywordsError,
 };
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
@@ -528,9 +528,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidKeywordLengthError(InvalidKeywordLengthError),
-
-    #[error(transparent)]
-    InvalidKeywordEncodingError(InvalidKeywordEncodingError),
 
     #[error(transparent)]
     InvalidDescriptionLengthError(InvalidDescriptionLengthError),

@@ -6,13 +6,10 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::consensus::basic::data_contract::{
-    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
+    DuplicateKeywordsError, InvalidDataContractIdError, InvalidDataContractVersionError,
+    InvalidDescriptionLengthError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError,
+    NonContiguousContractTokenPositionsError, TooManyKeywordsError,
 };
-use dpp::consensus::basic::data_contract::{
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
-    NonContiguousContractTokenPositionsError,
-};
-use dpp::consensus::basic::data_contract::{InvalidKeywordEncodingError, TooManyKeywordsError};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
@@ -173,7 +170,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
             ));
         }
 
-        // Validate the keywords are all unique, between 3 and 50 characters, and all ASCII
+        // Validate the keywords are all unique and between 3 and 50 characters
         let mut seen_keywords = HashSet::new();
         for keyword in self.data_contract().keywords() {
             // First check keyword length
@@ -186,23 +183,6 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                     bump_action,
                     vec![ConsensusError::BasicError(
                         BasicError::InvalidKeywordLengthError(InvalidKeywordLengthError::new(
-                            self.data_contract().id().to_string(Encoding::Base58),
-                            keyword.to_string(),
-                        )),
-                    )],
-                ));
-            }
-
-            // Then check keyword is ASCII
-            if !keyword.is_ascii() {
-                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![ConsensusError::BasicError(
-                        BasicError::InvalidKeywordEncodingError(InvalidKeywordEncodingError::new(
                             self.data_contract().id().to_string(Encoding::Base58),
                             keyword.to_string(),
                         )),

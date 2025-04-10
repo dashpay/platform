@@ -109,8 +109,7 @@ impl ErrorWithCode for BasicError {
             Self::TooManyKeywordsError(_) => 10262,
             Self::DuplicateKeywordsError(_) => 10263,
             Self::InvalidKeywordLengthError(_) => 10264,
-            Self::InvalidKeywordEncodingError(_) => 10265,
-            Self::InvalidDescriptionLengthError(_) => 10266,
+            Self::InvalidDescriptionLengthError(_) => 10265,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
