@@ -102,7 +102,8 @@ impl Drive {
         let sub_query = if let Some(after) = after {
             Query::new_single_query_item(QueryItem::RangeAfter(after.to_vec()..))
         } else {
-            // TODO: why not limit 1?
+            // We do range full because this sub query can get multiple identities
+            // as they are non unique.
             Query::new_range_full()
         };
         query.set_subquery(sub_query);

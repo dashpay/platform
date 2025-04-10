@@ -61,7 +61,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::identity::{Identity, IdentityPublicKey, KeyType};
+    use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;

@@ -27,13 +27,12 @@ impl<C> Platform<C> {
                 ),
             ));
         };
-        // TODO why `identity_by_unique_public_key_hash`?
-        // Shouldn't we rename or add new field like `identity_by_non_unique_public_key_hash`?
+
         let feature_version_bounds = &platform_version
             .drive_abci
             .query
             .identity_based_queries
-            .identity_by_unique_public_key_hash;
+            .identity_by_non_unique_public_key_hash;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
