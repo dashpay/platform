@@ -1090,6 +1090,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         Ok(state_transition)
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_token_change_direct_purchase_price_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,

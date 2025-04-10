@@ -271,15 +271,11 @@ impl TokenEvent {
 
                 properties
             }
-            TokenEvent::DirectPurchase(amount, total_cost) => {
-                let properties = BTreeMap::from([
-                    ("tokenId".to_string(), token_id.into()),
-                    ("tokenAmount".to_string(), amount.into()),
-                    ("purchaseCost".to_string(), total_cost.into()),
-                ]);
-
-                properties
-            }
+            TokenEvent::DirectPurchase(amount, total_cost) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("tokenAmount".to_string(), amount.into()),
+                ("purchaseCost".to_string(), total_cost.into()),
+            ]),
         };
 
         let document: Document = DocumentV0 {

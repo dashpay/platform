@@ -234,6 +234,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     ) -> Result<StateTransition, ProtocolError>;
 
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn new_token_direct_purchase_transition<S: Signer>(
         token_id: Identifier,
         owner_id: Identifier,
