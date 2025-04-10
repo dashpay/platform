@@ -1,16 +1,21 @@
+mod advanced_structure;
 mod identity_contract_nonce;
 mod state;
 
+use advanced_structure::v0::DataContractUpdatedStateTransitionAdvancedStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::PartialIdentity;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;
 
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::processor::v0::StateTransitionAdvancedStructureValidationV0;
 
 use drive::state_transition_action::StateTransitionAction;
 
@@ -51,6 +56,38 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
                 received: version,
             })),
         }
+    }
+}
+
+impl StateTransitionAdvancedStructureValidationV0 for DataContractUpdateTransition {
+    fn validate_advanced_structure(
+        &self,
+        _identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .contract_update_state_transition
+            .basic_structure
+        {
+            Some(0) => self.validate_advanced_structure_v0(execution_context, platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract create transition: validate_advanced_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "data contract create transition: validate_advanced_structure".to_string(),
+                known_versions: vec![0],
+            })),
+        }
+    }
+
+    fn has_advanced_structure_validation_without_state(&self) -> bool {
+        true
     }
 }
 

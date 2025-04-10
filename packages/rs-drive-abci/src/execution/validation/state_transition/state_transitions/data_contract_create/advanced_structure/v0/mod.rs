@@ -157,7 +157,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
 
-    mod validate_advanced_structure {
+    mod validate_advanced_structure_for_contract_create {
         use super::*;
         use dpp::consensus::ConsensusError;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};

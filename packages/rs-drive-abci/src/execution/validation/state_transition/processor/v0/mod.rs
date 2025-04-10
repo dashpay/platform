@@ -21,9 +21,9 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
-use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
+use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;
 use crate::execution::validation::state_transition::identity_create::{StateTransitionStateValidationForIdentityCreateTransitionV0, StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0};
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
@@ -765,6 +765,9 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
                 }
             }
             StateTransition::DataContractCreate(st) => {
+                st.validate_advanced_structure(identity, execution_context, platform_version)
+            }
+            StateTransition::DataContractUpdate(st) => {
                 st.validate_advanced_structure(identity, execution_context, platform_version)
             }
             _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
