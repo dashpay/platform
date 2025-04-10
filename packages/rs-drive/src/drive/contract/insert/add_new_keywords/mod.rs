@@ -11,7 +11,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-mod v0;
+mod v1;
 
 impl Drive {
     /// Adds keywords to the state.
@@ -35,7 +35,7 @@ impl Drive {
             0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",
             ))),
-            1 => self.add_new_contract_keywords_v0(
+            1 => self.add_new_contract_keywords_v1(
                 contract_id,
                 owner_id,
                 keywords,
@@ -74,7 +74,7 @@ impl Drive {
             0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",
             ))),
-            1 => self.add_new_contract_keywords_add_to_operations_v0(
+            1 => self.add_new_contract_keywords_add_to_operations_v1(
                 contract_id,
                 owner_id,
                 keywords,
@@ -115,7 +115,7 @@ impl Drive {
             0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",
             ))),
-            1 => self.add_new_contract_keywords_operations_v0(
+            1 => self.add_new_contract_keywords_operations_v1(
                 contract_id,
                 owner_id,
                 keywords,

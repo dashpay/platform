@@ -12,11 +12,11 @@ use dpp::platform_value::Value;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 impl Drive {
     /// Adds operations for updating keywords and returns the fee result.
-    pub(super) fn update_contract_keywords_v0(
+    pub(super) fn update_contract_keywords_v1(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -27,7 +27,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.update_contract_keywords_add_to_operations_v0(
+        self.update_contract_keywords_add_to_operations_v1(
             contract_id,
             owner_id,
             keywords,
@@ -49,7 +49,7 @@ impl Drive {
     }
 
     /// Adds keyword update operations to drive operations
-    pub(super) fn update_contract_keywords_add_to_operations_v0(
+    pub(super) fn update_contract_keywords_add_to_operations_v1(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -87,7 +87,7 @@ impl Drive {
 
     /// The operations needed to update the keywords search contract documents
     /// First we delete the existing keywords then we add the new ones
-    pub(super) fn update_contract_keywords_operations_v0(
+    pub(super) fn update_contract_keywords_operations_v1(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -137,7 +137,7 @@ impl Drive {
         }
 
         // Then add the new ones
-        operations.extend(self.add_new_contract_keywords_operations_v0(
+        operations.extend(self.add_new_contract_keywords_operations_v1(
             contract_id,
             owner_id,
             keywords,

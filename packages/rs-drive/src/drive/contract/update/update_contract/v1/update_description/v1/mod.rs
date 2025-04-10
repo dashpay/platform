@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds operations for updating a contract description and returns the fee result.
-    pub(super) fn update_contract_description_v0(
+    pub(super) fn update_contract_description_v1(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -29,7 +29,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.update_contract_description_add_to_operations_v0(
+        self.update_contract_description_add_to_operations_v1(
             contract_id,
             owner_id,
             description,
@@ -51,7 +51,7 @@ impl Drive {
     }
 
     /// Adds contract description update operations to drive operations
-    pub(super) fn update_contract_description_add_to_operations_v0(
+    pub(super) fn update_contract_description_add_to_operations_v1(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -88,7 +88,7 @@ impl Drive {
     }
 
     /// The operations needed to update a contract description
-    pub(super) fn update_contract_description_operations_v0(
+    pub(super) fn update_contract_description_operations_v1(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -133,7 +133,7 @@ impl Drive {
 
         if existing_documents.is_empty() {
             // Add the new one
-            operations.extend(self.add_new_contract_description_operations_v0(
+            operations.extend(self.add_new_contract_description_operations_v1(
                 contract_id,
                 owner_id,
                 description,

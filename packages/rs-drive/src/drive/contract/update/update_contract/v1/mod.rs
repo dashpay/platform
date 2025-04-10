@@ -20,7 +20,9 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
+#[allow(clippy::too_many_arguments)]
 mod update_description;
+#[allow(clippy::too_many_arguments)]
 mod update_keywords;
 
 impl Drive {
