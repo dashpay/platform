@@ -37,11 +37,11 @@ const {
   GetProofsResponse: ProtocGetProofsResponse,
 } = require('./drive_protoc');
 
-const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
+const getDriveDefinition = require('../../../../lib/getDriveDefinition');
 
-const PlatformNodeJSClient = getPlatformDefinition(0);
+const DriveNodeJSClient = getDriveDefinition(0);
 
-class PlatformPromiseClient {
+class DrivePromiseClient {
   /**
    * @param {string} hostname
    * @param {?Object} credentials
@@ -59,7 +59,7 @@ class PlatformPromiseClient {
     // eslint-disable-next-line no-param-reassign
     credentials = protocol.replace(':', '') === 'https' ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
-    this.client = new PlatformNodeJSClient(strippedHostname, credentials, options);
+    this.client = new DriveNodeJSClient(strippedHostname, credentials, options);
 
     this.client.getProofs = promisify(
       this.client.getProofs.bind(this.client),
@@ -108,4 +108,4 @@ class PlatformPromiseClient {
   }
 }
 
-module.exports = PlatformPromiseClient;
+module.exports = DrivePromiseClient;

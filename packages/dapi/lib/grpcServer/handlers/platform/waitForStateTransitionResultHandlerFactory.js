@@ -117,8 +117,8 @@ function waitForStateTransitionResultHandlerFactory(
     if (prove) {
       const stateTransitionProof = await fetchProofForStateTransition(result.getTransaction());
 
-      v0.setMetadata(stateTransitionProof.getV0().getMetadata());
-      v0.setProof(stateTransitionProof.getV0().getProof());
+      v0.setMetadata(stateTransitionProof.getMetadata());
+      v0.setProof(stateTransitionProof.getProof());
     }
 
     response.setV0(v0);
