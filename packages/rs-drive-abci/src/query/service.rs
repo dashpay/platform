@@ -752,7 +752,7 @@ impl PlatformService for QueryService {
 
     async fn get_token_direct_purchase_prices(
         &self,
-        request: Request<GetTokenDirectPurchasePricesRequest>,
+        _request: Request<GetTokenDirectPurchasePricesRequest>,
     ) -> Result<Response<GetTokenDirectPurchasePricesResponse>, Status> {
         todo!()
     }

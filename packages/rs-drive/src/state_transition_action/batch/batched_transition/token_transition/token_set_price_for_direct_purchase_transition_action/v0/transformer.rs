@@ -181,7 +181,7 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
             TokenBaseTransitionAction::try_from_borrowed_base_transition_with_contract_lookup(
                 drive,
                 owner_id,
-                &base,
+                base,
                 approximate_without_state_for_costs,
                 transaction,
                 &mut drive_operations,
