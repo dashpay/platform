@@ -1162,6 +1162,37 @@ public final class PlatformGrpc {
     return getGetTokenStatusesMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse> getGetTokenDirectPurchasePricesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getTokenDirectPurchasePrices",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse> getGetTokenDirectPurchasePricesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse> getGetTokenDirectPurchasePricesMethod;
+    if ((getGetTokenDirectPurchasePricesMethod = PlatformGrpc.getGetTokenDirectPurchasePricesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetTokenDirectPurchasePricesMethod = PlatformGrpc.getGetTokenDirectPurchasePricesMethod) == null) {
+          PlatformGrpc.getGetTokenDirectPurchasePricesMethod = getGetTokenDirectPurchasePricesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getTokenDirectPurchasePrices"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getTokenDirectPurchasePrices"))
+              .build();
+        }
+      }
+    }
+    return getGetTokenDirectPurchasePricesMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsResponse> getGetTokenPreProgrammedDistributionsMethod;
 
@@ -1672,6 +1703,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getTokenDirectPurchasePrices(org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetTokenDirectPurchasePricesMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getTokenPreProgrammedDistributions(org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetTokenPreProgrammedDistributionsMethod(), responseObserver);
@@ -1973,6 +2011,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenStatusesRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenStatusesResponse>(
                   this, METHODID_GET_TOKEN_STATUSES)))
+          .addMethod(
+            getGetTokenDirectPurchasePricesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse>(
+                  this, METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES)))
           .addMethod(
             getGetTokenPreProgrammedDistributionsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -2346,6 +2391,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getTokenDirectPurchasePrices(org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetTokenDirectPurchasePricesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getTokenPreProgrammedDistributions(org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -2679,6 +2732,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenStatusesResponse getTokenStatuses(org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenStatusesRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetTokenStatusesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse getTokenDirectPurchasePrices(org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetTokenDirectPurchasePricesMethod(), getCallOptions(), request);
     }
 
     /**
@@ -3051,6 +3111,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse> getTokenDirectPurchasePrices(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetTokenDirectPurchasePricesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsResponse> getTokenPreProgrammedDistributions(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -3135,12 +3203,13 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 34;
   private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 35;
   private static final int METHODID_GET_TOKEN_STATUSES = 36;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 37;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 38;
-  private static final int METHODID_GET_GROUP_INFO = 39;
-  private static final int METHODID_GET_GROUP_INFOS = 40;
-  private static final int METHODID_GET_GROUP_ACTIONS = 41;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 42;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 37;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 38;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 39;
+  private static final int METHODID_GET_GROUP_INFO = 40;
+  private static final int METHODID_GET_GROUP_INFOS = 41;
+  private static final int METHODID_GET_GROUP_ACTIONS = 42;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 43;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -3307,6 +3376,10 @@ public final class PlatformGrpc {
           serviceImpl.getTokenStatuses((org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenStatusesRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenStatusesResponse>) responseObserver);
           break;
+        case METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES:
+          serviceImpl.getTokenDirectPurchasePrices((org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenDirectPurchasePricesResponse>) responseObserver);
+          break;
         case METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS:
           serviceImpl.getTokenPreProgrammedDistributions((org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTokenPreProgrammedDistributionsResponse>) responseObserver);
@@ -3429,6 +3502,7 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityTokenInfosMethod())
               .addMethod(getGetIdentitiesTokenInfosMethod())
               .addMethod(getGetTokenStatusesMethod())
+              .addMethod(getGetTokenDirectPurchasePricesMethod())
               .addMethod(getGetTokenPreProgrammedDistributionsMethod())
               .addMethod(getGetTokenTotalSupplyMethod())
               .addMethod(getGetGroupInfoMethod())

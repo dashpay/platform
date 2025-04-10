@@ -875,6 +875,26 @@
              responseClass:[GetTokenStatusesResponse class]];
 }
 
+#pragma mark getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse)
+
+- (void)getTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenDirectPurchasePricesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenDirectPurchasePrices"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenDirectPurchasePricesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenDirectPurchasePricesWithMessage:(GetTokenDirectPurchasePricesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenDirectPurchasePrices"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenDirectPurchasePricesResponse class]];
+}
+
 #pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
 
 - (void)getTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler{
