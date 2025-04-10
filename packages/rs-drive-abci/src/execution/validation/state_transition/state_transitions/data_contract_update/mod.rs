@@ -1526,4 +1526,734 @@ mod tests {
                 .expect("expected to commit transaction");
         }
     }
+
+    mod keyword_updates {
+        use super::*;
+        use dpp::{
+            data_contract::conversion::value::v0::DataContractValueConversionMethodsV0,
+            data_contracts::SystemDataContract,
+            document::DocumentV0Getters,
+            platform_value::{string_encoding::Encoding, Value},
+            state_transition::{
+                data_contract_create_transition::{
+                    methods::DataContractCreateTransitionMethodsV0, DataContractCreateTransition,
+                },
+                StateTransition,
+            },
+            system_data_contracts::load_system_data_contract,
+            tests::json_document::json_document_to_contract_with_ids,
+        };
+        use drive::{
+            drive::document::query::QueryDocumentsOutcomeV0Methods,
+            query::{DriveDocumentQuery, WhereClause, WhereOperator},
+        };
+
+        // ────────────────────────────────────────────────────────────────────────
+        // helpers
+        // ────────────────────────────────────────────────────────────────────────
+
+        /// Creates a contract with the supplied keywords and commits it to Drive.
+        /// Returns `(contract_id, create_transition)`.
+        fn create_contract_with_keywords(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            identity: &Identity,
+            signer: &SimpleSigner,
+            key: &IdentityPublicKey,
+            keywords: &[&str],
+            platform_version: &PlatformVersion,
+        ) -> (Identifier, StateTransition) {
+            let base = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("load base contract");
+
+            let mut val = base.to_value(platform_version).expect("to_value");
+
+            val["keywords"] = Value::Array(
+                keywords
+                    .iter()
+                    .map(|k| Value::Text(k.to_string()))
+                    .collect(),
+            );
+
+            let contract =
+                DataContract::from_value(val, true, platform_version).expect("from_value");
+
+            let create = DataContractCreateTransition::new_from_data_contract(
+                contract,
+                2,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                signer,
+                platform_version,
+                None,
+            )
+            .expect("create transition");
+
+            let tx_bytes = create.serialize_to_bytes().expect("serialize");
+
+            let tx = platform.drive.grove.start_transaction();
+            let platform_state = platform.state.load();
+
+            let res = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process create");
+
+            assert_matches!(
+                res.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("commit create");
+
+            // pull id from unique_identifiers
+            let contract_id = Identifier::from_string(
+                create
+                    .unique_identifiers()
+                    .first()
+                    .unwrap()
+                    .as_str()
+                    .split('-')
+                    .last()
+                    .unwrap(),
+                Encoding::Base58,
+            )
+            .unwrap();
+
+            (contract_id, create)
+        }
+
+        /// Convenience for building and applying an **update** transition that
+        /// only changes the `keywords` array.
+        fn apply_keyword_update(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            identity: &Identity,
+            signer: &SimpleSigner,
+            key: &IdentityPublicKey,
+            new_keywords: &[&str],
+            platform_version: &PlatformVersion,
+        ) -> Result<(), Vec<StateTransitionExecutionResult>> {
+            // fetch existing contract
+            let fetched = platform
+                .drive
+                .fetch_contract(contract_id.into(), None, None, None, platform_version)
+                .value
+                .unwrap()
+                .unwrap();
+
+            let mut val = fetched.contract.to_value(platform_version).unwrap();
+
+            val["keywords"] = Value::Array(
+                new_keywords
+                    .iter()
+                    .map(|k| Value::Text(k.to_string()))
+                    .collect(),
+            );
+
+            let mut updated_contract =
+                DataContract::from_value(val, true, platform_version).unwrap();
+            updated_contract.set_version(2);
+
+            let update = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                signer,
+                platform_version,
+                None,
+            )
+            .expect("build update");
+
+            let bytes = update.serialize_to_bytes().unwrap();
+
+            let tx = platform.drive.grove.start_transaction();
+            let platform_state = platform.state.load();
+
+            let outcome = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process update");
+
+            if matches!(
+                outcome.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            ) {
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(tx)
+                    .unwrap()
+                    .expect("commit update");
+                Ok(())
+            } else {
+                Err(outcome.execution_results().to_vec())
+            }
+        }
+
+        /// Helper to read all keyword docs for a contract id.
+        fn keyword_docs_for_contract(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            platform_version: &PlatformVersion,
+        ) -> Vec<String> {
+            let search_contract =
+                load_system_data_contract(SystemDataContract::Search, platform_version).unwrap();
+            let doc_type = search_contract
+                .document_type_for_name("contractKeywords")
+                .unwrap();
+
+            let mut query = DriveDocumentQuery {
+                contract: &search_contract,
+                document_type: doc_type,
+                internal_clauses: Default::default(),
+                offset: None,
+                limit: None,
+                order_by: Default::default(),
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+            };
+            query.internal_clauses.equal_clauses.insert(
+                "contractId".to_string(),
+                WhereClause {
+                    field: "contractId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: contract_id.into(),
+                },
+            );
+
+            let res = platform
+                .drive
+                .query_documents(query, None, false, None, None)
+                .unwrap();
+
+            res.documents()
+                .iter()
+                .map(|d| d.get("keyword").unwrap().as_str().unwrap().to_owned())
+                .collect()
+        }
+
+        // ────────────────────────────────────────────────────────────────────────
+        // negative cases – same validation as create
+        // ────────────────────────────────────────────────────────────────────────
+
+        macro_rules! invalid_update_test {
+            ($name:ident, $keywords:expr, $error:pat_param) => {
+                #[test]
+                fn $name() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+                    // create initial contract with one keyword so update is allowed
+                    let (cid, _) = create_contract_with_keywords(
+                        &mut platform,
+                        &identity,
+                        &signer,
+                        &key,
+                        &["orig"],
+                        &platform_version,
+                    );
+
+                    // try invalid update
+                    let err = apply_keyword_update(
+                        &mut platform,
+                        cid,
+                        &identity,
+                        &signer,
+                        &key,
+                        &$keywords,
+                        &platform_version,
+                    )
+                    .unwrap_err();
+
+                    assert_matches!(
+                        err.as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError($error),
+                            _
+                        )]
+                    );
+
+                    // original keyword docs must still be there
+                    let docs = keyword_docs_for_contract(&platform, cid, &platform_version);
+                    assert_eq!(docs, vec!["orig"]);
+                }
+            };
+        }
+
+        invalid_update_test!(
+            update_fails_too_many_keywords,
+            [
+                "kw0", "kw1", "kw2", "kw3", "kw4", "kw5", "kw6", "kw7", "kw8", "kw9", "kw10",
+                "kw11", "kw12", "kw13", "kw14", "kw15", "kw16", "kw17", "kw18", "kw19", "kw20",
+            ],
+            BasicError::TooManyKeywordsError(_)
+        );
+
+        invalid_update_test!(
+            update_fails_duplicate_keywords,
+            ["dup", "dup"],
+            BasicError::DuplicateKeywordsError(_)
+        );
+
+        invalid_update_test!(
+            update_fails_keyword_too_short,
+            ["hi"],
+            BasicError::InvalidKeywordLengthError(_)
+        );
+
+        invalid_update_test!(
+            update_fails_keyword_too_long,
+            [&"x".repeat(51)],
+            BasicError::InvalidKeywordLengthError(_)
+        );
+
+        // ────────────────────────────────────────────────────────────────────────
+        // positive case – old docs removed, new docs inserted
+        // ────────────────────────────────────────────────────────────────────────
+
+        #[test]
+        fn update_keywords_replaces_search_docs() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // initial contract with two keywords
+            let (cid, _) = create_contract_with_keywords(
+                &mut platform,
+                &identity,
+                &signer,
+                &key,
+                &["old1", "old2"],
+                &platform_version,
+            );
+
+            // verify initial docs
+            let initial_docs = keyword_docs_for_contract(&platform, cid, &platform_version);
+            assert_eq!(initial_docs.len(), 2);
+
+            // apply update to ["newA", "newB", "newC"]
+            apply_keyword_update(
+                &mut platform,
+                cid,
+                &identity,
+                &signer,
+                &key,
+                &["newA", "newB", "newC"],
+                &platform_version,
+            )
+            .expect("update should succeed");
+
+            // fetch contract – keywords updated?
+            let fetched = platform
+                .drive
+                .fetch_contract(cid.into(), None, None, None, &platform_version)
+                .value
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                *fetched.contract.keywords(),
+                vec!["newA", "newB", "newC"]
+                    .iter()
+                    .map(|&s| s.to_string())
+                    .collect::<Vec<String>>()
+            );
+
+            // search‑contract docs updated?
+            let docs_after = keyword_docs_for_contract(&platform, cid, &platform_version);
+            assert_eq!(docs_after.len(), 3);
+            assert!(docs_after.contains(&"newA".to_string()));
+            assert!(docs_after.contains(&"newB".to_string()));
+            assert!(docs_after.contains(&"newC".to_string()));
+            // old docs gone
+            assert!(!docs_after.contains(&"old1".to_string()));
+            assert!(!docs_after.contains(&"old2".to_string()));
+        }
+    }
+
+    mod description_updates {
+        use super::*;
+        use dpp::{
+            data_contract::conversion::value::v0::DataContractValueConversionMethodsV0,
+            data_contracts::SystemDataContract,
+            document::DocumentV0Getters,
+            platform_value::{string_encoding::Encoding, Value},
+            state_transition::{
+                data_contract_create_transition::{
+                    methods::DataContractCreateTransitionMethodsV0, DataContractCreateTransition,
+                },
+                StateTransition,
+            },
+            system_data_contracts::load_system_data_contract,
+            tests::json_document::json_document_to_contract_with_ids,
+        };
+        use drive::{
+            drive::document::query::QueryDocumentsOutcomeV0Methods,
+            query::{DriveDocumentQuery, WhereClause, WhereOperator},
+        };
+
+        // ────────────────────────────────────────────────────────────────────────
+        // helpers
+        // ────────────────────────────────────────────────────────────────────────
+
+        /// Creates a contract with the supplied description and commits it to Drive.
+        /// Returns `(contract_id, create_transition)`.
+        fn create_contract_with_description(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            identity: &Identity,
+            signer: &SimpleSigner,
+            key: &IdentityPublicKey,
+            description: &str,
+            platform_version: &PlatformVersion,
+        ) -> (Identifier, StateTransition) {
+            let base = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("load base contract");
+
+            let mut val = base.to_value(platform_version).expect("to_value");
+
+            val["description"] = Value::Text(description.to_string());
+
+            let contract =
+                DataContract::from_value(val, true, platform_version).expect("from_value");
+
+            let create = DataContractCreateTransition::new_from_data_contract(
+                contract,
+                2,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                signer,
+                platform_version,
+                None,
+            )
+            .expect("create transition");
+
+            let tx_bytes = create.serialize_to_bytes().expect("serialize");
+
+            let tx = platform.drive.grove.start_transaction();
+            let platform_state = platform.state.load();
+
+            let res = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process create");
+
+            assert_matches!(
+                res.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(tx)
+                .unwrap()
+                .expect("commit create");
+
+            // pull id from unique_identifiers
+            let contract_id = Identifier::from_string(
+                create
+                    .unique_identifiers()
+                    .first()
+                    .unwrap()
+                    .as_str()
+                    .split('-')
+                    .last()
+                    .unwrap(),
+                Encoding::Base58,
+            )
+            .unwrap();
+
+            (contract_id, create)
+        }
+
+        /// Convenience for building and applying an **update** transition that
+        /// only changes the `description` string.
+        fn apply_description_update(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            identity: &Identity,
+            signer: &SimpleSigner,
+            key: &IdentityPublicKey,
+            new_description: &str,
+            platform_version: &PlatformVersion,
+        ) -> Result<(), Vec<StateTransitionExecutionResult>> {
+            // fetch existing contract
+            let fetched = platform
+                .drive
+                .fetch_contract(contract_id.into(), None, None, None, platform_version)
+                .value
+                .unwrap()
+                .unwrap();
+
+            let mut val = fetched.contract.to_value(platform_version).unwrap();
+
+            val["description"] = Value::Text(new_description.to_string());
+
+            let mut updated_contract =
+                DataContract::from_value(val, true, platform_version).unwrap();
+            updated_contract.set_version(2);
+
+            let update = DataContractUpdateTransition::new_from_data_contract(
+                updated_contract,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                2,
+                0,
+                signer,
+                platform_version,
+                None,
+            )
+            .expect("build update");
+
+            let bytes = update.serialize_to_bytes().unwrap();
+
+            let tx = platform.drive.grove.start_transaction();
+            let platform_state = platform.state.load();
+
+            let outcome = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &tx,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("process update");
+
+            if matches!(
+                outcome.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            ) {
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(tx)
+                    .unwrap()
+                    .expect("commit update");
+                Ok(())
+            } else {
+                Err(outcome.execution_results().to_vec())
+            }
+        }
+
+        /// Helper to read all description docs for a contract id.
+        fn description_docs_for_contract(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+            platform_version: &PlatformVersion,
+        ) -> String {
+            let search_contract =
+                load_system_data_contract(SystemDataContract::Search, platform_version).unwrap();
+            let doc_type = search_contract
+                .document_type_for_name("shortDescription")
+                .unwrap();
+
+            let mut query = DriveDocumentQuery {
+                contract: &search_contract,
+                document_type: doc_type,
+                internal_clauses: Default::default(),
+                offset: None,
+                limit: None,
+                order_by: Default::default(),
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+            };
+            query.internal_clauses.equal_clauses.insert(
+                "contractId".to_string(),
+                WhereClause {
+                    field: "contractId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: contract_id.into(),
+                },
+            );
+
+            let res = platform
+                .drive
+                .query_documents(query, None, false, None, None)
+                .unwrap();
+
+            res.documents()
+                .iter()
+                .map(|d| d.get("description").unwrap().as_str().unwrap().to_owned())
+                .collect()
+        }
+
+        // ────────────────────────────────────────────────────────────────────────
+        // negative cases – same validation as create
+        // ────────────────────────────────────────────────────────────────────────
+
+        macro_rules! invalid_update_test {
+            ($name:ident, $description:expr, $error:pat_param) => {
+                #[test]
+                fn $name() {
+                    let platform_version = PlatformVersion::latest();
+                    let mut platform = TestPlatformBuilder::new()
+                        .build_with_mock_rpc()
+                        .set_genesis_state();
+
+                    let (identity, signer, key) =
+                        setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+                    // create initial contract with description so update is allowed
+                    let (cid, _) = create_contract_with_description(
+                        &mut platform,
+                        &identity,
+                        &signer,
+                        &key,
+                        &"orig",
+                        &platform_version,
+                    );
+
+                    // try invalid update
+                    let err = apply_description_update(
+                        &mut platform,
+                        cid,
+                        &identity,
+                        &signer,
+                        &key,
+                        &$description,
+                        &platform_version,
+                    )
+                    .unwrap_err();
+
+                    assert_matches!(
+                        err.as_slice(),
+                        [StateTransitionExecutionResult::PaidConsensusError(
+                            ConsensusError::BasicError($error),
+                            _
+                        )]
+                    );
+
+                    // original description docs must still be there
+                    let docs = description_docs_for_contract(&platform, cid, &platform_version);
+                    assert_eq!(docs, "orig".to_string());
+                }
+            };
+        }
+
+        invalid_update_test!(
+            update_fails_description_too_short,
+            "hi",
+            BasicError::InvalidDescriptionLengthError(_)
+        );
+
+        invalid_update_test!(
+            update_fails_description_too_long,
+            &"x".repeat(51),
+            BasicError::InvalidDescriptionLengthError(_)
+        );
+
+        // ────────────────────────────────────────────────────────────────────────
+        // positive case – old docs removed, new docs inserted
+        // ────────────────────────────────────────────────────────────────────────
+
+        #[test]
+        fn update_description_replaces_search_docs() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            // initial contract with description
+            let (cid, _) = create_contract_with_description(
+                &mut platform,
+                &identity,
+                &signer,
+                &key,
+                &"old1",
+                &platform_version,
+            );
+
+            // verify initial docs
+            let initial_docs = description_docs_for_contract(&platform, cid, &platform_version);
+            assert_eq!(initial_docs, "old1".to_string());
+
+            // apply update to "newA"
+            apply_description_update(
+                &mut platform,
+                cid,
+                &identity,
+                &signer,
+                &key,
+                &"newA",
+                &platform_version,
+            )
+            .expect("update should succeed");
+
+            // fetch contract – description updated?
+            let fetched = platform
+                .drive
+                .fetch_contract(cid.into(), None, None, None, &platform_version)
+                .value
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                fetched.contract.description(),
+                Some("newA".to_string()).as_ref()
+            );
+
+            // search‑contract docs updated?
+            let docs_after = description_docs_for_contract(&platform, cid, &platform_version);
+            assert_eq!(docs_after, "newA".to_string());
+            // old docs gone
+            assert!(!docs_after.contains(&"old1".to_string()));
+        }
+    }
 }

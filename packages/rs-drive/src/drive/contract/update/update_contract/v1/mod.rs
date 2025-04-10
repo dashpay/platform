@@ -20,6 +20,9 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
+mod update_description;
+mod update_keywords;
+
 impl Drive {
     /// Updates a data contract.
     ///
@@ -245,6 +248,30 @@ impl Drive {
             batch_operations.extend(self.add_new_groups_operations(
                 contract.id(),
                 contract.groups(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if !contract.keywords().is_empty() {
+            batch_operations.extend(self.update_contract_keywords_operations(
+                contract.id(),
+                contract.owner_id(),
+                contract.keywords(),
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
+        }
+
+        if let Some(description) = contract.description() {
+            batch_operations.extend(self.update_contract_description_operations(
+                contract.id(),
+                contract.owner_id(),
+                description,
+                block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

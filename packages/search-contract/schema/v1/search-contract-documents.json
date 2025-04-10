@@ -1,8 +1,8 @@
 {
   "contractKeywords": {
     "type": "object",
-    "documentsMutable": false,
-    "canBeDeleted": false,
+    "documentsMutable": true,
+    "canBeDeleted": true,
     "creationRestrictionMode": 2,
     "indices": [
       {
@@ -10,6 +10,14 @@
         "properties": [
           {
             "keyword": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byContractId",
+        "properties": [
+          {
+            "contractId": "asc"
           }
         ]
       }
@@ -38,8 +46,8 @@
   },
   "shortDescription": {
     "type": "object",
-    "documentsMutable": false,
-    "canBeDeleted": false,
+    "documentsMutable": true,
+    "canBeDeleted": true,
     "creationRestrictionMode": 2,
     "indices": [
       {
@@ -78,7 +86,7 @@
   "fullDescription": {
     "type": "object",
     "documentsMutable": true,
-    "canBeDeleted": false,
+    "canBeDeleted": true,
     "creationRestrictionMode": 2,
     "indices": [
       {
