@@ -11,18 +11,23 @@ service Platform {
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-  rpc getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse);
-  rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
-  rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
+  rpc getIdentitiesContractKeys(GetIdentitiesContractKeysRequest)
+      returns (GetIdentitiesContractKeysResponse);
+  rpc getIdentityNonce(GetIdentityNonceRequest)
+      returns (GetIdentityNonceResponse);
+  rpc getIdentityContractNonce(GetIdentityContractNonceRequest)
+      returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
   rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
       returns (GetIdentitiesBalancesResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
       returns (GetIdentityBalanceAndRevisionResponse);
-  rpc getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest)
+  rpc getEvonodesProposedEpochBlocksByIds(
+      GetEvonodesProposedEpochBlocksByIdsRequest)
       returns (GetEvonodesProposedEpochBlocksResponse);
-  rpc getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest)
+  rpc getEvonodesProposedEpochBlocksByRange(
+      GetEvonodesProposedEpochBlocksByRangeRequest)
       returns (GetEvonodesProposedEpochBlocksResponse);
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
@@ -36,56 +41,80 @@ service Platform {
       returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams(GetConsensusParamsRequest)
       returns (GetConsensusParamsResponse);
-  rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse);
-  rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
+  rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest)
+      returns (GetProtocolVersionUpgradeStateResponse);
+  rpc getProtocolVersionUpgradeVoteStatus(
+      GetProtocolVersionUpgradeVoteStatusRequest)
+      returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
   // What votes are currently happening for a specific contested index
-  rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+  rpc getContestedResources(GetContestedResourcesRequest)
+      returns (GetContestedResourcesResponse);
   // What's the state of a contested resource vote? (ie who is winning?)
-  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest)
+      returns (GetContestedResourceVoteStateResponse);
   // Who voted for a contested resource to go to a specific identity?
-  rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+  rpc getContestedResourceVotersForIdentity(
+      GetContestedResourceVotersForIdentityRequest)
+      returns (GetContestedResourceVotersForIdentityResponse);
   // How did an identity vote?
-  rpc getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse);
+  rpc getContestedResourceIdentityVotes(
+      GetContestedResourceIdentityVotesRequest)
+      returns (GetContestedResourceIdentityVotesResponse);
   // What vote polls will end soon?
-  rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
-  rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
-  rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
+  rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest)
+      returns (GetVotePollsByEndDateResponse);
+  rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest)
+      returns (GetPrefundedSpecializedBalanceResponse);
+  rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest)
+      returns (GetTotalCreditsInPlatformResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
   rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
-  rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
-  rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
-  rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
-  rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
-  rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
-  rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
-  rpc getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse);
-  rpc getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse);
-  rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
+  rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest)
+      returns (GetCurrentQuorumsInfoResponse);
+  rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest)
+      returns (GetIdentityTokenBalancesResponse);
+  rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest)
+      returns (GetIdentitiesTokenBalancesResponse);
+  rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest)
+      returns (GetIdentityTokenInfosResponse);
+  rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest)
+      returns (GetIdentitiesTokenInfosResponse);
+  rpc getTokenStatuses(GetTokenStatusesRequest)
+      returns (GetTokenStatusesResponse);
+  rpc getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest)
+      returns (GetTokenDirectPurchasePricesResponse);
+  rpc getTokenPreProgrammedDistributions(
+      GetTokenPreProgrammedDistributionsRequest)
+      returns (GetTokenPreProgrammedDistributionsResponse);
+  rpc getTokenTotalSupply(GetTokenTotalSupplyRequest)
+      returns (GetTokenTotalSupplyResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
   rpc getGroupInfos(GetGroupInfosRequest) returns (GetGroupInfosResponse);
   rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
-  rpc getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse);
+  rpc getGroupActionSigners(GetGroupActionSignersRequest)
+      returns (GetGroupActionSignersResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
 message Proof {
-  bytes grovedb_proof = 1;  // GroveDB proof for the data
-  bytes quorum_hash = 2;    // Hash of the quorum validating the data
-  bytes signature = 3;      // Signature proving data authenticity
-  uint32 round = 4;         // Consensus round number
-  bytes block_id_hash = 5;  // Hash of the block ID
-  uint32 quorum_type = 6;   // Type of the quorum
+  bytes grovedb_proof = 1; // GroveDB proof for the data
+  bytes quorum_hash = 2;   // Hash of the quorum validating the data
+  bytes signature = 3;     // Signature proving data authenticity
+  uint32 round = 4;        // Consensus round number
+  bytes block_id_hash = 5; // Hash of the block ID
+  uint32 quorum_type = 6;  // Type of the quorum
 }
 
-// ResponseMetadata provides metadata about the blockchain state at the time of response
+// ResponseMetadata provides metadata about the blockchain state at the time of
+// response
 message ResponseMetadata {
-  uint64 height = 1 [jstype = JS_STRING];  // Current blockchain height
-  uint32 core_chain_locked_height = 2;     // Latest known core height in consensus
-  uint32 epoch = 3;                        // Current epoch number
-  uint64 time_ms = 4 [jstype = JS_STRING]; // Timestamp in milliseconds
-  uint32 protocol_version = 5;             // Protocol version
-  string chain_id = 6;                     // Identifier of the blockchain
+  uint64 height = 1 [ jstype = JS_STRING ]; // Current blockchain height
+  uint32 core_chain_locked_height = 2; // Latest known core height in consensus
+  uint32 epoch = 3;                    // Current epoch number
+  uint64 time_ms = 4 [ jstype = JS_STRING ]; // Timestamp in milliseconds
+  uint32 protocol_version = 5;               // Protocol version
+  string chain_id = 6;                       // Identifier of the blockchain
 }
 
 message StateTransitionBroadcastError {
@@ -109,8 +138,8 @@ message BroadcastStateTransitionResponse {}
 message GetIdentityRequest {
 
   message GetIdentityRequestV0 {
-    bytes id = 1;    // The ID of the identity being requested
-    bool prove = 2;  // Flag to request a proof as the response
+    bytes id = 1;   // The ID of the identity being requested
+    bool prove = 2; // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityRequestV0 v0 = 1; }
@@ -126,7 +155,6 @@ message GetIdentityNonceRequest {
   oneof version { GetIdentityNonceRequestV0 v0 = 1; }
 }
 
-
 message GetIdentityContractNonceRequest {
 
   message GetIdentityContractNonceRequestV0 {
@@ -141,8 +169,8 @@ message GetIdentityContractNonceRequest {
 message GetIdentityBalanceRequest {
 
   message GetIdentityBalanceRequestV0 {
-    bytes id = 1;    // ID of the identity whose balance is requested
-    bool prove = 2;  // Flag to request a proof as the response
+    bytes id = 1;   // ID of the identity whose balance is requested
+    bool prove = 2; // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityBalanceRequestV0 v0 = 1; }
@@ -151,8 +179,8 @@ message GetIdentityBalanceRequest {
 message GetIdentityBalanceAndRevisionRequest {
 
   message GetIdentityBalanceAndRevisionRequestV0 {
-    bytes id = 1;    // ID of the identity for balance and revision
-    bool prove = 2;  // Flag to request a proof as the response
+    bytes id = 1;   // ID of the identity for balance and revision
+    bool prove = 2; // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityBalanceAndRevisionRequestV0 v0 = 1; }
@@ -162,10 +190,10 @@ message GetIdentityResponse {
 
   message GetIdentityResponseV0 {
     oneof result {
-      bytes identity = 1;  // The requested identity data
-      Proof proof = 2;     // Proof of the identity data, if requested
+      bytes identity = 1; // The requested identity data
+      Proof proof = 2;    // Proof of the identity data, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
   oneof version { GetIdentityResponseV0 v0 = 1; }
@@ -175,7 +203,7 @@ message GetIdentityNonceResponse {
 
   message GetIdentityNonceResponseV0 {
     oneof result {
-      uint64 identity_nonce = 1  [jstype = JS_STRING];
+      uint64 identity_nonce = 1 [ jstype = JS_STRING ];
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
@@ -188,7 +216,7 @@ message GetIdentityContractNonceResponse {
 
   message GetIdentityContractNonceResponseV0 {
     oneof result {
-      uint64 identity_contract_nonce = 1 [jstype = JS_STRING];
+      uint64 identity_contract_nonce = 1 [ jstype = JS_STRING ];
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
@@ -201,10 +229,11 @@ message GetIdentityBalanceResponse {
 
   message GetIdentityBalanceResponseV0 {
     oneof result {
-      uint64 balance = 1  [jstype = JS_STRING];  // The balance of the requested identity
-      Proof proof = 2;     // Proof of the balance, if requested
+      uint64 balance = 1
+          [ jstype = JS_STRING ]; // The balance of the requested identity
+      Proof proof = 2;            // Proof of the balance, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
   oneof version { GetIdentityBalanceResponseV0 v0 = 1; }
@@ -214,15 +243,17 @@ message GetIdentityBalanceAndRevisionResponse {
 
   message GetIdentityBalanceAndRevisionResponseV0 {
     message BalanceAndRevision {
-      uint64 balance = 1  [jstype = JS_STRING];   // Balance of the identity
-      uint64 revision = 2  [jstype = JS_STRING];  // Revision number of the identity
+      uint64 balance = 1 [ jstype = JS_STRING ]; // Balance of the identity
+      uint64 revision = 2
+          [ jstype = JS_STRING ]; // Revision number of the identity
     }
 
     oneof result {
-      BalanceAndRevision balance_and_revision = 1;  // The balance and revision data
-      Proof proof = 2;                              // Proof of the data, if requested
+      BalanceAndRevision balance_and_revision =
+          1;           // The balance and revision data
+      Proof proof = 2; // Proof of the data, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
   oneof version { GetIdentityBalanceAndRevisionResponseV0 v0 = 1; }
@@ -230,9 +261,9 @@ message GetIdentityBalanceAndRevisionResponse {
 
 message KeyRequestType {
   oneof request {
-    AllKeys all_keys = 1;            // Request for all keys
-    SpecificKeys specific_keys = 2;  // Request for specific keys by their IDs
-    SearchKey search_key = 3;        // Request for keys based on a search criteria
+    AllKeys all_keys = 1;           // Request for all keys
+    SpecificKeys specific_keys = 2; // Request for specific keys by their IDs
+    SearchKey search_key = 3; // Request for keys based on a search criteria
   }
 }
 
@@ -241,31 +272,37 @@ message AllKeys {}
 
 // SpecificKeys is used to request specific keys by their IDs
 message SpecificKeys {
-  repeated uint32 key_ids = 1;  // List of key IDs
+  repeated uint32 key_ids = 1; // List of key IDs
 }
 
 // SearchKey represents a request to search for keys based on specific criteria
 message SearchKey {
-  map<uint32, SecurityLevelMap> purpose_map = 1;  // Map of purposes to their security level maps
+  map<uint32, SecurityLevelMap> purpose_map =
+      1; // Map of purposes to their security level maps
 }
 
 // SecurityLevelMap maps security levels to a request type for key retrieval
 message SecurityLevelMap {
   enum KeyKindRequestType {
-    CURRENT_KEY_OF_KIND_REQUEST = 0;  // Request the current key of a particular kind
-    ALL_KEYS_OF_KIND_REQUEST = 1;     // Request all keys of a particular kind
+    CURRENT_KEY_OF_KIND_REQUEST =
+        0; // Request the current key of a particular kind
+    ALL_KEYS_OF_KIND_REQUEST = 1; // Request all keys of a particular kind
   }
-  map<uint32, KeyKindRequestType> security_level_map = 1;  // Maps security levels to key request types
+  map<uint32, KeyKindRequestType> security_level_map =
+      1; // Maps security levels to key request types
 }
 
 message GetIdentityKeysRequest {
 
   message GetIdentityKeysRequestV0 {
-    bytes identity_id = 1;                   // ID of the identity for key retrieval
-    KeyRequestType request_type = 2;         // Type of key request: all, specific, or search
-    google.protobuf.UInt32Value limit = 3;   // Limit on the number of keys to be returned
-    google.protobuf.UInt32Value offset = 4;  // Offset for pagination through the keys
-    bool prove = 5;                          // Flag to request a proof as the response
+    bytes identity_id = 1; // ID of the identity for key retrieval
+    KeyRequestType request_type =
+        2; // Type of key request: all, specific, or search
+    google.protobuf.UInt32Value limit =
+        3; // Limit on the number of keys to be returned
+    google.protobuf.UInt32Value offset =
+        4;          // Offset for pagination through the keys
+    bool prove = 5; // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityKeysRequestV0 v0 = 1; }
@@ -274,13 +311,15 @@ message GetIdentityKeysRequest {
 message GetIdentityKeysResponse {
 
   message GetIdentityKeysResponseV0 {
-    message Keys { repeated bytes keys_bytes = 1; }  // Collection of keys as byte sequences
+    message Keys {
+      repeated bytes keys_bytes = 1;
+    } // Collection of keys as byte sequences
 
     oneof result {
-      Keys keys = 1;    // The actual key data
-      Proof proof = 2;  // Proof of the keys data, if requested
+      Keys keys = 1;   // The actual key data
+      Proof proof = 2; // Proof of the keys data, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetIdentityKeysResponseV0 v0 = 1; }
 }
@@ -294,9 +333,7 @@ message GetIdentitiesContractKeysRequest {
     bool prove = 5;
   }
 
-  oneof version {
-    GetIdentitiesContractKeysRequestV0 v0 = 1;
-  }
+  oneof version { GetIdentitiesContractKeysRequestV0 v0 = 1; }
 }
 
 message GetIdentitiesContractKeysResponse {
@@ -311,9 +348,7 @@ message GetIdentitiesContractKeysResponse {
       repeated PurposeKeys keys = 2;
     }
 
-    message IdentitiesKeys {
-      repeated IdentityKeys entries = 1;
-    };
+    message IdentitiesKeys { repeated IdentityKeys entries = 1; };
 
     oneof result {
       IdentitiesKeys identities_keys = 1;
@@ -328,9 +363,11 @@ message GetIdentitiesContractKeysResponse {
 message GetEvonodesProposedEpochBlocksByIdsRequest {
 
   message GetEvonodesProposedEpochBlocksByIdsRequestV0 {
-    optional uint32 epoch = 1; // The epoch we are querying for, if none is set, get current epoch
-    repeated bytes ids = 2;    // IDs of the evonodes for which we want to get their proposed blocks
-    bool prove = 3;  // Flag to request a proof as the response
+    optional uint32 epoch =
+        1; // The epoch we are querying for, if none is set, get current epoch
+    repeated bytes ids =
+        2; // IDs of the evonodes for which we want to get their proposed blocks
+    bool prove = 3; // Flag to request a proof as the response
   }
 
   oneof version { GetEvonodesProposedEpochBlocksByIdsRequestV0 v0 = 1; }
@@ -341,7 +378,7 @@ message GetEvonodesProposedEpochBlocksResponse {
   message GetEvonodesProposedEpochBlocksResponseV0 {
     message EvonodeProposedBlocks {
       bytes pro_tx_hash = 1;
-      uint64 count = 2  [jstype = JS_STRING];
+      uint64 count = 2 [ jstype = JS_STRING ];
     }
 
     message EvonodesProposedBlocks {
@@ -349,10 +386,11 @@ message GetEvonodesProposedEpochBlocksResponse {
     }
 
     oneof result {
-      EvonodesProposedBlocks evonodes_proposed_block_counts_info = 1;    // The actual result
-      Proof proof = 2;  // Proof of the keys data, if requested
+      EvonodesProposedBlocks evonodes_proposed_block_counts_info =
+          1;           // The actual result
+      Proof proof = 2; // Proof of the keys data, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetEvonodesProposedEpochBlocksResponseV0 v0 = 1; }
 }
@@ -360,13 +398,15 @@ message GetEvonodesProposedEpochBlocksResponse {
 message GetEvonodesProposedEpochBlocksByRangeRequest {
 
   message GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-    optional uint32 epoch = 1; // The epoch we are querying for, if none is set, get current epoch
-    optional uint32 limit = 2;            // Maximum number of evonodes proposed epoch blocks to return
+    optional uint32 epoch =
+        1; // The epoch we are querying for, if none is set, get current epoch
+    optional uint32 limit =
+        2; // Maximum number of evonodes proposed epoch blocks to return
     oneof start {
-      bytes start_after = 3;  // Start retrieval after this document
-      bytes start_at = 4;     // Start retrieval at this document
+      bytes start_after = 3; // Start retrieval after this document
+      bytes start_at = 4;    // Start retrieval at this document
     }
-    bool prove = 5;  // Flag to request a proof as the response
+    bool prove = 5; // Flag to request a proof as the response
   }
 
   oneof version { GetEvonodesProposedEpochBlocksByRangeRequestV0 v0 = 1; }
@@ -378,21 +418,17 @@ message GetIdentitiesBalancesRequest {
     bool prove = 2;
   }
 
-  oneof version {
-    GetIdentitiesBalancesRequestV0 v0 = 1;
-  }
+  oneof version { GetIdentitiesBalancesRequestV0 v0 = 1; }
 }
 
 message GetIdentitiesBalancesResponse {
   message GetIdentitiesBalancesResponseV0 {
     message IdentityBalance {
       bytes identity_id = 1;
-      optional uint64 balance = 2  [jstype = JS_STRING];
+      optional uint64 balance = 2 [ jstype = JS_STRING ];
     }
 
-    message IdentitiesBalances {
-      repeated IdentityBalance entries = 1;
-    };
+    message IdentitiesBalances { repeated IdentityBalance entries = 1; };
 
     oneof result {
       IdentitiesBalances identities_balances = 1;
@@ -406,8 +442,8 @@ message GetIdentitiesBalancesResponse {
 
 message GetDataContractRequest {
   message GetDataContractRequestV0 {
-    bytes id = 1;    // The ID of the data contract being requested
-    bool prove = 2;  // Flag to request a proof as the response
+    bytes id = 1;   // The ID of the data contract being requested
+    bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetDataContractRequestV0 v0 = 1; }
 }
@@ -415,50 +451,58 @@ message GetDataContractRequest {
 message GetDataContractResponse {
   message GetDataContractResponseV0 {
     oneof result {
-      bytes data_contract = 1;  // The actual data contract in binary form
-      Proof proof = 2;          // Cryptographic proof of the data contract, if requested
+      bytes data_contract = 1; // The actual data contract in binary form
+      Proof proof = 2; // Cryptographic proof of the data contract, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
 message GetDataContractsRequest {
   message GetDataContractsRequestV0 {
-    repeated bytes ids = 1;  // A list of unique IDs for the data contracts being requested
-    bool prove = 2;          // Flag to request a proof as the response
+    repeated bytes ids =
+        1; // A list of unique IDs for the data contracts being requested
+    bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetDataContractsRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {
   message DataContractEntry {
-    bytes identifier = 1;                          // The unique identifier of the data contract
-    google.protobuf.BytesValue data_contract = 2;  // The actual data contract content
+    bytes identifier = 1; // The unique identifier of the data contract
+    google.protobuf.BytesValue data_contract =
+        2; // The actual data contract content
   }
 
   // DataContracts is a collection of data contract entries.
   message DataContracts {
-    repeated DataContractEntry data_contract_entries = 1;  // A list of data contract entries
+    repeated DataContractEntry data_contract_entries =
+        1; // A list of data contract entries
   }
 
   message GetDataContractsResponseV0 {
     oneof result {
-      DataContracts data_contracts = 1;  // The actual data contracts requested
-      Proof proof = 2;                   // Cryptographic proof for the data contracts, if requested
+      DataContracts data_contracts = 1; // The actual data contracts requested
+      Proof proof =
+          2; // Cryptographic proof for the data contracts, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDataContractsResponseV0 v0 = 1; }
 }
 
 message GetDataContractHistoryRequest {
   message GetDataContractHistoryRequestV0 {
-    bytes id = 1;                            // The unique ID of the data contract
-    google.protobuf.UInt32Value limit = 2;   // The maximum number of history entries to return
-    google.protobuf.UInt32Value offset = 3;  // The offset for pagination through the contract history
-    uint64 start_at_ms = 4  [jstype = JS_STRING];                  // Only return results starting at this time in milliseconds
-    bool prove = 5;                          // Flag to request a proof as the response
+    bytes id = 1; // The unique ID of the data contract
+    google.protobuf.UInt32Value limit =
+        2; // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset =
+        3; // The offset for pagination through the contract history
+    uint64 start_at_ms = 4 [
+      jstype = JS_STRING
+    ];              // Only return results starting at this time in milliseconds
+    bool prove = 5; // Flag to request a proof as the response
   }
   oneof version { GetDataContractHistoryRequestV0 v0 = 1; }
 }
@@ -467,39 +511,44 @@ message GetDataContractHistoryResponse {
   message GetDataContractHistoryResponseV0 {
     // Represents a single entry in the data contract's history
     message DataContractHistoryEntry {
-      uint64 date = 1  [jstype = JS_STRING];  // The date of the history entry
-      bytes value = 2;  // The value of the data contract at this point in history
+      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
+      bytes value =
+          2; // The value of the data contract at this point in history
     }
 
     // Collection of data contract history entries
     message DataContractHistory {
-      repeated DataContractHistoryEntry data_contract_entries = 1;  // List of history entries
+      repeated DataContractHistoryEntry data_contract_entries =
+          1; // List of history entries
     }
 
     oneof result {
-      DataContractHistory data_contract_history = 1;  // The actual history of the data contract
-      Proof proof = 2;                                // Cryptographic proof of the data contract history, if requested
+      DataContractHistory data_contract_history =
+          1; // The actual history of the data contract
+      Proof proof =
+          2; // Cryptographic proof of the data contract history, if requested
     }
 
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDataContractHistoryResponseV0 v0 = 1; }
 }
 
 message GetDocumentsRequest {
   message GetDocumentsRequestV0 {
-    bytes data_contract_id = 1;  // The ID of the data contract containing the documents
-    string document_type = 2;    // The type of document being requested
-    bytes where = 3;             // Conditions to be met by the requested documents
-    bytes order_by = 4;          // Ordering criteria for the documents
-    uint32 limit = 5;            // Maximum number of documents to return
+    bytes data_contract_id =
+        1; // The ID of the data contract containing the documents
+    string document_type = 2; // The type of document being requested
+    bytes where = 3;          // Conditions to be met by the requested documents
+    bytes order_by = 4;       // Ordering criteria for the documents
+    uint32 limit = 5;         // Maximum number of documents to return
 
     // Specifies the starting point for the document retrieval
     oneof start {
-      bytes start_after = 6;  // Start retrieval after this document
-      bytes start_at = 7;     // Start retrieval at this document
+      bytes start_after = 6; // Start retrieval after this document
+      bytes start_at = 7;    // Start retrieval at this document
     }
-    bool prove = 8;  // Flag to request a proof as the response
+    bool prove = 8; // Flag to request a proof as the response
   }
   oneof version { GetDocumentsRequestV0 v0 = 1; }
 }
@@ -508,22 +557,23 @@ message GetDocumentsResponse {
   message GetDocumentsResponseV0 {
     // Represents a collection of documents
     message Documents {
-      repeated bytes documents = 1;  // The actual documents in binary form
+      repeated bytes documents = 1; // The actual documents in binary form
     }
 
     oneof result {
-      Documents documents = 1;  // The actual documents requested
-      Proof proof = 2;          // Cryptographic proof of the documents, if requested
+      Documents documents = 1; // The actual documents requested
+      Proof proof = 2; // Cryptographic proof of the documents, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDocumentsResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
   message GetIdentityByPublicKeyHashRequestV0 {
-    bytes public_key_hash = 1;  // The public key hash of the identity being requested
-    bool prove = 2;             // Flag to request a proof as the response
+    bytes public_key_hash =
+        1;          // The public key hash of the identity being requested
+    bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetIdentityByPublicKeyHashRequestV0 v0 = 1; }
 }
@@ -531,19 +581,22 @@ message GetIdentityByPublicKeyHashRequest {
 message GetIdentityByPublicKeyHashResponse {
   message GetIdentityByPublicKeyHashResponseV0 {
     oneof result {
-      bytes identity = 1;  // The actual identity data corresponding to the requested public key hash
-      Proof proof = 2;     // Cryptographic proof for the identity data, if requested
+      bytes identity = 1; // The actual identity data corresponding to the
+                          // requested public key hash
+      Proof proof =
+          2; // Cryptographic proof for the identity data, if requested
     }
 
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetIdentityByPublicKeyHashResponseV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultRequest {
   message WaitForStateTransitionResultRequestV0 {
-    bytes state_transition_hash = 1;  // The hash of the state transition to wait for
-    bool prove = 2;                   // Flag to request a proof as the response
+    bytes state_transition_hash =
+        1;          // The hash of the state transition to wait for
+    bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
@@ -551,155 +604,162 @@ message WaitForStateTransitionResultRequest {
 message WaitForStateTransitionResultResponse {
   message WaitForStateTransitionResultResponseV0 {
     oneof result {
-      StateTransitionBroadcastError error = 1;  // Any error that occurred during the state transition broadcast
-      Proof proof = 2;                          // Cryptographic proof for the state transition, if requested
+      StateTransitionBroadcastError error =
+          1; // Any error that occurred during the state transition broadcast
+      Proof proof =
+          2; // Cryptographic proof for the state transition, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }
 
 message GetConsensusParamsRequest {
   message GetConsensusParamsRequestV0 {
-    int32 height = 1;  // The blockchain height at which to get the consensus parameters
-    bool prove = 2;    // Flag to request a proof as the response
+    int32 height =
+        1; // The blockchain height at which to get the consensus parameters
+    bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetConsensusParamsRequestV0 v0 = 1; }
 }
 
 message GetConsensusParamsResponse {
   message ConsensusParamsBlock {
-    string max_bytes = 1;     // The maximum size of a block in bytes
-    string max_gas = 2;       // The maximum gas allowed in a block
-    string time_iota_ms = 3;  // The minimum time increment between consecutive blocks, in milliseconds
+    string max_bytes = 1;    // The maximum size of a block in bytes
+    string max_gas = 2;      // The maximum gas allowed in a block
+    string time_iota_ms = 3; // The minimum time increment between consecutive
+                             // blocks, in milliseconds
   }
 
   message ConsensusParamsEvidence {
-    string max_age_num_blocks = 1;  // The maximum age of evidence, in number of blocks
-    string max_age_duration = 2;    // The maximum age of evidence, as a duration
-    string max_bytes = 3;           // The maximum size of evidence in bytes
+    string max_age_num_blocks =
+        1; // The maximum age of evidence, in number of blocks
+    string max_age_duration = 2; // The maximum age of evidence, as a duration
+    string max_bytes = 3;        // The maximum size of evidence in bytes
   }
 
   message GetConsensusParamsResponseV0 {
-    ConsensusParamsBlock block = 1;        // Consensus parameters related to block creation and validation
-    ConsensusParamsEvidence evidence = 2;  // Consensus parameters related to evidence
+    ConsensusParamsBlock block =
+        1; // Consensus parameters related to block creation and validation
+    ConsensusParamsEvidence evidence =
+        2; // Consensus parameters related to evidence
   }
   oneof version { GetConsensusParamsResponseV0 v0 = 1; }
 }
 
-
 message GetProtocolVersionUpgradeStateRequest {
   message GetProtocolVersionUpgradeStateRequestV0 {
-    bool prove = 1;  // Flag to request a proof as the response
+    bool prove = 1; // Flag to request a proof as the response
   }
 
-  oneof version {
-    GetProtocolVersionUpgradeStateRequestV0 v0 = 1;
-  }
+  oneof version { GetProtocolVersionUpgradeStateRequestV0 v0 = 1; }
 }
 
 message GetProtocolVersionUpgradeStateResponse {
   message GetProtocolVersionUpgradeStateResponseV0 {
     // Versions holds a collection of version entries
     message Versions {
-      repeated VersionEntry versions = 1;  // List of protocol version entries
+      repeated VersionEntry versions = 1; // List of protocol version entries
     }
 
     // VersionEntry represents a single entry of a protocol version
     message VersionEntry {
-      uint32 version_number = 1;  // The protocol version number
-      uint32 vote_count = 2;      // The vote count for this protocol version
+      uint32 version_number = 1; // The protocol version number
+      uint32 vote_count = 2;     // The vote count for this protocol version
     }
 
     oneof result {
-      Versions versions = 1;  // The actual protocol version information
-      Proof proof = 2;        // Cryptographic proof of the protocol version information, if requested
+      Versions versions = 1; // The actual protocol version information
+      Proof proof = 2;       // Cryptographic proof of the protocol version
+                             // information, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
-  oneof version {
-    GetProtocolVersionUpgradeStateResponseV0 v0 = 1;
-  }
+  oneof version { GetProtocolVersionUpgradeStateResponseV0 v0 = 1; }
 }
 
 message GetProtocolVersionUpgradeVoteStatusRequest {
   message GetProtocolVersionUpgradeVoteStatusRequestV0 {
-    bytes start_pro_tx_hash = 1;  // The starting masternode provider transaction hash to filter the votes by
-    uint32 count = 2;             // The number of vote entries to retrieve
-    bool prove = 3;               // Flag to request a proof as the response
+    bytes start_pro_tx_hash = 1; // The starting masternode provider transaction
+                                 // hash to filter the votes by
+    uint32 count = 2;            // The number of vote entries to retrieve
+    bool prove = 3;              // Flag to request a proof as the response
   }
 
-  oneof version {
-    GetProtocolVersionUpgradeVoteStatusRequestV0 v0 = 1;
-  }
+  oneof version { GetProtocolVersionUpgradeVoteStatusRequestV0 v0 = 1; }
 }
 
 message GetProtocolVersionUpgradeVoteStatusResponse {
   message GetProtocolVersionUpgradeVoteStatusResponseV0 {
     // VersionSignals holds a collection of version signal entries
     message VersionSignals {
-      repeated VersionSignal version_signals = 1;  // List of version signal entries
+      repeated VersionSignal version_signals =
+          1; // List of version signal entries
     }
 
     // VersionSignal represents a single voting signal for a protocol version
     message VersionSignal {
-      bytes pro_tx_hash = 1;  // The masternode provider transaction hash associated with the vote
-      uint32 version = 2;     // The protocol version number that is being voted on
+      bytes pro_tx_hash = 1; // The masternode provider transaction hash
+                             // associated with the vote
+      uint32 version = 2; // The protocol version number that is being voted on
     }
 
     oneof result {
-      VersionSignals versions = 1;  // The actual version signal information
-      Proof proof = 2;              // Cryptographic proof of the version signal information, if requested
+      VersionSignals versions = 1; // The actual version signal information
+      Proof proof = 2; // Cryptographic proof of the version signal information,
+                       // if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
-  oneof version {
-    GetProtocolVersionUpgradeVoteStatusResponseV0 v0 = 1;
-  }
+  oneof version { GetProtocolVersionUpgradeVoteStatusResponseV0 v0 = 1; }
 }
 
 message GetEpochsInfoRequest {
   message GetEpochsInfoRequestV0 {
-    google.protobuf.UInt32Value start_epoch = 1;  // The starting epoch for the request
-    uint32 count = 2;                             // The number of epochs to retrieve information for
-    bool ascending = 3;                           // Flag indicating if the epochs should be listed in ascending order
-    bool prove = 4;                               // Flag to request a proof as the response
+    google.protobuf.UInt32Value start_epoch =
+        1;            // The starting epoch for the request
+    uint32 count = 2; // The number of epochs to retrieve information for
+    bool ascending =
+        3; // Flag indicating if the epochs should be listed in ascending order
+    bool prove = 4; // Flag to request a proof as the response
   }
 
-  oneof version {
-    GetEpochsInfoRequestV0 v0 = 1;
-  }
+  oneof version { GetEpochsInfoRequestV0 v0 = 1; }
 }
 
 message GetEpochsInfoResponse {
   message GetEpochsInfoResponseV0 {
     // EpochInfos holds a collection of epoch information entries
     message EpochInfos {
-      repeated EpochInfo epoch_infos = 1;  // List of information for each requested epoch
+      repeated EpochInfo epoch_infos =
+          1; // List of information for each requested epoch
     }
 
     // EpochInfo represents information about a single epoch
     message EpochInfo {
-      uint32 number = 1;                   // The number of the epoch
-      uint64 first_block_height = 2  [jstype = JS_STRING];       // The height of the first block in this epoch
-      uint32 first_core_block_height = 3;  // The height of the first Core block in this epoch
-      uint64 start_time = 4  [jstype = JS_STRING];               // The start time of the epoch
-      double fee_multiplier = 5;           // The fee multiplier applicable in this epoch
+      uint32 number = 1; // The number of the epoch
+      uint64 first_block_height = 2
+          [ jstype = JS_STRING ]; // The height of the first block in this epoch
+      uint32 first_core_block_height =
+          3; // The height of the first Core block in this epoch
+      uint64 start_time = 4
+          [ jstype = JS_STRING ]; // The start time of the epoch
+      double fee_multiplier = 5;  // The fee multiplier applicable in this epoch
       uint32 protocol_version = 6;
     }
 
     oneof result {
-      EpochInfos epochs = 1;  // The actual information about the requested epochs
-      Proof proof = 2;        // Cryptographic proof of the epoch information, if requested
+      EpochInfos epochs =
+          1; // The actual information about the requested epochs
+      Proof proof =
+          2; // Cryptographic proof of the epoch information, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
-  oneof version {
-    GetEpochsInfoResponseV0 v0 = 1;
-  }
+  oneof version { GetEpochsInfoResponseV0 v0 = 1; }
 }
 
 message GetContestedResourcesRequest {
@@ -720,9 +780,7 @@ message GetContestedResourcesRequest {
     bool prove = 9;
   }
 
-  oneof version {
-    GetContestedResourcesRequestV0 v0 = 1;
-  }
+  oneof version { GetContestedResourcesRequestV0 v0 = 1; }
 }
 
 message GetContestedResourcesResponse {
@@ -738,19 +796,17 @@ message GetContestedResourcesResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetContestedResourcesResponseV0 v0 = 1;
-  }
+  oneof version { GetContestedResourcesResponseV0 v0 = 1; }
 }
 
 message GetVotePollsByEndDateRequest {
   message GetVotePollsByEndDateRequestV0 {
     message StartAtTimeInfo {
-      uint64 start_time_ms = 1  [jstype = JS_STRING];
+      uint64 start_time_ms = 1 [ jstype = JS_STRING ];
       bool start_time_included = 2;
     }
     message EndAtTimeInfo {
-      uint64 end_time_ms = 1  [jstype = JS_STRING];
+      uint64 end_time_ms = 1 [ jstype = JS_STRING ];
       bool end_time_included = 2;
     }
     optional StartAtTimeInfo start_time_info = 1;
@@ -761,15 +817,13 @@ message GetVotePollsByEndDateRequest {
     bool prove = 6;
   }
 
-  oneof version {
-    GetVotePollsByEndDateRequestV0 v0 = 1;
-  }
+  oneof version { GetVotePollsByEndDateRequestV0 v0 = 1; }
 }
 
 message GetVotePollsByEndDateResponse {
   message GetVotePollsByEndDateResponseV0 {
     message SerializedVotePollsByTimestamp {
-      uint64 timestamp = 1  [jstype = JS_STRING];
+      uint64 timestamp = 1 [ jstype = JS_STRING ];
       repeated bytes serialized_vote_polls = 2;
     }
 
@@ -785,9 +839,7 @@ message GetVotePollsByEndDateResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetVotePollsByEndDateResponseV0 v0 = 1;
-  }
+  oneof version { GetVotePollsByEndDateResponseV0 v0 = 1; }
 }
 
 // What's the state of a contested resource vote? (ie who is winning?)
@@ -814,9 +866,7 @@ message GetContestedResourceVoteStateRequest {
     bool prove = 9;
   }
 
-  oneof version {
-    GetContestedResourceVoteStateRequestV0 v0 = 1;
-  }
+  oneof version { GetContestedResourceVoteStateRequestV0 v0 = 1; }
 }
 
 message GetContestedResourceVoteStateResponse {
@@ -828,10 +878,11 @@ message GetContestedResourceVoteStateResponse {
         NO_PREVIOUS_WINNER = 2;
       }
       FinishedVoteOutcome finished_vote_outcome = 1;
-      optional bytes won_by_identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
-      uint64 finished_at_block_height = 3  [jstype = JS_STRING];
+      optional bytes won_by_identity_id =
+          2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+      uint64 finished_at_block_height = 3 [ jstype = JS_STRING ];
       uint32 finished_at_core_block_height = 4;
-      uint64 finished_at_block_time_ms = 5  [jstype = JS_STRING];
+      uint64 finished_at_block_time_ms = 5 [ jstype = JS_STRING ];
       uint32 finished_at_epoch = 6;
     }
 
@@ -855,9 +906,7 @@ message GetContestedResourceVoteStateResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetContestedResourceVoteStateResponseV0 v0 = 1;
-  }
+  oneof version { GetContestedResourceVoteStateResponseV0 v0 = 1; }
 }
 
 // Who voted for a contested resource to go to a specific identity?
@@ -878,9 +927,7 @@ message GetContestedResourceVotersForIdentityRequest {
     bool prove = 9;
   }
 
-  oneof version {
-    GetContestedResourceVotersForIdentityRequestV0 v0 = 1;
-  }
+  oneof version { GetContestedResourceVotersForIdentityRequestV0 v0 = 1; }
 }
 
 message GetContestedResourceVotersForIdentityResponse {
@@ -897,9 +944,7 @@ message GetContestedResourceVotersForIdentityResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetContestedResourceVotersForIdentityResponseV0 v0 = 1;
-  }
+  oneof version { GetContestedResourceVotersForIdentityResponseV0 v0 = 1; }
 }
 
 // How did an identity vote?
@@ -917,15 +962,14 @@ message GetContestedResourceIdentityVotesRequest {
     bool prove = 6;
   }
 
-  oneof version {
-    GetContestedResourceIdentityVotesRequestV0 v0 = 1;
-  }
+  oneof version { GetContestedResourceIdentityVotesRequestV0 v0 = 1; }
 }
 
 message GetContestedResourceIdentityVotesResponse {
   message GetContestedResourceIdentityVotesResponseV0 {
     message ContestedResourceIdentityVotes {
-      repeated ContestedResourceIdentityVote contested_resource_identity_votes = 1;
+      repeated ContestedResourceIdentityVote contested_resource_identity_votes =
+          1;
       bool finished_results = 2;
     }
 
@@ -936,7 +980,8 @@ message GetContestedResourceIdentityVotesResponse {
         LOCK = 2;
       }
       VoteChoiceType vote_choice_type = 1;
-      optional bytes identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+      optional bytes identity_id =
+          2; // Only used when vote_choice_type is TOWARDS_IDENTITY
     }
 
     message ContestedResourceIdentityVote {
@@ -953,9 +998,7 @@ message GetContestedResourceIdentityVotesResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetContestedResourceIdentityVotesResponseV0 v0 = 1;
-  }
+  oneof version { GetContestedResourceIdentityVotesResponseV0 v0 = 1; }
 }
 
 message GetPrefundedSpecializedBalanceRequest {
@@ -972,7 +1015,7 @@ message GetPrefundedSpecializedBalanceResponse {
 
   message GetPrefundedSpecializedBalanceResponseV0 {
     oneof result {
-      uint64 balance = 1  [jstype = JS_STRING];
+      uint64 balance = 1 [ jstype = JS_STRING ];
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
@@ -982,28 +1025,22 @@ message GetPrefundedSpecializedBalanceResponse {
 }
 
 message GetTotalCreditsInPlatformRequest {
-  message GetTotalCreditsInPlatformRequestV0 {
-    bool prove = 1;
-  }
+  message GetTotalCreditsInPlatformRequestV0 { bool prove = 1; }
 
-  oneof version {
-    GetTotalCreditsInPlatformRequestV0 v0 = 1;
-  }
+  oneof version { GetTotalCreditsInPlatformRequestV0 v0 = 1; }
 }
 
 message GetTotalCreditsInPlatformResponse {
   message GetTotalCreditsInPlatformResponseV0 {
     oneof result {
-      uint64 credits = 1 [jstype = JS_STRING];
+      uint64 credits = 1 [ jstype = JS_STRING ];
 
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetTotalCreditsInPlatformResponseV0 v0 = 1;
-  }
+  oneof version { GetTotalCreditsInPlatformResponseV0 v0 = 1; }
 }
 
 message GetPathElementsRequest {
@@ -1013,16 +1050,12 @@ message GetPathElementsRequest {
     bool prove = 3;
   }
 
-  oneof version {
-    GetPathElementsRequestV0 v0 = 1;
-  }
+  oneof version { GetPathElementsRequestV0 v0 = 1; }
 }
 
 message GetPathElementsResponse {
   message GetPathElementsResponseV0 {
-    message Elements {
-      repeated bytes elements = 1;
-    }
+    message Elements { repeated bytes elements = 1; }
 
     oneof result {
       Elements elements = 1;
@@ -1032,18 +1065,14 @@ message GetPathElementsResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetPathElementsResponseV0 v0 = 1;
-  }
+  oneof version { GetPathElementsResponseV0 v0 = 1; }
 }
 
 message GetStatusRequest {
-  message GetStatusRequestV0 {
-  }
+  message GetStatusRequestV0 {}
 
   oneof version { GetStatusRequestV0 v0 = 1; }
 }
-
 
 message GetStatusResponse {
   message GetStatusResponseV0 {
@@ -1076,11 +1105,11 @@ message GetStatusResponse {
     }
 
     message Time {
-      uint64 local = 1 [jstype = JS_STRING];
+      uint64 local = 1 [ jstype = JS_STRING ];
       // It will be missing if Drive is not responding
-      optional uint64 block = 2 [jstype = JS_STRING];
+      optional uint64 block = 2 [ jstype = JS_STRING ];
       // It will be missing if Drive is not responding
-      optional uint64 genesis = 3 [jstype = JS_STRING];
+      optional uint64 genesis = 3 [ jstype = JS_STRING ];
       // It will be missing if Drive is not responding
       optional uint32 epoch = 4;
     }
@@ -1096,11 +1125,11 @@ message GetStatusResponse {
       bool catching_up = 1;
       bytes latest_block_hash = 2;
       bytes latest_app_hash = 3;
-      uint64 latest_block_height = 4 [jstype = JS_STRING];
+      uint64 latest_block_height = 4 [ jstype = JS_STRING ];
       bytes earliest_block_hash = 5;
       bytes earliest_app_hash = 6;
-      uint64 earliest_block_height = 7 [jstype = JS_STRING];
-      uint64 max_peer_block_height = 9 [jstype = JS_STRING];
+      uint64 earliest_block_height = 7 [ jstype = JS_STRING ];
+      uint64 max_peer_block_height = 9 [ jstype = JS_STRING ];
       // Latest known core height in consensus.
       // It will be missing if Drive is not responding
       optional uint32 core_chain_locked_height = 10;
@@ -1113,14 +1142,14 @@ message GetStatusResponse {
     }
 
     message StateSync {
-      uint64 total_synced_time = 1 [jstype = JS_STRING];
-      uint64 remaining_time = 2 [jstype = JS_STRING];
+      uint64 total_synced_time = 1 [ jstype = JS_STRING ];
+      uint64 remaining_time = 2 [ jstype = JS_STRING ];
       uint32 total_snapshots = 3;
-      uint64 chunk_process_avg_time = 4 [jstype = JS_STRING];
-      uint64 snapshot_height = 5 [jstype = JS_STRING];
-      uint64 snapshot_chunks_count = 6 [jstype = JS_STRING];
-      uint64 backfilled_blocks = 7 [jstype = JS_STRING];
-      uint64 backfill_blocks_total = 8 [jstype = JS_STRING];
+      uint64 chunk_process_avg_time = 4 [ jstype = JS_STRING ];
+      uint64 snapshot_height = 5 [ jstype = JS_STRING ];
+      uint64 snapshot_chunks_count = 6 [ jstype = JS_STRING ];
+      uint64 backfilled_blocks = 7 [ jstype = JS_STRING ];
+      uint64 backfill_blocks_total = 8 [ jstype = JS_STRING ];
     }
 
     Version version = 1;
@@ -1135,8 +1164,7 @@ message GetStatusResponse {
 }
 
 message GetCurrentQuorumsInfoRequest {
-  message GetCurrentQuorumsInfoRequestV0 {
-  }
+  message GetCurrentQuorumsInfoRequestV0 {}
 
   oneof version { GetCurrentQuorumsInfoRequestV0 v0 = 1; }
 }
@@ -1166,71 +1194,63 @@ message GetCurrentQuorumsInfoResponse {
 
 message GetIdentityTokenBalancesRequest {
   message GetIdentityTokenBalancesRequestV0 {
-    bytes identity_id = 1;            // ID of the identity
-    repeated bytes token_ids = 2;     // List of token IDs
-    bool prove = 3;                   // Flag to request a proof as the response
+    bytes identity_id = 1;        // ID of the identity
+    repeated bytes token_ids = 2; // List of token IDs
+    bool prove = 3;               // Flag to request a proof as the response
   }
-  oneof version {
-    GetIdentityTokenBalancesRequestV0 v0 = 1;
-  }
+  oneof version { GetIdentityTokenBalancesRequestV0 v0 = 1; }
 }
 
 message GetIdentityTokenBalancesResponse {
   message GetIdentityTokenBalancesResponseV0 {
     message TokenBalanceEntry {
-      bytes token_id = 1;     // Token ID
-      optional uint64 balance = 2;     // Token balance for the contract
+      bytes token_id = 1;          // Token ID
+      optional uint64 balance = 2; // Token balance for the contract
     }
 
     message TokenBalances {
-      repeated TokenBalanceEntry token_balances = 1;  // List of token balances
+      repeated TokenBalanceEntry token_balances = 1; // List of token balances
     }
 
     oneof result {
-      TokenBalances token_balances = 1;  // Actual token balances
-      Proof proof = 2;                   // Proof of the token balances, if requested
+      TokenBalances token_balances = 1; // Actual token balances
+      Proof proof = 2; // Proof of the token balances, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
-  oneof version {
-    GetIdentityTokenBalancesResponseV0 v0 = 1;
-  }
+  oneof version { GetIdentityTokenBalancesResponseV0 v0 = 1; }
 }
 
 message GetIdentitiesTokenBalancesRequest {
   message GetIdentitiesTokenBalancesRequestV0 {
-    bytes token_id = 1;               // Token ID
-    repeated bytes identity_ids = 2;  // List of identity IDs
-    bool prove = 3;                   // Flag to request a proof as the response
+    bytes token_id = 1;              // Token ID
+    repeated bytes identity_ids = 2; // List of identity IDs
+    bool prove = 3;                  // Flag to request a proof as the response
   }
-  oneof version {
-    GetIdentitiesTokenBalancesRequestV0 v0 = 1;
-  }
+  oneof version { GetIdentitiesTokenBalancesRequestV0 v0 = 1; }
 }
 
 message GetIdentitiesTokenBalancesResponse {
   message GetIdentitiesTokenBalancesResponseV0 {
     message IdentityTokenBalanceEntry {
-      bytes identity_id = 1;  // Identity ID
-      optional uint64 balance = 2;     // Token balance for the identity
+      bytes identity_id = 1;       // Identity ID
+      optional uint64 balance = 2; // Token balance for the identity
     }
 
     message IdentityTokenBalances {
-      repeated IdentityTokenBalanceEntry identity_token_balances = 1;  // List of identity token balances
+      repeated IdentityTokenBalanceEntry identity_token_balances =
+          1; // List of identity token balances
     }
 
     oneof result {
-      IdentityTokenBalances identity_token_balances = 1;  // Actual identity token balances
-      Proof proof = 2;                                    // Proof of the balances, if requested
+      IdentityTokenBalances identity_token_balances =
+          1;           // Actual identity token balances
+      Proof proof = 2; // Proof of the balances, if requested
     }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
-  oneof version {
-    GetIdentitiesTokenBalancesResponseV0 v0 = 1;
-  }
+  oneof version { GetIdentitiesTokenBalancesResponseV0 v0 = 1; }
 }
-
-
 
 message GetIdentityTokenInfosRequest {
   message GetIdentityTokenInfosRequestV0 {
@@ -1238,25 +1258,19 @@ message GetIdentityTokenInfosRequest {
     repeated bytes token_ids = 2;
     bool prove = 3;
   }
-  oneof version {
-    GetIdentityTokenInfosRequestV0 v0 = 1;
-  }
+  oneof version { GetIdentityTokenInfosRequestV0 v0 = 1; }
 }
 
 message GetIdentityTokenInfosResponse {
   message GetIdentityTokenInfosResponseV0 {
-    message TokenIdentityInfoEntry {
-      bool frozen = 1;
-    }
+    message TokenIdentityInfoEntry { bool frozen = 1; }
 
     message TokenInfoEntry {
       bytes token_id = 1;
       optional TokenIdentityInfoEntry info = 2;
     }
 
-    message TokenInfos {
-      repeated TokenInfoEntry token_infos = 1;
-    }
+    message TokenInfos { repeated TokenInfoEntry token_infos = 1; }
 
     oneof result {
       TokenInfos token_infos = 1;
@@ -1264,9 +1278,7 @@ message GetIdentityTokenInfosResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetIdentityTokenInfosResponseV0 v0 = 1;
-  }
+  oneof version { GetIdentityTokenInfosResponseV0 v0 = 1; }
 }
 
 message GetIdentitiesTokenInfosRequest {
@@ -1275,25 +1287,19 @@ message GetIdentitiesTokenInfosRequest {
     repeated bytes identity_ids = 2;
     bool prove = 3;
   }
-  oneof version {
-    GetIdentitiesTokenInfosRequestV0 v0 = 1;
-  }
+  oneof version { GetIdentitiesTokenInfosRequestV0 v0 = 1; }
 }
 
 message GetIdentitiesTokenInfosResponse {
   message GetIdentitiesTokenInfosResponseV0 {
-    message TokenIdentityInfoEntry {
-      bool frozen = 1;
-    }
+    message TokenIdentityInfoEntry { bool frozen = 1; }
 
     message TokenInfoEntry {
       bytes identity_id = 1;
       optional TokenIdentityInfoEntry info = 2;
     }
 
-    message IdentityTokenInfos {
-      repeated TokenInfoEntry token_infos = 1;
-    }
+    message IdentityTokenInfos { repeated TokenInfoEntry token_infos = 1; }
 
     oneof result {
       IdentityTokenInfos identity_token_infos = 1;
@@ -1301,9 +1307,7 @@ message GetIdentitiesTokenInfosResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetIdentitiesTokenInfosResponseV0 v0 = 1;
-  }
+  oneof version { GetIdentitiesTokenInfosResponseV0 v0 = 1; }
 }
 
 message GetTokenStatusesRequest {
@@ -1311,9 +1315,7 @@ message GetTokenStatusesRequest {
     repeated bytes token_ids = 1;
     bool prove = 2;
   }
-  oneof version {
-    GetTokenStatusesRequestV0 v0 = 1;
-  }
+  oneof version { GetTokenStatusesRequestV0 v0 = 1; }
 }
 
 message GetTokenStatusesResponse {
@@ -1323,9 +1325,7 @@ message GetTokenStatusesResponse {
       optional bool paused = 2;
     }
 
-    message TokenStatuses {
-      repeated TokenStatusEntry token_statuses = 1;
-    }
+    message TokenStatuses { repeated TokenStatusEntry token_statuses = 1; }
 
     oneof result {
       TokenStatuses token_statuses = 1;
@@ -1333,20 +1333,7 @@ message GetTokenStatusesResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetTokenStatusesResponseV0 v0 = 1;
-  }
-}
-
-
-message GetTokenDirectPurchasePricesRequest {
-  message GetTokenDirectPurchasePricesRequestV0 {
-    repeated bytes token_ids = 1;
-    bool prove = 2;
-  }
-  oneof version {
-    GetTokenDirectPurchasePricesRequestV0 v0 = 1;
-  }
+  oneof version { GetTokenStatusesResponseV0 v0 = 1; }
 }
 
 message GetTokenDirectPurchasePricesResponse {
@@ -1360,16 +1347,14 @@ message GetTokenDirectPurchasePricesResponse {
       repeated PriceForQuantity price_for_quantity = 1;
     }
 
-    message Price {
-      oneof price {
-        uint64 fixed_price = 1;
-        PricingSchedule variable_price = 2;
-      }
-    }
-
     message TokenDirectPurchasePriceEntry {
       bytes token_id = 1;
-      optional Price price = 2;
+
+      // Price of the token; optional
+      oneof price {
+        uint64 fixed_price = 2;
+        PricingSchedule variable_price = 3;
+      }
     }
 
     message TokenDirectPurchasePrices {
@@ -1382,9 +1367,15 @@ message GetTokenDirectPurchasePricesResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetTokenDirectPurchasePricesResponseV0 v0 = 1;
+  oneof version { GetTokenDirectPurchasePricesResponseV0 v0 = 1; }
+}
+
+message GetTokenDirectPurchasePricesRequest {
+  message GetTokenDirectPurchasePricesRequestV0 {
+    repeated bytes token_ids = 1;
+    bool prove = 2;
   }
+  oneof version { GetTokenDirectPurchasePricesRequestV0 v0 = 1; }
 }
 
 message GetTokenPreProgrammedDistributionsRequest {
@@ -1399,9 +1390,7 @@ message GetTokenPreProgrammedDistributionsRequest {
     optional uint32 limit = 3;
     bool prove = 4;
   }
-  oneof version {
-    GetTokenPreProgrammedDistributionsRequestV0 v0 = 1;
-  }
+  oneof version { GetTokenPreProgrammedDistributionsRequestV0 v0 = 1; }
 }
 
 message GetTokenPreProgrammedDistributionsResponse {
@@ -1426,9 +1415,7 @@ message GetTokenPreProgrammedDistributionsResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetTokenPreProgrammedDistributionsResponseV0 v0 = 1;
-  }
+  oneof version { GetTokenPreProgrammedDistributionsResponseV0 v0 = 1; }
 }
 
 message GetTokenTotalSupplyRequest {
@@ -1436,9 +1423,7 @@ message GetTokenTotalSupplyRequest {
     bytes token_id = 1;
     bool prove = 2;
   }
-  oneof version {
-    GetTokenTotalSupplyRequestV0 v0 = 1;
-  }
+  oneof version { GetTokenTotalSupplyRequestV0 v0 = 1; }
 }
 
 message GetTokenTotalSupplyResponse {
@@ -1455,9 +1440,7 @@ message GetTokenTotalSupplyResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetTokenTotalSupplyResponseV0 v0 = 1;
-  }
+  oneof version { GetTokenTotalSupplyResponseV0 v0 = 1; }
 }
 
 message GetGroupInfoRequest {
@@ -1466,9 +1449,7 @@ message GetGroupInfoRequest {
     uint32 group_contract_position = 2;
     bool prove = 3;
   }
-  oneof version {
-    GetGroupInfoRequestV0 v0 = 1;
-  }
+  oneof version { GetGroupInfoRequestV0 v0 = 1; }
 }
 
 message GetGroupInfoResponse {
@@ -1483,9 +1464,7 @@ message GetGroupInfoResponse {
       uint32 group_required_power = 2;
     }
 
-    message GroupInfo {
-      optional GroupInfoEntry group_info = 1;
-    }
+    message GroupInfo { optional GroupInfoEntry group_info = 1; }
 
     oneof result {
       GroupInfo group_info = 1;
@@ -1493,9 +1472,7 @@ message GetGroupInfoResponse {
     }
     ResponseMetadata metadata = 4;
   }
-  oneof version {
-    GetGroupInfoResponseV0 v0 = 1;
-  }
+  oneof version { GetGroupInfoResponseV0 v0 = 1; }
 }
 
 message GetGroupInfosRequest {
@@ -1510,9 +1487,7 @@ message GetGroupInfosRequest {
     optional uint32 count = 3;
     bool prove = 4;
   }
-  oneof version {
-    GetGroupInfosRequestV0 v0 = 1;
-  }
+  oneof version { GetGroupInfosRequestV0 v0 = 1; }
 }
 
 message GetGroupInfosResponse {
@@ -1528,9 +1503,7 @@ message GetGroupInfosResponse {
       uint32 group_required_power = 3;
     }
 
-    message GroupInfos {
-      repeated GroupPositionInfoEntry group_infos = 1;
-    }
+    message GroupInfos { repeated GroupPositionInfoEntry group_infos = 1; }
 
     oneof result {
       GroupInfos group_infos = 1;
@@ -1538,9 +1511,7 @@ message GetGroupInfosResponse {
     }
     ResponseMetadata metadata = 4;
   }
-  oneof version {
-    GetGroupInfosResponseV0 v0 = 1;
-  }
+  oneof version { GetGroupInfosResponseV0 v0 = 1; }
 }
 
 message GetGroupActionsRequest {
@@ -1562,56 +1533,55 @@ message GetGroupActionsRequest {
     optional uint32 count = 5;
     bool prove = 6;
   }
-  oneof version {
-    GetGroupActionsRequestV0 v0 = 1;
-  }
+  oneof version { GetGroupActionsRequestV0 v0 = 1; }
 }
 
 message GetGroupActionsResponse {
   message GetGroupActionsResponseV0 {
     // Mint event
     message MintEvent {
-      uint64 amount = 1; // Amount to mint
-      bytes recipient_id = 2; // Recipient identifier
+      uint64 amount = 1;               // Amount to mint
+      bytes recipient_id = 2;          // Recipient identifier
       optional string public_note = 3; // Public note
     }
 
     // Burn event
     message BurnEvent {
-      uint64 amount = 1; // Amount to burn
+      uint64 amount = 1;               // Amount to burn
       optional string public_note = 2; // Public note
     }
 
     // Freeze event
     message FreezeEvent {
-      bytes frozen_id = 1; // Identifier of the frozen entity
+      bytes frozen_id = 1;             // Identifier of the frozen entity
       optional string public_note = 2; // Public note
     }
 
     // Unfreeze event
     message UnfreezeEvent {
-      bytes frozen_id = 1; // Identifier of the unfrozen entity
+      bytes frozen_id = 1;             // Identifier of the unfrozen entity
       optional string public_note = 2; // Public note
     }
 
     // Destroy frozen funds event
     message DestroyFrozenFundsEvent {
-      bytes frozen_id = 1; // Identifier of the frozen entity
-      uint64 amount = 2; // Amount to destroy
+      bytes frozen_id = 1;             // Identifier of the frozen entity
+      uint64 amount = 2;               // Amount to destroy
       optional string public_note = 3; // Public note
     }
 
     // Shared encrypted note
     message SharedEncryptedNote {
-      uint32 sender_key_index = 1; // Sender key index
+      uint32 sender_key_index = 1;    // Sender key index
       uint32 recipient_key_index = 2; // Recipient key index
-      bytes encrypted_data = 3; // Encrypted data
+      bytes encrypted_data = 3;       // Encrypted data
     }
 
     // Personal encrypted note
     message PersonalEncryptedNote {
       uint32 root_encryption_key_index = 1; // Root encryption key index
-      uint32 derivation_encryption_key_index = 2; // Derivation encryption key index
+      uint32 derivation_encryption_key_index =
+          2;                    // Derivation encryption key index
       bytes encrypted_data = 3; // Encrypted data
     }
 
@@ -1619,18 +1589,18 @@ message GetGroupActionsResponse {
     message EmergencyActionEvent {
       // Enum for emergency action types
       enum ActionType {
-        PAUSE = 0; // Pause action
+        PAUSE = 0;  // Pause action
         RESUME = 1; // Resume action
       }
 
-      ActionType action_type = 1; // Emergency action type
+      ActionType action_type = 1;      // Emergency action type
       optional string public_note = 2; // Public note
     }
 
     // Token config update event
     message TokenConfigUpdateEvent {
       bytes token_config_update_item = 1; // Token config update item
-      optional string public_note = 2; // Public note
+      optional string public_note = 2;    // Public note
     }
 
     // UpdatePrice event
@@ -1661,46 +1631,43 @@ message GetGroupActionsResponse {
 
     message DocumentEvent {
       oneof type {
-        DocumentCreateEvent create = 1;             // Create event details
+        DocumentCreateEvent create = 1; // Create event details
       }
     }
 
-    message DocumentCreateEvent {
-      bytes created_document = 1;
-    }
+    message DocumentCreateEvent { bytes created_document = 1; }
 
-    message ContractUpdateEvent {
-      bytes updated_contract = 1;
-    }
+    message ContractUpdateEvent { bytes updated_contract = 1; }
 
     message ContractEvent {
       oneof type {
-        ContractUpdateEvent update = 1;             // Contract update event
+        ContractUpdateEvent update = 1; // Contract update event
       }
     }
 
     // Details for token events
     message TokenEvent {
       oneof type {
-        MintEvent mint = 1;             // Mint event details
-        BurnEvent burn = 2;             // Burn event details
-        FreezeEvent freeze = 3;         // Freeze event details
-        UnfreezeEvent unfreeze = 4;     // Unfreeze event details
-        DestroyFrozenFundsEvent destroy_frozen_funds = 5; // Destroy frozen funds
+        MintEvent mint = 1;         // Mint event details
+        BurnEvent burn = 2;         // Burn event details
+        FreezeEvent freeze = 3;     // Freeze event details
+        UnfreezeEvent unfreeze = 4; // Unfreeze event details
+        DestroyFrozenFundsEvent destroy_frozen_funds =
+            5;                                     // Destroy frozen funds
         EmergencyActionEvent emergency_action = 6; // Emergency action details
-        TokenConfigUpdateEvent token_config_update = 7; // Token configuration update details
-        UpdateDirectPurchasePriceEvent update_price = 8; // Updating the token direct selling price
+        TokenConfigUpdateEvent token_config_update =
+            7; // Token configuration update details
+        UpdateDirectPurchasePriceEvent update_price =
+            8; // Updating the token direct selling price
       }
     }
 
     message GroupActionEntry {
-      bytes action_id = 1; // Unique identifier for the action
+      bytes action_id = 1;        // Unique identifier for the action
       GroupActionEvent event = 2; // The event data
     }
 
-    message GroupActions {
-      repeated GroupActionEntry group_actions = 1;
-    }
+    message GroupActions { repeated GroupActionEntry group_actions = 1; }
 
     oneof result {
       GroupActions group_actions = 1;
@@ -1708,11 +1675,8 @@ message GetGroupActionsResponse {
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version {
-    GetGroupActionsResponseV0 v0 = 1;
-  }
+  oneof version { GetGroupActionsResponseV0 v0 = 1; }
 }
-
 
 message GetGroupActionSignersRequest {
   enum ActionStatus {
@@ -1727,9 +1691,7 @@ message GetGroupActionSignersRequest {
     bytes action_id = 4;
     bool prove = 5;
   }
-  oneof version {
-    GetGroupActionSignersRequestV0 v0 = 1;
-  }
+  oneof version { GetGroupActionSignersRequestV0 v0 = 1; }
 }
 
 message GetGroupActionSignersResponse {
@@ -1738,9 +1700,7 @@ message GetGroupActionSignersResponse {
       bytes signer_id = 1;
       uint32 power = 2;
     }
-    message GroupActionSigners {
-      repeated GroupActionSigner signers = 1;
-    }
+    message GroupActionSigners { repeated GroupActionSigner signers = 1; }
 
     oneof result {
       GroupActionSigners group_action_signers = 1;
@@ -1749,7 +1709,5 @@ message GetGroupActionSignersResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetGroupActionSignersResponseV0 v0 = 1;
-  }
+  oneof version { GetGroupActionSignersResponseV0 v0 = 1; }
 }

@@ -186,7 +186,6 @@ CF_EXTERN_C_BEGIN
 @class GetStatusResponse_GetStatusResponseV0_Version_Software;
 @class GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0;
-@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry;
@@ -474,7 +473,8 @@ typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
 };
 
 /**
- * ResponseMetadata provides metadata about the blockchain state at the time of response
+ * ResponseMetadata provides metadata about the blockchain state at the time of
+ * response
  **/
 GPB_FINAL @interface ResponseMetadata : GPBMessage
 
@@ -2422,10 +2422,10 @@ GPB_FINAL @interface GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHa
 
 @property(nonatomic, readonly) GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
-/** The actual identity data corresponding to the requested public key hash */
+/** The actual identity data corresponding to the */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
-/** Cryptographic proof for the identity data, if requested */
+/** requested public key hash */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -2622,7 +2622,7 @@ GPB_FINAL @interface GetConsensusParamsResponse_ConsensusParamsBlock : GPBMessag
 /** The maximum gas allowed in a block */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxGas;
 
-/** The minimum time increment between consecutive blocks, in milliseconds */
+/** The minimum time increment between consecutive */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *timeIotaMs;
 
 @end
@@ -2751,7 +2751,7 @@ GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUp
 /** The actual protocol version information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions *versions;
 
-/** Cryptographic proof of the protocol version information, if requested */
+/** Cryptographic proof of the protocol version */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -2838,10 +2838,10 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUp
 
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 : GPBMessage
 
-/** The starting masternode provider transaction hash to filter the votes by */
+/** The starting masternode provider transaction */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startProTxHash;
 
-/** The number of vote entries to retrieve */
+/** hash to filter the votes by */
 @property(nonatomic, readwrite) uint32_t count;
 
 /** Flag to request a proof as the response */
@@ -2894,7 +2894,7 @@ GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVers
 /** The actual version signal information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
 
-/** Cryptographic proof of the version signal information, if requested */
+/** Cryptographic proof of the version signal information, */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -2939,10 +2939,10 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionU
  **/
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal : GPBMessage
 
-/** The masternode provider transaction hash associated with the vote */
+/** The masternode provider transaction hash */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
 
-/** The protocol version number that is being voted on */
+/** associated with the vote */
 @property(nonatomic, readwrite) uint32_t version;
 
 @end
@@ -5495,47 +5495,6 @@ GPB_FINAL @interface GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenSt
 
 @end
 
-#pragma mark - GetTokenDirectPurchasePricesRequest
-
-typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_FieldNumber) {
-  GetTokenDirectPurchasePricesRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
-  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
-
-@property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetTokenDirectPurchasePricesRequest_ClearVersionOneOfCase(GetTokenDirectPurchasePricesRequest *message);
-
-#pragma mark - GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0
-
-typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber) {
-  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_TokenIdsArray = 1,
-  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_Prove = 2,
-};
-
-GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
-/** The number of items in @c tokenIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
-
-@property(nonatomic, readwrite) BOOL prove;
-
-@end
-
 #pragma mark - GetTokenDirectPurchasePricesResponse
 
 typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_FieldNumber) {
@@ -5622,22 +5581,26 @@ GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchase
 
 @end
 
-#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry
 
-typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_FieldNumber) {
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_FieldNumber_FixedPrice = 1,
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_FieldNumber_VariablePrice = 2,
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_TokenId = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_FixedPrice = 2,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_VariablePrice = 3,
 };
 
-typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase) {
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase_FixedPrice = 1,
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase_VariablePrice = 2,
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase_FixedPrice = 2,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase_VariablePrice = 3,
 };
 
-GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price : GPBMessage
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry : GPBMessage
 
-@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase priceOneOfCase;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+
+/** Price of the token; optional */
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase priceOneOfCase;
 
 @property(nonatomic, readwrite) uint64_t fixedPrice;
 
@@ -5648,24 +5611,7 @@ GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchase
 /**
  * Clears whatever value was set for the oneof 'price'.
  **/
-void GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_ClearPriceOneOfCase(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price *message);
-
-#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry
-
-typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber) {
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_TokenId = 1,
-  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_Price = 2,
-};
-
-GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price *price;
-/** Test to see if @c price has been set. */
-@property(nonatomic, readwrite) BOOL hasPrice;
-
-@end
+void GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_ClearPriceOneOfCase(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry *message);
 
 #pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices
 
@@ -5678,6 +5624,47 @@ GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchase
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry*> *tokenDirectPurchasePriceArray;
 /** The number of items in @c tokenDirectPurchasePriceArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger tokenDirectPurchasePriceArray_Count;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesRequest
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenDirectPurchasePricesRequest_ClearVersionOneOfCase(GetTokenDirectPurchasePricesRequest *message);
+
+#pragma mark - GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_TokenIdsArray = 1,
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
+/** The number of items in @c tokenIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
 
 @end
 

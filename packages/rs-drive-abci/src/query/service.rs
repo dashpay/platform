@@ -742,9 +742,14 @@ impl PlatformService for QueryService {
 
     async fn get_token_direct_purchase_prices(
         &self,
-        _request: Request<GetTokenDirectPurchasePricesRequest>,
+        request: Request<GetTokenDirectPurchasePricesRequest>,
     ) -> Result<Response<GetTokenDirectPurchasePricesResponse>, Status> {
-        todo!()
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_token_direct_purchase_prices,
+            "get_token_direct_purchase_prices",
+        )
+        .await
     }
 }
 
