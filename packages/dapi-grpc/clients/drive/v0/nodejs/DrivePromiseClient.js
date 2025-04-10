@@ -104,7 +104,7 @@ class DrivePromiseClient {
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {
-    this.setProtocolVersion = protocolVersion;
+    this.protocolVersion = protocolVersion;
   }
 }
 

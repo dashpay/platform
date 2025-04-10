@@ -62,7 +62,7 @@ pub mod drive {
             not(feature = "server"),
             not(target_arch = "wasm32")
         ))]
-        include!("platform/client/org.dash.platform.drive.v0.rs");
+        include!("drive/client/org.dash.platform.drive.v0.rs");
     }
 
     #[cfg(feature = "tenderdash-proto")]
