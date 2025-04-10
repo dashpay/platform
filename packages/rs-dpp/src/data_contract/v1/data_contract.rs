@@ -66,6 +66,11 @@ use platform_value::Value;
 /// - This vector can be left empty, but if populated, it must contain unique keywords.
 /// - The maximum number of keywords is limited to 20.
 ///
+/// ## 5. **Description** (`description: Option<String>`)
+/// - A human-readable description of the contract.
+/// - This field is optional but if provided, must be between 3 and 100 characters.
+/// - The description is automatically added to the new `search` system contract as well.
+///
 /// These additions ensure that data contracts are not only more flexible and governed but also
 /// fully auditable in terms of when and how they evolve over time.
 #[derive(Debug, Clone, PartialEq)]
