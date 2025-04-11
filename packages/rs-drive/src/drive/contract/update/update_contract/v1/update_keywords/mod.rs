@@ -68,8 +68,8 @@ impl Drive {
             .drive
             .methods
             .contract
-            .insert
-            .insert_contract
+            .update
+            .update_contract
         {
             0 => Err(Error::Drive(DriveError::NotSupported(
                 "Contract keywords are not supported in this version",

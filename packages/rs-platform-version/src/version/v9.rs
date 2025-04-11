@@ -33,7 +33,7 @@ pub const PROTOCOL_VERSION_9: ProtocolVersion = 9;
 //todo: make changes
 pub const PLATFORM_V9: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_9,
-    drive: DRIVE_VERSION_V4, // changed (for data contract insert)
+    drive: DRIVE_VERSION_V4, // changed (for data contract insert and update)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V6, // changed because of the genesis state
