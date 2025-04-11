@@ -1,5 +1,6 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::{DriveDocumentQuery, WhereClause, WhereOperator};
@@ -15,7 +16,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds operations for updating keywords and returns the fee result.
+    /// Updates the documents in the Keyword Search contract for the contract
+    /// update keywords and returns the fee result
     pub(super) fn update_contract_keywords_v1(
         &self,
         contract_id: Identifier,
@@ -48,7 +50,8 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Adds keyword update operations to drive operations
+    /// Creates and applies the LowLeveLDriveOperations needed to update
+    /// the documents in the Keyword Search contract for the contract keywords
     pub(super) fn update_contract_keywords_add_to_operations_v1(
         &self,
         contract_id: Identifier,
@@ -85,8 +88,8 @@ impl Drive {
         )
     }
 
-    /// The operations needed to update the keywords search contract documents
-    /// First we delete the existing keywords then we add the new ones
+    /// Creates and returns the LowLeveLDriveOperations needed to update
+    /// the documents in the Keyword Search contract for the contract keywords
     pub(super) fn update_contract_keywords_operations_v1(
         &self,
         contract_id: Identifier,
@@ -101,7 +104,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        // First delete the existing keywords
+        // First get the existing keywords so we know which ones we need to delete and which new ones we need to add
         let contract = self
             .cache
             .system_data_contracts
@@ -119,6 +122,7 @@ impl Drive {
             },
         );
 
+        // todo: deal with cost of this operation
         let query_outcome = self.query_documents(
             query,
             Some(&block_info.epoch),
@@ -127,29 +131,54 @@ impl Drive {
             Some(platform_version.protocol_version),
         )?;
 
-        let existing_documents = query_outcome.documents();
-        for document in existing_documents {
-            operations.extend(self.delete_document_for_contract_operations(
-                document.id(),
-                &contract,
-                document_type,
-                None,
+        let mut existing: Vec<(String, Identifier)> = Vec::new();
+        for doc in query_outcome.documents() {
+            let kw = doc
+                .get("keyword")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    Error::Drive(DriveError::CorruptedDriveState(
+                        "keyword should exist".to_string(),
+                    ))
+                })?
+                .to_string();
+            existing.push((kw, doc.id()));
+        }
+
+        // If an existing keyword is not in the new keyword set, we delete it
+        for (kw, doc_id) in &existing {
+            if !keywords.iter().any(|k| k == kw) {
+                operations.extend(self.delete_document_for_contract_operations(
+                    *doc_id,
+                    &contract,
+                    document_type,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?);
+            }
+        }
+
+        // Finally, add the new ones
+        let mut keywords_to_add: Vec<String> = Vec::new();
+        for kw in keywords {
+            if !existing.iter().any(|(e_kw, _)| e_kw == kw) {
+                keywords_to_add.push(kw.clone());
+            }
+        }
+
+        if !keywords_to_add.is_empty() {
+            operations.extend(self.add_new_contract_keywords_operations_v1(
+                contract_id,
+                owner_id,
+                &keywords_to_add,
+                block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             )?);
         }
-
-        // Then add the new ones
-        operations.extend(self.add_new_contract_keywords_operations_v1(
-            contract_id,
-            owner_id,
-            keywords,
-            block_info,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            platform_version,
-        )?);
 
         Ok(operations)
     }

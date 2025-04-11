@@ -17,7 +17,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds operations for updating a contract description and returns the fee result.
+    /// Updates the documents in the Keyword Search contract for the contract
+    /// update description and returns the fee result
     pub(super) fn update_contract_description_v1(
         &self,
         contract_id: Identifier,
@@ -50,7 +51,8 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Adds contract description update operations to drive operations
+    /// Creates and applies the LowLeveLDriveOperations needed to update
+    /// the documents in the Keyword Search contract for the contract description
     pub(super) fn update_contract_description_add_to_operations_v1(
         &self,
         contract_id: Identifier,
@@ -87,7 +89,8 @@ impl Drive {
         )
     }
 
-    /// The operations needed to update a contract description
+    /// Creates and returns the LowLeveLDriveOperations needed to update
+    /// the documents in the Keyword Search contract for the contract description
     pub(super) fn update_contract_description_operations_v1(
         &self,
         contract_id: Identifier,
@@ -119,6 +122,7 @@ impl Drive {
             },
         );
 
+        // todo: deal with cost of this operation
         let query_outcome = self.query_documents(
             query,
             Some(&block_info.epoch),
