@@ -3,12 +3,13 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Data contract {} has description with invalid length: '{}'. Valid length is between 3 and 100 characters.", contract_id, description.len())]
+#[error("Data contract {} has description with invalid length: '{}'. Valid length is between 3 and 100 characters.", data_contract_id, description.len())]
 #[platform_serialize(unversioned)]
 pub struct InvalidDescriptionLengthError {
     /*
@@ -16,20 +17,20 @@ pub struct InvalidDescriptionLengthError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    contract_id: String,
+    data_contract_id: Identifier,
     description: String,
 }
 
 impl InvalidDescriptionLengthError {
-    pub fn new(contract_id: String, description: String) -> Self {
+    pub fn new(data_contract_id: Identifier, description: String) -> Self {
         Self {
-            contract_id,
+            data_contract_id,
             description,
         }
     }
 
-    pub fn contract_id(&self) -> &str {
-        &self.contract_id
+    pub fn data_contract_id(&self) -> &Identifier {
+        &self.data_contract_id
     }
 
     pub fn description(&self) -> &str {

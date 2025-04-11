@@ -3,12 +3,13 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Data contract {contract_id} has duplicated keyword '{keyword}'.")]
+#[error("Data contract {data_contract_id} has duplicated keyword '{keyword}'.")]
 #[platform_serialize(unversioned)]
 pub struct DuplicateKeywordsError {
     /*
@@ -16,20 +17,20 @@ pub struct DuplicateKeywordsError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    contract_id: String,
+    data_contract_id: Identifier,
     keyword: String,
 }
 
 impl DuplicateKeywordsError {
-    pub fn new(contract_id: String, keyword: String) -> Self {
+    pub fn new(data_contract_id: Identifier, keyword: String) -> Self {
         Self {
-            contract_id,
+            data_contract_id,
             keyword,
         }
     }
 
-    pub fn contract_id(&self) -> &str {
-        &self.contract_id
+    pub fn data_contract_id(&self) -> &Identifier {
+        &self.data_contract_id
     }
 
     pub fn keyword(&self) -> &str {

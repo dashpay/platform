@@ -14,7 +14,6 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -163,7 +162,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                 bump_action,
                 vec![ConsensusError::BasicError(
                     BasicError::TooManyKeywordsError(TooManyKeywordsError::new(
-                        self.data_contract().id().to_string(Encoding::Base58),
+                        self.data_contract().id(),
                         self.data_contract().keywords().len() as u8,
                     )),
                 )],
@@ -183,7 +182,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                     bump_action,
                     vec![ConsensusError::BasicError(
                         BasicError::InvalidKeywordLengthError(InvalidKeywordLengthError::new(
-                            self.data_contract().id().to_string(Encoding::Base58),
+                            self.data_contract().id(),
                             keyword.to_string(),
                         )),
                     )],
@@ -200,7 +199,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                     bump_action,
                     vec![ConsensusError::BasicError(
                         BasicError::DuplicateKeywordsError(DuplicateKeywordsError::new(
-                            self.data_contract().id().to_string(Encoding::Base58),
+                            self.data_contract().id(),
                             keyword.to_string(),
                         )),
                     )],
@@ -220,7 +219,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
                     vec![ConsensusError::BasicError(
                         BasicError::InvalidDescriptionLengthError(
                             InvalidDescriptionLengthError::new(
-                                self.data_contract().id().to_string(Encoding::Base58),
+                                self.data_contract().id(),
                                 description.to_string(),
                             ),
                         ),

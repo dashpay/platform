@@ -2194,7 +2194,7 @@ mod tests {
 
         invalid_update_test!(
             update_fails_description_too_long,
-            &"x".repeat(51),
+            &"x".repeat(101),
             BasicError::InvalidDescriptionLengthError(_)
         );
 

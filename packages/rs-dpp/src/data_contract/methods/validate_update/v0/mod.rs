@@ -1,7 +1,10 @@
+use std::collections::HashSet;
+
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
-    IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
+    DuplicateKeywordsError, IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
+    InvalidDescriptionLengthError, InvalidKeywordLengthError, TooManyKeywordsError,
 };
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
@@ -166,84 +169,123 @@ impl DataContract {
                     return Ok(SimpleConsensusValidationResult::new_with_errors(errors));
                 }
             }
+        }
 
-            if self.groups() != new_data_contract.groups() {
-                // No groups can have been removed
-                for old_group_position in self.groups().keys() {
-                    if !new_data_contract.groups().contains_key(old_group_position) {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DataContractUpdateActionNotAllowedError::new(
-                                self.id(),
-                                "remove group".to_string(),
-                            )
-                            .into(),
-                        ));
-                    }
-                }
-
-                // Ensure no group has been changed
-                for (old_group_position, old_group) in self.groups() {
-                    if let Some(new_group) = new_data_contract.groups().get(old_group_position) {
-                        if old_group != new_group {
-                            return Ok(SimpleConsensusValidationResult::new_with_error(
-                                DataContractUpdateActionNotAllowedError::new(
-                                    self.id(),
-                                    format!(
-                                        "change group at position {} is not allowed",
-                                        old_group_position
-                                    ),
-                                )
-                                .into(),
-                            ));
-                        }
-                    }
-                }
-
-                let valid =
-                    DataContract::validate_groups(new_data_contract.groups(), platform_version)?;
-                if !valid.is_valid() {
-                    return Ok(valid);
+        if self.groups() != new_data_contract.groups() {
+            // No groups can have been removed
+            for old_group_position in self.groups().keys() {
+                if !new_data_contract.groups().contains_key(old_group_position) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractUpdateActionNotAllowedError::new(
+                            self.id(),
+                            "remove group".to_string(),
+                        )
+                        .into(),
+                    ));
                 }
             }
 
-            if self.tokens() != new_data_contract.tokens() {
-                for (token_position, old_token_config) in self.tokens() {
-                    // Check if a token has been removed
-                    if !new_data_contract.tokens().contains_key(token_position) {
+            // Ensure no group has been changed
+            for (old_group_position, old_group) in self.groups() {
+                if let Some(new_group) = new_data_contract.groups().get(old_group_position) {
+                    if old_group != new_group {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             DataContractUpdateActionNotAllowedError::new(
                                 self.id(),
-                                format!("remove token at position {}", token_position),
+                                format!(
+                                    "change group at position {} is not allowed",
+                                    old_group_position
+                                ),
                             )
                             .into(),
                         ));
-                    }
-
-                    // Check if a token configuration has been changed
-                    if let Some(new_token_config) = new_data_contract.tokens().get(token_position) {
-                        if old_token_config != new_token_config {
-                            return Ok(SimpleConsensusValidationResult::new_with_error(
-                                DataContractUpdateActionNotAllowedError::new(
-                                    self.id(),
-                                    format!("update token at position {}", token_position),
-                                )
-                                .into(),
-                            ));
-                        }
                     }
                 }
+            }
 
-                // Check if a token has been added
-                for token_position in new_data_contract.tokens().keys() {
-                    if !self.tokens().contains_key(token_position) {
+            let valid =
+                DataContract::validate_groups(new_data_contract.groups(), platform_version)?;
+            if !valid.is_valid() {
+                return Ok(valid);
+            }
+        }
+
+        if self.tokens() != new_data_contract.tokens() {
+            for (token_position, old_token_config) in self.tokens() {
+                // Check if a token has been removed
+                if !new_data_contract.tokens().contains_key(token_position) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractUpdateActionNotAllowedError::new(
+                            self.id(),
+                            format!("remove token at position {}", token_position),
+                        )
+                        .into(),
+                    ));
+                }
+
+                // Check if a token configuration has been changed
+                if let Some(new_token_config) = new_data_contract.tokens().get(token_position) {
+                    if old_token_config != new_token_config {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             DataContractUpdateActionNotAllowedError::new(
                                 self.id(),
-                                format!("add token at position {}", token_position),
+                                format!("update token at position {}", token_position),
                             )
                             .into(),
                         ));
                     }
+                }
+            }
+
+            // Check if a token has been added
+            for token_position in new_data_contract.tokens().keys() {
+                if !self.tokens().contains_key(token_position) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractUpdateActionNotAllowedError::new(
+                            self.id(),
+                            format!("add token at position {}", token_position),
+                        )
+                        .into(),
+                    ));
+                }
+            }
+        }
+
+        if self.keywords() != new_data_contract.keywords() {
+            // Validate there are no more than 20 keywords
+            if new_data_contract.keywords().len() > 20 {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    TooManyKeywordsError::new(self.id(), self.keywords().len() as u8).into(),
+                ));
+            }
+
+            // Validate the keywords are all unique and between 3 and 50 characters
+            let mut seen_keywords = HashSet::new();
+            for keyword in new_data_contract.keywords() {
+                // First check keyword length
+                if keyword.len() < 3 || keyword.len() > 50 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidKeywordLengthError::new(self.id(), keyword.to_string()).into(),
+                    ));
+                }
+
+                // Then check uniqueness
+                if !seen_keywords.insert(keyword) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DuplicateKeywordsError::new(self.id(), keyword.to_string()).into(),
+                    ));
+                }
+            }
+        }
+
+        if self.description() != new_data_contract.description() {
+            // Validate the description is between 3 and 100 characters
+            if let Some(description) = new_data_contract.description() {
+                if !(description.len() >= 3 && description.len() <= 100) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidDescriptionLengthError::new(self.id(), description.to_string())
+                            .into(),
+                    ));
                 }
             }
         }
