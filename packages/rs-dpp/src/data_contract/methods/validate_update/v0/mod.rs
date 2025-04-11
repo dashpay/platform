@@ -308,9 +308,22 @@ mod tests {
     use platform_value::Identifier;
 
     mod validate_update {
+        use std::collections::BTreeMap;
+
         use super::*;
         use crate::data_contract::accessors::v0::DataContractV0Setters;
+        use crate::data_contract::accessors::v1::DataContractV1Setters;
+        use crate::data_contract::associated_token::token_configuration::accessors::v0::{
+            TokenConfigurationV0Getters, TokenConfigurationV0Setters,
+        };
+        use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         use crate::data_contract::document_type::DocumentTypeMutRef;
+        use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
+        use crate::data_contract::group::v0::GroupV0;
+        use crate::data_contract::group::Group;
+        use crate::data_contract::TokenConfiguration;
+        use crate::identity::accessors::IdentityGettersV0;
+        use crate::prelude::Identity;
 
         #[test]
         fn should_return_invalid_result_if_owner_id_is_not_the_same() {
@@ -519,6 +532,274 @@ mod tests {
 
             let mut new_data_contract = old_data_contract.clone();
 
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, platform_version)
+                .expect("failed validate update");
+
+            assert!(result.is_valid());
+        }
+
+        //
+        // ──────────────────────────────────────────────────────────────────────────
+        //  Group‑related rules
+        // ──────────────────────────────────────────────────────────────────────────
+        //
+
+        #[test]
+        fn should_return_invalid_result_when_group_is_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            let identity_1 = Identity::random_identity(3, Some(14), platform_version)
+                .expect("expected a platform identity");
+            let identity_1_id = identity_1.id();
+            let identity_2 = Identity::random_identity(3, Some(506), platform_version)
+                .expect("expected a platform identity");
+            let identity_2_id = identity_2.id();
+
+            let mut old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+            old_data_contract.set_groups(BTreeMap::from([(
+                0,
+                Group::V0(GroupV0 {
+                    members: [(identity_1_id, 1), (identity_2_id, 1)].into(),
+                    required_power: 2,
+                }),
+            )]));
+
+            // Clone & bump version
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // Remove the first (and normally only) group
+            let first_group_pos = *old_data_contract
+                .groups()
+                .keys()
+                .next()
+                .expect("fixture must have at least one group");
+            new_data_contract
+                .groups_mut()
+                .unwrap()
+                .remove(&first_group_pos);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DataContractUpdateActionNotAllowedError(e)
+                )] if e.action() == "remove group"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_group_is_changed() {
+            let platform_version = PlatformVersion::latest();
+
+            let identity_1 = Identity::random_identity(3, Some(14), platform_version)
+                .expect("expected a platform identity");
+            let identity_1_id = identity_1.id();
+            let identity_2 = Identity::random_identity(3, Some(506), platform_version)
+                .expect("expected a platform identity");
+            let identity_2_id = identity_2.id();
+
+            let mut old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+            old_data_contract.set_groups(BTreeMap::from([(
+                0,
+                Group::V0(GroupV0 {
+                    members: [(identity_1_id, 1), (identity_2_id, 1)].into(),
+                    required_power: 2,
+                }),
+            )]));
+
+            // Clone & bump version
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // Mutate the first group in some trivial way so that
+            // `old_group != new_group` evaluates to true.
+            let first_group_pos = *new_data_contract
+                .groups()
+                .keys()
+                .next()
+                .expect("fixture must have at least one group");
+            let mut altered_group = new_data_contract
+                .groups()
+                .get(&first_group_pos)
+                .cloned()
+                .expect("group must exist");
+            // Tweak required power
+            altered_group.set_required_power(altered_group.required_power() + 1);
+            new_data_contract
+                .groups_mut()
+                .unwrap()
+                .insert(first_group_pos, altered_group);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DataContractUpdateActionNotAllowedError(e)
+                )] if e.action() == format!(
+                        "change group at position {} is not allowed",
+                        first_group_pos
+                    )
+            );
+        }
+
+        //
+        // ──────────────────────────────────────────────────────────────────────────
+        //  Token‑related rules
+        // ──────────────────────────────────────────────────────────────────────────
+        //
+
+        #[test]
+        fn should_return_invalid_result_when_token_is_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+            old_data_contract.set_tokens(BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]));
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // Remove an existing token
+            let first_token_pos = *old_data_contract
+                .tokens()
+                .keys()
+                .next()
+                .expect("fixture must have at least one token");
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .remove(&first_token_pos);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DataContractUpdateActionNotAllowedError(e)
+                )] if e.action() == format!("remove token at position {}", first_token_pos)
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_token_is_updated() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+            old_data_contract.set_tokens(BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]));
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // Modify an existing token configuration
+            let first_token_pos = *new_data_contract
+                .tokens()
+                .keys()
+                .next()
+                .expect("fixture must have at least one token");
+            let mut altered_token_cfg = new_data_contract
+                .tokens()
+                .get(&first_token_pos)
+                .cloned()
+                .expect("token must exist");
+            // Tweak base supply
+            altered_token_cfg.set_base_supply(altered_token_cfg.base_supply() + 1);
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .insert(first_token_pos, altered_token_cfg);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DataContractUpdateActionNotAllowedError(e)
+                )] if e.action() == format!("update token at position {}", first_token_pos)
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_new_token_is_added() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+            old_data_contract.set_tokens(BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]));
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // Create a new token by cloning an existing config but
+            // inserting it at an unused position.
+            let existing_cfg = new_data_contract
+                .tokens()
+                .values()
+                .next()
+                .expect("fixture must have at least one token")
+                .clone();
+            let new_position = old_data_contract
+                .tokens()
+                .keys()
+                .max()
+                .expect("fixture must have at least one token")
+                + 1;
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .insert(new_position, existing_cfg);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DataContractUpdateActionNotAllowedError(e)
+                )] if e.action() == format!("add token at position {}", new_position)
+            );
+        }
+
+        //
+        // ──────────────────────────────────────────────────────────────────────────
+        //  Happy‑path check: no token / group changes
+        // ──────────────────────────────────────────────────────────────────────────
+        //
+
+        #[test]
+        fn should_pass_when_groups_and_tokens_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
             new_data_contract.set_version(old_data_contract.version() + 1);
 
             let result = old_data_contract
