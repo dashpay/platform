@@ -66,10 +66,6 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/platform-test-suite"\
     },\
     {\
-      "name": "@dashevo/search-contract",\
-      "reference": "workspace:packages/search-contract"\
-    },\
-    {\
       "name": "@dashevo/token-history-contract",\
       "reference": "workspace:packages/token-history-contract"\
     },\
@@ -105,7 +101,6 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],\
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
-    ["@dashevo/search-contract", ["workspace:packages/search-contract"]],\
     ["@dashevo/token-history-contract", ["workspace:packages/token-history-contract"]],\
     ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
     ["@dashevo/wallet-utils-contract", ["workspace:packages/wallet-utils-contract"]],\
@@ -2882,24 +2877,6 @@ const RAW_RUNTIME_STATE =
           ["uglify-js", "npm:3.14.4"]\
         ],\
         "linkType": "HARD"\
-      }]\
-    ]],\
-    ["@dashevo/search-contract", [\
-      ["workspace:packages/search-contract", {\
-        "packageLocation": "./packages/search-contract/",\
-        "packageDependencies": [\
-          ["@dashevo/search-contract", "workspace:packages/search-contract"],\
-          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
-          ["chai", "npm:4.3.10"],\
-          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
-          ["eslint", "npm:8.53.0"],\
-          ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
-          ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
-          ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
-          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
-        ],\
-        "linkType": "SOFT"\
       }]\
     ]],\
     ["@dashevo/token-history-contract", [\

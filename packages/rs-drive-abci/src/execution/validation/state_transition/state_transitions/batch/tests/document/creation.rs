@@ -2488,7 +2488,11 @@ mod creation_tests {
             .expect("expected to get current platform version");
 
         // Load the system Search contract
-        let search_contract = platform.drive.cache.system_data_contracts.load_keyword_search();
+        let search_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_keyword_search();
 
         platform
             .drive

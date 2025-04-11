@@ -2894,9 +2894,11 @@ mod tests {
             assert_eq!(keywords[2], "key3");
 
             // Now check the Search Contract has the keyword documents
-            let search_contract =
-                load_system_data_contract(SystemDataContract::KeywordSearch, PlatformVersion::latest())
-                    .expect("expected to load search contract");
+            let search_contract = load_system_data_contract(
+                SystemDataContract::KeywordSearch,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load search contract");
             let document_type = search_contract
                 .document_type_for_name("contractKeywords")
                 .expect("expected to get document type");
@@ -3176,9 +3178,11 @@ mod tests {
             assert_eq!(desc, "A perfectly valid description.");
 
             // Now check the Search Contract has the short and full description documents
-            let search_contract =
-                load_system_data_contract(SystemDataContract::KeywordSearch, PlatformVersion::latest())
-                    .expect("expected to load search contract");
+            let search_contract = load_system_data_contract(
+                SystemDataContract::KeywordSearch,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to load search contract");
             let short_description_document_type = search_contract
                 .document_type_for_name("shortDescription")
                 .expect("expected to get document type");
