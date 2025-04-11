@@ -28,29 +28,18 @@ mod token_selling_tests {
         let (buyer, buyer_signer, buyer_key) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
 
-        let (contract, token_id) = create_token_contract_with_owner_identity(
-            &mut platform,
-            seller.id(),
-            Some(|token_configuration: &mut TokenConfiguration| {
-                token_configuration
-                    .distribution_rules_mut()
-                    .set_change_direct_purchase_pricing_rules(ChangeControlRules::V0(
-                        ChangeControlRulesV0 {
-                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
-                            admin_action_takers: AuthorizedActionTakers::NoOne,
-                            changing_authorized_action_takers_to_no_one_allowed: false,
-                            changing_admin_action_takers_to_no_one_allowed: false,
-                            self_changing_admin_action_takers_allowed: false,
-                        },
-                    ));
-            }),
-            None,
-            None,
-            platform_version,
-        );
-
-        let platform_state = platform.state.load();
         let single_price = TokenPricingSchedule::SinglePrice(dash_to_credits!(1));
+
+        let mut identity_contract_nonce: u64 = 2;
+        let (contract, token_id) = create_token_with_pricing(
+            platform_version,
+            &mut platform,
+            &seller,
+            &seller_signer,
+            &seller_key,
+            Some(single_price.clone()),
+            &mut identity_contract_nonce,
+        );
 
         // Seller sets single price
         let set_price_transition =
@@ -63,7 +52,7 @@ mod token_selling_tests {
                 None,
                 None,
                 &seller_key,
-                2,
+                identity_contract_nonce,
                 0,
                 &seller_signer,
                 platform_version,
@@ -73,6 +62,7 @@ mod token_selling_tests {
             )
             .unwrap();
 
+        let platform_state = platform.state.load();
         let processing_result = process_test_state_transition(
             &mut platform,
             set_price_transition,
@@ -436,12 +426,12 @@ mod token_selling_tests {
         let tokens = pricing_schedules
             .into_iter()
             .map(|pricing| {
-                let (contract, token_id) = create_token(
+                let (contract, token_id) = create_token_with_pricing(
                     platform_version,
                     &mut platform,
-                    seller.clone(),
-                    seller_signer.clone(),
-                    seller_key.clone(),
+                    &seller,
+                    &seller_signer,
+                    &seller_key,
                     Some(pricing.clone()),
                     &mut identity_contract_nonce,
                 );
@@ -531,13 +521,13 @@ mod token_selling_tests {
         assert_eq!(price, expected_price, "{}", msg);
     }
 
-    /// Creates a token contract with the given owner identity and configuration.
-    fn create_token(
+    /// Creates a token contract with the given owner identity and configuration, and sets the price.
+    fn create_token_with_pricing(
         platform_version: &dpp::version::PlatformVersion,
         platform: &mut TempPlatform<MockCoreRPCLike>,
-        seller: Identity,
-        seller_signer: SimpleSigner,
-        seller_key: IdentityPublicKey,
+        seller: &Identity,
+        seller_signer: &SimpleSigner,
+        seller_key: &IdentityPublicKey,
         pricing: Option<TokenPricingSchedule>,
         identity_contract_nonce: &mut u64,
     ) -> (DataContract, Identifier) {
@@ -574,10 +564,10 @@ mod token_selling_tests {
                 pricing, // Price per token
                 None,
                 None,
-                &seller_key,
+                seller_key,
                 *identity_contract_nonce,
                 0,
-                &seller_signer,
+                seller_signer,
                 platform_version,
                 None,
                 None,
