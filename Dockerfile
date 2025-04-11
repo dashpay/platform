@@ -380,7 +380,7 @@ COPY --parents \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
-    packages/search-contract \
+    packages/keyword-search-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -456,7 +456,7 @@ COPY --parents \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
-    packages/search-contract \
+    packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
@@ -553,7 +553,7 @@ COPY --parents \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
-    packages/search-contract \
+    packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
     packages/feature-flags-contract \
     packages/dpns-contract \
@@ -677,7 +677,7 @@ COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grp
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
 COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
 COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
-COPY --from=build-dashmate-helper /platform/packages/search-contract packages/search-contract
+COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
@@ -754,7 +754,7 @@ COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
 COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
-COPY --from=build-dapi /platform/packages/search-contract /platform/packages/search-contract
+COPY --from=build-dapi /platform/packages/keyword-search-contract /platform/packages/keyword-search-contract
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

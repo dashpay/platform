@@ -7,7 +7,7 @@ const {
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const { expect } = require('chai');
-const walletContractDocumentsSchema = require('../../schema/v1/search-contract-documents.json');
+const keywordSearchContractDocumentsSchema = require('../../schema/v1/keyword-search-contract-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
@@ -37,11 +37,11 @@ describe('Search Contract', () => {
 
     identityId = await generateRandomIdentifier();
 
-    dataContract = dpp.dataContract.create(identityId, BigInt(1), walletContractDocumentsSchema);
+    dataContract = dpp.dataContract.create(identityId, BigInt(1), keywordSearchContractDocumentsSchema);
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, BigInt(1), walletContractDocumentsSchema))
+    expect(() => dpp.dataContract.create(identityId, BigInt(1), keywordSearchContractDocumentsSchema))
       .to
       .not
       .throw();

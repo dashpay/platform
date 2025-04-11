@@ -29,7 +29,7 @@ pub mod document_types {
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!(
-        "../../schema/v1/search-contract-documents.json"
+        "../../schema/v1/keyword-search-contract-documents.json"
     ))
     .map_err(Error::InvalidSchemaJson)
 }
