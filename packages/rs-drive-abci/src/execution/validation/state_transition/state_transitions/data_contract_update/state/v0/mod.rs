@@ -73,25 +73,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             return Ok(action);
         }
 
-        // Validate token distribution rules
-        for (position, config) in self.data_contract().tokens() {
-            if let Some(distribution) = config.distribution_rules().pre_programmed_distribution() {
-                if let Some((timestamp, _)) = distribution.distributions().iter().next() {
-                    if timestamp < &block_info.time_ms {
-                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                            StateTransitionAction::BumpIdentityDataContractNonceAction(
-                                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self),
-                            ),
-                            vec![StateError::PreProgrammedDistributionTimestampInPastError(
-                                PreProgrammedDistributionTimestampInPastError::new(self.data_contract().id(), *position, *timestamp, block_info.time_ms),
-                            )
-                                .into()],
-                        ));
-                    }
-                }
-            }
-        }
-
         let state_transition_action = action.data.as_mut().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "we should always have an action at this point in data contract update",
