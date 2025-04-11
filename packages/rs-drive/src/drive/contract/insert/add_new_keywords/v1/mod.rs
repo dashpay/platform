@@ -14,7 +14,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
-    /// Adds a keyword by inserting a new keyword subtree structure to the `Identities` subtree.
+    /// Creates the documents in the Keyword Search contract for the contract keywords and
+    /// returns the fee result
     pub(super) fn add_new_contract_keywords_v1(
         &self,
         contract_id: Identifier,
@@ -47,7 +48,8 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Adds keyword creation operations to drive operations
+    /// Creates and applies the LowLeveLDriveOperations needed to create
+    /// the documents in the Keyword Search contract for the contract keywords
     pub(super) fn add_new_contract_keywords_add_to_operations_v1(
         &self,
         contract_id: Identifier,
@@ -84,7 +86,8 @@ impl Drive {
         )
     }
 
-    /// The operations needed to create a keyword
+    /// Creates and returns the LowLeveLDriveOperations needed to create
+    /// the documents in the Keyword Search contract for the contract keywords
     pub(crate) fn add_new_contract_keywords_operations_v1(
         &self,
         contract_id: Identifier,
@@ -99,7 +102,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = self.cache.system_data_contracts.load_search();
+        let contract = self.cache.system_data_contracts.load_keyword_search();
         let document_type = contract.document_type_for_name("contractKeywords")?;
 
         for (i, keyword) in keywords.iter().enumerate() {
@@ -134,6 +137,7 @@ impl Drive {
         Ok(operations)
     }
 
+    /// Creates and returns a `contractKeyword` document for the Keyword Search contract
     pub(super) fn build_contract_keyword_document_owned_v1(
         &self,
         contract_id: Identifier,

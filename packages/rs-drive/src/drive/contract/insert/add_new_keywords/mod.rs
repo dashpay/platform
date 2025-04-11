@@ -14,7 +14,8 @@ use std::collections::HashMap;
 mod v1;
 
 impl Drive {
-    /// Adds keywords to the state.
+    /// Creates the documents in the Keyword Search contract for the contract keywords and
+    /// returns the fee result
     pub fn add_new_contract_keywords(
         &self,
         contract_id: Identifier,
@@ -52,7 +53,8 @@ impl Drive {
         }
     }
 
-    /// Adds keywords creation operations to drive operations
+    /// Creates and applies the LowLeveLDriveOperations needed to create
+    /// the documents in the Keyword Search contract for the contract keywords
     pub fn add_new_contract_keywords_add_to_operations(
         &self,
         contract_id: Identifier,
@@ -92,7 +94,8 @@ impl Drive {
         }
     }
 
-    /// The operations needed to create keywords
+    /// Creates and returns the LowLeveLDriveOperations needed to create
+    /// the documents in the Keyword Search contract for the contract keywords
     pub fn add_new_contract_keywords_operations(
         &self,
         contract_id: Identifier,
