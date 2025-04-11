@@ -9,5 +9,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V1: SystemDataContractVersions =
         feature_flags: 1,
         wallet: 1,
         token_history: 1,
-        search: 1,
+        keyword_search: 1,
     };

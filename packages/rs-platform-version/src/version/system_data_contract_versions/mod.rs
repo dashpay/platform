@@ -11,5 +11,5 @@ pub struct SystemDataContractVersions {
     pub feature_flags: FeatureVersion,
     pub wallet: FeatureVersion,
     pub token_history: FeatureVersion,
-    pub search: FeatureVersion,
+    pub keyword_search: FeatureVersion,
 }

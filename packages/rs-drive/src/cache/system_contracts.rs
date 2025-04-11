@@ -18,7 +18,7 @@ pub struct SystemDataContracts {
     /// Token history contract
     token_history: ArcSwap<DataContract>,
     /// Search contract
-    search: ArcSwap<DataContract>,
+    keyword_search: ArcSwap<DataContract>,
 }
 
 impl SystemDataContracts {
@@ -47,8 +47,8 @@ impl SystemDataContracts {
                 SystemDataContract::TokenHistory,
                 platform_version,
             )?),
-            search: ArcSwap::from_pointee(load_system_data_contract(
-                SystemDataContract::Search,
+            keyword_search: ArcSwap::from_pointee(load_system_data_contract(
+                SystemDataContract::KeywordSearch,
                 platform_version,
             )?),
         })
@@ -80,7 +80,7 @@ impl SystemDataContracts {
     }
 
     /// Returns the search contract
-    pub fn load_search(&self) -> Guard<Arc<DataContract>> {
-        self.search.load()
+    pub fn load_keyword_search(&self) -> Guard<Arc<DataContract>> {
+        self.keyword_search.load()
     }
 }

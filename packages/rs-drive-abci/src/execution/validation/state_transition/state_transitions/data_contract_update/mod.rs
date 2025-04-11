@@ -1726,7 +1726,8 @@ mod tests {
             platform_version: &PlatformVersion,
         ) -> Vec<String> {
             let search_contract =
-                load_system_data_contract(SystemDataContract::Search, platform_version).unwrap();
+                load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                    .unwrap();
             let doc_type = search_contract
                 .document_type_for_name("contractKeywords")
                 .unwrap();
@@ -2097,7 +2098,8 @@ mod tests {
             platform_version: &PlatformVersion,
         ) -> String {
             let search_contract =
-                load_system_data_contract(SystemDataContract::Search, platform_version).unwrap();
+                load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                    .unwrap();
             let doc_type = search_contract
                 .document_type_for_name("shortDescription")
                 .unwrap();

@@ -487,7 +487,7 @@ impl<C> Platform<C> {
         )?;
 
         let search_contract =
-            load_system_data_contract(SystemDataContract::Search, platform_version)?;
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)?;
 
         self.drive.insert_contract(
             &search_contract,

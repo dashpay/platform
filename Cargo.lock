@@ -1323,10 +1323,10 @@ dependencies = [
  "dashpay-contract",
  "dpns-contract",
  "feature-flags-contract",
+ "keyword-search-contract",
  "masternode-reward-shares-contract",
  "platform-value",
  "platform-version",
- "search-contract",
  "serde_json",
  "thiserror 1.0.64",
  "token-history-contract",
@@ -2834,6 +2834,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyword-search-contract"
+version = "2.0.0-dev.1"
+dependencies = [
+ "platform-value",
+ "platform-version",
+ "serde_json",
+ "thiserror 1.0.64",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4296,16 +4306,6 @@ name = "seahash"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
-
-[[package]]
-name = "search-contract"
-version = "2.0.0-dev.1"
-dependencies = [
- "platform-value",
- "platform-version",
- "serde_json",
- "thiserror 1.0.64",
-]
 
 [[package]]
 name = "sec1"

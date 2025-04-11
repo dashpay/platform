@@ -137,10 +137,10 @@ impl From<token_history_contract::Error> for Error {
     }
 }
 
-impl From<search_contract::Error> for Error {
-    fn from(e: search_contract::Error) -> Self {
+impl From<keyword_search_contract::Error> for Error {
+    fn from(e: keyword_search_contract::Error) -> Self {
         match e {
-            search_contract::Error::UnknownVersionMismatch {
+            keyword_search_contract::Error::UnknownVersionMismatch {
                 method,
                 known_versions,
                 received,
@@ -149,7 +149,7 @@ impl From<search_contract::Error> for Error {
                 known_versions,
                 received,
             },
-            search_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+            keyword_search_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
         }
     }
 }

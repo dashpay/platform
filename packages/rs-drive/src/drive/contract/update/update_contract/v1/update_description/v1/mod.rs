@@ -102,7 +102,11 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = self.cache.system_data_contracts.load_search().clone();
+        let contract = self
+            .cache
+            .system_data_contracts
+            .load_keyword_search()
+            .clone();
         let document_type = contract.document_type_for_name("shortDescription")?;
 
         let mut query = DriveDocumentQuery::all_items_query(&contract, document_type, None);

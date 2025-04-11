@@ -2895,7 +2895,7 @@ mod tests {
 
             // Now check the Search Contract has the keyword documents
             let search_contract =
-                load_system_data_contract(SystemDataContract::Search, PlatformVersion::latest())
+                load_system_data_contract(SystemDataContract::KeywordSearch, PlatformVersion::latest())
                     .expect("expected to load search contract");
             let document_type = search_contract
                 .document_type_for_name("contractKeywords")
@@ -3177,7 +3177,7 @@ mod tests {
 
             // Now check the Search Contract has the short and full description documents
             let search_contract =
-                load_system_data_contract(SystemDataContract::Search, PlatformVersion::latest())
+                load_system_data_contract(SystemDataContract::KeywordSearch, PlatformVersion::latest())
                     .expect("expected to load search contract");
             let short_description_document_type = search_contract
                 .document_type_for_name("shortDescription")
