@@ -23,8 +23,10 @@ pub struct TokenDirectPurchaseTransitionV0 {
     pub base: TokenBaseTransition,
     /// How many tokens should we buy.
     pub token_count: TokenAmount,
-    /// Agreed price
-    /// The user will pay this amount
+    /// Price that the user is willing to pay for all the tokens.
+    /// The user will pay up to this amount.
+    /// If the actual cost of the token per the contract is less than the agreed price that the user is willing to pay
+    /// Then we take the actual cost per the contract.
     pub total_agreed_price: Credits,
 }
 

@@ -513,7 +513,7 @@ impl Drive {
                                         )?
                                     else {
                                         return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
+                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token direct purchase)", owner_id))));
                                     };
                                     Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
                                 }

@@ -3,18 +3,47 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::ProtocolError;
 
 // @append-only
+/// Represents the type of action described by a token-related state transition.
+///
+/// `TokenTransitionActionType` is **not used by the backend system directly**,
+/// but is intended to assist **client-side applications** in identifying and
+/// classifying the purpose of a token state transition.
+///
+/// This enum enables clients to more easily display, filter, or handle different
+/// token operations, such as minting, transferring, or burning tokens.
 #[derive(Eq, PartialEq, Debug, Copy, Clone, Hash)]
 pub enum TokenTransitionActionType {
+    /// Indicates a burn action, where tokens are permanently removed from circulation.
     Burn,
+
+    /// Indicates a mint action, where new tokens are created and added to supply.
     Mint,
+
+    /// Indicates a transfer of tokens between identities.
     Transfer,
+
+    /// Indicates that tokens are being frozen, preventing their use or transfer.
     Freeze,
+
+    /// Indicates that previously frozen tokens are being unfrozen and made usable again.
     Unfreeze,
+
+    /// Indicates the destruction of tokens that were in a frozen state.
     DestroyFrozenFunds,
+
+    /// Indicates a claim action, typically used to redeem or withdraw tokens (e.g., from rewards).
     Claim,
+
+    /// Indicates an emergency action, usually reserved for critical recovery or administrative intervention.
     EmergencyAction,
+
+    /// Indicates a configuration update affecting token properties or behavior.
     ConfigUpdate,
+
+    /// Indicates that the transition involves a direct purchase of tokens.
     DirectPurchase,
+
+    /// Indicates that the transition sets or updates the price for direct token purchases.
     SetPriceForDirectPurchase,
 }
 

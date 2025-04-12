@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
+/// Defines the pricing schedule for tokens in terms of credits.
+///
+/// A pricing schedule can either be a single, flat price applied to all
+/// token amounts, or a tiered pricing model where specific amounts
+/// correspond to specific credit values.
 #[derive(
     Debug,
     Clone,
@@ -24,7 +29,20 @@ use std::fmt::{self, Display, Formatter};
     derive(Serialize, Deserialize)
 )]
 pub enum TokenPricingSchedule {
+    /// A single flat price in credits for all token amounts.
+    ///
+    /// This variant is used when the pricing does not depend on
+    /// the number of tokens being purchased or processed.
     SinglePrice(Credits),
+
+    /// A tiered pricing model where specific token amounts map to credit prices.
+    ///
+    /// This allows for more complex pricing structures, such as
+    /// volume discounts or progressive pricing. The map keys
+    /// represent token amount thresholds, and the values are the
+    /// corresponding credit prices.
+    /// If the first token amount is greater than 1 this means that the user can only
+    /// purchase that amount as a minimum at a time.
     SetPrices(BTreeMap<TokenAmount, Credits>),
 }
 

@@ -44,7 +44,7 @@ impl Drive {
     ///    - Contains direct purchase price entries for tokens.
     ///    - Expected to hold a relatively flat key-value structure with binary-encoded price schedules.
     ///    - Tree type: Normal.
-    ///    - Estimated to contain 8 items, each with hash-sized keys and no child trees.
+    ///    - Estimated to contain values of 8 bytes (u64), each with hash-sized keys and no flags.
     ///    - Estimated depth: 10 levels.
     ///
     /// This setup provides a balanced estimation model for token price operations,
