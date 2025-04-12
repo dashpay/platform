@@ -36,6 +36,7 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
+use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::{
@@ -60,8 +61,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetProofsResponse>, Error> {
-        let state_transition: StateTransition =
-            StateTransition::deserialize_from_bytes(&state_transition_bytes)?;
+        let state_transition =
+            match StateTransition::deserialize_from_bytes(&state_transition_bytes) {
+                Ok(state_transition) => state_transition,
+                Err(e) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Protocol(
+                        e,
+                    )))
+                }
+            };
 
         let path_query = match state_transition {
             StateTransition::DataContractCreate(st) => {
