@@ -8,6 +8,8 @@ use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
+use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
+use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
@@ -34,12 +36,12 @@ use dapi_grpc::platform::v0::{
     GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
     GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetPathElementsRequest,
     GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetStatusRequest, GetStatusResponse, GetTokenPreProgrammedDistributionsRequest,
-    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
+    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
+    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
+    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
@@ -335,18 +337,6 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_balance_and_revision,
             "get_identity_balance_and_revision",
-        )
-        .await
-    }
-
-    async fn get_proofs(
-        &self,
-        request: Request<GetProofsRequest>,
-    ) -> Result<Response<GetProofsResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_proofs,
-            "get_proofs",
         )
         .await
     }
@@ -745,6 +735,21 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_group_action_signers,
             "get_group_action_signers",
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl DriveInternal for QueryService {
+    async fn get_proofs(
+        &self,
+        request: Request<GetProofsRequest>,
+    ) -> Result<Response<GetProofsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proofs,
+            "get_proofs",
         )
         .await
     }
