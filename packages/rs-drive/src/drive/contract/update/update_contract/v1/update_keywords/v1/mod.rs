@@ -169,7 +169,7 @@ impl Drive {
         }
 
         if !keywords_to_add.is_empty() {
-            operations.extend(self.add_new_contract_keywords_operations_v1(
+            operations.extend(self.add_new_contract_keywords_operations(
                 contract_id,
                 owner_id,
                 &keywords_to_add,

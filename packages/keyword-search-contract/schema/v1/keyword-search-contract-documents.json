@@ -1,7 +1,7 @@
 {
   "contractKeywords": {
     "type": "object",
-    "documentsMutable": true,
+    "documentsMutable": false,
     "canBeDeleted": true,
     "creationRestrictionMode": 2,
     "indices": [
@@ -42,6 +42,7 @@
       "contractId",
       "keyword"
     ],
+    "description": "Keywords associated with the contract allowing for better searchability. This document type can be deleted but not manually created nor updated. Creation occurs automatically internally on DataContractCreate and mirrors the contract's keywords field. It can be updated with DataContractUpdate.",
     "additionalProperties": false
   },
   "shortDescription": {
@@ -80,7 +81,7 @@
       "contractId",
       "description"
     ],
-    "description": "Short description of the contract. This document type is immutable and creation is not allowed. Creation occurs automatically internally on DataContractCreate and mirrors the contract's description field.",
+    "description": "Short description of the contract. This document type is mutable but creation is not allowed. Creation occurs automatically internally on DataContractCreate and mirrors the contract's description field initially.",
     "additionalProperties": false
   },
   "fullDescription": {
@@ -119,7 +120,7 @@
       "contractId",
       "description"
     ],
-    "description": "Full description of the contract. This document type is mutable by contract owner but creation is not allowed. Creation occurs automatically internally on DataContractCreate and mirrors the contract's description field initially.",
+    "description": "Full description of the contract. This document type is mutable but creation is not allowed. Creation occurs automatically internally on DataContractCreate and mirrors the contract's description field initially.",
     "additionalProperties": false
   }
 }

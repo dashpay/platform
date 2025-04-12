@@ -105,12 +105,11 @@ impl Drive {
         let contract = self.cache.system_data_contracts.load_keyword_search();
         let document_type = contract.document_type_for_name("contractKeywords")?;
 
-        for (i, keyword) in keywords.iter().enumerate() {
+        for keyword in keywords.iter() {
             let document = self.build_contract_keyword_document_owned_v1(
                 contract_id,
                 owner_id,
-                keyword,
-                i as u64,
+                keyword, // since keywords are unique in the contract, we can use it as entropy
                 block_info,
             )?;
 
@@ -143,14 +142,13 @@ impl Drive {
         contract_id: Identifier,
         owner_id: Identifier,
         keyword: &String,
-        keyword_index: u64,
         block_info: &BlockInfo,
     ) -> Result<Document, Error> {
         let document_id = Document::generate_document_id_v0(
             &contract_id,
             &owner_id,
             "contractKeywords",
-            keyword_index.to_be_bytes().as_slice(),
+            &keyword.as_bytes(),
         );
 
         let properties = BTreeMap::from([
