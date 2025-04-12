@@ -148,7 +148,7 @@ impl Drive {
             &contract_id,
             &owner_id,
             "contractKeywords",
-            &keyword.as_bytes(),
+            keyword.as_bytes(),
         );
 
         let properties = BTreeMap::from([
