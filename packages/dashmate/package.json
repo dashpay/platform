@@ -56,7 +56,7 @@
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.24.0",
+    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#be478c813ef28aa74389182964f1aa76cdaa777d",
     "@dashevo/dashd-rpc": "^19.0.0",
     "@dashevo/docker-compose": "^0.24.4",
     "@dashevo/wallet-lib": "workspace:*",

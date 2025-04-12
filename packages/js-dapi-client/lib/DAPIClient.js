@@ -118,6 +118,7 @@ DAPIClient.EVENTS = EVENTS;
  * @property {string} [loggerOptions.level]
  * @property {BlockHeadersProvider} [blockHeadersProvider]
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
+ * @property {Object} [llmqParamsOverride]
  */
 
 module.exports = DAPIClient;

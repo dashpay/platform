@@ -8,7 +8,7 @@
     "lint": ""
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.24.0",
+    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#be478c813ef28aa74389182964f1aa76cdaa777d",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
