@@ -1,8 +1,6 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
@@ -275,6 +273,7 @@ impl<C> Platform<C> {
                 IDENTITY_ID_1.to_buffer(),
                 mint_amount,
                 false,
+                false,
                 block_info,
                 true,
                 transaction,
@@ -287,6 +286,7 @@ impl<C> Platform<C> {
                 token_id.to_buffer(),
                 IDENTITY_ID_2.to_buffer(),
                 mint_amount,
+                false,
                 false,
                 block_info,
                 true,
@@ -301,6 +301,7 @@ impl<C> Platform<C> {
                 token_id.to_buffer(),
                 IDENTITY_ID_3.to_buffer(),
                 mint_amount,
+                false,
                 false,
                 block_info,
                 true,

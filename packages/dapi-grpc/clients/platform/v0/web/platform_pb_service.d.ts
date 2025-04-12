@@ -103,15 +103,6 @@ type PlatformgetEvonodesProposedEpochBlocksByRange = {
   readonly responseType: typeof platform_pb.GetEvonodesProposedEpochBlocksResponse;
 };
 
-type PlatformgetProofs = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetProofsRequest;
-  readonly responseType: typeof platform_pb.GetProofsResponse;
-};
-
 type PlatformgetDataContract = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -413,7 +404,6 @@ export class Platform {
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
   static readonly getEvonodesProposedEpochBlocksByIds: PlatformgetEvonodesProposedEpochBlocksByIds;
   static readonly getEvonodesProposedEpochBlocksByRange: PlatformgetEvonodesProposedEpochBlocksByRange;
-  static readonly getProofs: PlatformgetProofs;
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContracts: PlatformgetDataContracts;
@@ -578,15 +568,6 @@ export class PlatformClient {
   getEvonodesProposedEpochBlocksByRange(
     requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
-  ): UnaryResponse;
-  getProofs(
-    requestMessage: platform_pb.GetProofsRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProofsResponse|null) => void
-  ): UnaryResponse;
-  getProofs(
-    requestMessage: platform_pb.GetProofsRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProofsResponse|null) => void
   ): UnaryResponse;
   getDataContract(
     requestMessage: platform_pb.GetDataContractRequest,
