@@ -36,7 +36,6 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
-use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::{
