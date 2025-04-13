@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 dash-sdk = { path = "../rs-sdk", default-features = false }
 console_error_panic_hook = { version = "0.1.6" }
-thiserror = { version = "2.0.9" }
+thiserror = { version = "2.0.12" }
 web-sys = { version = "0.3.4", features = [
     'console',
     'Document',

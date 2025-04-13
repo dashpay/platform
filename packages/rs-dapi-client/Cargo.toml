@@ -48,14 +48,14 @@ rand = { version = "0.8.5", features = [
     "small_rng",
     "getrandom",
 ], default-features = false }
-thiserror = "1.0.64"
+thiserror = "2.0.12"
 tracing = "0.1.40"
 tokio = { version = "1.40", default-features = false }
 sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4.3", optional = true }
 lru = { version = "0.12.3" }
-serde = { version = "1.0.197", optional = true, features = ["derive"] }
-serde_json = { version = "1.0.120", optional = true }
+serde = { version = "1.0.219", optional = true, features = ["derive"] }
+serde_json = { version = "1.0.140", optional = true }
 chrono = { version = "0.4.38", features = ["serde"] }
 
 [dev-dependencies]
