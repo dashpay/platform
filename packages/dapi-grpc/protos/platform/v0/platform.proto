@@ -59,6 +59,7 @@ service Platform {
   rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
   rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
   rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
+  rpc getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse);
   rpc getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse);
   rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
   rpc getGroupInfo(GetGroupInfoRequest) returns (GetGroupInfoResponse);
@@ -1337,6 +1338,55 @@ message GetTokenStatusesResponse {
   }
 }
 
+
+message GetTokenDirectPurchasePricesRequest {
+  message GetTokenDirectPurchasePricesRequestV0 {
+    repeated bytes token_ids = 1;
+    bool prove = 2;
+  }
+  oneof version {
+    GetTokenDirectPurchasePricesRequestV0 v0 = 1;
+  }
+}
+
+message GetTokenDirectPurchasePricesResponse {
+  message GetTokenDirectPurchasePricesResponseV0 {
+    message PriceForQuantity {
+      uint64 quantity = 1;
+      uint64 price = 2;
+    }
+
+    message PricingSchedule {
+      repeated PriceForQuantity price_for_quantity = 1;
+    }
+
+    message Price {
+      oneof price {
+        uint64 fixed_price = 1;
+        PricingSchedule variable_price = 2;
+      }
+    }
+
+    message TokenDirectPurchasePriceEntry {
+      bytes token_id = 1;
+      optional Price price = 2;
+    }
+
+    message TokenDirectPurchasePrices {
+      repeated TokenDirectPurchasePriceEntry token_direct_purchase_price = 1;
+    }
+
+    oneof result {
+      TokenDirectPurchasePrices token_direct_purchase_prices = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetTokenDirectPurchasePricesResponseV0 v0 = 1;
+  }
+}
+
 message GetTokenPreProgrammedDistributionsRequest {
   message GetTokenPreProgrammedDistributionsRequestV0 {
     bytes token_id = 1;
@@ -1583,6 +1633,23 @@ message GetGroupActionsResponse {
       optional string public_note = 2; // Public note
     }
 
+    // UpdatePrice event
+    message UpdateDirectPurchasePriceEvent {
+      message PriceForQuantity {
+        uint64 quantity = 1;
+        uint64 price = 2;
+      }
+
+      message PricingSchedule {
+        repeated PriceForQuantity price_for_quantity = 1;
+      }
+      oneof price {
+        uint64 fixed_price = 1;
+        PricingSchedule variable_price = 2;
+      }
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -1621,7 +1688,8 @@ message GetGroupActionsResponse {
         UnfreezeEvent unfreeze = 4;     // Unfreeze event details
         DestroyFrozenFundsEvent destroy_frozen_funds = 5; // Destroy frozen funds
         EmergencyActionEvent emergency_action = 6; // Emergency action details
-        TokenConfigUpdateEvent  token_config_update = 7; // Token configuration update details
+        TokenConfigUpdateEvent token_config_update = 7; // Token configuration update details
+        UpdateDirectPurchasePriceEvent update_price = 8; // Updating the token direct selling price
       }
     }
 

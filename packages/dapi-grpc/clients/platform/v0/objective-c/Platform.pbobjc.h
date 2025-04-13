@@ -102,6 +102,9 @@ CF_EXTERN_C_BEGIN
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule;
 @class GetGroupInfoRequest_GetGroupInfoRequestV0;
 @class GetGroupInfoResponse_GetGroupInfoResponseV0;
 @class GetGroupInfoResponse_GetGroupInfoResponseV0_GroupInfo;
@@ -181,6 +184,13 @@ CF_EXTERN_C_BEGIN
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive;
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash;
 @class GetStatusResponse_GetStatusResponseV0_Version_Software;
+@class GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices;
 @class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0;
 @class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo;
 @class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0;
@@ -5485,6 +5495,192 @@ GPB_FINAL @interface GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenSt
 
 @end
 
+#pragma mark - GetTokenDirectPurchasePricesRequest
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenDirectPurchasePricesRequest_ClearVersionOneOfCase(GetTokenDirectPurchasePricesRequest *message);
+
+#pragma mark - GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_TokenIdsArray = 1,
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
+/** The number of items in @c tokenIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesResponse
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_Version_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenDirectPurchasePricesResponse_ClearVersionOneOfCase(GetTokenDirectPurchasePricesResponse *message);
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber_TokenDirectPurchasePrices = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber_Proof = 2,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase_TokenDirectPurchasePrices = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices *tokenDirectPurchasePrices;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_ClearResultOneOfCase(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0 *message);
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber_Quantity = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber_Price = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t quantity;
+
+@property(nonatomic, readwrite) uint64_t price;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule_FieldNumber_PriceForQuantityArray = 1,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity*> *priceForQuantityArray;
+/** The number of items in @c priceForQuantityArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger priceForQuantityArray_Count;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_FieldNumber_FixedPrice = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_FieldNumber_VariablePrice = 2,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase_FixedPrice = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase_VariablePrice = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_Price_OneOfCase priceOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t fixedPrice;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule *variablePrice;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'price'.
+ **/
+void GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price_ClearPriceOneOfCase(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price *message);
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_TokenId = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_Price = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Price *price;
+/** Test to see if @c price has been set. */
+@property(nonatomic, readwrite) BOOL hasPrice;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices_FieldNumber_TokenDirectPurchasePriceArray = 1,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry*> *tokenDirectPurchasePriceArray;
+/** The number of items in @c tokenDirectPurchasePriceArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenDirectPurchasePriceArray_Count;
+
+@end
+
 #pragma mark - GetTokenPreProgrammedDistributionsRequest
 
 typedef GPB_ENUM(GetTokenPreProgrammedDistributionsRequest_FieldNumber) {
@@ -6445,6 +6641,72 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConf
 
 @end
 
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber_FixedPrice = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber_VariablePrice = 2,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber_PublicNote = 3,
+};
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase_FixedPrice = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase_VariablePrice = 2,
+};
+
+/**
+ * UpdatePrice event
+ **/
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent : GPBMessage
+
+@property(nonatomic, readonly) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase priceOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t fixedPrice;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule *variablePrice;
+
+/** Public note */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *publicNote;
+/** Test to see if @c publicNote has been set. */
+@property(nonatomic, readwrite) BOOL hasPublicNote;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'price'.
+ **/
+void GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_ClearPriceOneOfCase(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *message);
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity_FieldNumber_Quantity = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity_FieldNumber_Price = 2,
+};
+
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t quantity;
+
+@property(nonatomic, readwrite) uint64_t price;
+
+@end
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule_FieldNumber_PriceForQuantityArray = 1,
+};
+
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity*> *priceForQuantityArray;
+/** The number of items in @c priceForQuantityArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger priceForQuantityArray_Count;
+
+@end
+
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent_FieldNumber) {
@@ -6565,6 +6827,7 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Fi
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_DestroyFrozenFunds = 5,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_EmergencyAction = 6,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_TokenConfigUpdate = 7,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_UpdatePrice = 8,
 };
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase) {
@@ -6576,6 +6839,7 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Ty
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_DestroyFrozenFunds = 5,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_EmergencyAction = 6,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_TokenConfigUpdate = 7,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_UpdatePrice = 8,
 };
 
 /**
@@ -6605,6 +6869,9 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEven
 
 /** Token configuration update details */
 @property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent *tokenConfigUpdate;
+
+/** Updating the token direct selling price */
+@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *updatePrice;
 
 @end
 

@@ -1,4 +1,6 @@
+mod direct_selling;
 mod distribution;
+
 use super::*;
 use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;

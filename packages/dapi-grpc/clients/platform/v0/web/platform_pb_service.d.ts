@@ -328,6 +328,15 @@ type PlatformgetTokenStatuses = {
   readonly responseType: typeof platform_pb.GetTokenStatusesResponse;
 };
 
+type PlatformgetTokenDirectPurchasePrices = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetTokenDirectPurchasePricesRequest;
+  readonly responseType: typeof platform_pb.GetTokenDirectPurchasePricesResponse;
+};
+
 type PlatformgetTokenPreProgrammedDistributions = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -420,6 +429,7 @@ export class Platform {
   static readonly getIdentityTokenInfos: PlatformgetIdentityTokenInfos;
   static readonly getIdentitiesTokenInfos: PlatformgetIdentitiesTokenInfos;
   static readonly getTokenStatuses: PlatformgetTokenStatuses;
+  static readonly getTokenDirectPurchasePrices: PlatformgetTokenDirectPurchasePrices;
   static readonly getTokenPreProgrammedDistributions: PlatformgetTokenPreProgrammedDistributions;
   static readonly getTokenTotalSupply: PlatformgetTokenTotalSupply;
   static readonly getGroupInfo: PlatformgetGroupInfo;
@@ -783,6 +793,15 @@ export class PlatformClient {
   getTokenStatuses(
     requestMessage: platform_pb.GetTokenStatusesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenStatusesResponse|null) => void
+  ): UnaryResponse;
+  getTokenDirectPurchasePrices(
+    requestMessage: platform_pb.GetTokenDirectPurchasePricesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenDirectPurchasePricesResponse|null) => void
+  ): UnaryResponse;
+  getTokenDirectPurchasePrices(
+    requestMessage: platform_pb.GetTokenDirectPurchasePricesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTokenDirectPurchasePricesResponse|null) => void
   ): UnaryResponse;
   getTokenPreProgrammedDistributions(
     requestMessage: platform_pb.GetTokenPreProgrammedDistributionsRequest,

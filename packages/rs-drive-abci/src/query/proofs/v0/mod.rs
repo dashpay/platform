@@ -258,6 +258,31 @@ impl<C> Platform<C> {
                                     )
                                 }
                             }
+                            TokenTransition::DirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_purchase_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_balance_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::SetPriceForDirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_pricing_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_direct_purchase_price_query(token_id.to_buffer())
+                                }
+                            }
                             TokenTransition::DestroyFrozenFunds(_)
                             | TokenTransition::EmergencyAction(_)
                             | TokenTransition::ConfigUpdate(_)

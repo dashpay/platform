@@ -334,6 +334,15 @@ Platform.getTokenStatuses = {
   responseType: platform_pb.GetTokenStatusesResponse
 };
 
+Platform.getTokenDirectPurchasePrices = {
+  methodName: "getTokenDirectPurchasePrices",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetTokenDirectPurchasePricesRequest,
+  responseType: platform_pb.GetTokenDirectPurchasePricesResponse
+};
+
 Platform.getTokenPreProgrammedDistributions = {
   methodName: "getTokenPreProgrammedDistributions",
   service: Platform,
@@ -1485,6 +1494,37 @@ PlatformClient.prototype.getTokenStatuses = function getTokenStatuses(requestMes
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getTokenStatuses, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getTokenDirectPurchasePrices = function getTokenDirectPurchasePrices(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getTokenDirectPurchasePrices, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
