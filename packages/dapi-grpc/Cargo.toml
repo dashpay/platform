@@ -27,13 +27,19 @@ tenderdash-proto = []
 client = ["platform"]
 
 # Build tonic server code. Includes all client features and adds server-specific dependencies.
-server = ["platform", "tenderdash-proto/server", "client", "drive", "tonic/router"]
+server = [
+  "platform",
+  "tenderdash-proto/server",
+  "client",
+  "drive",
+  "tonic/router",
+]
 
 serde = ["dep:serde", "dep:serde_bytes", "tenderdash-proto/serde"]
 mocks = ["serde", "dep:serde_json"]
 
 [dependencies]
-tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "8d26acb3f8ae17ddb89c87119148dbb98aeeea29", default-features = false }
+tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.4.0", tag = "v1.4.0", default-features = false }
 
 prost = { version = "0.13" }
 futures-core = "0.3.30"
