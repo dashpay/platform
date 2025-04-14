@@ -5,6 +5,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
     IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
+    InvalidTokenBaseSupplyError, NonContiguousContractTokenPositionsError,
 };
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
@@ -15,7 +16,7 @@ use crate::data_contract::associated_token::token_distribution_rules::accessors:
 use crate::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, TokenContractPosition};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
@@ -242,21 +243,59 @@ impl DataContract {
                 }
             }
 
-            // Check if a token has been added
-            for (token_position, config) in new_data_contract.tokens() {
-                if !self.tokens().contains_key(token_position) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DataContractUpdateActionNotAllowedError::new(
-                            self.id(),
-                            format!("add token at position {}", token_position),
-                        )
-                        .into(),
-                    ));
+            // Validate any newly added tokens
+            for (expected_position, (token_contract_position, token_configuration)) in
+                new_data_contract.tokens().iter().enumerate()
+            {
+                if !self.tokens().contains_key(token_contract_position) {
+                    if expected_position as TokenContractPosition != *token_contract_position {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            NonContiguousContractTokenPositionsError::new(
+                                expected_position as TokenContractPosition,
+                                *token_contract_position,
+                            )
+                            .into(),
+                        ));
+                    }
 
-                    // In the future we will allow new tokens on contract update
-                    // Validate token distribution rules
-                    if let Some(distribution) =
-                        config.distribution_rules().pre_programmed_distribution()
+                    if token_configuration.base_supply() > i64::MAX as u64 {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenBaseSupplyError::new(token_configuration.base_supply())
+                                .into(),
+                        ));
+                    }
+
+                    let validation_result = token_configuration
+                        .conventions()
+                        .validate_localizations(platform_version)?;
+                    if !validation_result.is_valid() {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            validation_result
+                                .errors
+                                .first()
+                                .expect("expected an error")
+                                .clone(),
+                        ));
+                    }
+
+                    let validation_result = token_configuration
+                        .validate_token_config_groups_exist(
+                            new_data_contract.groups(),
+                            platform_version,
+                        )?;
+                    if !validation_result.is_valid() {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            validation_result
+                                .errors
+                                .first()
+                                .expect("expected an error")
+                                .clone(),
+                        ));
+                    }
+
+                    if let Some(distribution) = token_configuration
+                        .distribution_rules()
+                        .pre_programmed_distribution()
                     {
                         if let Some((timestamp, _)) = distribution.distributions().iter().next() {
                             if timestamp < &block_info.time_ms {
@@ -264,7 +303,7 @@ impl DataContract {
                                     StateError::PreProgrammedDistributionTimestampInPastError(
                                         PreProgrammedDistributionTimestampInPastError::new(
                                             new_data_contract.id(),
-                                            *token_position,
+                                            *token_contract_position,
                                             *timestamp,
                                             block_info.time_ms,
                                         ),
@@ -305,6 +344,10 @@ mod tests {
             TokenConfigurationV0Getters, TokenConfigurationV0Setters,
         };
         use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+        use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+        use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+        use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
         use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         use crate::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
         use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
@@ -733,21 +776,32 @@ mod tests {
         }
 
         #[test]
-        fn should_return_invalid_result_when_new_token_is_added() {
+        fn should_return_invalid_result_when_token_is_added_with_past_timestamp() {
             let platform_version = PlatformVersion::latest();
 
             let mut old_data_contract =
                 get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
-            old_data_contract.set_tokens(BTreeMap::from([(
-                0,
-                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
-            )]));
+            let mut token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_cfg.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: false,
+                            singular_form: "test".to_string(),
+                            plural_form: "tests".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+            old_data_contract.set_tokens(BTreeMap::from([(0, token_cfg)]));
 
             let mut new_data_contract = old_data_contract.clone();
             new_data_contract.set_version(old_data_contract.version() + 1);
 
-            // Create a new token by cloning an existing config but
-            // inserting it at an unused position.
+            // Create a new token with a past timestamp
             let existing_cfg = new_data_contract
                 .tokens()
                 .values()
@@ -760,82 +814,37 @@ mod tests {
                 .max()
                 .expect("fixture must have at least one token")
                 + 1;
+            let mut new_token_cfg = existing_cfg.clone();
+            new_token_cfg
+                .distribution_rules_mut()
+                .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                    TokenPreProgrammedDistributionV0 {
+                        distributions: BTreeMap::from([(
+                            0,
+                            BTreeMap::from([(new_data_contract.owner_id(), 100)]),
+                        )]),
+                    },
+                )));
             new_data_contract
                 .tokens_mut()
                 .unwrap()
-                .insert(new_position, existing_cfg);
+                .insert(new_position, new_token_cfg);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .validate_update_v0(
+                    &new_data_contract,
+                    &BlockInfo::default_with_time(100000),
+                    platform_version,
+                )
                 .expect("failed validate update");
 
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::StateError(
-                    StateError::DataContractUpdateActionNotAllowedError(e)
-                )] if e.action() == format!("add token at position {}", new_position)
+                    StateError::PreProgrammedDistributionTimestampInPastError(e)
+                )] if e.token_position() == new_position
             );
         }
-
-        // // Uncomment after allowing new tokens on updates
-        // #[test]
-        // fn should_return_invalid_result_when_token_is_added_with_past_timestamp() {
-        //     let platform_version = PlatformVersion::latest();
-
-        //     let mut old_data_contract =
-        //         get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
-        //     old_data_contract.set_tokens(BTreeMap::from([(
-        //         0,
-        //         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
-        //     )]));
-
-        //     let mut new_data_contract = old_data_contract.clone();
-        //     new_data_contract.set_version(old_data_contract.version() + 1);
-
-        //     // Create a new token with a past timestamp
-        //     let existing_cfg = new_data_contract
-        //         .tokens()
-        //         .values()
-        //         .next()
-        //         .expect("fixture must have at least one token")
-        //         .clone();
-        //     let new_position = old_data_contract
-        //         .tokens()
-        //         .keys()
-        //         .max()
-        //         .expect("fixture must have at least one token")
-        //         + 1;
-        //     let mut new_token_cfg = existing_cfg.clone();
-        //     new_token_cfg
-        //         .distribution_rules_mut()
-        //         .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
-        //             TokenPreProgrammedDistributionV0 {
-        //                 distributions: BTreeMap::from([(
-        //                     0,
-        //                     BTreeMap::from([(new_data_contract.owner_id(), 100)]),
-        //                 )]),
-        //             },
-        //         )));
-        //     new_data_contract
-        //         .tokens_mut()
-        //         .unwrap()
-        //         .insert(new_position, new_token_cfg);
-
-        //     let result = old_data_contract
-        //         .validate_update_v0(
-        //             &new_data_contract,
-        //             &BlockInfo::default_with_time(100000),
-        //             platform_version,
-        //         )
-        //         .expect("failed validate update");
-
-        //     assert_matches!(
-        //         result.errors.as_slice(),
-        //         [ConsensusError::StateError(
-        //             StateError::PreProgrammedDistributionTimestampInPastError(e)
-        //         )] if e.token_position() == new_position
-        //     );
-        // }
 
         //
         // ──────────────────────────────────────────────────────────────────────────
