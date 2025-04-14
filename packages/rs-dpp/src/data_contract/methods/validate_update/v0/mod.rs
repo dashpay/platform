@@ -1,3 +1,6 @@
+use crate::block::block_info::BlockInfo;
+use crate::consensus::state::state_error::StateError;
+use crate::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
@@ -7,6 +10,9 @@ use crate::consensus::state::data_contract::data_contract_update_action_not_allo
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::accessors::v1::DataContractV1Getters;
+use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
@@ -20,6 +26,7 @@ pub trait DataContractUpdateValidationMethodsV0 {
     fn validate_update(
         &self,
         data_contract: &DataContract,
+        block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
@@ -29,6 +36,7 @@ impl DataContract {
     pub(super) fn validate_update_v0(
         &self,
         new_data_contract: &DataContract,
+        block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Check if the contract is owned by the same identity
@@ -235,7 +243,7 @@ impl DataContract {
             }
 
             // Check if a token has been added
-            for token_position in new_data_contract.tokens().keys() {
+            for (token_position, config) in new_data_contract.tokens() {
                 if !self.tokens().contains_key(token_position) {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         DataContractUpdateActionNotAllowedError::new(
@@ -244,6 +252,28 @@ impl DataContract {
                         )
                         .into(),
                     ));
+
+                    // // In the future we will allow new tokens on contract update
+                    // // Validate token distribution rules
+                    // if let Some(distribution) =
+                    //     config.distribution_rules().pre_programmed_distribution()
+                    // {
+                    //     if let Some((timestamp, _)) = distribution.distributions().iter().next() {
+                    //         if timestamp < &block_info.time_ms {
+                    //             return Ok(SimpleConsensusValidationResult::new_with_error(
+                    //                 StateError::PreProgrammedDistributionTimestampInPastError(
+                    //                     PreProgrammedDistributionTimestampInPastError::new(
+                    //                         new_data_contract.id(),
+                    //                         *token_position,
+                    //                         *timestamp,
+                    //                         block_info.time_ms,
+                    //                     ),
+                    //                 )
+                    //                 .into(),
+                    //             ));
+                    //         }
+                    //     }
+                    // }
                 }
             }
         }
@@ -275,6 +305,9 @@ mod tests {
             TokenConfigurationV0Getters, TokenConfigurationV0Setters,
         };
         use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+        use crate::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+        use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
         use crate::data_contract::document_type::DocumentTypeMutRef;
         use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
         use crate::data_contract::group::v0::GroupV0;
@@ -295,7 +328,7 @@ mod tests {
             new_data_contract.as_v0_mut().unwrap().owner_id = Identifier::random();
 
             let result = old_data_contract
-                .validate_update(&new_data_contract, platform_version)
+                .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -316,7 +349,7 @@ mod tests {
             let new_data_contract = old_data_contract.clone();
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -340,7 +373,7 @@ mod tests {
             new_data_contract.config_mut().set_readonly(true);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -366,7 +399,7 @@ mod tests {
                 .remove("niceDocument");
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -399,7 +432,7 @@ mod tests {
             new_document_type.documents_mutable = false;
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -430,7 +463,7 @@ mod tests {
                 .expect("failed to set schema defs");
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -470,7 +503,7 @@ mod tests {
                 .expect("failed to set schema defs");
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -493,7 +526,7 @@ mod tests {
             new_data_contract.set_version(old_data_contract.version() + 1);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert!(result.is_valid());
@@ -542,7 +575,7 @@ mod tests {
                 .remove(&first_group_pos);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -598,7 +631,7 @@ mod tests {
                 .insert(first_group_pos, altered_group);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -644,7 +677,7 @@ mod tests {
                 .remove(&first_token_pos);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -688,7 +721,7 @@ mod tests {
                 .insert(first_token_pos, altered_token_cfg);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -733,7 +766,7 @@ mod tests {
                 .insert(new_position, existing_cfg);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert_matches!(
@@ -743,6 +776,66 @@ mod tests {
                 )] if e.action() == format!("add token at position {}", new_position)
             );
         }
+
+        // // Uncomment after allowing new tokens on updates
+        // #[test]
+        // fn should_return_invalid_result_when_token_is_added_with_past_timestamp() {
+        //     let platform_version = PlatformVersion::latest();
+
+        //     let mut old_data_contract =
+        //         get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+        //     old_data_contract.set_tokens(BTreeMap::from([(
+        //         0,
+        //         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+        //     )]));
+
+        //     let mut new_data_contract = old_data_contract.clone();
+        //     new_data_contract.set_version(old_data_contract.version() + 1);
+
+        //     // Create a new token with a past timestamp
+        //     let existing_cfg = new_data_contract
+        //         .tokens()
+        //         .values()
+        //         .next()
+        //         .expect("fixture must have at least one token")
+        //         .clone();
+        //     let new_position = old_data_contract
+        //         .tokens()
+        //         .keys()
+        //         .max()
+        //         .expect("fixture must have at least one token")
+        //         + 1;
+        //     let mut new_token_cfg = existing_cfg.clone();
+        //     new_token_cfg
+        //         .distribution_rules_mut()
+        //         .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+        //             TokenPreProgrammedDistributionV0 {
+        //                 distributions: BTreeMap::from([(
+        //                     0,
+        //                     BTreeMap::from([(new_data_contract.owner_id(), 100)]),
+        //                 )]),
+        //             },
+        //         )));
+        //     new_data_contract
+        //         .tokens_mut()
+        //         .unwrap()
+        //         .insert(new_position, new_token_cfg);
+
+        //     let result = old_data_contract
+        //         .validate_update_v0(
+        //             &new_data_contract,
+        //             &BlockInfo::default_with_time(100000),
+        //             platform_version,
+        //         )
+        //         .expect("failed validate update");
+
+        //     assert_matches!(
+        //         result.errors.as_slice(),
+        //         [ConsensusError::StateError(
+        //             StateError::PreProgrammedDistributionTimestampInPastError(e)
+        //         )] if e.token_position() == new_position
+        //     );
+        // }
 
         //
         // ──────────────────────────────────────────────────────────────────────────
@@ -761,7 +854,7 @@ mod tests {
             new_data_contract.set_version(old_data_contract.version() + 1);
 
             let result = old_data_contract
-                .validate_update_v0(&new_data_contract, platform_version)
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
                 .expect("failed validate update");
 
             assert!(result.is_valid());

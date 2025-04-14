@@ -131,8 +131,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let old_data_contract = &contract_fetch_info.contract;
 
+        // Here we do validations that consider the old data contract
         let validation_result =
-            old_data_contract.validate_update(new_data_contract, platform_version)?;
+            old_data_contract.validate_update(new_data_contract, block_info, platform_version)?;
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
