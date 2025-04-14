@@ -1530,7 +1530,6 @@ __metadata:
     "@dashevo/dashd-rpc": "npm:^19.0.0"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
-    "@dashevo/token-history-contract": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     "@grpc/grpc-js": "npm:1.4.4"
     "@pshenmic/zeromq": "npm:6.0.0-beta.22"
@@ -1854,7 +1853,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/token-history-contract@workspace:*, @dashevo/token-history-contract@workspace:packages/token-history-contract":
+"@dashevo/token-history-contract@workspace:packages/token-history-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/token-history-contract@workspace:packages/token-history-contract"
   dependencies:

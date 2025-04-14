@@ -79,14 +79,14 @@
 @class GetPathElementsResponse;
 @class GetPrefundedSpecializedBalanceRequest;
 @class GetPrefundedSpecializedBalanceResponse;
-@class GetProofsRequest;
-@class GetProofsResponse;
 @class GetProtocolVersionUpgradeStateRequest;
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
 @class GetStatusRequest;
 @class GetStatusResponse;
+@class GetTokenDirectPurchasePricesRequest;
+@class GetTokenDirectPurchasePricesResponse;
 @class GetTokenPreProgrammedDistributionsRequest;
 @class GetTokenPreProgrammedDistributionsResponse;
 @class GetTokenStatusesRequest;
@@ -172,10 +172,6 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
 
 - (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByRangeWithMessage:(GetEvonodesProposedEpochBlocksByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
-
-- (GRPCUnaryProtoCall *)getProofsWithMessage:(GetProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
@@ -292,6 +288,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getTokenStatusesWithMessage:(GetTokenStatusesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse)
+
+- (GRPCUnaryProtoCall *)getTokenDirectPurchasePricesWithMessage:(GetTokenDirectPurchasePricesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
 
 - (GRPCUnaryProtoCall *)getTokenPreProgrammedDistributionsWithMessage:(GetTokenPreProgrammedDistributionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
@@ -399,13 +399,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
-
-- (void)getProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
@@ -631,6 +624,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetTokenStatusesWithRequest:(GetTokenStatusesRequest *)request handler:(void(^)(GetTokenStatusesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse)
+
+- (void)getTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTokenDirectPurchasePricesWithRequest:(GetTokenDirectPurchasePricesRequest *)request handler:(void(^)(GetTokenDirectPurchasePricesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)

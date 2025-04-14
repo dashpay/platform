@@ -93,6 +93,18 @@ impl TokenDistributionRulesV0Getters for TokenDistributionRules {
             TokenDistributionRules::V0(v0) => v0.minting_allow_choosing_destination_rules_mut(),
         }
     }
+
+    fn change_direct_purchase_pricing_rules(&self) -> &ChangeControlRules {
+        match self {
+            TokenDistributionRules::V0(v0) => v0.change_direct_purchase_pricing_rules(),
+        }
+    }
+
+    fn change_direct_purchase_pricing_rules_mut(&mut self) -> &mut ChangeControlRules {
+        match self {
+            TokenDistributionRules::V0(v0) => v0.change_direct_purchase_pricing_rules_mut(),
+        }
+    }
 }
 
 /// Implementing `TokenDistributionRulesV0Setters` for `TokenDistributionRules`
@@ -153,6 +165,12 @@ impl TokenDistributionRulesV0Setters for TokenDistributionRules {
             TokenDistributionRules::V0(v0) => {
                 v0.set_minting_allow_choosing_destination_rules(rules)
             }
+        }
+    }
+
+    fn set_change_direct_purchase_pricing_rules(&mut self, rules: ChangeControlRules) {
+        match self {
+            TokenDistributionRules::V0(v0) => v0.set_change_direct_purchase_pricing_rules(rules),
         }
     }
 }

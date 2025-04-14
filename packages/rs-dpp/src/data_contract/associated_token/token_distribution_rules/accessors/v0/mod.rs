@@ -40,6 +40,12 @@ pub trait TokenDistributionRulesV0Getters {
 
     /// Returns the rules for changing the minting allow choosing destination setting.
     fn minting_allow_choosing_destination_rules_mut(&mut self) -> &mut ChangeControlRules;
+
+    /// Returns the rules for changing the direct purchase pricing.
+    fn change_direct_purchase_pricing_rules(&self) -> &ChangeControlRules;
+
+    /// Returns the rules for changing the direct purchase pricing as mut.
+    fn change_direct_purchase_pricing_rules_mut(&mut self) -> &mut ChangeControlRules;
 }
 
 /// Accessor trait for setters of `TokenDistributionRulesV0`
@@ -70,4 +76,7 @@ pub trait TokenDistributionRulesV0Setters {
 
     /// Sets the rules for changing the minting allow choosing destination setting.
     fn set_minting_allow_choosing_destination_rules(&mut self, rules: ChangeControlRules);
+
+    /// Sets the rules for changing the direct purchase pricing as mut.
+    fn set_change_direct_purchase_pricing_rules(&mut self, rules: ChangeControlRules);
 }

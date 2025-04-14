@@ -28,6 +28,8 @@ pub struct TokenDistributionRulesV0 {
     pub minting_allow_choosing_destination: bool,
     #[serde(default = "default_change_control_rules")]
     pub minting_allow_choosing_destination_rules: ChangeControlRules,
+    #[serde(default = "default_change_control_rules")]
+    pub change_direct_purchase_pricing_rules: ChangeControlRules,
 }
 
 // Default function for `minting_allow_choosing_destination` to return `true`
@@ -56,7 +58,8 @@ impl fmt::Display for TokenDistributionRulesV0 {
             new_tokens_destination_identity: {},\n  \
             new_tokens_destination_identity_rules: {},\n  \
             minting_allow_choosing_destination: {},\n  \
-            minting_allow_choosing_destination_rules: {}\n\
+            minting_allow_choosing_destination_rules: {},\n  \
+            change_direct_purchase_pricing_rules:: {}\n\
             }}",
             match &self.perpetual_distribution {
                 Some(value) => format!("{}", value),
@@ -74,6 +77,7 @@ impl fmt::Display for TokenDistributionRulesV0 {
             self.new_tokens_destination_identity_rules,
             self.minting_allow_choosing_destination,
             self.minting_allow_choosing_destination_rules,
+            self.change_direct_purchase_pricing_rules,
         )
     }
 }
