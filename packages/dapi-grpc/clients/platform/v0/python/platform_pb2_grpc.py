@@ -69,11 +69,6 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
                 )
-        self.getProofs = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getProofs',
-                request_serializer=platform__pb2.GetProofsRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetProofsResponse.FromString,
-                )
         self.getDataContract = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContract',
                 request_serializer=platform__pb2.GetDataContractRequest.SerializeToString,
@@ -199,6 +194,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetTokenStatusesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetTokenStatusesResponse.FromString,
                 )
+        self.getTokenDirectPurchasePrices = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenDirectPurchasePrices',
+                request_serializer=platform__pb2.GetTokenDirectPurchasePricesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenDirectPurchasePricesResponse.FromString,
+                )
         self.getTokenPreProgrammedDistributions = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getTokenPreProgrammedDistributions',
                 request_serializer=platform__pb2.GetTokenPreProgrammedDistributionsRequest.SerializeToString,
@@ -295,12 +295,6 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getEvonodesProposedEpochBlocksByRange(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getProofs(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -461,6 +455,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getTokenDirectPurchasePrices(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getTokenPreProgrammedDistributions(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -554,11 +554,6 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getEvonodesProposedEpochBlocksByRange,
                     request_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.FromString,
                     response_serializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.SerializeToString,
-            ),
-            'getProofs': grpc.unary_unary_rpc_method_handler(
-                    servicer.getProofs,
-                    request_deserializer=platform__pb2.GetProofsRequest.FromString,
-                    response_serializer=platform__pb2.GetProofsResponse.SerializeToString,
             ),
             'getDataContract': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContract,
@@ -684,6 +679,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getTokenStatuses,
                     request_deserializer=platform__pb2.GetTokenStatusesRequest.FromString,
                     response_serializer=platform__pb2.GetTokenStatusesResponse.SerializeToString,
+            ),
+            'getTokenDirectPurchasePrices': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenDirectPurchasePrices,
+                    request_deserializer=platform__pb2.GetTokenDirectPurchasePricesRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenDirectPurchasePricesResponse.SerializeToString,
             ),
             'getTokenPreProgrammedDistributions': grpc.unary_unary_rpc_method_handler(
                     servicer.getTokenPreProgrammedDistributions,
@@ -909,23 +909,6 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEvonodesProposedEpochBlocksByRange',
             platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.SerializeToString,
             platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getProofs(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getProofs',
-            platform__pb2.GetProofsRequest.SerializeToString,
-            platform__pb2.GetProofsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1351,6 +1334,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenStatuses',
             platform__pb2.GetTokenStatusesRequest.SerializeToString,
             platform__pb2.GetTokenStatusesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTokenDirectPurchasePrices(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenDirectPurchasePrices',
+            platform__pb2.GetTokenDirectPurchasePricesRequest.SerializeToString,
+            platform__pb2.GetTokenDirectPurchasePricesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

@@ -24,6 +24,7 @@ use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
 
 use crate::execution::validation::state_transition::tests::add_tokens_to_identity;
+use crate::execution::validation::state_transition::tests::process_test_state_transition;
 use crate::execution::validation::state_transition::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;

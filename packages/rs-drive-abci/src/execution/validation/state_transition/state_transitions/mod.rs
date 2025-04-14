@@ -118,7 +118,7 @@ pub(in crate::execution) mod tests {
     use crate::expect_match;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{SuccessfulExecution, UnpaidConsensusError};
     use crate::execution::types::block_state_info::BlockStateInfo;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
@@ -2468,5 +2468,40 @@ pub(in crate::execution) mod tests {
         );
 
         basic_token_contract
+    }
+
+    pub(in crate::execution) fn process_test_state_transition<S: PlatformSerializable>(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        state_transition: S,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionsProcessingResult {
+        let Ok(serialized_state_transition) = state_transition.serialize_to_bytes() else {
+            panic!("expected documents batch serialized state transition")
+        };
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized_state_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
     }
 }
