@@ -6,7 +6,7 @@ use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
 pub struct DriveAbciQueryVersions {
     pub max_returned_elements: u16,
     pub response_metadata: FeatureVersion,
-    pub proofs_query: FeatureVersionBounds,
+    pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,

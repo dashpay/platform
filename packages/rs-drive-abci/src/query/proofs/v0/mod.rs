@@ -3,231 +3,355 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
-use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
-    IdentityTokenBalanceRequest, IdentityTokenInfoRequest, TokenStatusRequest,
-};
-use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
-use dapi_grpc::platform::v0::get_proofs_response::{get_proofs_response_v0, GetProofsResponseV0};
-use dpp::check_validation_result_with_data;
-use dpp::platform_value::Bytes32;
+use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contracts::SystemDataContract;
 use dpp::prelude::Identifier;
-use dpp::validation::ValidationResult;
+use dpp::serialization::PlatformDeserializable;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
-use drive::query::identity_token_balance_drive_query::IdentityTokenBalanceDriveQuery;
-use drive::query::identity_token_info_drive_query::IdentityTokenInfoDriveQuery;
-use drive::query::token_status_drive_query::TokenStatusDriveQuery;
-use drive::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
+use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::Vote;
+use drive::drive::Drive;
+use drive::error::proof::ProofError;
+use drive::query::{
+    IdentityBasedVoteDriveQuery, PathQuery, SingleDocumentDriveQuery,
+    SingleDocumentDriveQueryContestedStatus,
+};
+
+fn contract_ids_to_non_historical_path_query(contract_ids: &[Identifier]) -> PathQuery {
+    let contract_ids: Vec<_> = contract_ids.iter().map(|id| id.to_buffer()).collect();
+
+    let mut path_query = Drive::fetch_non_historical_contracts_query(&contract_ids);
+    path_query.query.limit = None;
+    path_query
+}
 
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
         &self,
-        GetProofsRequestV0 {
-            identities,
-            contracts,
-            documents,
-            votes,
-            identity_token_balances,
-            identity_token_infos,
-            token_statuses,
-        }: GetProofsRequestV0,
+        GetProofsRequest {
+            state_transition: state_transition_bytes,
+        }: GetProofsRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetProofsResponseV0>, Error> {
-        let contract_ids = check_validation_result_with_data!(contracts
-            .into_iter()
-            .map(|contract_request| {
-                Bytes32::from_vec(contract_request.contract_id)
-                    .map(|bytes| (bytes.0, None))
-                    .map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })
-            })
-            .collect::<Result<Vec<([u8; 32], Option<bool>)>, QueryError>>());
+    ) -> Result<QueryValidationResult<GetProofsResponse>, Error> {
+        let state_transition =
+            match StateTransition::deserialize_from_bytes(&state_transition_bytes) {
+                Ok(state_transition) => state_transition,
+                Err(e) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Protocol(
+                        e,
+                    )))
+                }
+            };
 
-        let identity_requests = check_validation_result_with_data!(identities
-            .into_iter()
-            .map(|identity_request| {
-                Ok(IdentityDriveQuery {
-                    identity_id: Bytes32::from_vec(identity_request.identity_id)
-                        .map(|bytes| bytes.0)
-                        .map_err(|_| {
-                            QueryError::InvalidArgument(
-                                "id must be a valid identifier (32 bytes long)".to_string(),
-                            )
-                        })?,
-                    prove_request_type: IdentityProveRequestType::try_from(
-                        identity_request.request_type as u8,
-                    )
-                    .map_err(|_| {
-                        QueryError::InvalidArgument(
-                            format!(
-                                "invalid prove request type '{}'",
-                                identity_request.request_type
-                            )
-                            .to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
+        let path_query = match state_transition {
+            StateTransition::DataContractCreate(st) => {
+                contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+            }
+            StateTransition::DataContractUpdate(st) => {
+                contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+            }
+            StateTransition::Batch(st) => {
+                if st.transitions_len() > 1 {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Proof(
+                        ProofError::InvalidTransition(
+                            "batch state transition must have only one batched transition"
+                                .to_string(),
+                        ),
+                    )));
+                }
+                let Some(transition) = st.first_transition() else {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Proof(
+                        ProofError::InvalidTransition(
+                            "batch state transition must have one batched transition".to_string(),
+                        ),
+                    )));
+                };
 
-        let document_queries = check_validation_result_with_data!(documents
-            .into_iter()
-            .map(|document_proof_request| {
-                let contract_id: Identifier =
-                    document_proof_request.contract_id.try_into().map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?;
-                let document_id: Identifier =
-                    document_proof_request.document_id.try_into().map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?;
+                let owner_id = st.owner_id();
 
-                let contested_status = document_proof_request
-                    .document_contested_status
-                    .try_into()?;
+                match transition {
+                    BatchedTransitionRef::Document(document_transition) => {
+                        let data_contract_id = document_transition.data_contract_id();
 
-                Ok(SingleDocumentDriveQuery {
-                    contract_id: contract_id.into_buffer(),
-                    document_type_name: document_proof_request.document_type,
-                    document_type_keeps_history: document_proof_request.document_type_keeps_history,
-                    document_id: document_id.into_buffer(),
-                    block_time_ms: None, //None because we want latest
-                    contested_status,
-                })
-            })
-            .collect::<Result<Vec<SingleDocumentDriveQuery>, QueryError>>());
+                        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+                            data_contract_id.to_buffer(),
+                            false,
+                            None,
+                            platform_version,
+                        )?
+                        else {
+                            return Err(drive::error::Error::Proof(ProofError::UnknownContract(
+                                format!("unknown contract with id {}", data_contract_id),
+                            ))
+                            .into());
+                        };
 
-        let vote_queries = check_validation_result_with_data!(votes
-            .into_iter()
-            .filter_map(|vote_proof_request| {
-                if let Some(request_type) = vote_proof_request.request_type {
-                    match request_type {
-                        RequestType::ContestedResourceVoteStatusRequest(contested_resource_vote_status_request) => {
-                            let identity_id = match contested_resource_vote_status_request.voter_identifier.try_into() {
-                                Ok(identity_id) => identity_id,
-                                Err(_) => return Some(Err(QueryError::InvalidArgument(
-                                    "voter_identifier must be a valid identifier (32 bytes long)".to_string(),
-                                ))),
+                        let contract = &contract_fetch_info.contract;
+
+                        let document_type = contract
+                            .document_type_for_name(document_transition.document_type_name())
+                            .map_err(|e| {
+                                drive::error::Error::Proof(ProofError::UnknownContract(format!(
+                                    "cannot fetch contract for document {} with id {}: {}",
+                                    document_transition.document_type_name(),
+                                    document_transition.data_contract_id(),
+                                    e
+                                )))
+                            })?;
+
+                        let contested_status =
+                            if let DocumentTransition::Create(create_transition) =
+                                document_transition
+                            {
+                                if create_transition.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested
+                                }
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested
                             };
-                            let contract_id = match contested_resource_vote_status_request.contract_id.try_into() {
-                                Ok(contract_id) => contract_id,
-                                Err(_) => return Some(Err(QueryError::InvalidArgument(
-                                    "contract_id must be a valid identifier (32 bytes long)".to_string(),
-                                ))),
-                            };
-                            let document_type_name = contested_resource_vote_status_request.document_type_name;
-                            let index_name = contested_resource_vote_status_request.index_name;
-                            let index_values = match contested_resource_vote_status_request.index_values.into_iter().enumerate().map(|(pos, serialized_value)|
-                                Ok(bincode::decode_from_slice(serialized_value.as_slice(), bincode::config::standard().with_big_endian()
-                                    .with_no_limit()).map_err(|_| QueryError::InvalidArgument(
-                                    format!("could not convert {:?} to a value in the index values at position {}", serialized_value, pos),
-                                ))?.0)
-                            ).collect::<Result<Vec<_>, QueryError>>() {
-                                Ok(index_values) => index_values,
-                                Err(e) => return Some(Err(e)),
-                            };
-                            let vote_poll = ContestedDocumentResourceVotePoll {
-                                contract_id,
-                                document_type_name,
-                                index_name,
-                                index_values,
-                            }.into();
-                            Some(Ok(IdentityBasedVoteDriveQuery {
-                                identity_id,
-                                vote_poll,
-                            }))
+
+                        let query = SingleDocumentDriveQuery {
+                            contract_id: document_transition.data_contract_id().into_buffer(),
+                            document_type_name: document_transition.document_type_name().clone(),
+                            document_type_keeps_history: document_type.documents_keep_history(),
+                            document_id: document_transition.base().id().into_buffer(),
+                            block_time_ms: None, //None because we want latest
+                            contested_status,
+                        };
+
+                        let mut path_query = query.construct_path_query(platform_version)?;
+                        path_query.query.limit = None;
+                        path_query
+                    }
+                    BatchedTransitionRef::Token(token_transition) => {
+                        //todo group actions
+                        let data_contract_id = token_transition.data_contract_id();
+                        let token_id = token_transition.token_id();
+
+                        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+                            data_contract_id.to_buffer(),
+                            false,
+                            None,
+                            platform_version,
+                        )?
+                        else {
+                            return Ok(QueryValidationResult::new_with_error(QueryError::Proof(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {}",
+                                    data_contract_id
+                                )),
+                            )));
+                        };
+
+                        let contract = &contract_fetch_info.contract;
+
+                        let token_config = contract.expected_token_configuration(
+                            token_transition.base().token_contract_position(),
+                        )?;
+
+                        let keeps_historical_document = token_config.keeps_history();
+
+                        match token_transition {
+                            TokenTransition::Burn(_) => {
+                                if keeps_historical_document.keeps_burning_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_balance_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::Mint(token_mint_transition) => {
+                                if keeps_historical_document.keeps_minting_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    let recipient_id =
+                                        token_mint_transition.recipient_id(token_config)?;
+
+                                    Drive::token_balance_for_identity_id_query(
+                                        token_id.into_buffer(),
+                                        recipient_id.into_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::Transfer(token_transfer_transition) => {
+                                if keeps_historical_document.keeps_transfer_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    let recipient_id = token_transfer_transition.recipient_id();
+                                    let identity_ids =
+                                        [owner_id.to_buffer(), recipient_id.to_buffer()];
+
+                                    Drive::token_balances_for_identity_ids_query(
+                                        token_id.into_buffer(),
+                                        &identity_ids,
+                                    )
+                                }
+                            }
+                            TokenTransition::Freeze(_) => {
+                                if keeps_historical_document.keeps_freezing_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_info_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::Unfreeze(_) => {
+                                if keeps_historical_document.keeps_freezing_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_info_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::DirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_purchase_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_balance_for_identity_id_query(
+                                        token_id.to_buffer(),
+                                        owner_id.to_buffer(),
+                                    )
+                                }
+                            }
+                            TokenTransition::SetPriceForDirectPurchase(_) => {
+                                if keeps_historical_document.keeps_direct_pricing_history() {
+                                    create_token_historical_document_query(
+                                        token_transition,
+                                        owner_id,
+                                        platform_version,
+                                    )?
+                                } else {
+                                    Drive::token_direct_purchase_price_query(token_id.to_buffer())
+                                }
+                            }
+                            TokenTransition::DestroyFrozenFunds(_)
+                            | TokenTransition::EmergencyAction(_)
+                            | TokenTransition::ConfigUpdate(_)
+                            | TokenTransition::Claim(_) => create_token_historical_document_query(
+                                token_transition,
+                                owner_id,
+                                platform_version,
+                            )?,
                         }
                     }
-                } else {
-                    None
                 }
-            })
-            .collect::<Result<Vec<IdentityBasedVoteDriveQuery>, QueryError>>());
+            }
+            StateTransition::IdentityCreate(st) => Drive::full_identity_query(
+                &st.identity_id().into_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
+            StateTransition::IdentityTopUp(st) => {
+                // we expect to get a new balance and revision
+                Drive::revision_and_balance_path_query(
+                    st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                Drive::identity_balance_query(&st.identity_id().to_buffer())
+            }
+            StateTransition::IdentityUpdate(st) => Drive::identity_all_keys_query(
+                &st.identity_id().to_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
+            StateTransition::IdentityCreditTransfer(st) => {
+                let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());
+                let recipient_query =
+                    Drive::identity_balance_query(&st.recipient_id().into_buffer());
 
-        let token_balance_queries = check_validation_result_with_data!(identity_token_balances
-            .into_iter()
-            .map(|identity_token_balance_request| {
-                let IdentityTokenBalanceRequest {
-                    token_id,
-                    identity_id,
-                } = identity_token_balance_request;
-                Ok(IdentityTokenBalanceDriveQuery {
-                    identity_id: Identifier::try_from(identity_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "identity_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                    token_id: Identifier::try_from(token_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "token_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<IdentityTokenBalanceDriveQuery>, QueryError>>());
+                PathQuery::merge(
+                    vec![&sender_query, &recipient_query],
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::MasternodeVote(st) => {
+                let pro_tx_hash = st.pro_tx_hash();
 
-        let token_info_queries = check_validation_result_with_data!(identity_token_infos
-            .into_iter()
-            .map(|identity_token_info_request| {
-                let IdentityTokenInfoRequest {
-                    token_id,
-                    identity_id,
-                } = identity_token_info_request;
-                Ok(IdentityTokenInfoDriveQuery {
-                    identity_id: Identifier::try_from(identity_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "identity_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                    token_id: Identifier::try_from(token_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "token_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<IdentityTokenInfoDriveQuery>, QueryError>>());
+                match st.vote_owned() {
+                    Vote::ResourceVote(resource_vote) => {
+                        let query = IdentityBasedVoteDriveQuery {
+                            identity_id: pro_tx_hash,
+                            vote_poll: resource_vote.vote_poll_owned(),
+                        };
 
-        let token_status_queries = check_validation_result_with_data!(token_statuses
-            .into_iter()
-            .map(|token_status_request| {
-                let TokenStatusRequest { token_id } = token_status_request;
-                Ok(TokenStatusDriveQuery {
-                    token_id: Identifier::try_from(token_id).map_err(|_| {
-                        QueryError::InvalidArgument(
-                            "token_id must be a valid identifier (32 bytes long)".to_string(),
-                        )
-                    })?,
-                })
-            })
-            .collect::<Result<Vec<TokenStatusDriveQuery>, QueryError>>());
+                        // The path query construction can only fail if the serialization fails.
+                        // Because the serialization will pretty much never fail, we can do this.
+                        let mut path_query = query.construct_path_query()?;
+                        path_query.query.limit = None;
+                        path_query
+                    }
+                }
+            }
+        };
 
-        let proof = self.drive.prove_multiple_state_transition_results(
-            &identity_requests,
-            &contract_ids,
-            &document_queries,
-            &vote_queries,
-            &token_balance_queries,
-            &token_info_queries,
-            &token_status_queries,
+        let proof = self.drive.grove_get_proved_path_query(
+            &path_query,
             None,
-            platform_version,
+            &mut vec![],
+            &platform_version.drive,
         )?;
 
-        let response = GetProofsResponseV0 {
-            result: Some(get_proofs_response_v0::Result::Proof(
-                self.response_proof_v0(platform_state, proof),
-            )),
+        let response = GetProofsResponse {
+            proof: Some(self.response_proof_v0(platform_state, proof)),
             metadata: Some(self.response_metadata_v0(platform_state)),
         };
 
@@ -235,269 +359,26 @@ impl<C> Platform<C> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
-    use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::ContestedResourceVoteStatusRequest;
-    use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
-        ContractRequest, DocumentRequest, IdentityRequest, VoteStatusRequest,
+fn create_token_historical_document_query(
+    token_transition: &TokenTransition,
+    owner_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Result<PathQuery, Error> {
+    let token_history_contract =
+        load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
+
+    let query = SingleDocumentDriveQuery {
+        contract_id: token_history_contract.id().into_buffer(),
+        document_type_name: token_transition.historical_document_type_name().to_string(),
+        document_type_keeps_history: false,
+        document_id: token_transition
+            .historical_document_id(owner_id)
+            .to_buffer(),
+        block_time_ms: None, //None because we want latest
+        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
     };
-    use dpp::dashcore::Network;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::platform_value::Value;
-    use dpp::util::strings::convert_to_homograph_safe_chars;
 
-    #[test]
-    fn test_invalid_identity_ids() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetProofsRequestV0 {
-            identities: vec![IdentityRequest {
-                identity_id: vec![0; 8],
-                request_type: 0,
-            }],
-            contracts: vec![],
-            documents: vec![],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert_invalid_identifier(result);
-    }
-
-    #[test]
-    fn test_invalid_identity_prove_request_type() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request_type = 10;
-
-        let request = GetProofsRequestV0 {
-            identities: vec![IdentityRequest {
-                identity_id: vec![0; 32],
-                request_type,
-            }],
-            contracts: vec![],
-            documents: vec![],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(matches!(
-            result.errors.as_slice(),
-            [QueryError::InvalidArgument(msg)] if msg == &format!(
-                "invalid prove request type '{}'",
-                request_type
-            )
-        ))
-    }
-
-    #[test]
-    fn test_invalid_contract_ids() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetProofsRequestV0 {
-            identities: vec![],
-            contracts: vec![ContractRequest {
-                contract_id: vec![0; 8],
-            }],
-            documents: vec![],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert_invalid_identifier(result);
-    }
-
-    #[test]
-    fn test_invalid_contract_id_for_documents_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetProofsRequestV0 {
-            identities: vec![],
-            contracts: vec![],
-            documents: vec![DocumentRequest {
-                contract_id: vec![0; 8],
-                document_type: "niceDocument".to_string(),
-                document_type_keeps_history: false,
-                document_id: vec![0; 32],
-                document_contested_status: 0,
-            }],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert_invalid_identifier(result);
-    }
-
-    #[test]
-    fn test_invalid_document_id() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetProofsRequestV0 {
-            identities: vec![],
-            contracts: vec![],
-            documents: vec![DocumentRequest {
-                contract_id: vec![0; 32],
-                document_type: "niceDocument".to_string(),
-                document_type_keeps_history: false,
-                document_id: vec![0; 8],
-                document_contested_status: 0,
-            }],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert_invalid_identifier(result);
-    }
-
-    #[test]
-    fn test_proof_of_absence() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetProofsRequestV0 {
-            identities: vec![],
-            contracts: vec![],
-            documents: vec![DocumentRequest {
-                contract_id: vec![0; 32],
-                document_type: "niceDocument".to_string(),
-                document_type_keeps_history: false,
-                document_id: vec![0; 32],
-                document_contested_status: 0,
-            }],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let validation_result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(matches!(validation_result.data, Some(GetProofsResponseV0 {
-            result: Some(get_proofs_response_v0::Result::Proof(proof)),
-            metadata: Some(_),
-        }) if !proof.grovedb_proof.is_empty()));
-    }
-
-    #[test]
-    fn test_proof_of_absence_of_vote() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let dpns_contract = platform
-            .drive
-            .cache
-            .system_data_contracts
-            .load_dpns()
-            .as_ref()
-            .clone();
-
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        let serialized_index_values = [
-            Value::Text("dash".to_string()),
-            Value::Text(convert_to_homograph_safe_chars("quantum")),
-        ]
-        .iter()
-        .map(|value| {
-            bincode::encode_to_vec(value, config).expect("expected to encode value in path")
-        })
-        .collect();
-
-        let request = GetProofsRequestV0 {
-            identities: vec![],
-            contracts: vec![],
-            documents: vec![],
-            votes: vec![VoteStatusRequest {
-                request_type: Some(RequestType::ContestedResourceVoteStatusRequest(
-                    ContestedResourceVoteStatusRequest {
-                        contract_id: dpns_contract.id().to_vec(),
-                        document_type_name: "domain".to_string(),
-                        index_name: "parentNameAndLabel".to_string(),
-                        index_values: serialized_index_values,
-                        voter_identifier: [0u8; 32].to_vec(),
-                    },
-                )),
-            }],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let validation_result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(matches!(validation_result.data, Some(GetProofsResponseV0 {
-            result: Some(get_proofs_response_v0::Result::Proof(proof)),
-            metadata: Some(_),
-        }) if !proof.grovedb_proof.is_empty()));
-    }
-
-    #[test]
-    fn test_prove_all() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetProofsRequestV0 {
-            identities: vec![IdentityRequest {
-                identity_id: vec![0; 32],
-                request_type: 0,
-            }],
-            contracts: vec![ContractRequest {
-                contract_id: vec![0; 32],
-            }],
-            documents: vec![DocumentRequest {
-                contract_id: vec![0; 32],
-                document_type: "niceDocument".to_string(),
-                document_type_keeps_history: false,
-                document_id: vec![1; 32],
-                document_contested_status: 0,
-            }],
-            votes: vec![],
-            identity_token_balances: vec![],
-            identity_token_infos: vec![],
-            token_statuses: vec![],
-        };
-
-        let validation_result = platform
-            .query_proofs_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(matches!(validation_result.data, Some(GetProofsResponseV0 {
-            result: Some(get_proofs_response_v0::Result::Proof(proof)),
-            metadata: Some(_),
-        }) if !proof.grovedb_proof.is_empty()));
-    }
+    query
+        .construct_path_query(platform_version)
+        .map_err(Error::Drive)
 }
