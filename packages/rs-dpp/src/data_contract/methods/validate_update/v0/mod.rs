@@ -253,27 +253,27 @@ impl DataContract {
                         .into(),
                     ));
 
-                    // // In the future we will allow new tokens on contract update
-                    // // Validate token distribution rules
-                    // if let Some(distribution) =
-                    //     config.distribution_rules().pre_programmed_distribution()
-                    // {
-                    //     if let Some((timestamp, _)) = distribution.distributions().iter().next() {
-                    //         if timestamp < &block_info.time_ms {
-                    //             return Ok(SimpleConsensusValidationResult::new_with_error(
-                    //                 StateError::PreProgrammedDistributionTimestampInPastError(
-                    //                     PreProgrammedDistributionTimestampInPastError::new(
-                    //                         new_data_contract.id(),
-                    //                         *token_position,
-                    //                         *timestamp,
-                    //                         block_info.time_ms,
-                    //                     ),
-                    //                 )
-                    //                 .into(),
-                    //             ));
-                    //         }
-                    //     }
-                    // }
+                    // In the future we will allow new tokens on contract update
+                    // Validate token distribution rules
+                    if let Some(distribution) =
+                        config.distribution_rules().pre_programmed_distribution()
+                    {
+                        if let Some((timestamp, _)) = distribution.distributions().iter().next() {
+                            if timestamp < &block_info.time_ms {
+                                return Ok(SimpleConsensusValidationResult::new_with_error(
+                                    StateError::PreProgrammedDistributionTimestampInPastError(
+                                        PreProgrammedDistributionTimestampInPastError::new(
+                                            new_data_contract.id(),
+                                            *token_position,
+                                            *timestamp,
+                                            block_info.time_ms,
+                                        ),
+                                    )
+                                    .into(),
+                                ));
+                            }
+                        }
+                    }
                 }
             }
         }
