@@ -509,6 +509,7 @@ mod fixed_amount {
         consensus::{state::state_error::StateError, ConsensusError},
         data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction,
     };
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_CYCLES_PARAM;
 
     #[test]
     fn fixed_amount_1_interval_1() -> Result<(), String> {
@@ -531,7 +532,7 @@ mod fixed_amount {
     // Then the claim should be successful.
     #[test]
     fn fixed_amount_50_interval_10() {
-        super::test_suite::check_heights(
+        check_heights(
             DistributionFunction::FixedAmount { amount: 50 },
             &[
                 TestStep::new(1, 100_000, true),
@@ -549,12 +550,11 @@ mod fixed_amount {
 
     /// Test case for overflow error.
     ///
-    /// TODO: Fails, please fix.
     ///
     /// claim at height 1000000000000: claim failed: assertion 0 failed: expected SuccessfulExecution,
     /// got [InternalError(\"storage: protocol: overflow error: Overflow in FixedAmount evaluation\")]"
     #[test]
-    fn fail_fixed_amount_1_000_000_000() {
+    fn fixed_amount_at_trillionth_block() {
         check_heights(
             DistributionFunction::FixedAmount {
                 amount: 1_000_000_000,
@@ -564,10 +564,17 @@ mod fixed_amount {
                 TestStep::new(46, INITIAL_BALANCE + 4 * 1_000_000_000, false),
                 TestStep::new(50, INITIAL_BALANCE + 5 * 1_000_000_000, true),
                 TestStep::new(51, INITIAL_BALANCE + 5 * 1_000_000_000, false),
+                // We will be getting MAX_DISTRIBUTION_CYCLES_PARAM intervals of 1_000_000_000 tokens, and we already had 5
                 TestStep::new(
                     1_000_000_000_000,
-                    INITIAL_BALANCE + 5 * 1_000_000_000,
-                    false,
+                    INITIAL_BALANCE + (MAX_DISTRIBUTION_CYCLES_PARAM + 5) * 1_000_000_000,
+                    true,
+                ),
+                // We will be getting another MAX_DISTRIBUTION_CYCLES_PARAM intervals of 1_000_000_000 tokens, and we already had 5 + MAX_DISTRIBUTION_CYCLES_PARAM
+                TestStep::new(
+                    1_000_000_000_000,
+                    INITIAL_BALANCE + (MAX_DISTRIBUTION_CYCLES_PARAM * 2 + 5) * 1_000_000_000,
+                    true,
                 ),
             ],
             None,
