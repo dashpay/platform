@@ -1180,12 +1180,18 @@ mod tests {
     mod token_tests {
         use super::*;
         use dpp::data_contract::accessors::v1::DataContractV1Setters;
-        use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
+            TokenConfigurationV0Getters, TokenConfigurationV0Setters,
+        };
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+        use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+        use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+        use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
         use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         #[test]
-        fn test_data_contract_update_can_not_add_new_token() {
+        fn test_data_contract_update_can_add_new_token() {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -1197,31 +1203,11 @@ mod tests {
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
-            // Create an initial data contract with groups
+            // ── original contract (no tokens) ─────────────────────────────────
             let mut data_contract =
                 get_data_contract_fixture(None, 0, platform_version.protocol_version)
                     .data_contract_owned();
-
             data_contract.set_owner_id(identity.id());
-
-            {
-                // Add groups to the contract
-                let groups = data_contract.groups_mut().expect("expected groups");
-                groups.insert(
-                    0,
-                    Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
-                        required_power: 1,
-                    }),
-                );
-                groups.insert(
-                    1,
-                    Group::V0(GroupV0 {
-                        members: [(identity.id(), 1)].into(),
-                        required_power: 1,
-                    }),
-                );
-            }
 
             platform
                 .drive
@@ -1235,12 +1221,118 @@ mod tests {
                 )
                 .expect("expected to apply contract successfully");
 
-            // Create an updated contract with one group removed
+            // ── updated contract: add a well‑formed token at position 0 ──────
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let valid_token_cfg = {
+                let mut cfg =
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+                cfg.set_base_supply(1_000_000);
+
+                cfg.set_conventions(TokenConfigurationConvention::V0(
+                    TokenConfigurationConventionV0 {
+                        localizations: BTreeMap::from([(
+                            "en".to_string(),
+                            TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                                should_capitalize: true,
+                                singular_form: "credit".to_string(),
+                                plural_form: "credits".to_string(),
+                            }),
+                        )]),
+                        decimals: 8,
+                    },
+                ));
+                cfg
+            };
+
+            updated_data_contract.add_token(0, valid_token_cfg);
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let tx_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_update_can_not_add_new_token_with_gap() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // ── original contract with token at position 0 ───────────────────
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+            data_contract.add_token(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            );
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // ── updated contract: try to add token at position 2 (gap) ───────
             let mut updated_data_contract = data_contract.clone();
             updated_data_contract.set_version(2);
 
             updated_data_contract.add_token(
-                0,
+                2, // <‑‑ non‑contiguous
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
             );
 
@@ -1257,16 +1349,15 @@ mod tests {
                 )
                 .expect("expect to create data contract update transition");
 
-            let data_contract_update_serialized_transition = data_contract_update_transition
+            let tx_bytes = data_contract_update_transition
                 .serialize_to_bytes()
                 .expect("expected serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
-
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
+                    &vec![tx_bytes],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1276,27 +1367,199 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // Extract the error and check the message
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
-            {
-                assert_eq!(
-                    error.action(),
-                    "add token at position 0",
-                    "expected error message to match 'add token at position 0'"
-                );
-                assert_eq!(
-                    error.data_contract_id(),
-                    data_contract.id(),
-                    "expected the error to reference the correct data contract ID"
-                );
-            } else {
-                panic!("Expected a DataContractUpdateActionNotAllowedError");
-            }
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::NonContiguousContractTokenPositionsError(_)
+                    ),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_update_can_not_add_new_token_with_large_base_supply() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // ── original contract (no tokens) ────────────────────────────────
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // ── updated contract: token with base_supply > i64::MAX ──────────
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let mut huge_supply_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            huge_supply_cfg.set_base_supply(i64::MAX as u64 + 1);
+
+            updated_data_contract.add_token(0, huge_supply_cfg);
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let tx_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::InvalidTokenBaseSupplyError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_update_can_not_add_new_token_with_invalid_localization() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // ── original contract (no tokens) ────────────────────────────────
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // ── updated contract: token with empty localization map ──────────
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let empty_localization_cfg = {
+                let mut cfg =
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+                cfg.set_conventions(TokenConfigurationConvention::V0(
+                    TokenConfigurationConventionV0 {
+                        localizations: BTreeMap::new(), // <‑‑ invalid
+                        decimals: 8,
+                    },
+                ));
+                cfg
+            };
+
+            updated_data_contract.add_token(0, empty_localization_cfg);
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let tx_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::MissingDefaultLocalizationError(_)),
+                    _
+                )]
+            );
 
             platform
                 .drive

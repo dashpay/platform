@@ -846,6 +846,154 @@ mod tests {
             );
         }
 
+        #[test]
+        fn should_return_invalid_result_when_new_token_position_is_non_contiguous() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+            // one token at position 0
+            old_data_contract.set_tokens(BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]));
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // add **one** new token but skip position 1 → put it at position 2
+            let mut new_token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            new_token_cfg.set_base_supply(1); // something valid
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .insert(2, new_token_cfg);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::NonContiguousContractTokenPositionsError(_)
+                )]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_new_token_has_base_supply_above_i64_max() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // add a token at the next contiguous position 0
+            let mut huge_supply_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            huge_supply_cfg.set_base_supply(i64::MAX as u64 + 1); // one more than allowed
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .insert(0, huge_supply_cfg);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidTokenBaseSupplyError(e)
+                )] if e.base_supply() == i64::MAX as u64 + 1
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_new_token_has_invalid_localizations() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // conventions with **no** localizations → validate_localizations() must fail
+            let empty_conventions =
+                TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::new(), // <‑‑ invalid
+                    decimals: 8,
+                });
+
+            let mut bad_local_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            bad_local_cfg.set_conventions(empty_conventions);
+
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .insert(0, bad_local_cfg);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            // We don’t depend on the exact error type here – just that it’s invalid
+            assert!(!result.is_valid(), "localization check must fail");
+        }
+
+        #[test]
+        fn should_pass_when_a_well_formed_new_token_is_added() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract =
+                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+
+            // build a fully valid token configuration
+            let valid_token_cfg = {
+                let mut cfg =
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+
+                cfg.set_base_supply(1_000_000); // within limits
+
+                cfg.set_conventions(TokenConfigurationConvention::V0(
+                    TokenConfigurationConventionV0 {
+                        localizations: BTreeMap::from([(
+                            "en".to_string(),
+                            TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                                should_capitalize: true,
+                                singular_form: "credit".to_string(),
+                                plural_form: "credits".to_string(),
+                            }),
+                        )]),
+                        decimals: 8,
+                    },
+                ));
+
+                cfg
+            };
+
+            // insert at contiguous position 0 (old contract had no tokens)
+            new_data_contract
+                .tokens_mut()
+                .unwrap()
+                .insert(0, valid_token_cfg);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert!(result.is_valid(), "well‑formed token should be accepted");
+        }
+
         //
         // ──────────────────────────────────────────────────────────────────────────
         //  Happy‑path check: no token / group changes
