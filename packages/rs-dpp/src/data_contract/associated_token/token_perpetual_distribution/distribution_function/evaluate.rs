@@ -82,7 +82,8 @@ impl DistributionFunction {
 
                 let mut numerator = *distribution_start_amount;
                 let denominator = *decrease_per_interval_denominator as u64;
-                let reduction_numerator = denominator.saturating_sub(*decrease_per_interval_numerator as u64);
+                let reduction_numerator =
+                    denominator.saturating_sub(*decrease_per_interval_numerator as u64);
 
                 for _ in 0..steps_passed {
                     numerator = numerator * reduction_numerator / denominator;
