@@ -5,7 +5,6 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
     IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
-    InvalidTokenBaseSupplyError, NonContiguousContractTokenPositionsError,
 };
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
@@ -16,7 +15,7 @@ use crate::data_contract::associated_token::token_distribution_rules::accessors:
 use crate::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
-use crate::data_contract::{DataContract, TokenContractPosition};
+use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
@@ -208,12 +207,6 @@ impl DataContract {
                     }
                 }
             }
-
-            let valid =
-                DataContract::validate_groups(new_data_contract.groups(), platform_version)?;
-            if !valid.is_valid() {
-                return Ok(valid);
-            }
         }
 
         if self.tokens() != new_data_contract.tokens() {
@@ -244,55 +237,8 @@ impl DataContract {
             }
 
             // Validate any newly added tokens
-            for (expected_position, (token_contract_position, token_configuration)) in
-                new_data_contract.tokens().iter().enumerate()
-            {
+            for (token_contract_position, token_configuration) in new_data_contract.tokens() {
                 if !self.tokens().contains_key(token_contract_position) {
-                    if expected_position as TokenContractPosition != *token_contract_position {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            NonContiguousContractTokenPositionsError::new(
-                                expected_position as TokenContractPosition,
-                                *token_contract_position,
-                            )
-                            .into(),
-                        ));
-                    }
-
-                    if token_configuration.base_supply() > i64::MAX as u64 {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            InvalidTokenBaseSupplyError::new(token_configuration.base_supply())
-                                .into(),
-                        ));
-                    }
-
-                    let validation_result = token_configuration
-                        .conventions()
-                        .validate_localizations(platform_version)?;
-                    if !validation_result.is_valid() {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            validation_result
-                                .errors
-                                .first()
-                                .expect("expected an error")
-                                .clone(),
-                        ));
-                    }
-
-                    let validation_result = token_configuration
-                        .validate_token_config_groups_exist(
-                            new_data_contract.groups(),
-                            platform_version,
-                        )?;
-                    if !validation_result.is_valid() {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            validation_result
-                                .errors
-                                .first()
-                                .expect("expected an error")
-                                .clone(),
-                        ));
-                    }
-
                     if let Some(distribution) = token_configuration
                         .distribution_rules()
                         .pre_programmed_distribution()
@@ -844,107 +790,6 @@ mod tests {
                     StateError::PreProgrammedDistributionTimestampInPastError(e)
                 )] if e.token_position() == new_position
             );
-        }
-
-        #[test]
-        fn should_return_invalid_result_when_new_token_position_is_non_contiguous() {
-            let platform_version = PlatformVersion::latest();
-
-            let mut old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
-            // one token at position 0
-            old_data_contract.set_tokens(BTreeMap::from([(
-                0,
-                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
-            )]));
-
-            let mut new_data_contract = old_data_contract.clone();
-            new_data_contract.set_version(old_data_contract.version() + 1);
-
-            // add **one** new token but skip position 1 → put it at position 2
-            let mut new_token_cfg =
-                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
-            new_token_cfg.set_base_supply(1); // something valid
-            new_data_contract
-                .tokens_mut()
-                .unwrap()
-                .insert(2, new_token_cfg);
-
-            let result = old_data_contract
-                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
-                .expect("failed validate update");
-
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(
-                    BasicError::NonContiguousContractTokenPositionsError(_)
-                )]
-            );
-        }
-
-        #[test]
-        fn should_return_invalid_result_when_new_token_has_base_supply_above_i64_max() {
-            let platform_version = PlatformVersion::latest();
-
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
-
-            let mut new_data_contract = old_data_contract.clone();
-            new_data_contract.set_version(old_data_contract.version() + 1);
-
-            // add a token at the next contiguous position 0
-            let mut huge_supply_cfg =
-                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
-            huge_supply_cfg.set_base_supply(i64::MAX as u64 + 1); // one more than allowed
-            new_data_contract
-                .tokens_mut()
-                .unwrap()
-                .insert(0, huge_supply_cfg);
-
-            let result = old_data_contract
-                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
-                .expect("failed validate update");
-
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(
-                    BasicError::InvalidTokenBaseSupplyError(e)
-                )] if e.base_supply() == i64::MAX as u64 + 1
-            );
-        }
-
-        #[test]
-        fn should_return_invalid_result_when_new_token_has_invalid_localizations() {
-            let platform_version = PlatformVersion::latest();
-
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 9).data_contract_owned();
-
-            let mut new_data_contract = old_data_contract.clone();
-            new_data_contract.set_version(old_data_contract.version() + 1);
-
-            // conventions with **no** localizations → validate_localizations() must fail
-            let empty_conventions =
-                TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
-                    localizations: BTreeMap::new(), // <‑‑ invalid
-                    decimals: 8,
-                });
-
-            let mut bad_local_cfg =
-                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
-            bad_local_cfg.set_conventions(empty_conventions);
-
-            new_data_contract
-                .tokens_mut()
-                .unwrap()
-                .insert(0, bad_local_cfg);
-
-            let result = old_data_contract
-                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
-                .expect("failed validate update");
-
-            // We don’t depend on the exact error type here – just that it’s invalid
-            assert!(!result.is_valid(), "localization check must fail");
         }
 
         #[test]

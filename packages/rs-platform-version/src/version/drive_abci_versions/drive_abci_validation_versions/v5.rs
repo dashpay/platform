@@ -85,7 +85,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
             },
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
-                advanced_structure: None,
+                advanced_structure: Some(0),
                 identity_signatures: None,
                 advanced_minimum_balance_pre_check: None,
                 nonce: Some(0),
@@ -93,7 +93,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: None,
+                basic_structure: Some(0),
                 advanced_structure: None,
                 identity_signatures: None,
                 advanced_minimum_balance_pre_check: None,

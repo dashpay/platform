@@ -6,7 +6,14 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
     DriveAbciValidationVersions, PenaltyAmounts,
 };
 
-pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
+// In this version we introduce basic structure validation for DataContractCreate and DataContractUpdate.
+// In order for tests that used the first protocol version to pass, we needed to change the contract_create
+// and contract_update state transition validation basic_structure to Some(0) for all previous versions.
+// Also, we needed to change contract_create advanced_structure to Some(0) for all previous versions.
+// There were some things in validate_advanced_structure for Create that should've been in basic.
+// There were also some things in validate_update for that should've been in basic.
+// We were also matching to basic_structure version for advanced_structure before too for Create.
+pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
             common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
@@ -75,7 +82,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: None,
                 advanced_minimum_balance_pre_check: Some(0),
-                nonce: Some(0),
+                nonce: Some(1),
                 state: 0,
                 transform_into_action: 0,
             },
@@ -157,7 +164,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
             },
         },
-        has_nonce_validation: 0,
+        has_nonce_validation: 1,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

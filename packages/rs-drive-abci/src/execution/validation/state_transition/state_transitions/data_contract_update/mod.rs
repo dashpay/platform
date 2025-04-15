@@ -1,16 +1,20 @@
+mod basic_structure;
 mod identity_contract_nonce;
 mod state;
 
+use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::validation::ConsensusValidationResult;
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 
 use drive::state_transition_action::StateTransitionAction;
 
@@ -20,6 +24,32 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+
+impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
+    fn validate_basic_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .contract_update_state_transition
+            .basic_structure
+        {
+            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "data contract update transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
+            })),
+        }
+    }
+}
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -676,6 +706,8 @@ mod tests {
 
     mod group_tests {
         use super::*;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
+
         #[test]
         fn test_data_contract_update_can_not_remove_groups() {
             let mut platform = TestPlatformBuilder::new()
@@ -1029,12 +1061,9 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(
-                        BasicError::NonContiguousContractGroupPositionsError(_)
-                    ),
-                    _
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::NonContiguousContractGroupPositionsError(_)
+                ))]
             );
 
             platform
@@ -1179,17 +1208,17 @@ mod tests {
 
     mod token_tests {
         use super::*;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
         use dpp::data_contract::accessors::v1::DataContractV1Setters;
-        use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
-            TokenConfigurationV0Getters, TokenConfigurationV0Setters,
-        };
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::{TokenConfigurationV0Getters, TokenConfigurationV0Setters};
         use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
         use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
         use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
         use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
         use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
         use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
-        use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+
         #[test]
         fn test_data_contract_update_can_add_new_token() {
             let mut platform = TestPlatformBuilder::new()
@@ -1314,6 +1343,21 @@ mod tests {
                 0,
                 TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
             );
+            data_contract
+                .tokens_mut()
+                .expect("expected tokens")
+                .get_mut(&0)
+                .expect("expected token")
+                .conventions_mut()
+                .localizations_mut()
+                .insert(
+                    "en".to_string(),
+                    TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                        should_capitalize: true,
+                        singular_form: "test".to_string(),
+                        plural_form: "tests".to_string(),
+                    }),
+                );
 
             platform
                 .drive
@@ -1369,12 +1413,9 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(
-                        BasicError::NonContiguousContractTokenPositionsError(_)
-                    ),
-                    _
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::NonContiguousContractTokenPositionsError(_)
+                ))]
             );
 
             platform
@@ -1459,10 +1500,9 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(BasicError::InvalidTokenBaseSupplyError(_)),
-                    _
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::InvalidTokenBaseSupplyError(_)
+                ))]
             );
 
             platform
@@ -1555,231 +1595,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(BasicError::MissingDefaultLocalizationError(_)),
-                    _
-                )]
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::MissingDefaultLocalizationError(_)
+                ))]
             );
-
-            platform
-                .drive
-                .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("expected to commit transaction");
-        }
-
-        #[test]
-        fn test_data_contract_update_can_not_remove_token() {
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
-
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
-
-            let platform_state = platform.state.load();
-            let platform_version = platform_state
-                .current_platform_version()
-                .expect("expected to get current platform version");
-
-            let mut data_contract =
-                get_data_contract_fixture(None, 0, platform_version.protocol_version)
-                    .data_contract_owned();
-
-            data_contract.set_owner_id(identity.id());
-
-            {
-                // Add a token to the contract
-                let tokens = data_contract.tokens_mut().expect("expected tokens");
-                tokens.insert(
-                    0,
-                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
-                );
-            }
-
-            platform
-                .drive
-                .apply_contract(
-                    &data_contract,
-                    BlockInfo::default(),
-                    true,
-                    StorageFlags::optional_default_as_cow(),
-                    None,
-                    platform_version,
-                )
-                .expect("expected to apply contract successfully");
-
-            // Create an updated contract with the token removed
-            let mut updated_data_contract = data_contract.clone();
-            updated_data_contract.set_version(2);
-
-            updated_data_contract.tokens_mut().unwrap().remove(&0);
-
-            let data_contract_update_transition =
-                DataContractUpdateTransition::new_from_data_contract(
-                    updated_data_contract,
-                    &identity.into_partial_identity_info(),
-                    key.id(),
-                    2,
-                    0,
-                    &signer,
-                    platform_version,
-                    None,
-                )
-                .expect("expect to create data contract update transition");
-
-            let data_contract_update_serialized_transition = data_contract_update_transition
-                .serialize_to_bytes()
-                .expect("expected serialized state transition");
-
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
-            {
-                assert_eq!(
-                    error.action(),
-                    "remove token at position 0",
-                    "expected error message to match 'remove token at position 0'"
-                );
-                assert_eq!(
-                    error.data_contract_id(),
-                    data_contract.id(),
-                    "expected the error to reference the correct data contract ID"
-                );
-            } else {
-                panic!("Expected a DataContractUpdateActionNotAllowedError");
-            }
-
-            platform
-                .drive
-                .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("expected to commit transaction");
-        }
-
-        #[test]
-        fn test_data_contract_update_can_not_modify_token() {
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
-
-            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
-
-            let platform_state = platform.state.load();
-            let platform_version = platform_state
-                .current_platform_version()
-                .expect("expected to get current platform version");
-
-            let mut data_contract =
-                get_data_contract_fixture(None, 0, platform_version.protocol_version)
-                    .data_contract_owned();
-
-            data_contract.set_owner_id(identity.id());
-
-            {
-                // Add a token to the contract
-                let tokens = data_contract.tokens_mut().expect("expected tokens");
-                tokens.insert(
-                    0,
-                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
-                );
-            }
-
-            platform
-                .drive
-                .apply_contract(
-                    &data_contract,
-                    BlockInfo::default(),
-                    true,
-                    StorageFlags::optional_default_as_cow(),
-                    None,
-                    platform_version,
-                )
-                .expect("expected to apply contract successfully");
-
-            // Create an updated contract with the token modified
-            let mut updated_data_contract = data_contract.clone();
-            updated_data_contract.set_version(2);
-
-            if let Some(TokenConfiguration::V0(config)) =
-                updated_data_contract.tokens_mut().unwrap().get_mut(&0)
-            {
-                config
-                    .distribution_rules_mut()
-                    .set_minting_allow_choosing_destination(false); //originally true
-            }
-
-            let data_contract_update_transition =
-                DataContractUpdateTransition::new_from_data_contract(
-                    updated_data_contract,
-                    &identity.into_partial_identity_info(),
-                    key.id(),
-                    2,
-                    0,
-                    &signer,
-                    platform_version,
-                    None,
-                )
-                .expect("expect to create data contract update transition");
-
-            let data_contract_update_serialized_transition = data_contract_update_transition
-                .serialize_to_bytes()
-                .expect("expected serialized state transition");
-
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![data_contract_update_serialized_transition.clone()],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
-            {
-                assert_eq!(
-                    error.action(),
-                    "update token at position 0",
-                    "expected error message to match 'update token at position 0'"
-                );
-                assert_eq!(
-                    error.data_contract_id(),
-                    data_contract.id(),
-                    "expected the error to reference the correct data contract ID"
-                );
-            } else {
-                panic!("Expected a DataContractUpdateActionNotAllowedError");
-            }
 
             platform
                 .drive

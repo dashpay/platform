@@ -487,6 +487,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
+        println!("processing result: {:?}", processing_result);
         assert_eq!(processing_result.aggregated_fees().processing_fee, 2483610);
 
         let check_result = platform

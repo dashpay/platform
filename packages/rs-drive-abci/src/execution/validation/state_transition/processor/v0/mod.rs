@@ -21,9 +21,9 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
-use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
+use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;
 use crate::execution::validation::state_transition::identity_create::{StateTransitionStateValidationForIdentityCreateTransitionV0, StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0};
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
@@ -516,9 +516,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::MasternodeVote(_) => {
+            StateTransition::MasternodeVote(_) => {
                 // no basic structure validation
                 Ok(SimpleConsensusValidationResult::new())
             }
@@ -532,15 +530,16 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             StateTransition::IdentityCreditTransfer(st) => {
                 st.validate_basic_structure(platform_version)
             }
+            StateTransition::DataContractCreate(st) => {
+                st.validate_basic_structure(platform_version)
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.validate_basic_structure(platform_version)
+            }
         }
     }
     fn has_basic_structure_validation(&self) -> bool {
-        !matches!(
-            self,
-            StateTransition::DataContractCreate(_)
-                | StateTransition::DataContractUpdate(_)
-                | StateTransition::MasternodeVote(_)
-        )
+        !matches!(self, StateTransition::MasternodeVote(_))
     }
 }
 
