@@ -175,10 +175,7 @@ mod test {
 
         let state_transition = DataContractCreateTransition::from_object(
             Value::from([
-                (
-                    STATE_TRANSITION_PROTOCOL_VERSION,
-                    Value::U16(0),
-                ),
+                (STATE_TRANSITION_PROTOCOL_VERSION, Value::U16(0)),
                 (
                     IDENTITY_NONCE,
                     Value::U64(created_data_contract.identity_nonce()),
