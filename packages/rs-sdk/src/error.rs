@@ -56,7 +56,7 @@ pub enum Error {
     #[error("No epoch found on Platform; it should never happen")]
     EpochNotFound,
     /// SDK operation timeout reached error
-    #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
+    #[error("SDK operation timeout {} secs reached: {}", .0.as_secs(), .1)]
     TimeoutReached(Duration, String),
 
     /// Returned when an attempt is made to create an object that already exists in the system
