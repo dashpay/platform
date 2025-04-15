@@ -198,6 +198,7 @@ impl<C> Platform<C> {
                 new_tokens_destination_identity_rules: ChangeControlRulesV0::default().into(),
                 minting_allow_choosing_destination: true,
                 minting_allow_choosing_destination_rules: ChangeControlRulesV0::default().into(),
+                change_direct_purchase_pricing_rules: ChangeControlRulesV0::default().into(),
             }
             .into(),
             manual_minting_rules: ChangeControlRulesV0 {
