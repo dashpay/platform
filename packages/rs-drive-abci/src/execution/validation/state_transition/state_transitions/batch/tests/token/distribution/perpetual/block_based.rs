@@ -77,7 +77,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -145,7 +145,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -215,7 +215,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -326,7 +326,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -448,7 +448,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -546,7 +546,7 @@ mod fixed_amount {
             10,
             None,
         )
-        .expect("\n-> fixed amount should pass");
+            .expect("\n-> fixed amount should pass");
     }
 
     /// Test case for overflow error.
@@ -582,7 +582,7 @@ mod fixed_amount {
             10,
             None,
         )
-        .expect("\n-> fixed amount should pass");
+            .expect("\n-> fixed amount should pass");
     }
 
     #[test]
@@ -597,7 +597,7 @@ mod fixed_amount {
             10,
             None,
         )
-        .expect_err("\namount should not be 0\n");
+            .expect_err("\namount should not be 0\n");
     }
 
     #[test]
@@ -625,7 +625,7 @@ mod fixed_amount {
             10,
             Some(Some(200_000)),
         )
-        .expect("\nfixed amount zero increase\n");
+            .expect("\nfixed amount zero increase\n");
     }
 
     /// Given a fixed amount distribution with value of u64::MAX,
@@ -640,7 +640,7 @@ mod fixed_amount {
             10,
             None,
         )
-        .expect_err("u64::Max is too much for DistributionFunction::FixedAmount");
+            .expect_err("u64::Max is too much for DistributionFunction::FixedAmount");
     }
 
     /// Given a fixed amount distribution with value of u64::MAX,
@@ -661,7 +661,7 @@ mod fixed_amount {
             10,
             None,
         )
-        .expect("MAX_DISTRIBUTION_PARAM should be valid DistributionFunction::FixedAmount");
+            .expect("MAX_DISTRIBUTION_PARAM should be valid DistributionFunction::FixedAmount");
     }
 }
 mod random {
@@ -733,7 +733,7 @@ mod random {
             10,
             None,
         )
-        .expect("no rewards");
+            .expect("no rewards");
     }
     #[test]
     fn test_block_based_perpetual_random_0_u64_max_should_error_at_validation() {
@@ -747,7 +747,7 @@ mod random {
             10,
             None,
         )
-        .expect_err("max is too much for DistributionFunction::Random");
+            .expect_err("max is too much for DistributionFunction::Random");
     }
 
     #[test]
@@ -766,7 +766,7 @@ mod random {
             10,
             None,
         )
-        .expect("no rewards");
+            .expect("no rewards");
     }
 
     /// Given a random distribution function with min=10, max=30,
@@ -809,9 +809,9 @@ mod random {
                     )));
             }),
         )
-        .with_step_success_fn(move |balance: u64| {
-            balances.lock().unwrap().push(balance);
-        });
+            .with_step_success_fn(move |balance: u64| {
+                balances.lock().unwrap().push(balance);
+            });
 
         suite.execute(&tests).expect("should execute");
 
@@ -990,7 +990,7 @@ mod step_decreasing {
                 INITIAL_BALANCE + 9_900 + 9_801 + 9_702 + 9_604,
             ],
         )
-        .expect("expected to succeed");
+            .expect("expected to succeed");
     }
 
     #[test]
@@ -1023,7 +1023,7 @@ mod step_decreasing {
                     + 8_946,
             ],
         )
-        .expect("expected to succeed");
+            .expect("expected to succeed");
     }
 
     #[test]
@@ -1041,7 +1041,7 @@ mod step_decreasing {
             1,
             vec![],
         )
-        .expect_err("should not allow to increase");
+            .expect_err("should not allow to increase");
         assert!(
             result_str.contains("Invalid parameter tuple in token distribution function: `decrease_per_interval_numerator` must be smaller than `decrease_per_interval_denominator`"),
             "Unexpected panic message: {result_str}"
@@ -1063,7 +1063,7 @@ mod step_decreasing {
             1,
             vec![],
         )
-        .expect_err("should not allow to increase");
+            .expect_err("should not allow to increase");
         assert!(
             result_str.contains("Invalid parameter `decrease_per_interval_numerator` in token distribution function. Expected range: 1 to 65535"),
             "Unexpected panic message: {result_str}"
@@ -1086,7 +1086,7 @@ mod step_decreasing {
             1,
             sum_till_for_100k_step_1_interval_1(steps),
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1114,7 +1114,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1143,7 +1143,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1173,7 +1173,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1200,7 +1200,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1221,8 +1221,8 @@ mod step_decreasing {
                 1,
                 expected_amounts.clone(),
             )
-            .map_err(|e| format!("failed with min {}: {}", min, e))
-            .expect("should pass");
+                .map_err(|e| format!("failed with min {}: {}", min, e))
+                .expect("should pass");
         }
     }
 
@@ -1250,8 +1250,8 @@ mod step_decreasing {
                 1,
                 expected_amounts,
             )
-            .map_err(|e| format!("failed with min {}: {}", min, e))
-            .expect("should pass");
+                .map_err(|e| format!("failed with min {}: {}", min, e))
+                .expect("should pass");
         }
     }
 
@@ -1270,7 +1270,7 @@ mod step_decreasing {
             1,
             vec![],
         )
-        .expect_err("should fail");
+            .expect_err("should fail");
         assert!(
             result_str.contains("Invalid parameter tuple in token distribution function: `n` must be greater than or equal to `min_value`"),
             "Unexpected panic message: {result_str}"
@@ -1295,7 +1295,7 @@ mod step_decreasing {
                 MAX_DISTRIBUTION_PARAM * 10 + INITIAL_BALANCE,
             ],
         )
-        .expect("should succeed");
+            .expect("should succeed");
     }
 
     #[test]
@@ -1323,7 +1323,7 @@ mod step_decreasing {
             1,
             expected_balances,
         )
-        .expect("should succeed");
+            .expect("should succeed");
     }
 
     #[test]
@@ -1341,7 +1341,7 @@ mod step_decreasing {
             1,
             vec![],
         )
-        .expect_err("should fail");
+            .expect_err("should fail");
         assert!(
             result_str.contains("Invalid parameter `n` in token distribution function. Expected range: 1 to 281474976710655"),
             "Unexpected panic message: {result_str}"
@@ -1368,7 +1368,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1391,7 +1391,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1415,7 +1415,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     #[test]
@@ -1453,7 +1453,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-        .expect("should pass");
+            .expect("should pass");
     }
 
     /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
@@ -1508,9 +1508,9 @@ mod step_decreasing {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!(e);
-        })
+            .inspect_err(|e| {
+                tracing::error!(e);
+            })
     }
 }
 
@@ -1563,10 +1563,10 @@ mod stepwise {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
-        .expect("stepwise should pass");
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
+            .expect("stepwise should pass");
     }
 }
 
@@ -1709,9 +1709,9 @@ mod linear {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 }
 
@@ -1912,7 +1912,7 @@ mod polynomial {
             &[(1, 100_000, false), (2, 100_001, true)],
             1,
         )
-        .expect("should panic");
+            .expect("should panic");
         unreachable!("should panic");
     }
     #[test]
@@ -1974,9 +1974,9 @@ mod polynomial {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 
     /// Test various combinations of `m/n` in [DistributionFunction::Polynomial] distribution.
@@ -2008,12 +2008,12 @@ mod polynomial {
                             .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
                                 TokenPerpetualDistributionV0 {
                                     distribution_type:
-                                        RewardDistributionType::BlockBasedDistribution {
-                                            interval: 1,
-                                            function: dist,
-                                        },
+                                    RewardDistributionType::BlockBasedDistribution {
+                                        interval: 1,
+                                        function: dist,
+                                    },
                                     distribution_recipient:
-                                        TokenDistributionRecipient::ContractOwner,
+                                    TokenDistributionRecipient::ContractOwner,
                                 },
                             )));
                     }),
@@ -2346,9 +2346,9 @@ mod logarithmic {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 }
 
@@ -2631,9 +2631,9 @@ mod inverted_logarithmic {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 }
 
@@ -2793,7 +2793,7 @@ mod test_suite {
                 token_configuration_modification: None, // setup later
                 on_step_success: Box::new(|_| {}),
             }
-            .with_genesis(1, genesis_time_ms);
+                .with_genesis(1, genesis_time_ms);
 
             if let Some(token_configuration_modification) = token_configuration_modification {
                 me.with_token_configuration_modification_fn(token_configuration_modification)
@@ -2806,9 +2806,9 @@ mod test_suite {
         pub(crate) fn with_token_configuration_modification_fn(
             mut self,
             token_configuration_modification: impl FnOnce(&mut TokenConfiguration)
-                + Send
-                + Sync
-                + 'static,
+            + Send
+            + Sync
+            + 'static,
         ) -> Self {
             if let Some(previous) = self.token_configuration_modification.take() {
                 let f = Box::new(move |token_configuration: &mut TokenConfiguration| {
@@ -2837,14 +2837,14 @@ mod test_suite {
         /// Enable logging for tests
         fn setup_logs() {
             tracing_subscriber::fmt::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace",
-        ))
-        .pretty()
-        .with_ansi(true)
-        .with_writer(std::io::stdout)
-        .try_init()
-        .ok();
+                .with_env_filter(tracing_subscriber::EnvFilter::new(
+                    "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace",
+                ))
+                .pretty()
+                .with_ansi(true)
+                .with_writer(std::io::stdout)
+                .try_init()
+                .ok();
         }
 
         /// Lazily initialize and return token contract. Also sets token id.
@@ -2934,7 +2934,7 @@ mod test_suite {
                 None,
                 None,
             )
-            .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let claim_serialized_transition = claim_transition
                 .serialize_to_bytes()
