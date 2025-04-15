@@ -177,15 +177,7 @@ mod test {
             Value::from([
                 (
                     STATE_TRANSITION_PROTOCOL_VERSION,
-                    Value::U16(
-                        LATEST_PLATFORM_VERSION
-                            .drive_abci
-                            .validation_and_processing
-                            .state_transitions
-                            .contract_create_state_transition
-                            .basic_structure
-                            .unwrap(),
-                    ),
+                    Value::U16(0),
                 ),
                 (
                     IDENTITY_NONCE,
