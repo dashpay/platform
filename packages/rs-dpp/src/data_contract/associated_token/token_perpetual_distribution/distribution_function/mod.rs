@@ -18,6 +18,8 @@ pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
 /// complex.
 pub const MAX_DISTRIBUTION_CYCLES_PARAM: u64 = 32_767; //u15::Max 2^(63 - 48) - 1
 
+pub const DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION: u16 = 128;
+
 pub const MAX_LINEAR_SLOPE_PARAM: u64 = 256;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -98,7 +100,11 @@ pub enum DistributionFunction {
     /// - `step_count`: The number of periods between each step.
     /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.
     /// - `s`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
-    /// - `n`: The initial token emission.
+    /// - `max_interval_count`: The maximum amount of intervals there can be. Can be up to 1024.
+    ///     !!!Very important!!! -> This will default to 128 is default if not set.
+    ///     This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
+    /// - `distribution_start_amount`: The initial token emission.
+    /// - `trailing_distribution_interval_amount`: The token emission after all decreasing intervals.
     /// - `min_value`: Optional minimum emission value.
     ///
     /// # Use Case
@@ -113,7 +119,9 @@ pub enum DistributionFunction {
         decrease_per_interval_numerator: u16,
         decrease_per_interval_denominator: u16,
         s: Option<u64>,
-        n: TokenAmount,
+        max_interval_count: Option<u16>,
+        distribution_start_amount: TokenAmount,
+        trailing_distribution_interval_amount: TokenAmount,
         min_value: Option<u64>,
     },
 
@@ -538,22 +546,34 @@ impl fmt::Display for DistributionFunction {
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
                 s,
-                n,
+                max_interval_count,
+                distribution_start_amount,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
                 write!(
                     f,
                     "StepDecreasingAmount: {} tokens, decreasing by {}/{} every {} steps",
-                    n,
+                    distribution_start_amount,
                     decrease_per_interval_numerator,
                     decrease_per_interval_denominator,
                     step_count
                 )?;
                 if let Some(start) = s {
-                    write!(f, " starting at period {}", start)?;
+                    write!(f, ", starting at period {}", start)?;
                 }
+                if let Some(max_intervals) = max_interval_count {
+                    write!(f, ", with a maximum of {} intervals", max_intervals)?;
+                } else {
+                    write!(f, ", with a maximum of 128 intervals (default)")?;
+                }
+                write!(
+                    f,
+                    ", trailing distribution amount {} tokens",
+                    trailing_distribution_interval_amount
+                )?;
                 if let Some(min) = min_value {
-                    write!(f, ", with a minimum emission of {}", min)?;
+                    write!(f, ", minimum emission {} tokens", min)?;
                 }
                 Ok(())
             }

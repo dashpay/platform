@@ -1,5 +1,7 @@
 use crate::balances::credits::TokenAmount;
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
+    DistributionFunction, DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+};
 use crate::ProtocolError;
 
 impl DistributionFunction {
@@ -52,41 +54,50 @@ impl DistributionFunction {
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
                 s,
-                n,
+                max_interval_count,
+                distribution_start_amount,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
-                // Check for division by zero in the denominator:
                 if *decrease_per_interval_denominator == 0 {
                     return Err(ProtocolError::DivideByZero(
                         "StepDecreasingAmount: denominator is 0",
                     ));
                 }
-                let s_val = s.unwrap_or(contract_registration_step);
-                // Compute the number of steps passed.
-                let steps = if x > s_val {
-                    (x - s_val) / (*step_count as u64)
-                } else {
-                    0
-                };
-                let reduction = 1.0
-                    - ((*decrease_per_interval_numerator as f64)
-                        / (*decrease_per_interval_denominator as f64));
-                let factor = reduction.powf(steps as f64);
-                let result = (*n as f64) * factor;
-                // Clamp to min_value if provided.
-                let clamped = if let Some(min) = min_value {
-                    result.max(*min as f64)
-                } else {
-                    result
-                };
-                if !clamped.is_finite() || clamped > (u64::MAX as f64) || clamped < 0.0 {
-                    return Err(ProtocolError::Overflow(
-                        "StepDecreasingAmount evaluation overflow or negative",
-                    ));
-                }
-                Ok(clamped as TokenAmount)
-            }
 
+                let s_val = s.unwrap_or(contract_registration_step);
+
+                if x <= s_val {
+                    return Ok(*distribution_start_amount);
+                }
+
+                let steps_passed = (x - s_val) / (*step_count as u64);
+                let max_intervals = max_interval_count.unwrap_or(
+                    DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+                ) as u64;
+
+                if steps_passed > max_intervals {
+                    return Ok(*trailing_distribution_interval_amount);
+                }
+
+                let mut numerator = *distribution_start_amount as u128;
+                let denominator = *decrease_per_interval_denominator as u128;
+                let reduction_numerator = denominator - *decrease_per_interval_numerator as u128;
+
+                for _ in 0..steps_passed {
+                    numerator = numerator * reduction_numerator / denominator;
+                }
+
+                let mut result = numerator as u64;
+
+                if let Some(min) = min_value {
+                    if result < *min {
+                        result = *min;
+                    }
+                }
+
+                Ok(result)
+            }
             DistributionFunction::Stepwise(steps) => {
                 // Return the emission corresponding to the greatest key <= x.
                 Ok(steps
@@ -502,7 +513,7 @@ mod tests {
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 2, // 50% reduction per step
             s: Some(0),
-            n: 100,
+            distribution_start_amount: 100,
             min_value: Some(10),
         };
 
@@ -521,7 +532,7 @@ mod tests {
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 0, // Invalid denominator
             s: Some(0),
-            n: 100,
+            distribution_start_amount: 100,
             min_value: Some(10),
         };
 
