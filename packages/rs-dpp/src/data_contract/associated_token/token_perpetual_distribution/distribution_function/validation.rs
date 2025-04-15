@@ -961,7 +961,7 @@ mod tests {
         #[test]
         fn test_fixed_amount_exceeds_max_invalid() {
             let dist = DistributionFunction::FixedAmount {
-                amount: u32::MAX as u64 + 1,
+                amount: MAX_DISTRIBUTION_PARAM + 1,
             };
             let result = dist.validate(START_MOMENT);
             assert!(result
@@ -980,7 +980,9 @@ mod tests {
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
                 start_decreasing_offset: Some(0),
+                max_interval_count: None,
                 distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
             let result = dist.validate(START_MOMENT);
@@ -997,7 +999,9 @@ mod tests {
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
                 start_decreasing_offset: Some(0),
+                max_interval_count: None,
                 distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
             let result = dist.validate(START_MOMENT);
@@ -1014,7 +1018,9 @@ mod tests {
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 0,
                 start_decreasing_offset: Some(0),
+                max_interval_count: None,
                 distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
             let result = dist.validate(START_MOMENT);

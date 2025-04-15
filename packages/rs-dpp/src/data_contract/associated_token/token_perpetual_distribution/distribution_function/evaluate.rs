@@ -82,7 +82,7 @@ impl DistributionFunction {
 
                 let mut numerator = *distribution_start_amount;
                 let denominator = *decrease_per_interval_denominator as u64;
-                let reduction_numerator = denominator - *decrease_per_interval_numerator as u64;
+                let reduction_numerator = denominator.saturating_sub(*decrease_per_interval_numerator as u64);
 
                 for _ in 0..steps_passed {
                     numerator = numerator * reduction_numerator / denominator;
@@ -513,7 +513,9 @@ mod tests {
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 2, // 50% reduction per step
             start_decreasing_offset: Some(0),
+            max_interval_count: None,
             distribution_start_amount: 100,
+            trailing_distribution_interval_amount: 0,
             min_value: Some(10),
         };
 
@@ -532,7 +534,9 @@ mod tests {
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 0, // Invalid denominator
             start_decreasing_offset: Some(0),
+            max_interval_count: None,
             distribution_start_amount: 100,
+            trailing_distribution_interval_amount: 0,
             min_value: Some(10),
         };
 
