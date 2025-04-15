@@ -22,7 +22,7 @@ impl Encode for DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
+                start_decreasing_offset: s,
                 max_interval_count,
                 distribution_start_amount: n,
                 trailing_distribution_interval_amount,
@@ -176,7 +176,7 @@ impl Decode for DistributionFunction {
                 let trailing_distribution_interval_amount = TokenAmount::decode(decoder)?;
                 let min_value = Option::<u64>::decode(decoder)?;
                 Ok(Self::StepDecreasingAmount {
-                    s,
+                    start_decreasing_offset: s,
                     decrease_per_interval_numerator,
                     decrease_per_interval_denominator,
                     step_count,
@@ -329,7 +329,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     step_count,
                     decrease_per_interval_numerator,
                     decrease_per_interval_denominator,
-                    s,
+                    start_decreasing_offset: s,
                     max_interval_count,
                     distribution_start_amount: n,
                     trailing_distribution_interval_amount,

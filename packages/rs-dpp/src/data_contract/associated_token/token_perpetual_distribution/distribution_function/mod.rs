@@ -99,7 +99,8 @@ pub enum DistributionFunction {
     /// # Parameters
     /// - `step_count`: The number of periods between each step.
     /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.
-    /// - `s`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
+    /// - `start_decreasing_offset`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
+    ///     If this is provided before this number we give out the distribution start amount every interval.
     /// - `max_interval_count`: The maximum amount of intervals there can be. Can be up to 1024.
     ///     !!!Very important!!! -> This will default to 128 is default if not set.
     ///     This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
@@ -118,7 +119,7 @@ pub enum DistributionFunction {
         step_count: u32,
         decrease_per_interval_numerator: u16,
         decrease_per_interval_denominator: u16,
-        s: Option<u64>,
+        start_decreasing_offset: Option<u64>,
         max_interval_count: Option<u16>,
         distribution_start_amount: TokenAmount,
         trailing_distribution_interval_amount: TokenAmount,
@@ -545,7 +546,7 @@ impl fmt::Display for DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
+                start_decreasing_offset: s,
                 max_interval_count,
                 distribution_start_amount,
                 trailing_distribution_interval_amount,

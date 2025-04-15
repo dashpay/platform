@@ -872,7 +872,7 @@ mod step_decreasing {
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM};
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
     use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
@@ -922,6 +922,67 @@ mod step_decreasing {
         762, 754, 746, 738, 730, 722, 714, 706, 698, 691, 684, 677, 670, 663, 656, 649, 642, 635,
         628, 621, 614,
     ];
+
+    fn sum_till_for_100k_step_1_interval_1(
+        distribution_heights: Vec<BlockHeight>,
+    ) -> Vec<TokenAmount> {
+        distribution_heights
+            .into_iter()
+            .map(|height| {
+                (1..=height)
+                    .map(|height| DECREASING_ONE_PERCENT_100K[height as usize])
+                    .sum::<TokenAmount>()
+                    + INITIAL_BALANCE
+            })
+            .collect()
+    }
+
+    const DECREASING_HALF_100K: [TokenAmount; 20] = [
+        100000, 50000, 25000, 12500, 6250, 3125, 1562, 781, 390, 195, 97, 48, 24, 12, 6, 3, 1, 0,
+        0, 0,
+    ];
+
+    fn sum_till_for_100k_halving(
+        distribution_heights: Vec<BlockHeight>,
+        reduce_every_block_count: u32,
+        interval: BlockHeightInterval,
+        start_decreasing_step: u64,
+    ) -> Vec<TokenAmount> {
+        distribution_heights
+            .into_iter()
+            .map(|height| {
+                // How many full intervals have passed by `height`?
+                let end = height / interval;
+
+                // If not even 1 interval, return the initial balance
+                if end < 1 {
+                    return INITIAL_BALANCE;
+                }
+
+                // Sum each interval’s distribution
+                let sum_halved = (1..=end)
+                    .map(|i| {
+                        if i < start_decreasing_step {
+                            // Before start offset => always distribute the first entry
+                            DECREASING_HALF_100K[0]
+                        } else {
+                            // After offset => normal indexing
+                            let offset_index =
+                                ((i - start_decreasing_step) as usize)
+                                    / (reduce_every_block_count as usize);
+
+                            DECREASING_HALF_100K
+                                .get(offset_index)
+                                .copied()
+                                .unwrap_or(0)
+                        }
+                    })
+                    .sum::<TokenAmount>();
+
+                INITIAL_BALANCE + sum_halved
+            })
+            .collect()
+    }
 
     #[test]
     fn claim_every_block() {
@@ -980,8 +1041,8 @@ mod step_decreasing {
     }
 
     #[test]
-    fn claim_every_100_blocks_with_1_percent_increase() {
-        run_test(
+    fn claim_with_1_percent_increase_should_fail() {
+        let result_str = run_test(
             1,
             101,
             100,
@@ -995,20 +1056,26 @@ mod step_decreasing {
             vec![],
         )
         .expect_err("should not allow to increase");
+        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter tuple in token distribution function: `decrease_per_interval_numerator` must be smaller than `decrease_per_interval_denominator`\", ...)");
     }
 
-    fn sum_till_for_100k_step_1_interval_1(
-        distribution_heights: Vec<BlockHeight>,
-    ) -> Vec<TokenAmount> {
-        distribution_heights
-            .into_iter()
-            .map(|height| {
-                (1..=height)
-                    .map(|height| DECREASING_ONE_PERCENT_100K[height as usize])
-                    .sum::<TokenAmount>()
-                    + INITIAL_BALANCE
-            })
-            .collect()
+    #[test]
+    fn claim_with_no_decrease_should_fail() {
+        let result_str = run_test(
+            1,
+            0,
+            100,
+            None,
+            None,
+            100_000,
+            0,
+            Some(1),
+            (1..1000).step_by(100).collect(),
+            1,
+            vec![],
+        )
+        .expect_err("should not allow to increase");
+        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter `decrease_per_interval_numerator` in token distribution function. Expected range: 1 to 65535\", ...)");
     }
 
     #[test]
@@ -1036,7 +1103,10 @@ mod step_decreasing {
         let start_steps = (1..129).step_by(1).collect::<Vec<_>>();
         let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps.clone());
         let later_steps = (129..200).step_by(1).collect::<Vec<_>>();
-        let later_steps_expected_amounts = later_steps.iter().map(|_| *start_steps_expected_amounts.last().unwrap()).collect::<Vec<_>>();
+        let later_steps_expected_amounts = later_steps
+            .iter()
+            .map(|_| *start_steps_expected_amounts.last().unwrap())
+            .collect::<Vec<_>>();
         let mut expected_amounts = start_steps_expected_amounts;
         expected_amounts.extend(later_steps_expected_amounts);
         run_test(
@@ -1052,7 +1122,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-            .expect("should pass");
+        .expect("should pass");
     }
 
     #[test]
@@ -1061,7 +1131,10 @@ mod step_decreasing {
         let start_steps = (1..129).step_by(1).collect::<Vec<_>>();
         let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps.clone());
         let later_steps = (129..200).step_by(1).collect::<Vec<_>>();
-        let later_steps_expected_amounts = later_steps.iter().map(|&i| *start_steps_expected_amounts.last().unwrap() + (i - 128)*10).collect::<Vec<_>>();
+        let later_steps_expected_amounts = later_steps
+            .iter()
+            .map(|&i| *start_steps_expected_amounts.last().unwrap() + (i - 128) * 10)
+            .collect::<Vec<_>>();
         let mut expected_amounts = start_steps_expected_amounts;
         expected_amounts.extend(later_steps_expected_amounts);
         run_test(
@@ -1078,7 +1151,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-            .expect("should pass");
+        .expect("should pass");
     }
 
     #[test]
@@ -1088,7 +1161,10 @@ mod step_decreasing {
         let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps);
         let step_128_amount = sum_till_for_100k_step_1_interval_1(vec![128]).remove(0);
         let later_steps = (141..500).step_by(10).collect::<Vec<_>>();
-        let later_steps_expected_amounts = later_steps.iter().map(|_| step_128_amount).collect::<Vec<_>>();
+        let later_steps_expected_amounts = later_steps
+            .iter()
+            .map(|_| step_128_amount)
+            .collect::<Vec<_>>();
         let mut expected_amounts = start_steps_expected_amounts;
         expected_amounts.push(step_128_amount); // at 131.
         expected_amounts.extend(later_steps_expected_amounts);
@@ -1105,7 +1181,7 @@ mod step_decreasing {
             1,
             expected_amounts,
         )
-            .expect("should pass");
+        .expect("should pass");
     }
 
     #[test]
@@ -1116,7 +1192,8 @@ mod step_decreasing {
         // 129 is the first claim for 400 because we can only do 128 cycles at a time
         // Then 257 because we are doing 128 cycles and 129 + 128 = 257
         // The last one is 480 because our max steps is 480
-        let expected_amounts = sum_till_for_100k_step_1_interval_1(vec![1, 129, 257, 385, 400, 401, 450, 480]);
+        let expected_amounts =
+            sum_till_for_100k_step_1_interval_1(vec![1, 129, 257, 385, 400, 401, 450, 480]);
         run_test(
             1,
             1,
@@ -1152,7 +1229,8 @@ mod step_decreasing {
                 1,
                 expected_amounts.clone(),
             )
-            .map_err(|e| format!("failed with min {}: {}", min, e)).expect("should pass");
+            .map_err(|e| format!("failed with min {}: {}", min, e))
+            .expect("should pass");
         }
     }
 
@@ -1160,7 +1238,13 @@ mod step_decreasing {
     fn heavy_decrease_to_min_with_min_various_values() {
         let claim_heights = vec![1, 2, 3, 10, 100];
         for min in [1, 10] {
-            let expected_amounts = vec![INITIAL_BALANCE + min, INITIAL_BALANCE + 2 * min, INITIAL_BALANCE + 3 * min, INITIAL_BALANCE + 10 * min, INITIAL_BALANCE + 100 * min];
+            let expected_amounts = vec![
+                INITIAL_BALANCE + min,
+                INITIAL_BALANCE + 2 * min,
+                INITIAL_BALANCE + 3 * min,
+                INITIAL_BALANCE + 10 * min,
+                INITIAL_BALANCE + 100 * min,
+            ];
             run_test(
                 1,
                 u16::MAX - 1,
@@ -1174,148 +1258,179 @@ mod step_decreasing {
                 1,
                 expected_amounts,
             )
-                .map_err(|e| format!("failed with min {}: {}", min, e)).expect("should pass");
+            .map_err(|e| format!("failed with min {}: {}", min, e))
+            .expect("should pass");
         }
     }
 
     #[test]
-    fn fails_full_decrease_min_eq_u64_max() -> Result<(), String> {
-        run_test(
+    fn full_decrease_min_eq_u64_max() {
+        let result_str = run_test(
             1,
-            1,
-            1,
+            u16::MAX - 1,
+            u16::MAX,
             None,
             None,
-            100_000,
+            MAX_DISTRIBUTION_PARAM,
             0,
             Some(u64::MAX),
             vec![1, 2, 3, 10, 100],
             1,
             vec![],
         )
+        .expect_err("should fail");
+        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter tuple in token distribution function: `n` must be greater than or equal to `min_value`\", ...)");
     }
     #[test]
-    fn no_decrease_changing_min() -> Result<(), String> {
-        for min in [None, Some(0), Some(1), Some(100)] {
-            run_test(
-                1,
-                0,
-                1,
-                None,
-                None,
-                100_000,
-                0,
-                min,
-                vec![1, 2, 3, 10, 100],
-                1,
-                vec![],
-            )
-            .map_err(|e| format!("failed with min {:?}: {}", min, e))?;
-        }
-        Ok(())
+    fn full_decrease_min_eq_max_distribution() {
+        run_test(
+            1,
+            u16::MAX - 1,
+            u16::MAX,
+            None,
+            None,
+            MAX_DISTRIBUTION_PARAM,
+            0,
+            Some(MAX_DISTRIBUTION_PARAM),
+            vec![1, 2, 10],
+            1,
+            vec![
+                MAX_DISTRIBUTION_PARAM + INITIAL_BALANCE,
+                MAX_DISTRIBUTION_PARAM * 2 + INITIAL_BALANCE,
+                MAX_DISTRIBUTION_PARAM * 10 + INITIAL_BALANCE,
+            ],
+        )
+        .expect("should succeed");
     }
 
     #[test]
-    fn full_decrease_step_10_interval_1() -> Result<(), String> {
+    fn distribute_max_distribution_param_every_step() {
+        let claim_heights = (1..65_536).step_by(128).collect::<Vec<_>>();
+        let expected_balances = claim_heights.iter().map(|&height| MAX_DISTRIBUTION_PARAM.saturating_mul(height).saturating_add(INITIAL_BALANCE).min(i64::MAX as u64)).collect();
         run_test(
-            10,
             1,
-            1,
+            u16::MAX - 1,
+            u16::MAX,
             None,
             None,
-            100_000,
+            MAX_DISTRIBUTION_PARAM,
+            MAX_DISTRIBUTION_PARAM,
+            Some(MAX_DISTRIBUTION_PARAM),
+            claim_heights,
+            1,
+            expected_balances,
+        )
+            .expect("should succeed");
+    }
+
+    #[test]
+    fn start_over_max_distribution_param_should_fail() {
+        let result_str = run_test(
+            1,
+            1,
+            u16::MAX,
+            None,
+            None,
+            MAX_DISTRIBUTION_PARAM + 1,
             0,
             None,
-            vec![2, 7, 9],
+            vec![1, 2, 10],
             1,
             vec![],
         )
+        .expect_err("should fail");
+        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter `n` in token distribution function. Expected range: 1 to 281474976710655\", ...)");
     }
 
     #[test]
-    fn full_decrease_start_5_step_10_interval_1() -> Result<(), String> {
+    fn half_decrease_changing_step_5_distribution_interval_1() {
+        let step = 5; // Every 5 blocks the amount divides by 1/2
+        let distribution_interval = 1; // The payout happens every block
+        let claim_heights = vec![5, 10, 18, 22, 100];
+        let expected_balances = sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
         run_test(
-            10,
+            step,
             1,
-            1,
-            Some(5),
+            2,
+            None,
             None,
             100_000,
             0,
             None,
-            vec![2, 7, 9, 13, 14],
-            1,
-            vec![],
+            claim_heights,
+            distribution_interval,
+            expected_balances,
         )
+        .expect("should pass");
     }
 
     #[test]
-    fn full_decrease_start_5_step_10_interval_1_err_at_15() -> Result<(), String> {
-        let result = run_test(
-            10,
+    fn half_decrease_changing_step_5_distribution_interval_5() {
+        let step = 5; // Every 25 blocks (5 x distribution interval) the amount divides by 1/2
+        let distribution_interval = 5; // The payout happens every 5 blocks
+        let claim_heights = vec![1,2,3,4,5,6,7,8,9, 10,11, 18, 22, 25, 26, 51, 100];
+        let expected_balances = sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
+        run_test(
+            step,
             1,
-            1,
-            Some(5),
+            2,
+            None,
             None,
             100_000,
             0,
             None,
-            vec![14, 15],
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn half_decrease_changing_step_24_distribution_interval_1000() {
+        let step = 24; // Every 24000 blocks (24 x distribution interval) the amount divides by 1/2
+        let distribution_interval = 1000; // The payout happens every 400 blocks
+        let claim_heights = vec![3000, 45000, 60000, 300000, 300000];
+        let value_heights = vec![3000, 45000, 60000, 60000 + 128 * 1000, 300000];
+        let expected_balances = sum_till_for_100k_halving(value_heights, step, distribution_interval, 0);
+        run_test(
+            step,
             1,
-            vec![],
-        );
-        assert!(result.is_err_and(|s| s.contains("claim at height 15: claim failed")));
-        Ok(())
+            2,
+            None,
+            None,
+            100_000,
+            0,
+            None,
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
     }
 
     #[test]
-    fn fails_half_decrease_changing_step_and_interval() -> Result<(), String> {
-        for step in [5, 10] {
-            for distribution_interval in [1, 5] {
-                run_test(
-                    step,
-                    1,
-                    2,
-                    None,
-                    None,
-                    100_000,
-                    0,
-                    None,
-                    vec![5, 10, 18, 22, 100],
-                    distribution_interval,
-                    vec![],
-                )
-                .map_err(|e| {
-                    format!(
-                        "failed with step {} interval {}: {}",
-                        step, distribution_interval, e
-                    )
-                })?;
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn half_decrease_chainging_s() -> Result<(), String> {
-        for s in [None, Some(1), Some(5)] {
-            run_test(
-                1,
-                10,
-                100,
-                s,
-                None,
-                100_000,
-                0,
-                None,
-                vec![5, 10, 15, 20],
-                1,
-                vec![],
-            )
-            .map_err(|e| format!("failed with s {:?}: {}", s, e))?;
-        }
-        Ok(())
+    fn half_decrease_changing_step_24_distribution_interval_1000_start_height_2000() {
+        let step = 24; // Every 24000 blocks (24 x distribution interval) the amount divides by 1/2
+        let distribution_interval = 1000; // The payout happens every 400 blocks
+        let claim_heights = vec![3000, 23000, 24000, 25000, 43000, 44000, 300000, 300000];
+        let start_height = 2000;
+        let value_heights = vec![3000, 23000, 24000, 25000, 43000, 44000, 44000 + 128 * 1000, 300000];
+        let expected_balances = sum_till_for_100k_halving(value_heights, step, distribution_interval, start_height / distribution_interval);
+        run_test(
+            step,
+            1,
+            2,
+            Some(start_height / distribution_interval),
+            None,
+            100_000,
+            0,
+            None,
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
     }
 
     /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
@@ -1324,7 +1439,7 @@ mod step_decreasing {
         step_count: u32,
         decrease_per_interval_numerator: u16,
         decrease_per_interval_denominator: u16,
-        s: Option<BlockHeight>,
+        start_decreasing_offset: Option<BlockHeight>,
         max_interval_count: Option<u16>,
         distribution_start_amount: TokenAmount,
         trailing_distribution_interval_amount: TokenAmount,
@@ -1337,7 +1452,7 @@ mod step_decreasing {
             step_count,
             decrease_per_interval_numerator,
             decrease_per_interval_denominator,
-            s,
+            start_decreasing_offset,
             max_interval_count,
             distribution_start_amount,
             trailing_distribution_interval_amount,
@@ -1355,7 +1470,7 @@ mod step_decreasing {
             .map(|(&h, &b)| {
                 let is_increase = match prev {
                     Some(p) => b > p,
-                    None => true,
+                    None => b > INITIAL_BALANCE,
                 };
                 prev = Some(b);
                 (h, b, is_increase)
@@ -1373,89 +1488,6 @@ mod step_decreasing {
         .inspect_err(|e| {
             tracing::error!(e);
         })
-    }
-
-    /// Given that we have a distribution function distributing some tokens,
-    /// When I claim tokens with delay bigger than [platform_version.system_limits.max_token_redemption_cycles],
-    /// Then I need to run the claim more than once to get correct balance.
-    #[test]
-    fn test_claim_more_than_max_token_redemption_cycles() {
-        let dist = DistributionFunction::StepDecreasingAmount {
-            step_count: 1,
-            decrease_per_interval_numerator: 101,
-            decrease_per_interval_denominator: 100,
-            s: None,
-            max_interval_count: None,
-            distribution_start_amount: 100_000,
-            trailing_distribution_interval_amount: 0,
-            min_value: Some(1),
-        };
-
-        let dist_clone = dist.clone();
-        let mut suite = TestSuite::new(
-            10_200_000_000,
-            1,
-            TokenDistributionType::Perpetual,
-            Some(|token_configuration: &mut TokenConfiguration| {
-                token_configuration
-                    .distribution_rules_mut()
-                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
-                        TokenPerpetualDistributionV0 {
-                            distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                interval: 1,
-                                function: dist_clone,
-                            },
-                            distribution_recipient: TokenDistributionRecipient::ContractOwner,
-                        },
-                    )));
-            }),
-        );
-
-        for (height, balance) in [(1, 100_001), (101, 100_110), (501, 100_510)] {
-            // claim at height 500;loop until we have no more coins
-            let step = TestStep {
-                name: format!("height {}", height),
-                base_height: height - 1,
-                base_time_ms: 10_200_000_000,
-                expected_balance: None,
-                claim_transition_assertions: vec![|v| match v {
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
-                    _ => Err(format!("got {:?}", v)),
-                }],
-            };
-
-            let mut loops = 0;
-            let err = loop {
-                if let Err(err) = suite.execute_step(&step) {
-                    break err;
-                }
-                loops += 1;
-            };
-
-            // max_token_redemption_cycles is 128
-            if height == 501 {
-                assert_eq!(loops, (501 - 101) / 128 + 1);
-            } else {
-                assert_eq!(loops, 1);
-            }
-
-            assert!(
-                err.contains("InvalidTokenClaimNoCurrentRewards"),
-                "expected InvalidTokenClaimNoCurrentRewards error, got {}",
-                err
-            );
-
-            assert_eq!(
-                suite
-                    .get_balance()
-                    .expect("get balance")
-                    .unwrap_or_default(),
-                balance,
-                "expected balance at height {}: {}",
-                height,
-                balance
-            );
-        }
     }
 }
 

@@ -60,7 +60,7 @@ impl DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
+                start_decreasing_offset: s,
                 max_interval_count,
                 distribution_start_amount,
                 trailing_distribution_interval_amount,
@@ -108,6 +108,17 @@ impl DistributionFunction {
                 if *step_count == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+                if *decrease_per_interval_numerator == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "decrease_per_interval_numerator".to_string(),
+                            1,
+                            u16::MAX as i64,
+                            None,
+                        )
+                        .into(),
                     ));
                 }
                 if *decrease_per_interval_denominator == 0 {
@@ -968,7 +979,7 @@ mod tests {
                 step_count: 10,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
-                s: Some(0),
+                start_decreasing_offset: Some(0),
                 distribution_start_amount: 100,
                 min_value: Some(10),
             };
@@ -985,7 +996,7 @@ mod tests {
                 step_count: 0,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
-                s: Some(0),
+                start_decreasing_offset: Some(0),
                 distribution_start_amount: 100,
                 min_value: Some(10),
             };
@@ -1002,7 +1013,7 @@ mod tests {
                 step_count: 10,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 0,
-                s: Some(0),
+                start_decreasing_offset: Some(0),
                 distribution_start_amount: 100,
                 min_value: Some(10),
             };

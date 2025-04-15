@@ -53,7 +53,7 @@ impl DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
+                start_decreasing_offset,
                 max_interval_count,
                 distribution_start_amount,
                 trailing_distribution_interval_amount,
@@ -65,7 +65,7 @@ impl DistributionFunction {
                     ));
                 }
 
-                let s_val = s.unwrap_or(contract_registration_step);
+                let s_val = start_decreasing_offset.unwrap_or(contract_registration_step);
 
                 if x <= s_val {
                     return Ok(*distribution_start_amount);
@@ -512,7 +512,7 @@ mod tests {
             step_count: 10,
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 2, // 50% reduction per step
-            s: Some(0),
+            start_decreasing_offset: Some(0),
             distribution_start_amount: 100,
             min_value: Some(10),
         };
@@ -531,7 +531,7 @@ mod tests {
             step_count: 10,
             decrease_per_interval_numerator: 1,
             decrease_per_interval_denominator: 0, // Invalid denominator
-            s: Some(0),
+            start_decreasing_offset: Some(0),
             distribution_start_amount: 100,
             min_value: Some(10),
         };
