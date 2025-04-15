@@ -84,16 +84,16 @@ impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransiti
             .validation_and_processing
             .state_transitions
             .contract_create_state_transition
-            .basic_structure
+            .advanced_structure
         {
             Some(0) => self.validate_advanced_structure_v0(execution_context, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract create transition: validate_basic_structure".to_string(),
+                method: "data contract create transition: validate_advanced_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                method: "data contract create transition: validate_basic_structure".to_string(),
+                method: "data contract create transition: validate_advanced_structure".to_string(),
                 known_versions: vec![0],
             })),
         }
