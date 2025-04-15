@@ -17,12 +17,12 @@ impl DistributionFunction {
         match self {
             DistributionFunction::FixedAmount { amount: n } => {
                 // Validate that n is > 0 and does not exceed u32::MAX.
-                if *n == 0 || *n > u32::MAX as u64 {
+                if *n == 0 || *n > MAX_DISTRIBUTION_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "n".to_string(),
                             1,
-                            u32::MAX as i64,
+                            MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
                         .into(),
@@ -60,25 +60,65 @@ impl DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
-                n,
+                start_decreasing_offset: s,
+                max_interval_count,
+                distribution_start_amount,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
                 // Validate n.
-                if *n == 0 || *n > u32::MAX as u64 {
+                if *distribution_start_amount == 0
+                    || *distribution_start_amount > MAX_DISTRIBUTION_PARAM as u64
+                {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "n".to_string(),
                             1,
-                            u32::MAX as i64,
+                            MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
                         .into(),
                     ));
                 }
+
+                if *trailing_distribution_interval_amount > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "trailing_distribution_interval_amount".to_string(),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+                if let Some(max_interval_count) = max_interval_count {
+                    if *max_interval_count < 2 || *max_interval_count > 1024 {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenDistributionFunctionInvalidParameterError::new(
+                                "max_interval_count".to_string(),
+                                2,
+                                1024,
+                                None,
+                            )
+                            .into(),
+                        ));
+                    }
+                }
                 if *step_count == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+                if *decrease_per_interval_numerator == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "decrease_per_interval_numerator".to_string(),
+                            1,
+                            u16::MAX as i64,
+                            None,
+                        )
+                        .into(),
                     ));
                 }
                 if *decrease_per_interval_denominator == 0 {
@@ -97,7 +137,7 @@ impl DistributionFunction {
                     ));
                 }
                 if let Some(min) = min_value {
-                    if *n < *min {
+                    if *distribution_start_amount < *min {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
                                 "n".to_string(),
@@ -921,7 +961,7 @@ mod tests {
         #[test]
         fn test_fixed_amount_exceeds_max_invalid() {
             let dist = DistributionFunction::FixedAmount {
-                amount: u32::MAX as u64 + 1,
+                amount: MAX_DISTRIBUTION_PARAM + 1,
             };
             let result = dist.validate(START_MOMENT);
             assert!(result
@@ -939,8 +979,10 @@ mod tests {
                 step_count: 10,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
-                s: Some(0),
-                n: 100,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
             let result = dist.validate(START_MOMENT);
@@ -956,8 +998,10 @@ mod tests {
                 step_count: 0,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
-                s: Some(0),
-                n: 100,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
             let result = dist.validate(START_MOMENT);
@@ -973,8 +1017,10 @@ mod tests {
                 step_count: 10,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 0,
-                s: Some(0),
-                n: 100,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
             let result = dist.validate(START_MOMENT);

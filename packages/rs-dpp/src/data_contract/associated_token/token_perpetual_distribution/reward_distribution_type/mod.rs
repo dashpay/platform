@@ -1,7 +1,7 @@
 mod accessors;
 mod evaluate_interval;
 
-use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_CYCLES_PARAM};
 use crate::prelude::{BlockHeightInterval, DataContract, EpochInterval, TimestampMillisInterval};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -154,12 +154,15 @@ impl RewardDistributionType {
         &self,
         start_moment: RewardDistributionMoment,
         current_cycle_moment: RewardDistributionMoment,
-        max_cycles: u32,
+        max_non_fixed_amount_cycles: u32,
     ) -> Result<RewardDistributionMoment, ProtocolError> {
-        if matches!(self.function(), DistributionFunction::FixedAmount { .. }) {
-            // This is much easier to calculate as it's always fixed, so we can have an unlimited amount of cycles
-            return Ok(current_cycle_moment);
-        }
+        let max_cycles = if matches!(self.function(), DistributionFunction::FixedAmount { .. }) {
+            // This is much easier to calculate as it's always fixed, so we can have a near unlimited amount of cycles
+            //
+            MAX_DISTRIBUTION_CYCLES_PARAM
+        } else {
+            max_non_fixed_amount_cycles as u64
+        };
         let interval = self.interval();
 
         // Calculate maximum allowed moment based on distribution type
@@ -169,14 +172,14 @@ impl RewardDistributionType {
                 RewardDistributionMoment::BlockBasedMoment(step),
                 RewardDistributionMoment::BlockBasedMoment(current),
             ) => Ok(RewardDistributionMoment::BlockBasedMoment(
-                (start + step.saturating_mul(max_cycles as u64)).min(current),
+                (start + step.saturating_mul(max_cycles)).min(current),
             )),
             (
                 RewardDistributionMoment::TimeBasedMoment(start),
                 RewardDistributionMoment::TimeBasedMoment(step),
                 RewardDistributionMoment::TimeBasedMoment(current),
             ) => Ok(RewardDistributionMoment::TimeBasedMoment(
-                (start + step.saturating_mul(max_cycles as u64)).min(current),
+                (start + step.saturating_mul(max_cycles)).min(current),
             )),
             (
                 RewardDistributionMoment::EpochBasedMoment(start),
