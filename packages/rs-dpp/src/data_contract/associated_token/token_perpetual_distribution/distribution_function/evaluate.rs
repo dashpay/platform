@@ -80,15 +80,15 @@ impl DistributionFunction {
                     return Ok(*trailing_distribution_interval_amount);
                 }
 
-                let mut numerator = *distribution_start_amount as u128;
-                let denominator = *decrease_per_interval_denominator as u128;
-                let reduction_numerator = denominator - *decrease_per_interval_numerator as u128;
+                let mut numerator = *distribution_start_amount;
+                let denominator = *decrease_per_interval_denominator as u64;
+                let reduction_numerator = denominator - *decrease_per_interval_numerator as u64;
 
                 for _ in 0..steps_passed {
                     numerator = numerator * reduction_numerator / denominator;
                 }
 
-                let mut result = numerator as u64;
+                let mut result = numerator;
 
                 if let Some(min) = min_value {
                     if result < *min {

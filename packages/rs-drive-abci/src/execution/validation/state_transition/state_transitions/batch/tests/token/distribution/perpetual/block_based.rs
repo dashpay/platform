@@ -869,20 +869,10 @@ mod random {
 
 mod step_decreasing {
     use dpp::balances::credits::TokenAmount;
-    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM};
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
-    use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{BlockHeight, BlockHeightInterval};
     use crate::{execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights, platform_types::state_transitions_processing_result::StateTransitionExecutionResult};
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::INITIAL_BALANCE;
-
-    use super::test_suite::{TestStep, TestSuite};
 
     const DECREASING_ONE_PERCENT_100K: [TokenAmount; 500] = [
         100000, 99000, 98010, 97029, 96058, 95097, 94146, 93204, 92271, 91348, 90434, 89529, 88633,
@@ -967,14 +957,10 @@ mod step_decreasing {
                             DECREASING_HALF_100K[0]
                         } else {
                             // After offset => normal indexing
-                            let offset_index =
-                                ((i - start_decreasing_step) as usize)
-                                    / (reduce_every_block_count as usize);
+                            let offset_index = ((i - start_decreasing_step) as usize)
+                                / (reduce_every_block_count as usize);
 
-                            DECREASING_HALF_100K
-                                .get(offset_index)
-                                .copied()
-                                .unwrap_or(0)
+                            DECREASING_HALF_100K.get(offset_index).copied().unwrap_or(0)
                         }
                     })
                     .sum::<TokenAmount>();
@@ -1056,7 +1042,10 @@ mod step_decreasing {
             vec![],
         )
         .expect_err("should not allow to increase");
-        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter tuple in token distribution function: `decrease_per_interval_numerator` must be smaller than `decrease_per_interval_denominator`\", ...)");
+        assert!(
+            result_str.contains("Invalid parameter tuple in token distribution function: `decrease_per_interval_numerator` must be smaller than `decrease_per_interval_denominator`"),
+            "Unexpected panic message: {result_str}"
+        );
     }
 
     #[test]
@@ -1075,7 +1064,10 @@ mod step_decreasing {
             vec![],
         )
         .expect_err("should not allow to increase");
-        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter `decrease_per_interval_numerator` in token distribution function. Expected range: 1 to 65535\", ...)");
+        assert!(
+            result_str.contains("Invalid parameter `decrease_per_interval_numerator` in token distribution function. Expected range: 1 to 65535"),
+            "Unexpected panic message: {result_str}"
+        );
     }
 
     #[test]
@@ -1279,7 +1271,10 @@ mod step_decreasing {
             vec![],
         )
         .expect_err("should fail");
-        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter tuple in token distribution function: `n` must be greater than or equal to `min_value`\", ...)");
+        assert!(
+            result_str.contains("Invalid parameter tuple in token distribution function: `n` must be greater than or equal to `min_value`"),
+            "Unexpected panic message: {result_str}"
+        );
     }
     #[test]
     fn full_decrease_min_eq_max_distribution() {
@@ -1306,7 +1301,15 @@ mod step_decreasing {
     #[test]
     fn distribute_max_distribution_param_every_step() {
         let claim_heights = (1..65_536).step_by(128).collect::<Vec<_>>();
-        let expected_balances = claim_heights.iter().map(|&height| MAX_DISTRIBUTION_PARAM.saturating_mul(height).saturating_add(INITIAL_BALANCE).min(i64::MAX as u64)).collect();
+        let expected_balances = claim_heights
+            .iter()
+            .map(|&height| {
+                MAX_DISTRIBUTION_PARAM
+                    .saturating_mul(height)
+                    .saturating_add(INITIAL_BALANCE)
+                    .min(i64::MAX as u64)
+            })
+            .collect();
         run_test(
             1,
             u16::MAX - 1,
@@ -1320,7 +1323,7 @@ mod step_decreasing {
             1,
             expected_balances,
         )
-            .expect("should succeed");
+        .expect("should succeed");
     }
 
     #[test]
@@ -1339,7 +1342,10 @@ mod step_decreasing {
             vec![],
         )
         .expect_err("should fail");
-        assert_eq!(result_str, "join error: JoinError::Panic(Id(3), \"Invalid parameter `n` in token distribution function. Expected range: 1 to 281474976710655\", ...)");
+        assert!(
+            result_str.contains("Invalid parameter `n` in token distribution function. Expected range: 1 to 281474976710655"),
+            "Unexpected panic message: {result_str}"
+        );
     }
 
     #[test]
@@ -1347,7 +1353,8 @@ mod step_decreasing {
         let step = 5; // Every 5 blocks the amount divides by 1/2
         let distribution_interval = 1; // The payout happens every block
         let claim_heights = vec![5, 10, 18, 22, 100];
-        let expected_balances = sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
+        let expected_balances =
+            sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
         run_test(
             step,
             1,
@@ -1368,8 +1375,9 @@ mod step_decreasing {
     fn half_decrease_changing_step_5_distribution_interval_5() {
         let step = 5; // Every 25 blocks (5 x distribution interval) the amount divides by 1/2
         let distribution_interval = 5; // The payout happens every 5 blocks
-        let claim_heights = vec![1,2,3,4,5,6,7,8,9, 10,11, 18, 22, 25, 26, 51, 100];
-        let expected_balances = sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
+        let claim_heights = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 22, 25, 26, 51, 100];
+        let expected_balances =
+            sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
         run_test(
             step,
             1,
@@ -1383,7 +1391,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-            .expect("should pass");
+        .expect("should pass");
     }
 
     #[test]
@@ -1392,7 +1400,8 @@ mod step_decreasing {
         let distribution_interval = 1000; // The payout happens every 400 blocks
         let claim_heights = vec![3000, 45000, 60000, 300000, 300000];
         let value_heights = vec![3000, 45000, 60000, 60000 + 128 * 1000, 300000];
-        let expected_balances = sum_till_for_100k_halving(value_heights, step, distribution_interval, 0);
+        let expected_balances =
+            sum_till_for_100k_halving(value_heights, step, distribution_interval, 0);
         run_test(
             step,
             1,
@@ -1406,7 +1415,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-            .expect("should pass");
+        .expect("should pass");
     }
 
     #[test]
@@ -1415,8 +1424,22 @@ mod step_decreasing {
         let distribution_interval = 1000; // The payout happens every 400 blocks
         let claim_heights = vec![3000, 23000, 24000, 25000, 43000, 44000, 300000, 300000];
         let start_height = 2000;
-        let value_heights = vec![3000, 23000, 24000, 25000, 43000, 44000, 44000 + 128 * 1000, 300000];
-        let expected_balances = sum_till_for_100k_halving(value_heights, step, distribution_interval, start_height / distribution_interval);
+        let value_heights = vec![
+            3000,
+            23000,
+            24000,
+            25000,
+            43000,
+            44000,
+            44000 + 128 * 1000,
+            300000,
+        ];
+        let expected_balances = sum_till_for_100k_halving(
+            value_heights,
+            step,
+            distribution_interval,
+            start_height / distribution_interval,
+        );
         run_test(
             step,
             1,
@@ -1430,7 +1453,7 @@ mod step_decreasing {
             distribution_interval,
             expected_balances,
         )
-            .expect("should pass");
+        .expect("should pass");
     }
 
     /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
@@ -1469,7 +1492,7 @@ mod step_decreasing {
             .zip(expected_balances.iter())
             .map(|(&h, &b)| {
                 let is_increase = match prev {
-                    Some(p) => b > p,
+                    Some(p) => b > p || b == i64::MAX as u64,
                     None => b > INITIAL_BALANCE,
                 };
                 prev = Some(b);
