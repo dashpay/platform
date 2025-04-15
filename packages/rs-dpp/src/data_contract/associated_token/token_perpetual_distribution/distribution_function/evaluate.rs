@@ -39,7 +39,7 @@ impl DistributionFunction {
                 z = z ^ (z >> 31);
 
                 // Calculate the range size: (max - min + 1)
-                let range = max.wrapping_sub(*min).wrapping_add(1);
+                let range = max.saturating_sub(*min).saturating_add(1);
 
                 // Map the pseudorandom number into the desired range.
                 let value = min.wrapping_add(z % range);
