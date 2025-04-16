@@ -5,8 +5,11 @@ const { Wallet } = require('../../src/index');
 const { fundWallet } = require('../../src/utils');
 const { EVENTS } = require('../../src');
 
-const seeds = process.env.DAPI_SEED
-  .split(',');
+let seeds = null;
+if (typeof process.env.DAPI_SEED === 'string') {
+  seeds = process.env.DAPI_SEED
+    .split(',');
+}
 
 let newWallet;
 let wallet;
