@@ -9,17 +9,17 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
-    /// Fetches token statuses from the backing store.
+    /// Fetches token direct purchase prices from the backing store.
     ///
     /// # Arguments
     ///
-    /// * `token_ids` - A list of token IDs whose infos are to be fetched.
+    /// * `token_ids` - A list of token IDs whose direct purchase prices are to be fetched.
     /// * `transaction` - The current transaction context.
     /// * `platform_version` - The version of the platform to use for compatibility checks.
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<[u8; 32], Option<IdentityTokenInfo>>, Error>` - A map of token IDs to their corresponding infos, or an error.
+    /// * `Result<BTreeMap<[u8; 32], Option<TokenPricingSchedule>>, Error>` - A map of token IDs to their corresponding pricing schedules, or an error.
     ///
     /// # Errors
     ///
@@ -35,10 +35,12 @@ impl Drive {
                 self.fetch_tokens_direct_purchase_price_v0(token_ids, transaction, platform_version)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_token_statuses".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
+             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+-                method: "fetch_token_statuses".to_string(),
++                method: "fetch_tokens_direct_purchase_price".to_string(),
+                 known_versions: vec![0],
+                 received: version,
+             })),
         }
     }
 }
