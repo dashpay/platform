@@ -44,19 +44,19 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::prelude::{Identifier, IdentityNonce};
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
+    use platform_version::version::PlatformVersion;
+    use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
+    use crate::execution::types::execution_operation::ValidationOperation;
+    use dpp::consensus::basic::BasicError;
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 
-    mod validate_advanced_structure {
-        use super::*;
-        use dpp::consensus::ConsensusError;
-        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-        use dpp::prelude::{Identifier, IdentityNonce};
-        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-        use dpp::tests::fixtures::get_data_contract_fixture;
-        use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
-        use platform_version::version::PlatformVersion;
-        use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
-
-        #[test]
+    #[test]
         fn should_return_invalid_result_if_contract_id_is_not_valid() {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
@@ -91,7 +91,6 @@ mod tests {
             let result = transition
                 .validate_advanced_structure_v0(&mut execution_context)
                 .expect("failed to validate advanced structure");
-
             assert_matches!(
                 execution_context.operations_slice(),
                 [ValidationOperation::DoubleSha256(1)]
@@ -110,5 +109,4 @@ mod tests {
                     && Identifier::try_from(e.invalid_id()).unwrap() == invalid_id
             );
         }
-    }
 }
