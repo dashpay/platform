@@ -4019,6 +4019,153 @@ pub mod get_token_statuses_response {
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTokenDirectPurchasePricesRequest {
+    #[prost(
+        oneof = "get_token_direct_purchase_prices_request::Version",
+        tags = "1"
+    )]
+    pub version: ::core::option::Option<get_token_direct_purchase_prices_request::Version>,
+}
+/// Nested message and enum types in `GetTokenDirectPurchasePricesRequest`.
+pub mod get_token_direct_purchase_prices_request {
+    #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetTokenDirectPurchasePricesRequestV0 {
+        #[prost(bytes = "vec", repeated, tag = "1")]
+        pub token_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
+    }
+    #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetTokenDirectPurchasePricesRequestV0),
+    }
+}
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTokenDirectPurchasePricesResponse {
+    #[prost(
+        oneof = "get_token_direct_purchase_prices_response::Version",
+        tags = "1"
+    )]
+    pub version: ::core::option::Option<get_token_direct_purchase_prices_response::Version>,
+}
+/// Nested message and enum types in `GetTokenDirectPurchasePricesResponse`.
+pub mod get_token_direct_purchase_prices_response {
+    #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetTokenDirectPurchasePricesResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_token_direct_purchase_prices_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<get_token_direct_purchase_prices_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetTokenDirectPurchasePricesResponseV0`.
+    pub mod get_token_direct_purchase_prices_response_v0 {
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+        pub struct PriceForQuantity {
+            #[prost(uint64, tag = "1")]
+            pub quantity: u64,
+            #[prost(uint64, tag = "2")]
+            pub price: u64,
+        }
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct PricingSchedule {
+            #[prost(message, repeated, tag = "1")]
+            pub price_for_quantity: ::prost::alloc::vec::Vec<PriceForQuantity>,
+        }
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Price {
+            #[prost(oneof = "price::Price", tags = "1, 2")]
+            pub price: ::core::option::Option<price::Price>,
+        }
+        /// Nested message and enum types in `Price`.
+        pub mod price {
+            #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+            #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[derive(Clone, PartialEq, ::prost::Oneof)]
+            pub enum Price {
+                #[prost(uint64, tag = "1")]
+                FixedPrice(u64),
+                #[prost(message, tag = "2")]
+                VariablePrice(super::PricingSchedule),
+            }
+        }
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct TokenDirectPurchasePriceEntry {
+            #[prost(bytes = "vec", tag = "1")]
+            pub token_id: ::prost::alloc::vec::Vec<u8>,
+            #[prost(message, optional, tag = "2")]
+            pub price: ::core::option::Option<Price>,
+        }
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct TokenDirectPurchasePrices {
+            #[prost(message, repeated, tag = "1")]
+            pub token_direct_purchase_price:
+                ::prost::alloc::vec::Vec<TokenDirectPurchasePriceEntry>,
+        }
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            TokenDirectPurchasePrices(TokenDirectPurchasePrices),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetTokenDirectPurchasePricesResponseV0),
+    }
+}
+#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTokenPreProgrammedDistributionsRequest {
     #[prost(
         oneof = "get_token_pre_programmed_distributions_request::Version",
@@ -4748,6 +4895,52 @@ pub mod get_group_actions_response {
             #[prost(string, optional, tag = "2")]
             pub public_note: ::core::option::Option<::prost::alloc::string::String>,
         }
+        /// UpdatePrice event
+        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct UpdateDirectPurchasePriceEvent {
+            /// Public note
+            #[prost(string, optional, tag = "3")]
+            pub public_note: ::core::option::Option<::prost::alloc::string::String>,
+            #[prost(oneof = "update_direct_purchase_price_event::Price", tags = "1, 2")]
+            pub price: ::core::option::Option<update_direct_purchase_price_event::Price>,
+        }
+        /// Nested message and enum types in `UpdateDirectPurchasePriceEvent`.
+        pub mod update_direct_purchase_price_event {
+            #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+            #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+            #[derive(::dapi_grpc_macros::Mockable)]
+            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+            pub struct PriceForQuantity {
+                #[prost(uint64, tag = "1")]
+                pub quantity: u64,
+                #[prost(uint64, tag = "2")]
+                pub price: u64,
+            }
+            #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+            #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+            #[derive(::dapi_grpc_macros::Mockable)]
+            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[derive(Clone, PartialEq, ::prost::Message)]
+            pub struct PricingSchedule {
+                #[prost(message, repeated, tag = "1")]
+                pub price_for_quantity: ::prost::alloc::vec::Vec<PriceForQuantity>,
+            }
+            #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+            #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[derive(Clone, PartialEq, ::prost::Oneof)]
+            pub enum Price {
+                #[prost(uint64, tag = "1")]
+                FixedPrice(u64),
+                #[prost(message, tag = "2")]
+                VariablePrice(PricingSchedule),
+            }
+        }
         /// Event associated with this action
         #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
         #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
@@ -4841,7 +5034,7 @@ pub mod get_group_actions_response {
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct TokenEvent {
-            #[prost(oneof = "token_event::Type", tags = "1, 2, 3, 4, 5, 6, 7")]
+            #[prost(oneof = "token_event::Type", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
             pub r#type: ::core::option::Option<token_event::Type>,
         }
         /// Nested message and enum types in `TokenEvent`.
@@ -4872,6 +5065,9 @@ pub mod get_group_actions_response {
                 /// Token configuration update details
                 #[prost(message, tag = "7")]
                 TokenConfigUpdate(super::TokenConfigUpdateEvent),
+                /// Updating the token direct selling price
+                #[prost(message, tag = "8")]
+                UpdatePrice(super::UpdateDirectPurchasePriceEvent),
             }
         }
         #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
@@ -5112,7 +5308,7 @@ pub mod platform_client {
     }
     impl<T> PlatformClient<T>
     where
-        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
         T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
@@ -5133,12 +5329,12 @@ pub mod platform_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
+                http::Request<tonic::body::Body>,
                 Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
                 Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             PlatformClient::new(InterceptedService::new(inner, interceptor))
@@ -5900,6 +6096,27 @@ pub mod platform_client {
             ));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_token_direct_purchase_prices(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetTokenDirectPurchasePricesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetTokenDirectPurchasePricesResponse>,
+            tonic::Status,
+        > {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getTokenDirectPurchasePrices",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new(
+                "org.dash.platform.dapi.v0.Platform",
+                "getTokenDirectPurchasePrices",
+            ));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn get_token_pre_programmed_distributions(
             &mut self,
             request: impl tonic::IntoRequest<super::GetTokenPreProgrammedDistributionsRequest>,
@@ -6237,6 +6454,13 @@ pub mod platform_server {
             &self,
             request: tonic::Request<super::GetTokenStatusesRequest>,
         ) -> std::result::Result<tonic::Response<super::GetTokenStatusesResponse>, tonic::Status>;
+        async fn get_token_direct_purchase_prices(
+            &self,
+            request: tonic::Request<super::GetTokenDirectPurchasePricesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetTokenDirectPurchasePricesResponse>,
+            tonic::Status,
+        >;
         async fn get_token_pre_programmed_distributions(
             &self,
             request: tonic::Request<super::GetTokenPreProgrammedDistributionsRequest>,
@@ -6327,7 +6551,7 @@ pub mod platform_server {
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
-        type Response = http::Response<tonic::body::BoxBody>;
+        type Response = http::Response<tonic::body::Body>;
         type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
         fn poll_ready(
@@ -7865,6 +8089,49 @@ pub mod platform_server {
                     };
                     Box::pin(fut)
                 }
+                "/org.dash.platform.dapi.v0.Platform/getTokenDirectPurchasePrices" => {
+                    #[allow(non_camel_case_types)]
+                    struct getTokenDirectPurchasePricesSvc<T: Platform>(pub Arc<T>);
+                    impl<T: Platform>
+                        tonic::server::UnaryService<super::GetTokenDirectPurchasePricesRequest>
+                        for getTokenDirectPurchasePricesSvc<T>
+                    {
+                        type Response = super::GetTokenDirectPurchasePricesResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetTokenDirectPurchasePricesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Platform>::get_token_direct_purchase_prices(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = getTokenDirectPurchasePricesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/org.dash.platform.dapi.v0.Platform/getTokenPreProgrammedDistributions" => {
                     #[allow(non_camel_case_types)]
                     struct getTokenPreProgrammedDistributionsSvc<T: Platform>(pub Arc<T>);
@@ -8116,7 +8383,7 @@ pub mod platform_server {
                     Box::pin(fut)
                 }
                 _ => Box::pin(async move {
-                    let mut response = http::Response::new(empty_body());
+                    let mut response = http::Response::new(tonic::body::Body::default());
                     let headers = response.headers_mut();
                     headers.insert(
                         tonic::Status::GRPC_STATUS,
