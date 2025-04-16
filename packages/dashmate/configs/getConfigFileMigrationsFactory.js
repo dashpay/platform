@@ -1080,7 +1080,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         configFile.configs.local.platform.drive.abci.validatorSet.quorum.activeSigners = 1;
         configFile.configs.local.platform.drive.abci.chainLock.quorum.activeSigners = 1;
         configFile.configs.local.platform.drive.abci.instantLock.quorum.activeSigners = 1;
-        configFile.configs.local.platform.drive.tenderdash.genesis.consensus_params.validator.threshold = 100;
+        configFile.configs.local.platform.drive.tenderdash.genesis.consensus_params
+          .validator.threshold = 100;
 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {

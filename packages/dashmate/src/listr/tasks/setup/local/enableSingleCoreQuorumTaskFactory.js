@@ -17,7 +17,7 @@ export default function enableSingleCoreQuorumTaskFactory(generateBlocks) {
         task: async (ctx) => {
           const seedCoreService = ctx.coreServices
             .find((coreService) => coreService.getConfig().getName() === 'local_seed');
-          
+
           if (!seedCoreService) {
             throw new Error('Local seed core service not found');
           }
