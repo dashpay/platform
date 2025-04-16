@@ -1,11 +1,15 @@
 mod advanced_structure;
+mod basic_structure;
 mod identity_nonce;
 mod state;
 
+use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
+use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;
@@ -21,7 +25,8 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionAdvancedStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionAdvancedStructureValidationV0, StateTransitionBasicStructureValidationV0,
+    StateTransitionStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -72,6 +77,32 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     }
 }
 
+impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
+    fn validate_basic_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .contract_create_state_transition
+            .basic_structure
+        {
+            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract create transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "data contract create transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
+            })),
+        }
+    }
+}
+
 impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransition {
     fn validate_advanced_structure(
         &self,
@@ -86,15 +117,16 @@ impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransiti
             .contract_create_state_transition
             .advanced_structure
         {
-            Some(0) => self.validate_advanced_structure_v0(execution_context, platform_version),
+            Some(0) => self.validate_advanced_structure_v0(execution_context),
+            Some(1) => self.validate_advanced_structure_v1(execution_context),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_advanced_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "data contract create transition: validate_advanced_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
             })),
         }
     }
@@ -1283,9 +1315,8 @@ mod tests {
                     .expect("expected to process state transition");
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
                         ConsensusError::BasicError(BasicError::InvalidTokenBaseSupplyError(_)),
-                        _
                     )]
                 );
 
@@ -1396,9 +1427,8 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
                         ConsensusError::BasicError(BasicError::GroupPositionDoesNotExistError(_)),
-                        _
                     )]
                 );
 
@@ -1511,9 +1541,8 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
                         ConsensusError::BasicError(BasicError::GroupPositionDoesNotExistError(_)),
-                        _
                     )]
                 );
 
@@ -1772,11 +1801,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(
                         BasicError::NonContiguousContractGroupPositionsError(_)
                     ),
-                    _
                 )]
             );
 
@@ -1903,9 +1931,8 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::GroupMemberHasPowerOfZeroError(_)),
-                    _
                 )]
             );
 
@@ -2032,9 +2059,8 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_)),
-                    _
                 )]
             );
 
@@ -2162,9 +2188,8 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_)),
-                    _
                 )]
             );
 
@@ -2291,9 +2316,8 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::GroupTotalPowerLessThanRequiredError(_)),
-                    _
                 )]
             );
 
@@ -2420,11 +2444,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
+                [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(
                         BasicError::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_)
                     ),
-                    _
                 )]
             );
 
