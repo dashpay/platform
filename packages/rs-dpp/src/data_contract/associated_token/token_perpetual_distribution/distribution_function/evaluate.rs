@@ -420,7 +420,11 @@ impl DistributionFunction {
                 }
 
                 // Calculate the denominator for the logarithm: m * (x - s + o)
-                let denom_f = (*m as f64) * (diff as f64);
+                let denom_f = if *m == 1 {
+                    diff as f64
+                } else {
+                    (*m as f64) * (diff as f64)
+                };
                 if denom_f <= 0.0 {
                     return Err(ProtocolError::Overflow(
                         "InvertedLogarithmic: computed denominator is non-positive",
@@ -437,26 +441,48 @@ impl DistributionFunction {
 
                 let log_val = argument.ln();
 
-                // Compute the final value: (a * ln(...)) / d + b.
-                let value = ((*a as f64) * log_val / (*d as f64)) + (*b as f64);
-
-                // Clamp to max_value if provided.
-                if let Some(max_value) = max_value {
-                    if value > *max_value as f64
-                        || (value.is_infinite() && value.is_sign_positive())
-                    {
-                        return Ok(*max_value);
-                    }
-                }
-
                 // Ensure the computed value is finite and within the u64 range.
-                if !value.is_finite() || value > (u64::MAX as f64) {
+                if !log_val.is_finite() || log_val > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
                         "InvertedLogarithmic: evaluation overflow",
                     ));
                 }
 
-                if value < 0.0 {
+                let intermediate = if *a == 1 {
+                    log_val
+                } else if *a == -1 {
+                    -log_val
+                } else {
+                    (*a as f64) * log_val
+                };
+                if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
+                    return Err(ProtocolError::Overflow(
+                        "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                    ));
+                }
+
+                let value = if d == &1 {
+                    (intermediate.floor() as i64).checked_add(*b as i64).ok_or(
+                        ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow when adding b",
+                        ),
+                    )?
+                } else {
+                    ((intermediate / (*d as f64)).floor() as i64)
+                        .checked_add(*b as i64)
+                        .ok_or(ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow when adding b",
+                        ))?
+                };
+
+                // Clamp to max_value if provided.
+                if let Some(max_value) = max_value {
+                    if value > *max_value as i64 {
+                        return Ok(*max_value);
+                    }
+                }
+
+                if value < 0 {
                     return if let Some(min_value) = min_value {
                         Ok(*min_value)
                     } else {

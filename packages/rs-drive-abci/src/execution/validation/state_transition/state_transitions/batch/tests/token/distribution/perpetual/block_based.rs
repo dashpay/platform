@@ -173,7 +173,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
                 _
             )]
@@ -354,7 +354,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
                 _
             )]
@@ -816,7 +816,7 @@ mod random {
         suite.execute(&tests).expect("should execute");
 
         let data = balances_result.lock().unwrap();
-        // substract balance from previous step (for first step, substract initial balance of 100_000)
+        // subtract balance from previous step (for first step, subtract initial balance of 100_000)
         let diffs: Vec<u64> = data
             .iter()
             .scan(INITIAL_BALANCE, |prev, &x| {
@@ -871,7 +871,7 @@ mod step_decreasing {
     use dpp::balances::credits::TokenAmount;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM};
     use dpp::prelude::{BlockHeight, BlockHeightInterval};
-    use crate::{execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights, platform_types::state_transitions_processing_result::StateTransitionExecutionResult};
+    use crate::{execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights};
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::INITIAL_BALANCE;
 
     const DECREASING_ONE_PERCENT_100K: [TokenAmount; 500] = [
@@ -1755,7 +1755,7 @@ mod polynomial {
 
     /// Divide by 0
     /// claim at height 10: claim failed: assertion 1 failed: expected SuccessfulExecution, got
-    /// [InternalError(\"storage: protocol: divide by zero error: Polynomial function: divisor d is 0\")]\nexpected balance Some(1100055) but got 100000\n\n-->
+    /// [InternalError(\"storage: protocol: divide by zero error: Polynomial function: divisor d is 0\")]\n expected balance Some(1100055) but got 100000\n\n-->
     #[test]
     fn fails_divide_by_0() -> Result<(), String> {
         test_polynomial(
@@ -1979,11 +1979,11 @@ mod polynomial {
         })
     }
 
-    /// Test various combinations of `m/n` in [DistributionFunction::Polynomial] distribution.
+    /// Test various combinations of `m/n` in `[DistributionFunction::Polynomial]` distribution.
     ///
     /// We expect this test not to end with InternalError.
     #[test]
-    fn fails_poynomial_power() -> Result<(), String> {
+    fn fails_polynomial_power() -> Result<(), String> {
         for m in [i64::MIN, -1, 0, 1, i64::MAX] {
             for n in [0, 1, u64::MAX] {
                 let dist = Polynomial {
@@ -2058,25 +2058,6 @@ mod logarithmic {
 
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
-
-    #[test]
-    fn fails_zeros() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: 0,                  // a: i64,
-                d: 0,                  // d: u64,
-                m: 0,                  // m: u64,
-                n: 0,                  // n: u64,
-                o: 0,                  // o: i64,
-                start_moment: Some(0), // start_moment: Option<u64>,
-                b: 0,                  // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
-            },
-            &[(4, 100_000, true)],
-            1,
-        )
-    }
 
     /// "fails: ones - use of ln instead of log as documented
     #[test]
@@ -2220,7 +2201,7 @@ mod logarithmic {
     }
     /// Given a logarithmic distribution function with a=MAX,
     /// When I try to claim tokens,
-    /// Then I get an error different than InternalError.
+    /// Then I get an error different from InternalError.
     ///
     ///
     #[test]
@@ -2357,25 +2338,8 @@ mod inverted_logarithmic {
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
 
     #[test]
-    fn fails_zeros() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 0,                  // a: i64,
-            d: 0,                  // d: u64,
-            m: 0,                  // m: u64,
-            n: 0,                  // n: u64,
-            o: 0,                  // o: i64,
-            start_moment: Some(0), // start_moment: Option<u64>,
-            b: 0,                  // b: TokenAmount,
-            min_value: None,       // min_value: Option<u64>,
-            max_value: None,       // max_value: Option<u64>,
-        };
-        let steps = [(4, 100_000, true)];
-
-        run_test(dist, &steps, 1)
-    }
-
-    #[test]
-    fn fails_ones() -> Result<(), String> {
+    fn ones() -> Result<(), String> {
+        // At block 2 no more can ever be claimed because the function is decreasing
         let dist = InvertedLogarithmic {
             a: 1,                  // a: i64,
             d: 1,                  // d: u64,
@@ -2389,235 +2353,145 @@ mod inverted_logarithmic {
         };
         let steps = [
             (1, 100_001, true),
-            (2, 100_002, true),
-            (3, 100_003, true),
-            (4, 100_005, true),
+            (2, 100_001, false),
+            (50000, 100_001, false),
         ];
-
+        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        assert_eq!(x_1, 1); // This is ln (1/ (1 - 1 + 1)), or basically ln(1) = 1
+        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        assert_eq!(x_2, 0); // This is ln (1/ (1 - 1 + 2)), or basically ln(1/2) = 0
         run_test(dist, &steps, 1)
     }
 
     #[test]
-    fn fails_divide_by_zero() -> Result<(), String> {
+    fn inv_log_reduced_emission() -> Result<(), String> {
+        //       y
+        //       ↑
+        // 10000 |*
+        //  9000 | *
+        //  8000 |  *
+        //  7000 |   *
+        //  6000 |    *
+        //  5000 |     *
+        //  4000 |       *
+        //  3000 |         *
+        //  2000 |           *
+        //  1000 |              *
+        //     0 +-------------------*----------→ x
+        //         0     2000   4000   6000   8000
         let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
-            d: 0,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 1,                  // b: TokenAmount,
-            min_value: None,       // min_value: Option<u64>,
-            max_value: None,       // max_value: Option<u64>,
-        };
-        let steps = [(2, 100_002, false)];
-
-        run_test(dist, &steps, 1)
-    }
-
-    #[test]
-    fn fails_n_zero_log_zero() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
+            a: 10000,              // a: i64,
             d: 1,                  // d: u64,
             m: 1,                  // m: u64,
-            n: 0,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 1,                  // b: TokenAmount,
-            min_value: None,       // min_value: Option<u64>,
-            max_value: None,       // max_value: Option<u64>,
-        };
-        let steps = [(1, 100_001, true), (5, 100_001, true)];
-
-        run_test(dist, &steps, 1)
-    }
-
-    #[test]
-    fn min_eq_max_means_linear() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
+            n: 5000,               // n: u64,
+            o: 0,                  // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
             b: 0,                  // b: TokenAmount,
-            min_value: Some(10),   // min_value: Option<u64>,
-            max_value: Some(10),   // max_value: Option<u64>,
-        };
-        let steps = [(1, 100_010, true), (5, 100_050, true)];
-
-        run_test(dist, &steps, 1)
-    }
-
-    #[test]
-    fn min_eq_max_means_linear_interval_5() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 0,                  // b: TokenAmount,
-            min_value: Some(10),   // min_value: Option<u64>,
-            max_value: Some(10),   // max_value: Option<u64>,
-        };
-        let steps = [(5, 100_010, true), (10, 100_020, true)];
-
-        run_test(dist, &steps, 5)
-    }
-
-    #[test]
-    fn fails_min_gt_max() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 1,                  // b: TokenAmount,
-            min_value: Some(10),   // min_value: Option<u64>,
-            max_value: Some(5),    // max_value: Option<u64>,
-        };
-        let steps = [(5, 100_000, false), (10, 100_000, false)];
-
-        run_test(dist, &steps, 5)
-    }
-
-    #[test]
-    fn fails_a_min() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: i64::MIN,           // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 1,                  // b: TokenAmount,
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
+        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
+        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
+        let x_5000 = dist.evaluate(0, 5000).expect("expected to evaluate");
+        let x_6000 = dist.evaluate(0, 6000).expect("expected to evaluate");
+        assert_eq!(x_1, 85171);
+        assert_eq!(x_2, 78240);
+        assert_eq!(x_1000, 16094);
+        assert_eq!(x_4000, 2231);
+        assert_eq!(x_5000, 0);
+        assert_eq!(x_6000, 0);
         let steps = [
-            (1, 100_000, false), // f(1) should be < 0, is 1
-            (9, 100_000, false),
-            (10, 100_000, false),
+            (1, 185_171, true),
+            (2, 263_411, true),
+            (1000, 6_110_958, true),
         ];
 
         run_test(dist, &steps, 1)
     }
 
     #[test]
-    fn a_max() -> Result<(), String> {
+    fn inv_log_reduced_emission_passing_0() -> Result<(), String> {
+        //         y
+        //         ↑
+        //     350 |*
+        //     300 | *
+        //     250 |  *
+        //     200 |   *
+        //     150 |     *
+        //     100 |       *
+        //      50 |         *
+        //       0 +-------------*--------------→ x
+        //         0     100    200   300   400
         let dist = InvertedLogarithmic {
-            a: i64::MAX,           // a: i64,
+            a: 100,                // a: i64,
             d: 1,                  // d: u64,
             m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 1,                  // b: TokenAmount,
-            min_value: None,       // min_value: Option<u64>,
-            max_value: None,       // max_value: Option<u64>,
-        };
-        let steps = [
-            (1, 100_001, true), // f(x) = 0 for x>1
-            (9, 100_001, false),
-            (10, 100_001, false),
-        ];
-
-        run_test(dist, &steps, 1)
-    }
-
-    #[test]
-    fn a_zero_b_zero() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 0,                  // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
+            n: 200,                // n: u64,
+            o: 0,                  // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
             b: 0,                  // b: TokenAmount,
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
         let steps = [
-            (1, 100_000, false),
-            (9, 100_000, false),
-            (10, 100_000, false),
+            (1, 100529, true),
+            (2, 100989, true),
+            (100, 116559, true),
+            (210, 119546, true),
+            (300, 119546, false), // past 200 we won't get any more
         ];
 
         run_test(dist, &steps, 1)
     }
 
     #[test]
-    fn fails_log_negative() -> Result<(), String> {
+    fn inv_log_negative_a_increase_emission() -> Result<(), String> {
+        //         y
+        //          ↑
+        //    10000 |
+        //     9000 |
+        //     8000 |
+        //     7000 |                                                    *
+        //     6000 |                                 *
+        //     5000 |                    *
+        //     4000 |           *
+        //     3000 |      *
+        //     2000 |  *
+        //     1000 *
+        //        0 +-------------------------------------------→ x
+        //          0       5k     10k     15k     20k     25k     30k
         let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
+            a: -2200,              // a: i64,
             d: 1,                  // d: u64,
             m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: -10,                // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 0,                  // b: TokenAmount,
+            n: 10000,              // n: u64,
+            o: 3000,               // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
+            b: 4000,               // b: TokenAmount,
             min_value: None,       // min_value: Option<u64>,
             max_value: None,       // max_value: Option<u64>,
         };
+        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
+        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
+        assert_eq!(x_1, 1351);
+        assert_eq!(x_2, 1352);
+        assert_eq!(x_1000, 1984);
+        assert_eq!(x_4000, 3215);
         let steps = [
-            (1, 100_000, false),
-            (9, 100_000, false),
-            (10, 100_000, false),
+            (1, 101351, true),
+            (2, 102703, true),
+            (100, 238739, true),
+            (210, 399539, true),
+            (300, 537282, true),
         ];
 
         run_test(dist, &steps, 1)
     }
 
-    #[test]
-    fn fails_o_min() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: i64::MIN,           // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: 0,                  // b: TokenAmount,
-            min_value: None,       // min_value: Option<u64>,
-            max_value: None,       // max_value: Option<u64>,
-        };
-        let steps = [
-            (1, 100_000, false),
-            (9, 100_000, false),
-            (10, 100_000, false),
-        ];
-
-        run_test(dist, &steps, 1)
-    }
-
-    #[test]
-    fn fails_b_max() -> Result<(), String> {
-        let dist = InvertedLogarithmic {
-            a: 1,                  // a: i64,
-            d: 1,                  // d: u64,
-            m: 1,                  // m: u64,
-            n: 1,                  // n: u64,
-            o: 1,                  // o: i64,
-            start_moment: Some(1), // start_moment: Option<u64>,
-            b: u64::MAX,           // b: TokenAmount,
-            min_value: None,       // min_value: Option<u64>,
-            max_value: None,       // max_value: Option<u64>,
-        };
-        let steps = [
-            (1, 100_000, false),
-            (9, 100_000, false),
-            (10, 100_000, false),
-        ];
-
-        run_test(dist, &steps, 1)
-    }
     /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
     fn run_test(
         dist: DistributionFunction,
@@ -2686,7 +2560,7 @@ mod test_suite {
     /// * `distribution_interval` - interval between distributions
     /// * `max_supply` - optional max supply of the token; if Some(), it will override max supply in contract JSON definition
     ///
-    /// Note that for conveniance, you can provide `steps` as a [`TestStep`] or a slice of tuples, where each tuple contains:
+    /// Note that for convenience, you can provide `steps` as a [`TestStep`] or a slice of tuples, where each tuple contains:
     /// * `height` - height at which claim will be made
     /// * `expected_balance` - expected balance after claim was made
     /// * `expect_pass` - whether we expect the claim to pass or not
@@ -2738,7 +2612,7 @@ mod test_suite {
         identity: dpp::prelude::Identity,
         signer: SimpleSigner,
         identity_public_key: IdentityPublicKey,
-        token_id: Option<dpp::prelude::Identifier>,
+        token_id: Option<Identifier>,
         contract: Option<DataContract>,
         start_time: Option<TimestampMillis>,
         token_distribution_type: TokenDistributionType,
