@@ -215,7 +215,7 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       time.setEpoch(driveStatus.time.epoch);
     }
 
-    time.setLocal(Date.now());
+    time.setLocal(Date.now().toString());
 
     v0.setTime(time);
 

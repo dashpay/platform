@@ -27,6 +27,8 @@ use crate::state_transition::batch_transition::token_emergency_action_transition
 use crate::state_transition::batch_transition::token_freeze_transition::validate_structure::TokenFreezeTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_mint_transition::validate_structure::TokenMintTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_claim_transition::validate_structure::TokenClaimTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_direct_purchase_transition::validate_structure::TokenDirectPurchaseTransitionStructureValidation;
+use crate::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::validate_structure::TokenSetPriceForDirectPurchaseTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
@@ -169,6 +171,14 @@ impl BatchTransition {
                 }
                 TokenTransition::Claim(release_transition) => {
                     release_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::DirectPurchase(direct_purchase_transition) => {
+                    direct_purchase_transition.validate_structure(platform_version)?
+                }
+                TokenTransition::SetPriceForDirectPurchase(
+                    set_price_for_direct_purchase_transition,
+                ) => {
+                    set_price_for_direct_purchase_transition.validate_structure(platform_version)?
                 }
             };
 

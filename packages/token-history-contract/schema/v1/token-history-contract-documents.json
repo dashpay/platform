@@ -759,5 +759,152 @@
       "$createdAtBlockHeight"
     ],
     "additionalProperties": false
+  },
+  "directPricing": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "priceSchedule": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 1,
+        "maxItems": 2048,
+        "description": "The serialized price schedule for direct token purchases",
+        "position": 1
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2048,
+        "description": "An optional note explaining the pricing change",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "directPurchase": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "indices": [
+      {
+        "name": "byDate",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerIdForToken",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwnerId",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byPurchaseCost",
+        "properties": [
+          {
+            "purchaseCost": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byTokenAmount",
+        "properties": [
+          {
+            "tokenId": "asc"
+          },
+          {
+            "tokenAmount": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "tokenId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The token ID",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "tokenAmount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The number of tokens purchased",
+        "position": 1
+      },
+      "purchaseCost": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The cost paid for the tokens in credits",
+        "position": 2
+      }
+    },
+    "required": [
+      "tokenId",
+      "tokenAmount",
+      "purchaseCost",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
   }
 }

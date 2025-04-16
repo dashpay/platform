@@ -38,7 +38,6 @@
     "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#be478c813ef28aa74389182964f1aa76cdaa777d",
     "@dashevo/dashd-rpc": "^19.0.0",
     "@dashevo/grpc-common": "workspace:*",
-    "@dashevo/token-history-contract": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@grpc/grpc-js": "1.4.4",
     "@pshenmic/zeromq": "6.0.0-beta.22",

@@ -60,6 +60,8 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::batch::batched_transition::token_transition::token_freeze_transition_action::TokenFreezeTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::TokenClaimTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
@@ -602,8 +604,28 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 Ok(batched_action)
             }
-            TokenTransition::Claim(release) => {
-                let (batched_action, fee_result) = TokenClaimTransitionAction::try_from_borrowed_token_claim_transition_with_contract_lookup(drive, owner_id, release, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+            TokenTransition::Claim(claim) => {
+                let (batched_action, fee_result) = TokenClaimTransitionAction::try_from_borrowed_token_claim_transition_with_contract_lookup(drive, owner_id, claim, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::DirectPurchase(direct_purchase) => {
+                let (batched_action, fee_result) = TokenDirectPurchaseTransitionAction::try_from_borrowed_token_direct_purchase_transition_with_contract_lookup(drive, owner_id, direct_purchase, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::SetPriceForDirectPurchase(set_price_for_direct_purchase) => {
+                let (batched_action, fee_result) = TokenSetPriceForDirectPurchaseTransitionAction::try_from_borrowed_token_set_price_for_direct_purchase_transition_with_contract_lookup(drive, owner_id, set_price_for_direct_purchase, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 }, platform_version)?;
 
