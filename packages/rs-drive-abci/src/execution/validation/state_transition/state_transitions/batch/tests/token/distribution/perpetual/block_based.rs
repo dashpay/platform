@@ -2058,10 +2058,10 @@ mod logarithmic {
 
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_LOG_A_PARAM, MIN_LOG_A_PARAM};
 
-    /// "fails: ones - use of ln instead of log as documented
     #[test]
-    fn fails_ones() -> Result<(), String> {
+    fn log_distribution_basic() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
                 a: 1,                  // a: i64,
@@ -2075,111 +2075,60 @@ mod logarithmic {
                 max_value: None,       // max_value: Option<u64>,
             },
             &[
-                (1, 100_001, true), // log(0)+1 = 1
-                (2, 100_002, true), // log(1)+1 = 1
-                (3, 100_003, true), // log(3)+1 = 1
-                (4, 100_005, true), // log(4)+1 = 2 (log(4) == 0.6, rounded up to 1)
+                (1, 100_001, true), // ln(0)+1 = 1
+                (2, 100_002, true), // ln(1)+1 = 1
+                (3, 100_004, true), // ln(3)+1 = 2
+                (4, 100_006, true), // ln(4)+1 = 2
             ],
             1,
         )
     }
+
     #[test]
-    fn fails_div_by_0() -> Result<(), String> {
+    fn log_distribution_1_div_u64_max() -> Result<(), String> {
+        // n is very big here, so we would expect to get 0
         test_logarithmic(
             Logarithmic {
                 a: 1,                  // a: i64,
                 d: 1,                  // d: u64,
                 m: 1,                  // m: u64,
-                n: 0,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 1,                  // b: TokenAmount,
+                n: u64::MAX,           // n: u64,
+                o: 0,                  // o: i64,
+                start_moment: Some(0), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
                 min_value: None,       // min_value: Option<u64>,
                 max_value: None,       // max_value: Option<u64>,
             },
-            &[(2, 100_002, false)],
-            1,
-        )
-    }
-    #[test]
-    fn fails_log_0() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: 1,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 0,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 1,                  // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
-            },
-            &[(1, 100_001, true), (5, 100_001, true)],
+            &[(1, 100_000, false), (5, 100_000, false)],
             1,
         )
     }
 
-    /// min == max means linear
     #[test]
-    fn min_eq_max() -> Result<(), String> {
+    fn log_distribution_neg_1_div_u64_max() -> Result<(), String> {
+        // n is very big here, so we would expect to get 0
         test_logarithmic(
             Logarithmic {
-                a: 1,                  // a: i64,
+                a: -1,                 // a: i64,
                 d: 1,                  // d: u64,
                 m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
+                n: u64::MAX,           // n: u64,
+                o: 0,                  // o: i64,
+                start_moment: Some(0), // start_moment: Option<u64>,
                 b: 0,                  // b: TokenAmount,
-                min_value: Some(10),   // min_value: Option<u64>,
-                max_value: Some(10),   // max_value: Option<u64>,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
             },
-            &[(1, 100_010, true), (5, 100_050, true)],
+            &[(1, 100_044, true), (5, 100_214, true)],
             1,
         )
     }
+
     #[test]
-    fn min_eq_max_interval_5() -> Result<(), String> {
+    fn log_distribution_a_min() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
-                a: 1,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 0,                  // b: TokenAmount,
-                min_value: Some(10),   // min_value: Option<u64>,
-                max_value: Some(10),   // max_value: Option<u64>,
-            },
-            &[(5, 100_010, true), (10, 100_020, true)],
-            5,
-        )
-    }
-    #[test]
-    fn fails_min_gt_max() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: 1,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 1,                  // b: TokenAmount,
-                min_value: Some(10),   // min_value: Option<u64>,
-                max_value: Some(5),    // max_value: Option<u64>,
-            },
-            &[(5, 100_000, false), (10, 100_000, false)],
-            5,
-        )
-    }
-    #[test]
-    fn fails_a_min() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: i64::MIN,           // a: i64,
+                a: MIN_LOG_A_PARAM,    // a: i64,
                 d: 1,                  // d: u64,
                 m: 1,                  // m: u64,
                 n: 1,                  // n: u64,
@@ -2191,125 +2140,58 @@ mod logarithmic {
             },
             // f(x) = (a * log(m * (x - s + o) / n)) / d + b
             &[
-                (1, 100_000, false), // should be false, as the balance after claim == initial balance
-                (2, 100_001, true),
+                (1, 100_001, true),
+                (2, 100_001, false),
                 (9, 100_001, false),
                 (10, 100_001, false),
             ],
             1,
         )
     }
-    /// Given a logarithmic distribution function with a=MAX,
-    /// When I try to claim tokens,
-    /// Then I get an error different from InternalError.
-    ///
-    ///
+
     #[test]
-    fn fails_a_max_overflows() -> Result<(), String> {
+    fn log_distribution_max_amounts() {
         test_logarithmic(
             Logarithmic {
-                a: i64::MAX,           // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 1,                  // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
+                a: MAX_LOG_A_PARAM,               // a: i64,
+                d: 1,                             // d: u64,
+                m: MAX_DISTRIBUTION_PARAM,        // m: u64,
+                n: 1,                             // n: u64,
+                o: MAX_DISTRIBUTION_PARAM as i64, // o: i64,
+                start_moment: Some(0),            // start_moment: Option<u64>,
+                b: MAX_DISTRIBUTION_PARAM,        // b: TokenAmount,
+                min_value: None,                  // min_value: Option<u64>,
+                max_value: None,                  // max_value: Option<u64>,
             },
             &[
-                (1, 100_000, false),
-                (9, 100_000, false),
-                (10, 100_000, false),
+                (1, 281474978991040, true),
+                (9, 2533274810119360, true),
+                (10, 2814749789010400, true),
+                (200, 38843547087063520, true),
             ],
             1,
         )
+        .expect("expect to pass");
     }
+
     #[test]
-    fn a_0_b_0() -> Result<(), String> {
+    fn log_distribution_with_b_max() -> Result<(), String> {
         test_logarithmic(
             Logarithmic {
-                a: 0,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 0,                  // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
+                a: 1,                      // a: i64,
+                d: 1,                      // d: u64,
+                m: 1,                      // m: u64,
+                n: 1,                      // n: u64,
+                o: 1,                      // o: i64,
+                start_moment: Some(1),     // start_moment: Option<u64>,
+                b: MAX_DISTRIBUTION_PARAM, // b: TokenAmount,
+                min_value: None,           // min_value: Option<u64>,
+                max_value: None,           // max_value: Option<u64>,
             },
             &[
-                (1, 100_000, false),
-                (9, 100_000, false),
-                (10, 100_000, false),
-            ],
-            1,
-        )
-    }
-    #[test]
-    fn fails_log_negative() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: 1,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: -10,                // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 0,                  // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
-            },
-            &[
-                (1, 100_000, false),
-                (9, 100_000, false),
-                (10, 100_000, false),
-            ],
-            1,
-        )
-    }
-    #[test]
-    fn fails_o_min() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: 1,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: i64::MIN,           // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: 0,                  // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
-            },
-            &[
-                (1, 100_000, false),
-                (9, 100_000, false),
-                (10, 100_000, false),
-            ],
-            1,
-        )
-    }
-    #[test]
-    fn fails_b_max() -> Result<(), String> {
-        test_logarithmic(
-            Logarithmic {
-                a: 1,                  // a: i64,
-                d: 1,                  // d: u64,
-                m: 1,                  // m: u64,
-                n: 1,                  // n: u64,
-                o: 1,                  // o: i64,
-                start_moment: Some(1), // start_moment: Option<u64>,
-                b: u64::MAX,           // b: TokenAmount,
-                min_value: None,       // min_value: Option<u64>,
-                max_value: None,       // max_value: Option<u64>,
-            },
-            &[
-                (1, 100_000, false),
-                (9, 100_000, false),
-                (10, 100_000, false),
+                (1, 281474976810655, true), // We start at 1
+                (9, 2533274790495904, true),
+                (10, 2814749767206561, true),
             ],
             1,
         )
@@ -2338,7 +2220,7 @@ mod inverted_logarithmic {
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
 
     #[test]
-    fn ones() -> Result<(), String> {
+    fn inv_log_distribution_very_low_emission() -> Result<(), String> {
         // At block 2 no more can ever be claimed because the function is decreasing
         let dist = InvertedLogarithmic {
             a: 1,                  // a: i64,
@@ -2364,7 +2246,7 @@ mod inverted_logarithmic {
     }
 
     #[test]
-    fn inv_log_reduced_emission() -> Result<(), String> {
+    fn inv_log_distribution_reduced_emission() -> Result<(), String> {
         //       y
         //       ↑
         // 10000 |*
@@ -2412,7 +2294,7 @@ mod inverted_logarithmic {
     }
 
     #[test]
-    fn inv_log_reduced_emission_passing_0() -> Result<(), String> {
+    fn inv_log_distribution_reduced_emission_passing_0() -> Result<(), String> {
         //         y
         //         ↑
         //     350 |*
@@ -2447,7 +2329,7 @@ mod inverted_logarithmic {
     }
 
     #[test]
-    fn inv_log_negative_a_increase_emission() -> Result<(), String> {
+    fn inv_log_distribution_negative_a_increase_emission() -> Result<(), String> {
         //         y
         //          ↑
         //    10000 |

@@ -87,7 +87,7 @@ impl Encode for DistributionFunction {
                 n,
                 o,
                 start_moment: s,
-                c,
+                b: c,
                 min_value,
                 max_value,
             } => {
@@ -245,7 +245,7 @@ impl Decode for DistributionFunction {
                     n,
                     o,
                     start_moment: s,
-                    c,
+                    b: c,
                     min_value,
                     max_value,
                 })
@@ -395,7 +395,7 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     n,
                     o,
                     start_moment: s,
-                    c,
+                    b: c,
                     min_value,
                     max_value,
                 })

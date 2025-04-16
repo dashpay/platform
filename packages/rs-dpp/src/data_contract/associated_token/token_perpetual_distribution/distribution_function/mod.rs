@@ -355,7 +355,7 @@ pub enum DistributionFunction {
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * e^(m * (x - s) / n)) / d + c
+    /// f(x) = (a * e^(m * (x - s) / n)) / d + b
     /// ```
     ///
     /// # Parameters
@@ -364,7 +364,7 @@ pub enum DistributionFunction {
     /// - `d`: A divisor used to scale the exponential term.
     /// - `s`: Optional start period offset. If not set, the contract creation start is assumed.
     /// - `o`: An offset for the exp function, this is useful if s is in None.
-    /// - `c`: An offset added to the result.
+    /// - `b`: An offset added to the result.
     /// - `min_value` / `max_value`: Optional constraints on the emitted tokens.
     ///
     /// # Use Cases
@@ -390,7 +390,7 @@ pub enum DistributionFunction {
     ///
     /// ## **Example 2: Exponential Decay (`m < 0`)**
     /// - **Use Case**: A deflationary model where emissions start high and gradually decrease to ensure scarcity.
-    /// - **Parameters**: `a = 500`, `m = -3`, `n = 100`, `d = 20`, `c = 10`
+    /// - **Parameters**: `a = 500`, `m = -3`, `n = 100`, `d = 20`, `b = 10`
     /// - **Formula**:
     ///   ```text
     ///   f(x) = (500 * e^(-3 * (x - s) / 100)) / 20 + 10
@@ -403,12 +403,12 @@ pub enum DistributionFunction {
         n: u64,
         o: i64,
         start_moment: Option<u64>,
-        c: TokenAmount,
+        b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
 
-    /// Emits tokens following a logarithmic function.
+    /// Emits tokens following a natural logarithmic (ln) function.
     ///
     /// # Formula
     /// The emission at period `x` is computed as:
@@ -440,7 +440,7 @@ pub enum DistributionFunction {
     ///
     /// - Given the formula:
     ///   ```text
-    ///   f(x) = (a * log(m * (x - s + o) / n)) / d + b
+    ///   f(x) = (a * ln(m * (x - s + o) / n)) / d + b
     ///   ```
     ///
     /// - Let’s assume the following parameters:
@@ -452,7 +452,7 @@ pub enum DistributionFunction {
     ///
     /// - This results in:
     ///   ```text
-    ///   f(x) = (100 * log(2 * (x + 1) / 1)) / 10 + 50
+    ///   f(x) = (100 * ln(2 * (x + 1) / 1)) / 10 + 50
     ///   ```
     ///
     /// - **Expected Behavior:**
@@ -476,13 +476,13 @@ pub enum DistributionFunction {
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
-    /// Emits tokens following an inverted logarithmic function.
+    /// Emits tokens following an inverted natural logarithmic function.
     ///
     /// # Formula
     /// The emission at period `x` is given by:
     ///
     /// ```text
-    /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
+    /// f(x) = (a * ln( n / (m * (x - s + o)) )) / d + b
     /// ```
     ///
     /// # Parameters
@@ -504,7 +504,7 @@ pub enum DistributionFunction {
     ///
     /// # Example
     ///   ```text
-    ///   f(x) = 10000 * log(5000 / x)
+    ///   f(x) = 10000 * ln(5000 / x)
     ///   ```
     /// - Values: a = 10000 n = 5000 m = 1 o = 0 b = 0 d = 0
     ///           y
@@ -652,7 +652,7 @@ impl fmt::Display for DistributionFunction {
                 n,
                 o,
                 start_moment: s,
-                c,
+                b: c,
                 min_value,
                 max_value,
             } => {

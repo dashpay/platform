@@ -254,7 +254,7 @@ impl DistributionFunction {
                 n,
                 o,
                 start_moment,
-                c,
+                b: c,
                 min_value,
                 max_value,
             } => {
@@ -346,22 +346,73 @@ impl DistributionFunction {
                     return Err(ProtocolError::Overflow("Logarithmic function: argument for log is too big (max should be u64::MAX)"));
                 }
 
-                let argument = (*m as f64) * (diff as f64) / (*n as f64);
+                let argument = if *m == 1 {
+                    if *n == 1 {
+                        diff as f64
+                    } else {
+                        (diff as f64) / (*n as f64)
+                    }
+                } else if *n == 1 {
+                    (*m as f64) * (diff as f64)
+                } else {
+                    (*m as f64) * (diff as f64) / (*n as f64)
+                };
 
                 let log_val = argument.ln();
-                let value = ((*a as f64) * log_val / (*d as f64)) + (*b as f64);
-                if let Some(max_value) = max_value {
-                    if value.is_infinite() && value.is_sign_positive() || value > *max_value as f64
-                    {
-                        return Ok(*max_value);
-                    }
-                }
-                if !value.is_finite() || value > (u64::MAX as f64) {
+
+                // Ensure the computed value is finite and within the u64 range.
+                if !log_val.is_finite() || log_val > (u64::MAX as f64) {
                     return Err(ProtocolError::Overflow(
-                        "Logarithmic function evaluation overflow or negative",
+                        "InvertedLogarithmic: evaluation overflow",
                     ));
                 }
-                if value < 0.0 {
+
+                let intermediate = if *a == 1 {
+                    log_val
+                } else if *a == -1 {
+                    -log_val
+                } else {
+                    (*a as f64) * log_val
+                };
+
+                let value = if d == &1 {
+                    if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
+                        if let Some(max_value) = max_value {
+                            if intermediate.is_sign_positive() {
+                                *max_value as i64
+                            } else {
+                                return Err(ProtocolError::Overflow(
+                                    "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                                ));
+                            }
+                        } else {
+                            return Err(ProtocolError::Overflow(
+                                "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                            ));
+                        }
+                    } else {
+                        (intermediate.floor() as i64)
+                            .checked_add(*b as i64)
+                            .or(max_value.map(|max| max as i64))
+                            .ok_or(ProtocolError::Overflow(
+                                "InvertedLogarithmic: evaluation overflow when adding b",
+                            ))?
+                    }
+                } else {
+                    if !intermediate.is_finite() || intermediate > (i64::MAX as f64) {
+                        return Err(ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow intermediate bigger than i64::max",
+                        ));
+                    }
+                    ((intermediate / (*d as f64)).floor() as i64)
+                        .checked_add(*b as i64)
+                        .or(max_value.map(|max| max as i64))
+                        .ok_or(ProtocolError::Overflow(
+                            "InvertedLogarithmic: evaluation overflow when adding b",
+                        ))?
+                };
+
+                if value < 0 {
                     return if let Some(min_value) = min_value {
                         Ok(*min_value)
                     } else {
@@ -372,6 +423,12 @@ impl DistributionFunction {
                 if let Some(min_value) = min_value {
                     if value_u64 < *min_value {
                         return Ok(*min_value);
+                    }
+                }
+
+                if let Some(max_value) = max_value {
+                    if value_u64 > *max_value {
+                        return Ok(*max_value);
                     }
                 }
                 Ok(value_u64)
@@ -900,7 +957,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: None,
                 max_value: None,
             };
@@ -918,7 +975,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: None,
                 max_value: None,
             };
@@ -938,7 +995,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: None,
                 max_value: None,
             };
@@ -957,7 +1014,7 @@ mod tests {
                 n: 10,
                 o: 0,
                 start_moment: Some(0),
-                c: 0,
+                b: 0,
                 min_value: None,
                 max_value: None,
             };
@@ -976,7 +1033,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 0,
+                b: 0,
                 min_value: None,
                 max_value: Some(100000000),
             };
@@ -997,7 +1054,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: None,
                 max_value: None,
             };
@@ -1016,7 +1073,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(11),
                 max_value: None,
             };
@@ -1035,7 +1092,7 @@ mod tests {
                 n: 2,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(11), // Set max at the starting value
             };
@@ -1061,7 +1118,7 @@ mod tests {
                 n: 10,
                 o: 0,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: None,
                 max_value: None,
             };
