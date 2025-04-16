@@ -3,6 +3,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use dpp::consensus::basic::data_contract::{
     InvalidDataContractIdError, InvalidDataContractVersionError,
 };
@@ -26,6 +27,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
         &self,
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // Moved this to basic structure validation in protocol version 9
         if self.data_contract().version() != INITIAL_DATA_CONTRACT_VERSION {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
@@ -41,33 +43,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
             ));
         }
 
-        // Validate data contract id
-        let generated_id = DataContract::generate_data_contract_id_v0(
-            self.data_contract().owner_id(),
-            self.identity_nonce(),
-        );
-
-        // This hash will only take 1 block (64 bytes)
-        execution_context.add_operation(ValidationOperation::DoubleSha256(1));
-
-        if generated_id != self.data_contract().id() {
-            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                vec![
-                    BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
-                        generated_id.to_vec(),
-                        self.data_contract().id().to_vec(),
-                    ))
-                    .into(),
-                ],
-            ));
-        }
-
-        Ok(ConsensusValidationResult::default())
+        self.validate_advanced_structure_v1(execution_context)
     }
 }
 

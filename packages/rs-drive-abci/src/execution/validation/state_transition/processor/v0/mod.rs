@@ -105,7 +105,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     }
 
     // Only Data contract state transitions and Masternode vote do not have basic structure validation
-    if state_transition.has_basic_structure_validation() {
+    if state_transition.has_basic_structure_validation(platform_version) {
         // We validate basic structure validation after verifying the identity,
         // this is structure validation that does not require state and is already checked on check_tx
         let consensus_result = state_transition.validate_basic_structure(platform_version)?;
@@ -333,7 +333,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 
     /// True if the state transition has basic structure validation.
     /// Currently only data contract update does not
-    fn has_basic_structure_validation(&self) -> bool {
+    fn has_basic_structure_validation(&self, _platform_version: &PlatformVersion) -> bool {
         true
     }
 }
@@ -531,15 +531,65 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 st.validate_basic_structure(platform_version)
             }
             StateTransition::DataContractCreate(st) => {
-                st.validate_basic_structure(platform_version)
+                if platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .contract_create_state_transition
+                    .basic_structure
+                    .is_some()
+                {
+                    st.validate_basic_structure(platform_version)
+                } else {
+                    Ok(SimpleConsensusValidationResult::new())
+                }
             }
             StateTransition::DataContractUpdate(st) => {
-                st.validate_basic_structure(platform_version)
+                if platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .contract_update_state_transition
+                    .basic_structure
+                    .is_some()
+                {
+                    st.validate_basic_structure(platform_version)
+                } else {
+                    Ok(SimpleConsensusValidationResult::new())
+                }
             }
         }
     }
-    fn has_basic_structure_validation(&self) -> bool {
-        !matches!(self, StateTransition::MasternodeVote(_))
+    fn has_basic_structure_validation(&self, platform_version: &PlatformVersion) -> bool {
+        match self {
+            StateTransition::DataContractCreate(_) => {
+                // Added in protocol version 9 (version 2.0)
+                platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .contract_create_state_transition
+                    .basic_structure
+                    .is_some()
+            }
+            StateTransition::DataContractUpdate(_) => {
+                // Added in protocol version 9  (version 2.0)
+                platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .contract_update_state_transition
+                    .basic_structure
+                    .is_some()
+            }
+            StateTransition::Batch(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_) => true,
+            StateTransition::MasternodeVote(_) => false,
+        }
     }
 }
 
