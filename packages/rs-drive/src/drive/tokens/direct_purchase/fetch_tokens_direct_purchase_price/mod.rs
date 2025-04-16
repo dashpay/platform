@@ -35,12 +35,10 @@ impl Drive {
                 self.fetch_tokens_direct_purchase_price_v0(token_ids, transaction, platform_version)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
--                method: "fetch_token_statuses".to_string(),
-+                method: "fetch_tokens_direct_purchase_price".to_string(),
-                 known_versions: vec![0],
-                 received: version,
-             })),
+                method: "fetch_tokens_direct_purchase_price".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
         }
     }
 }
