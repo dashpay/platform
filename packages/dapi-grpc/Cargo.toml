@@ -46,6 +46,7 @@ futures-core = "0.3.30"
 tonic = { version = "0.13.0", features = [
   "codegen",
   "prost",
+  "tls-ring",
 ], default-features = false }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11.12", optional = true }
@@ -64,6 +65,7 @@ tonic = { version = "0.13.0", features = [
   "transport",
   "tls-native-roots",
   "tls-webpki-roots",
+  "tls-ring",
 ], default-features = false }
 
 [build-dependencies]
