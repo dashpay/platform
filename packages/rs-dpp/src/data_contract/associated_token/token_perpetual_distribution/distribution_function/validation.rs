@@ -428,7 +428,7 @@ impl DistributionFunction {
                     }
                 }
             }
-            // f(x) = (a * e^(m * (x - s + o) / n)) / d + c
+            // f(x) = (a * e^(m * (x - s + o) / n)) / d + b
             DistributionFunction::Exponential {
                 a,
                 d,
@@ -436,7 +436,7 @@ impl DistributionFunction {
                 n,
                 o,
                 start_moment: s,
-                c,
+                b,
                 min_value,
                 max_value,
             } => {
@@ -514,10 +514,10 @@ impl DistributionFunction {
                     ));
                 }
 
-                if *a > MAX_DISTRIBUTION_PARAM {
+                if *b > MAX_DISTRIBUTION_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
-                            "a".to_string(),
+                            "b".to_string(),
                             0,
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
@@ -572,7 +572,7 @@ impl DistributionFunction {
                     n: *n,
                     o: *o,
                     start_moment: Some(s.unwrap_or(start_moment)),
-                    c: *c,
+                    b: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
@@ -607,7 +607,7 @@ impl DistributionFunction {
                     start_token_amount
                 };
             }
-            // f(x) = (a * log(m * (x - s + o) / n)) / d + b
+            // f(x) = (a * ln(m * (x - s + o) / n)) / d + b
             DistributionFunction::Logarithmic {
                 a,
                 d,
@@ -629,7 +629,7 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
-                if *m == 0 {
+                if *m == 0 || *m > MAX_DISTRIBUTION_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "m".to_string(),
@@ -648,6 +648,18 @@ impl DistributionFunction {
                             MIN_LOG_A_PARAM,
                             MAX_LOG_A_PARAM,
                             Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *b > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "b".to_string(),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
                         )
                         .into(),
                     ));
@@ -779,6 +791,19 @@ impl DistributionFunction {
                         .into(),
                     ));
                 }
+
+                if *b > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "b".to_string(),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+
                 // Check for division by zero.
                 if *d == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -1622,7 +1647,7 @@ mod tests {
                 n: 2,
                 o: -3999,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(1000000),
             };
@@ -1647,7 +1672,7 @@ mod tests {
                 n: 0,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
@@ -1667,7 +1692,7 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
@@ -1690,7 +1715,7 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
@@ -1713,7 +1738,7 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: None, // Invalid: max_value must be set
             };
@@ -1736,7 +1761,7 @@ mod tests {
                 n: 2,
                 o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: `o` exceeds allowed range
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
@@ -1759,7 +1784,7 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(50), // Invalid: min > max
                 max_value: Some(30),
             };
@@ -1782,7 +1807,7 @@ mod tests {
                 n: 4,
                 o: 2,
                 start_moment: Some(START_MOMENT),
-                c: 8,
+                b: 8,
                 min_value: Some(2),
                 max_value: Some(50),
             };
@@ -1802,7 +1827,7 @@ mod tests {
                 n: 4,
                 o: 1,
                 start_moment: Some(START_MOMENT),
-                c: 8,
+                b: 8,
                 min_value: Some(2),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
             };
@@ -1822,7 +1847,7 @@ mod tests {
                 n: 1,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM),
             };
@@ -1845,7 +1870,7 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(1000), // Small `max_value`
             };
@@ -1868,7 +1893,7 @@ mod tests {
                 n: 2,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(10), // Function starts at `min_value`
                 max_value: Some(1000),
             };
@@ -1891,7 +1916,7 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: Some(1),
                 max_value: None, // Should fail
             };
@@ -1914,7 +1939,7 @@ mod tests {
                 n: 1,
                 o: i64::MAX / 2, // Large `o`
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM),
             };
@@ -1937,7 +1962,7 @@ mod tests {
                 n: 2,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(10),
                 max_value: Some(100),
             };
@@ -1960,7 +1985,7 @@ mod tests {
                 n: 10,
                 o: -3,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: Some(10),
                 max_value: Some(1000),
             };
@@ -1991,7 +2016,7 @@ mod tests {
                 n: 4,
                 o: 2,
                 start_moment: Some(START_MOMENT),
-                c: 8,
+                b: 8,
                 min_value: Some(5),
                 max_value: Some(100),
             };
@@ -2011,7 +2036,7 @@ mod tests {
                 n: 3,
                 o: 5, // Shift start
                 start_moment: Some(START_MOMENT),
-                c: 10,
+                b: 10,
                 min_value: Some(5),
                 max_value: Some(100),
             };
@@ -2087,6 +2112,29 @@ mod tests {
                     .first_error()
                     .is_some(),
                 "Expected division by zero error"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_invalid_zero_m() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 0, // Invalid: this would make it a constant
+                n: 1,
+                o: 1,
+                start_moment: Some(0),
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_zero_m")
+                    .first_error()
+                    .is_some(),
+                "Expected m == 0 error"
             );
         }
 
