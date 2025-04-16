@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use dapi_grpc::platform::{
     v0::{
         get_token_direct_purchase_prices_request::Version as RequestVersion,
@@ -46,10 +48,12 @@ impl FromProof<GetTokenDirectPurchasePricesRequest> for TokenDirectPurchasePrice
         }
         .into_iter()
         .map(<[u8; 32]>::try_from)
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<Result<BTreeSet<_>, _>>() // BTreeSet to make it unique
         .map_err(|e| Error::RequestError {
             error: format!("token id {} has invalid length", e.to_lower_hex_string()),
-        })?;
+        })?
+        .into_iter()
+        .collect::<Vec<_>>();
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, tokens): (_, Self) = Drive::verify_token_direct_selling_prices(
