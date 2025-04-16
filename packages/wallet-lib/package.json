@@ -46,7 +46,7 @@
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#be478c813ef28aa74389182964f1aa76cdaa777d",
+    "@dashevo/dashcore-lib": "~0.25.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@yarnpkg/pnpify": "^4.0.0-rc.42",

@@ -35,7 +35,7 @@
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-grpc": "workspace:*",
-    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#be478c813ef28aa74389182964f1aa76cdaa777d",
+    "@dashevo/dashcore-lib": "~0.25.0",
     "@dashevo/dashd-rpc": "^19.0.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
