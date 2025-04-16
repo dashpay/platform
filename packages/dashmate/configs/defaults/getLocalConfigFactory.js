@@ -39,6 +39,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
           listeners: {
             dapiAndDrive: {
               port: 2443,
+              http2: {
+                maxConcurrentStreams: 30,
+              },
             },
           },
           rateLimiter: {
