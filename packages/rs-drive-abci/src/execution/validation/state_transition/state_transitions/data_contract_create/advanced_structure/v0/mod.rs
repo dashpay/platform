@@ -1,15 +1,8 @@
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
-use dpp::consensus::basic::data_contract::{
-    InvalidDataContractIdError, InvalidDataContractVersionError,
-};
-use dpp::consensus::basic::BasicError;
+use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
-use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::ConsensusValidationResult;
