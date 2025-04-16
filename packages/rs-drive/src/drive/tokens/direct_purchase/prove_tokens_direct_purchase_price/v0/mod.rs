@@ -11,12 +11,10 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::token_direct_purchase_prices_query(token_ids);
-        let mut drive_operations = Vec::new(); // actually, we don't need it
-
         self.grove_get_proved_path_query(
             &path_query,
             transaction,
-            &mut drive_operations,
+            &mut Vec::new(),
             &platform_version.drive,
         )
     }

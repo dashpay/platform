@@ -65,22 +65,25 @@ async fn test_direct_prices_tokens_ok() {
     }
 }
 
-/// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
+/// Given two identical existing token IDs,
+/// when we fetch direct purchase prices,
+/// we receive only one in response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_direct_prices_duplicate_token() {
     super::common::setup_logs();
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_direct_prices_token_not_found").await;
 
-    let ids = [*TOKEN_ID_0, *TOKEN_ID_0];
+    let ids = [*TOKEN_ID_2, *TOKEN_ID_2];
 
     let result = TokenPricingSchedule::fetch_many(&sdk, &ids[..])
         .await
         .expect("query should succeed");
 
+    assert_eq!(result.len(), 1, "only one token should be present");
     assert_eq!(
         result
-            .get(&*TOKEN_ID_0)
+            .get(&*TOKEN_ID_2)
             .expect("result should contain token"),
         &None,
         "proof of non-existence expected"

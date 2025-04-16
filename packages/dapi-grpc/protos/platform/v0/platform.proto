@@ -1336,43 +1336,70 @@ message GetTokenStatusesResponse {
   oneof version { GetTokenStatusesResponseV0 v0 = 1; }
 }
 
+// Response to GetTokenDirectPurchasePricesRequest, containing information about
+// direct purchase prices defined for requested token IDs.
 message GetTokenDirectPurchasePricesResponse {
   message GetTokenDirectPurchasePricesResponseV0 {
+    // Contains the individual price tier for a specific quantity of tokens.
     message PriceForQuantity {
+      // Minimum quantity of tokens to purchase to get this price.
       uint64 quantity = 1;
+      // Price for the specified quantity of tokens.
       uint64 price = 2;
     }
 
+    // Contains list of price tiers for a specific token.
     message PricingSchedule {
       repeated PriceForQuantity price_for_quantity = 1;
     }
 
     message TokenDirectPurchasePriceEntry {
+      // 32-byte token identifier
       bytes token_id = 1;
 
       // Price of the token; optional
       oneof price {
+        // Fixed price for the token.
         uint64 fixed_price = 2;
+        // Tiered pricing for the token, where the price varies based on the
+        // quantity purchased.
         PricingSchedule variable_price = 3;
       }
     }
-
+    // For each requested token, contains list of token IDs and their
+    // corresponding direct purchase prices.
     message TokenDirectPurchasePrices {
       repeated TokenDirectPurchasePriceEntry token_direct_purchase_price = 1;
     }
 
     oneof result {
+      // Contains the list of token IDs and their corresponding direct
       TokenDirectPurchasePrices token_direct_purchase_prices = 1;
+      // Requested information in a form of cryptographic proof.
+      // In Rust, use `FromProof` trait to convert it to the actual data.
       Proof proof = 2;
     }
+    // Metadata about the blockchain state.
     ResponseMetadata metadata = 3;
   }
   oneof version { GetTokenDirectPurchasePricesResponseV0 v0 = 1; }
 }
 
+// Retrieve direct purchase prices defined for one or more tokens.
+//
+// Some tokens can have a direct purchase price defined using
+// `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
+// This request retrieves the direct purchase prices for those tokens and
+// returns [GetTokenDirectPurchasePricesResponse].
 message GetTokenDirectPurchasePricesRequest {
   message GetTokenDirectPurchasePricesRequestV0 {
+    // List of token IDs to get prices for.
+    //
+    // The list must not be empty.
+    // Token IDs must have 32 bytes and be unique.
+    // Results for non-unique token IDs are undefined.
     repeated bytes token_ids = 1;
+    // Whether to return proofs for the response, or just direct response.
     bool prove = 2;
   }
   oneof version { GetTokenDirectPurchasePricesRequestV0 v0 = 1; }

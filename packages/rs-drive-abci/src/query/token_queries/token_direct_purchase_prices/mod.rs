@@ -22,7 +22,7 @@ impl<C> Platform<C> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
-                    "could not decode token direct pruchase prices query".to_string(),
+                    "could not decode token direct purchase prices query".to_string(),
                 ),
             ));
         };
