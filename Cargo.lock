@@ -1285,8 +1285,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.39.3"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.3#cbe12c1ebff0e693f29e2b7ac18a8935475b4924"
+version = "0.39.4"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1308,13 +1308,13 @@ dependencies = [
 
 [[package]]
 name = "dashcore-private"
-version = "0.39.3"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.3#cbe12c1ebff0e693f29e2b7ac18a8935475b4924"
+version = "0.39.4"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.39.3"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.3#cbe12c1ebff0e693f29e2b7ac18a8935475b4924"
+version = "0.39.4"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1326,8 +1326,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.39.3"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.3#cbe12c1ebff0e693f29e2b7ac18a8935475b4924"
+version = "0.39.4"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1340,8 +1340,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore_hashes"
-version = "0.39.3"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.3#cbe12c1ebff0e693f29e2b7ac18a8935475b4924"
+version = "0.39.4"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
 dependencies = [
  "dashcore-private",
  "secp256k1",
@@ -2841,9 +2841,9 @@ dependencies = [
 
 [[package]]
 name = "jsonrpc"
-version = "0.14.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8128f36b47411cd3f044be8c1f5cc0c9e24d1d1bfdc45f0a57897b32513053f2"
+checksum = "3662a38d341d77efecb73caf01420cfa5aa63c0253fd7bc05289ef9f6616e1bf"
 dependencies = [
  "base64 0.13.1",
  "serde",
@@ -2976,9 +2976,9 @@ checksum = "9374ef4228402d4b7e403e5838cb880d9ee663314b0a900d5a6aabf0c213552e"
 
 [[package]]
 name = "log"
-version = "0.4.22"
+version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "lru"
