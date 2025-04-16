@@ -3,10 +3,10 @@ use dpp::{prelude::Identifier, tokens::token_pricing_schedule::TokenPricingSched
 
 use crate::fetch::{
     config::Config,
-    generated_data::{TOKEN_ID_0, TOKEN_ID_1},
+    generated_data::{TOKEN_ID_0, TOKEN_ID_1, TOKEN_ID_2},
 };
 
-/// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
+/// Given some dummy token ID, when I fetch token prices, I get proof of non-existence.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_direct_prices_token_not_found() {
     super::common::setup_logs();
@@ -28,14 +28,16 @@ async fn test_direct_prices_token_not_found() {
     assert!(first.1.is_none(), "proof of non-existence expected");
 }
 
-/// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
+/// Given some existing token IDs, when I fetch token prices, I get correct results.
+///
+/// See [Platform::create_data_for_token_direct_prices](drive_abci::platform_types::platform::Platform::create_data_for_token_direct_prices) for token definitions.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_direct_prices_tokens_found_no_prices() {
+async fn test_direct_prices_tokens_ok() {
     super::common::setup_logs();
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_direct_prices_token_not_found").await;
 
-    let ids = [*TOKEN_ID_0, *TOKEN_ID_1];
+    let ids = [*TOKEN_ID_0, *TOKEN_ID_1, *TOKEN_ID_2];
 
     let result = TokenPricingSchedule::fetch_many(&sdk, &ids[..])
         .await
@@ -46,9 +48,20 @@ async fn test_direct_prices_tokens_found_no_prices() {
         ids.len(),
         "each queried token should be present"
     );
-    for id in &ids {
-        let item = result.get(id).expect("result should contain token");
-        assert!(item.is_none(), "proof of non-existence expected");
+
+    assert!(matches!(result.get(&*TOKEN_ID_0), Some(None)));
+    assert!(matches!(
+        result.get(&*TOKEN_ID_1),
+        Some(Some(TokenPricingSchedule::SinglePrice(25)))
+    ));
+
+    let Some(Some(TokenPricingSchedule::SetPrices(schedule))) = result.get(&*TOKEN_ID_2) else {
+        panic!("expected token pricing schedule");
+    };
+
+    assert_eq!(schedule.len(), 10);
+    for (amount, price) in schedule {
+        assert_eq!(*price, 1000 - amount);
     }
 }
 

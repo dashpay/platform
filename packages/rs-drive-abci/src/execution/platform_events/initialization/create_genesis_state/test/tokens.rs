@@ -29,7 +29,6 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 const IDENTITY_ID_1: Identifier = Identifier::new([1; 32]);
@@ -125,18 +124,12 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let pricing = TokenPricingSchedule::SetPrices(BTreeMap::from([
-            (0, 1000),
-            (100, 900),
-            (200, 800),
-            (300, 700),
-            (400, 600),
-            (500, 500),
-            (600, 400),
-            (700, 300),
-            (800, 200),
-            (900, 100),
-        ]));
+        let pricing = TokenPricingSchedule::SetPrices(
+            (0..=900)
+                .step_by(100)
+                .map(|amount| (amount, 1000 - amount))
+                .collect(),
+        );
 
         self.drive.token_set_direct_purchase_price(
             TOKEN_ID_2.to_buffer(),
