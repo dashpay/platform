@@ -49,8 +49,8 @@ module.exports = {
     ],
   },
   local: {
-    dapiAddresses: ['127.0.0.1:2443:self-signed'],
-    network: 'regtest',
+    seeds: ['127.0.0.1:2443:self-signed'],
+    network: 'local',
     llmqParamsOverride: {
       106: {
         size: 1,
