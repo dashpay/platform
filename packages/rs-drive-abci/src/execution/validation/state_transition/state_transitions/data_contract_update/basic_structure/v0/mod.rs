@@ -28,13 +28,7 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
             let validation_result = DataContract::validate_groups(groups, platform_version)?;
 
             if !validation_result.is_valid() {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    validation_result
-                        .errors
-                        .first()
-                        .cloned()
-                        .expect("error should exist"),
-                ));
+                return Ok(validation_result);
             }
         }
 
@@ -61,13 +55,7 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 .conventions()
                 .validate_localizations(platform_version)?;
             if !validation_result.is_valid() {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    validation_result
-                        .errors
-                        .first()
-                        .cloned()
-                        .expect("error should exist"),
-                ));
+                return Ok(validation_result);
             }
 
             let validation_result = token_configuration.validate_token_config_groups_exist(
@@ -75,13 +63,7 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 platform_version,
             )?;
             if !validation_result.is_valid() {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    validation_result
-                        .errors
-                        .first()
-                        .cloned()
-                        .expect("error should exist"),
-                ));
+                return Ok(validation_result);
             }
         }
 
