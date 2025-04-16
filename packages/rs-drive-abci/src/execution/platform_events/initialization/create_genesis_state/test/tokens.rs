@@ -1,8 +1,12 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
@@ -30,10 +34,6 @@ use drive::grovedb::TransactionArg;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use std::sync::LazyLock;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
-use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
-use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
 
 const IDENTITY_ID_1: Identifier = Identifier::new([1; 32]);
 const IDENTITY_ID_2: Identifier = Identifier::new([2; 32]);
@@ -271,14 +271,17 @@ impl<C> Platform<C> {
             description: Some("Some token description".to_string()),
         });
 
-        token_configuration.conventions_mut().localizations_mut().insert(
-            "en".to_string(),
-            TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
-                should_capitalize: false,
-                singular_form: "cat".to_string(),
-                plural_form: "cats".to_string(),
-            }),
-        );
+        token_configuration
+            .conventions_mut()
+            .localizations_mut()
+            .insert(
+                "en".to_string(),
+                TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                    should_capitalize: false,
+                    singular_form: "cat".to_string(),
+                    plural_form: "cats".to_string(),
+                }),
+            );
 
         let tokens = [
             (0, token_configuration.clone()),

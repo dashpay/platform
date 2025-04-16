@@ -11,16 +11,16 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-mod v1;
+mod v0;
 
 impl Drive {
     /// Updates the documents in the Keyword Search contract for the contract
-    /// update keywords and returns the fee result
-    pub fn update_contract_keywords(
+    /// update description and returns the fee result
+    pub fn update_contract_description(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &[String],
+        description: &String,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -30,23 +30,20 @@ impl Drive {
             .drive
             .methods
             .contract
-            .insert
-            .insert_contract
+            .update
+            .update_description
         {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract keywords are not supported in this version",
-            ))),
-            1 => self.update_contract_keywords_v1(
+            0 => self.update_contract_description_v0(
                 contract_id,
                 owner_id,
-                keywords,
+                description,
                 block_info,
                 apply,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "update_keywords".to_string(),
+                method: "update_contract_description".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             })),
@@ -54,12 +51,12 @@ impl Drive {
     }
 
     /// Creates and applies the LowLeveLDriveOperations needed to update
-    /// the documents in the Keyword Search contract for the contract keywords
-    pub fn update_contract_keywords_add_to_operations(
+    /// the documents in the Keyword Search contract for the contract description
+    pub fn update_contract_description_add_to_operations(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &[String],
+        description: &String,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -71,15 +68,12 @@ impl Drive {
             .methods
             .contract
             .update
-            .update_contract
+            .update_description
         {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract keywords are not supported in this version",
-            ))),
-            1 => self.update_contract_keywords_add_to_operations_v1(
+            0 => self.update_contract_description_add_to_operations_v0(
                 contract_id,
                 owner_id,
-                keywords,
+                description,
                 block_info,
                 apply,
                 transaction,
@@ -87,20 +81,20 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "update_keywords_add_to_operations".to_string(),
-                known_versions: vec![0, 1],
+                method: "update_contract_description_add_to_operations".to_string(),
+                known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
     /// Creates and returns the LowLeveLDriveOperations needed to update
-    /// the documents in the Keyword Search contract for the contract keywords
-    pub fn update_contract_keywords_operations(
+    /// the documents in the Keyword Search contract for the contract description
+    pub fn update_contract_description_operations(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
-        keywords: &[String],
+        description: &String,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -113,23 +107,20 @@ impl Drive {
             .methods
             .contract
             .update
-            .update_contract
+            .update_description
         {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract keywords are not supported in this version",
-            ))),
-            1 => self.update_contract_keywords_operations_v1(
+            0 => self.update_contract_description_operations_v0(
                 contract_id,
                 owner_id,
-                keywords,
+                description,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "update_keywords_operations".to_string(),
-                known_versions: vec![0, 1],
+                method: "update_contract_description_operations".to_string(),
+                known_versions: vec![0],
                 received: version,
             })),
         }

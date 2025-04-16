@@ -5,6 +5,7 @@ use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contracts::keyword_search_contract;
 use dpp::document::{Document, DocumentV0};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -16,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 impl Drive {
     /// Creates the documents in the Keyword Search contract for the contract keywords and
     /// returns the fee result
-    pub(super) fn add_new_contract_keywords_v1(
+    pub(super) fn add_new_contract_keywords_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -27,7 +28,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.add_new_contract_keywords_add_to_operations_v1(
+        self.add_new_contract_keywords_add_to_operations_v0(
             contract_id,
             owner_id,
             keywords,
@@ -50,7 +51,7 @@ impl Drive {
 
     /// Creates and applies the LowLeveLDriveOperations needed to create
     /// the documents in the Keyword Search contract for the contract keywords
-    pub(super) fn add_new_contract_keywords_add_to_operations_v1(
+    pub(super) fn add_new_contract_keywords_add_to_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -88,7 +89,7 @@ impl Drive {
 
     /// Creates and returns the LowLeveLDriveOperations needed to create
     /// the documents in the Keyword Search contract for the contract keywords
-    pub(crate) fn add_new_contract_keywords_operations_v1(
+    pub(crate) fn add_new_contract_keywords_operations_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
@@ -100,17 +101,16 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut operations: Vec<LowLevelDriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let contract = self.cache.system_data_contracts.load_keyword_search();
         let document_type = contract.document_type_for_name("contractKeywords")?;
 
         for keyword in keywords.iter() {
-            let document = self.build_contract_keyword_document_owned_v1(
+            let document = self.build_contract_keyword_document_owned_v0(
                 contract_id,
                 owner_id,
                 keyword, // since keywords are unique in the contract, we can use it as entropy
-                block_info,
             )?;
 
             let ops = self.add_document_for_contract_operations(
@@ -124,31 +124,34 @@ impl Drive {
                 },
                 true,
                 block_info,
-                &mut None,
+                &mut Some(&mut drive_operations),
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             )?;
 
-            operations.extend(ops);
+            drive_operations.extend(ops);
         }
 
-        Ok(operations)
+        Ok(drive_operations)
     }
 
     /// Creates and returns a `contractKeyword` document for the Keyword Search contract
-    pub(super) fn build_contract_keyword_document_owned_v1(
+    pub(super) fn build_contract_keyword_document_owned_v0(
         &self,
         contract_id: Identifier,
         owner_id: Identifier,
         keyword: &String,
-        block_info: &BlockInfo,
     ) -> Result<Document, Error> {
+        let mut entropy = Vec::with_capacity(contract_id.len() + keyword.len());
+        entropy.extend_from_slice(contract_id.as_slice());
+        entropy.extend_from_slice(keyword.as_bytes());
+        
         let document_id = Document::generate_document_id_v0(
-            &contract_id,
+            &keyword_search_contract::ID_BYTES.into(),
             &owner_id,
             "contractKeywords",
-            keyword.as_bytes(),
+            entropy.as_slice(),
         );
 
         let properties = BTreeMap::from([
@@ -161,10 +164,10 @@ impl Drive {
             owner_id,
             properties,
             revision: None,
-            created_at: Some(block_info.time_ms),
+            created_at: None,
             updated_at: None,
             transferred_at: None,
-            created_at_block_height: Some(block_info.height),
+            created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,
             created_at_core_block_height: None,

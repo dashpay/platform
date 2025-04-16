@@ -2,7 +2,7 @@
   "contractKeywords": {
     "type": "object",
     "documentsMutable": false,
-    "canBeDeleted": true,
+    "canBeDeleted": false,
     "creationRestrictionMode": 2,
     "indices": [
       {
@@ -48,7 +48,7 @@
   "shortDescription": {
     "type": "object",
     "documentsMutable": true,
-    "canBeDeleted": true,
+    "canBeDeleted": false,
     "creationRestrictionMode": 2,
     "indices": [
       {
@@ -87,7 +87,7 @@
   "fullDescription": {
     "type": "object",
     "documentsMutable": true,
-    "canBeDeleted": true,
+    "canBeDeleted": false,
     "creationRestrictionMode": 2,
     "indices": [
       {

@@ -30,11 +30,15 @@ pub struct DriveContractApplyMethodVersions {
 pub struct DriveContractInsertMethodVersions {
     pub add_contract_to_storage: FeatureVersion,
     pub insert_contract: FeatureVersion,
+    pub add_description: FeatureVersion,
+    pub add_keywords: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractUpdateMethodVersions {
     pub update_contract: FeatureVersion,
+    pub update_description: FeatureVersion,
+    pub update_keywords: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

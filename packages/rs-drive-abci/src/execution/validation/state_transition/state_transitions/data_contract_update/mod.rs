@@ -1298,7 +1298,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![tx_bytes],
+                    &[tx_bytes],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1488,7 +1488,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![tx_bytes],
+                    &[tx_bytes],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1973,7 +1973,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 *fetched.contract.keywords(),
-                vec!["newA", "newB", "newC"]
+                ["newA", "newB", "newC"]
                     .iter()
                     .map(|&s| s.to_string())
                     .collect::<Vec<String>>()
@@ -2301,8 +2301,8 @@ mod tests {
                 &identity,
                 &signer,
                 &key,
-                &"old1",
-                &platform_version,
+                "old1",
+                platform_version,
             );
 
             // verify initial docs
@@ -2316,15 +2316,15 @@ mod tests {
                 &identity,
                 &signer,
                 &key,
-                &"newA",
-                &platform_version,
+                "newA",
+                platform_version,
             )
             .expect("update should succeed");
 
             // fetch contract – description updated?
             let fetched = platform
                 .drive
-                .fetch_contract(cid.into(), None, None, None, &platform_version)
+                .fetch_contract(cid.into(), None, None, None, platform_version)
                 .value
                 .unwrap()
                 .unwrap();
@@ -2334,7 +2334,7 @@ mod tests {
             );
 
             // search‑contract docs updated?
-            let docs_after = description_docs_for_contract(&platform, cid, &platform_version);
+            let docs_after = description_docs_for_contract(&platform, cid, platform_version);
             assert_eq!(docs_after, "newA".to_string());
             // old docs gone
             assert!(!docs_after.contains(&"old1".to_string()));

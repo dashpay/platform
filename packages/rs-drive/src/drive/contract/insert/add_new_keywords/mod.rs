@@ -11,7 +11,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-mod v1;
+mod v0;
 
 impl Drive {
     /// Creates the documents in the Keyword Search contract for the contract keywords and
@@ -26,17 +26,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version
-            .drive
-            .methods
-            .contract
-            .insert
-            .insert_contract
-        {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract keywords are not supported in this version",
-            ))),
-            1 => self.add_new_contract_keywords_v1(
+        match platform_version.drive.methods.contract.insert.add_keywords {
+            0 => self.add_new_contract_keywords_v0(
                 contract_id,
                 owner_id,
                 keywords,
@@ -47,7 +38,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keywords".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -66,17 +57,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version
-            .drive
-            .methods
-            .contract
-            .insert
-            .insert_contract
-        {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract keywords are not supported in this version",
-            ))),
-            1 => self.add_new_contract_keywords_add_to_operations_v1(
+        match platform_version.drive.methods.contract.insert.add_keywords {
+            0 => self.add_new_contract_keywords_add_to_operations_v0(
                 contract_id,
                 owner_id,
                 keywords,
@@ -88,7 +70,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keywords_add_to_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -108,17 +90,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version
-            .drive
-            .methods
-            .contract
-            .insert
-            .insert_contract
-        {
-            0 => Err(Error::Drive(DriveError::NotSupported(
-                "Contract keywords are not supported in this version",
-            ))),
-            1 => self.add_new_contract_keywords_operations_v1(
+        match platform_version.drive.methods.contract.insert.add_keywords {
+            0 => self.add_new_contract_keywords_operations_v0(
                 contract_id,
                 owner_id,
                 keywords,
@@ -129,7 +102,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keywords_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
