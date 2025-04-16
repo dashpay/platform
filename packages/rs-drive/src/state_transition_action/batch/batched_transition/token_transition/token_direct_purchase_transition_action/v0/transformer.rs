@@ -119,7 +119,6 @@ impl TokenDirectPurchaseTransitionActionV0 {
         };
 
         // We need to make sure the amount we want to pay is the amount we are expected to pay
-
         let (pricing_schedule, fetch_token_direct_purchase_fee) = drive
             .fetch_token_direct_purchase_price_with_costs(
                 base.token_id().to_buffer(),
