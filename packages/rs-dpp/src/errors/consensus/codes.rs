@@ -307,6 +307,9 @@ impl ErrorWithCode for StateError {
             Self::InvalidTokenClaimWrongClaimant(_) => 40717,
             Self::TokenTransferRecipientIdentityNotExistError(_) => 40718,
             Self::PreProgrammedDistributionTimestampInPastError(_) => 40719,
+            Self::TokenDirectPurchaseUserPriceTooLow(_) => 40720,
+            Self::TokenAmountUnderMinimumSaleAmount(_) => 40721,
+            Self::TokenNotForDirectSale(_) => 40722,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

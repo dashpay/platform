@@ -162,9 +162,9 @@ impl ExecutionEvent<'_> {
                     )))
                 }
             }
-            StateTransitionAction::BatchAction(document_batch_action) => {
+            StateTransitionAction::BatchAction(batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
-                let removed_balance = document_batch_action.all_used_balances()?;
+                let removed_balance = batch_action.all_used_balances()?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {

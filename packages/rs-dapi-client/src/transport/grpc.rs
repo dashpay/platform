@@ -588,3 +588,12 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_group_action_signers
 );
+
+// rpc getTokenDirectPurchasePrices(GetTokenDirectPurchasePricesRequest) returns (GetTokenDirectPurchasePricesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenDirectPurchasePricesRequest,
+    platform_proto::GetTokenDirectPurchasePricesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_direct_purchase_prices
+);

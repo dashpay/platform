@@ -102,6 +102,9 @@ CF_EXTERN_C_BEGIN
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent;
 @class GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity;
+@class GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule;
 @class GetGroupInfoRequest_GetGroupInfoRequestV0;
 @class GetGroupInfoResponse_GetGroupInfoResponseV0;
 @class GetGroupInfoResponse_GetGroupInfoResponseV0_GroupInfo;
@@ -161,16 +164,6 @@ CF_EXTERN_C_BEGIN
 @class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
 @class GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0;
 @class GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0;
-@class GetProofsRequest_GetProofsRequestV0;
-@class GetProofsRequest_GetProofsRequestV0_ContractRequest;
-@class GetProofsRequest_GetProofsRequestV0_DocumentRequest;
-@class GetProofsRequest_GetProofsRequestV0_IdentityRequest;
-@class GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest;
-@class GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest;
-@class GetProofsRequest_GetProofsRequestV0_TokenStatusRequest;
-@class GetProofsRequest_GetProofsRequestV0_VoteStatusRequest;
-@class GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest;
-@class GetProofsResponse_GetProofsResponseV0;
 @class GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0;
 @class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0;
 @class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry;
@@ -191,6 +184,12 @@ CF_EXTERN_C_BEGIN
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive;
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash;
 @class GetStatusResponse_GetStatusResponseV0_Version_Software;
+@class GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry;
+@class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices;
 @class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0;
 @class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo;
 @class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0;
@@ -271,58 +270,6 @@ GPBEnumDescriptor *SecurityLevelMap_KeyKindRequestType_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
-
-#pragma mark - Enum GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus) {
-  /**
-   * Value used if any message's field encounters a value that is not defined
-   * by this enum. The message will also have C functions to get/set the rawValue
-   * of the field.
-   **/
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_NotContested = 0,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_MaybeContested = 1,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_Contested = 2,
-};
-
-GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_EnumDescriptor(void);
-
-/**
- * Checks to see if the given value is defined by the enum or was not known at
- * the time this source was generated.
- **/
-BOOL GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_IsValidValue(int32_t value);
-
-#pragma mark - Enum GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type) {
-  /**
-   * Value used if any message's field encounters a value that is not defined
-   * by this enum. The message will also have C functions to get/set the rawValue
-   * of the field.
-   **/
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
-  /** Request for the full identity */
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_FullIdentity = 0,
-
-  /** Request for the identity's balance */
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Balance = 1,
-
-  /** Request for the identity's keys */
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Keys = 2,
-
-  /** Request for the identity's revision */
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Revision = 3,
-};
-
-GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_EnumDescriptor(void);
-
-/**
- * Checks to see if the given value is defined by the enum or was not known at
- * the time this source was generated.
- **/
-BOOL GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -526,7 +473,8 @@ typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
 };
 
 /**
- * ResponseMetadata provides metadata about the blockchain state at the time of response
+ * ResponseMetadata provides metadata about the blockchain state at the time of
+ * response
  **/
 GPB_FINAL @interface ResponseMetadata : GPBMessage
 
@@ -1838,314 +1786,6 @@ GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponse
 
 @end
 
-#pragma mark - GetProofsRequest
-
-typedef GPB_ENUM(GetProofsRequest_FieldNumber) {
-  GetProofsRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetProofsRequest_Version_OneOfCase) {
-  GetProofsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetProofsRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetProofsRequest : GPBMessage
-
-@property(nonatomic, readonly) GetProofsRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetProofsRequest_GetProofsRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetProofsRequest_ClearVersionOneOfCase(GetProofsRequest *message);
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_IdentitiesArray = 1,
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_ContractsArray = 2,
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_DocumentsArray = 3,
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_VotesArray = 4,
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_IdentityTokenBalancesArray = 5,
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_IdentityTokenInfosArray = 6,
-  GetProofsRequest_GetProofsRequestV0_FieldNumber_TokenStatusesArray = 7,
-};
-
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0 : GPBMessage
-
-/** List of identity requests */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_IdentityRequest*> *identitiesArray;
-/** The number of items in @c identitiesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identitiesArray_Count;
-
-/** List of contract requests */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_ContractRequest*> *contractsArray;
-/** The number of items in @c contractsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger contractsArray_Count;
-
-/** List of document requests */
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_DocumentRequest*> *documentsArray;
-/** The number of items in @c documentsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger documentsArray_Count;
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_VoteStatusRequest*> *votesArray;
-/** The number of items in @c votesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger votesArray_Count;
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest*> *identityTokenBalancesArray;
-/** The number of items in @c identityTokenBalancesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identityTokenBalancesArray_Count;
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest*> *identityTokenInfosArray;
-/** The number of items in @c identityTokenInfosArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identityTokenInfosArray_Count;
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_TokenStatusRequest*> *tokenStatusesArray;
-/** The number of items in @c tokenStatusesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger tokenStatusesArray_Count;
-
-@end
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_DocumentRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_ContractId = 1,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentType = 2,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentTypeKeepsHistory = 3,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentId = 4,
-  GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentContestedStatus = 5,
-};
-
-/**
- * DocumentRequest specifies a request for a document proof
- **/
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_DocumentRequest : GPBMessage
-
-/** ID of the contract the document belongs to */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
-
-/** Type of document being requested */
-@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
-
-/** Indicates if the document type keeps a history of changes */
-@property(nonatomic, readwrite) BOOL documentTypeKeepsHistory;
-
-/** ID of the specific document being requested */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
-
-@property(nonatomic, readwrite) GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus documentContestedStatus;
-
-@end
-
-/**
- * Fetches the raw value of a @c GetProofsRequest_GetProofsRequestV0_DocumentRequest's @c documentContestedStatus property, even
- * if the value was not defined by the enum at the time the code was generated.
- **/
-int32_t GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_RawValue(GetProofsRequest_GetProofsRequestV0_DocumentRequest *message);
-/**
- * Sets the raw value of an @c GetProofsRequest_GetProofsRequestV0_DocumentRequest's @c documentContestedStatus property, allowing
- * it to be set to a value that was not defined by the enum at the time the code
- * was generated.
- **/
-void SetGetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_RawValue(GetProofsRequest_GetProofsRequestV0_DocumentRequest *message, int32_t value);
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_IdentityRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber_IdentityId = 1,
-  GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber_RequestType = 2,
-};
-
-/**
- * IdentityRequest specifies a request for an identity proof
- **/
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_IdentityRequest : GPBMessage
-
-/** ID of the identity for which the proof is requested */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
-
-/** Type of identity request */
-@property(nonatomic, readwrite) GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type requestType;
-
-@end
-
-/**
- * Fetches the raw value of a @c GetProofsRequest_GetProofsRequestV0_IdentityRequest's @c requestType property, even
- * if the value was not defined by the enum at the time the code was generated.
- **/
-int32_t GetProofsRequest_GetProofsRequestV0_IdentityRequest_RequestType_RawValue(GetProofsRequest_GetProofsRequestV0_IdentityRequest *message);
-/**
- * Sets the raw value of an @c GetProofsRequest_GetProofsRequestV0_IdentityRequest's @c requestType property, allowing
- * it to be set to a value that was not defined by the enum at the time the code
- * was generated.
- **/
-void SetGetProofsRequest_GetProofsRequestV0_IdentityRequest_RequestType_RawValue(GetProofsRequest_GetProofsRequestV0_IdentityRequest *message, int32_t value);
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_ContractRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_ContractRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_ContractRequest_FieldNumber_ContractId = 1,
-};
-
-/**
- * ContractRequest specifies a request for a data contract proof.
- **/
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_ContractRequest : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
-
-@end
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_VoteStatusRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_FieldNumber_ContestedResourceVoteStatusRequest = 1,
-};
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase) {
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase_ContestedResourceVoteStatusRequest = 1,
-};
-
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_VoteStatusRequest : GPBMessage
-
-@property(nonatomic, readonly) GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase requestTypeOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest *contestedResourceVoteStatusRequest;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'requestType'.
- **/
-void GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ClearRequestTypeOneOfCase(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest *message);
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_ContractId = 1,
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_DocumentTypeName = 2,
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_IndexName = 3,
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_IndexValuesArray = 4,
-  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_VoterIdentifier = 5,
-};
-
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSString *indexName;
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *indexValuesArray;
-/** The number of items in @c indexValuesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger indexValuesArray_Count;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *voterIdentifier;
-
-@end
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest_FieldNumber_TokenId = 1,
-  GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest_FieldNumber_IdentityId = 2,
-};
-
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_IdentityTokenBalanceRequest : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
-
-@end
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest_FieldNumber_TokenId = 1,
-  GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest_FieldNumber_IdentityId = 2,
-};
-
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_IdentityTokenInfoRequest : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
-
-@end
-
-#pragma mark - GetProofsRequest_GetProofsRequestV0_TokenStatusRequest
-
-typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_TokenStatusRequest_FieldNumber) {
-  GetProofsRequest_GetProofsRequestV0_TokenStatusRequest_FieldNumber_TokenId = 1,
-};
-
-GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_TokenStatusRequest : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
-
-@end
-
-#pragma mark - GetProofsResponse
-
-typedef GPB_ENUM(GetProofsResponse_FieldNumber) {
-  GetProofsResponse_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetProofsResponse_Version_OneOfCase) {
-  GetProofsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetProofsResponse_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetProofsResponse : GPBMessage
-
-@property(nonatomic, readonly) GetProofsResponse_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetProofsResponse_GetProofsResponseV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetProofsResponse_ClearVersionOneOfCase(GetProofsResponse *message);
-
-#pragma mark - GetProofsResponse_GetProofsResponseV0
-
-typedef GPB_ENUM(GetProofsResponse_GetProofsResponseV0_FieldNumber) {
-  GetProofsResponse_GetProofsResponseV0_FieldNumber_Proof = 1,
-  GetProofsResponse_GetProofsResponseV0_FieldNumber_Metadata = 2,
-};
-
-typedef GPB_ENUM(GetProofsResponse_GetProofsResponseV0_Result_OneOfCase) {
-  GetProofsResponse_GetProofsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetProofsResponse_GetProofsResponseV0_Result_OneOfCase_Proof = 1,
-};
-
-GPB_FINAL @interface GetProofsResponse_GetProofsResponseV0 : GPBMessage
-
-@property(nonatomic, readonly) GetProofsResponse_GetProofsResponseV0_Result_OneOfCase resultOneOfCase;
-
-/** Cryptographic proof for the requested data */
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-
-/** Metadata about the blockchain state */
-@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
-/** Test to see if @c metadata has been set. */
-@property(nonatomic, readwrite) BOOL hasMetadata;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'result'.
- **/
-void GetProofsResponse_GetProofsResponseV0_ClearResultOneOfCase(GetProofsResponse_GetProofsResponseV0 *message);
-
 #pragma mark - GetDataContractRequest
 
 typedef GPB_ENUM(GetDataContractRequest_FieldNumber) {
@@ -2782,10 +2422,10 @@ GPB_FINAL @interface GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHa
 
 @property(nonatomic, readonly) GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
-/** The actual identity data corresponding to the requested public key hash */
+/** The actual identity data corresponding to the */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
-/** Cryptographic proof for the identity data, if requested */
+/** requested public key hash */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -2982,7 +2622,7 @@ GPB_FINAL @interface GetConsensusParamsResponse_ConsensusParamsBlock : GPBMessag
 /** The maximum gas allowed in a block */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxGas;
 
-/** The minimum time increment between consecutive blocks, in milliseconds */
+/** The minimum time increment between consecutive */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *timeIotaMs;
 
 @end
@@ -3111,7 +2751,7 @@ GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUp
 /** The actual protocol version information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions *versions;
 
-/** Cryptographic proof of the protocol version information, if requested */
+/** Cryptographic proof of the protocol version */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -3198,10 +2838,10 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUp
 
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 : GPBMessage
 
-/** The starting masternode provider transaction hash to filter the votes by */
+/** The starting masternode provider transaction */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startProTxHash;
 
-/** The number of vote entries to retrieve */
+/** hash to filter the votes by */
 @property(nonatomic, readwrite) uint32_t count;
 
 /** Flag to request a proof as the response */
@@ -3254,7 +2894,7 @@ GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVers
 /** The actual version signal information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
 
-/** Cryptographic proof of the version signal information, if requested */
+/** Cryptographic proof of the version signal information, */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -3299,10 +2939,10 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionU
  **/
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal : GPBMessage
 
-/** The masternode provider transaction hash associated with the vote */
+/** The masternode provider transaction hash */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
 
-/** The protocol version number that is being voted on */
+/** associated with the vote */
 @property(nonatomic, readwrite) uint32_t version;
 
 @end
@@ -5855,6 +5495,223 @@ GPB_FINAL @interface GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenSt
 
 @end
 
+#pragma mark - GetTokenDirectPurchasePricesResponse
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_Version_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Response to GetTokenDirectPurchasePricesRequest, containing information about
+ * direct purchase prices defined for requested token IDs.
+ **/
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenDirectPurchasePricesResponse_ClearVersionOneOfCase(GetTokenDirectPurchasePricesResponse *message);
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber_TokenDirectPurchasePrices = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber_Proof = 2,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase_TokenDirectPurchasePrices = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Contains the list of token IDs and their corresponding direct */
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices *tokenDirectPurchasePrices;
+
+/**
+ * Requested information in a form of cryptographic proof.
+ * In Rust, use `FromProof` trait to convert it to the actual data.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state. */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_ClearResultOneOfCase(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0 *message);
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber_Quantity = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber_Price = 2,
+};
+
+/**
+ * Contains the individual price tier for a specific quantity of tokens.
+ **/
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity : GPBMessage
+
+/** Minimum quantity of tokens to purchase to get this price. */
+@property(nonatomic, readwrite) uint64_t quantity;
+
+/** Price for the specified quantity of tokens. */
+@property(nonatomic, readwrite) uint64_t price;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule_FieldNumber_PriceForQuantityArray = 1,
+};
+
+/**
+ * Contains list of price tiers for a specific token.
+ **/
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity*> *priceForQuantityArray;
+/** The number of items in @c priceForQuantityArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger priceForQuantityArray_Count;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_TokenId = 1,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_FixedPrice = 2,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_FieldNumber_VariablePrice = 3,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase_FixedPrice = 2,
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase_VariablePrice = 3,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry : GPBMessage
+
+/** 32-byte token identifier */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+
+/** Price of the token; optional */
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase priceOneOfCase;
+
+/** Fixed price for the token. */
+@property(nonatomic, readwrite) uint64_t fixedPrice;
+
+/**
+ * Tiered pricing for the token, where the price varies based on the
+ * quantity purchased.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule *variablePrice;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'price'.
+ **/
+void GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_ClearPriceOneOfCase(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry *message);
+
+#pragma mark - GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices_FieldNumber) {
+  GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices_FieldNumber_TokenDirectPurchasePriceArray = 1,
+};
+
+/**
+ * For each requested token, contains list of token IDs and their
+ * corresponding direct purchase prices.
+ **/
+GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry*> *tokenDirectPurchasePriceArray;
+/** The number of items in @c tokenDirectPurchasePriceArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenDirectPurchasePriceArray_Count;
+
+@end
+
+#pragma mark - GetTokenDirectPurchasePricesRequest
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Retrieve direct purchase prices defined for one or more tokens.
+ *
+ * Some tokens can have a direct purchase price defined using
+ * `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
+ * This request retrieves the direct purchase prices for those tokens and
+ * returns [GetTokenDirectPurchasePricesResponse].
+ **/
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenDirectPurchasePricesRequest_ClearVersionOneOfCase(GetTokenDirectPurchasePricesRequest *message);
+
+#pragma mark - GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_TokenIdsArray = 1,
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
+
+/**
+ * List of token IDs to get prices for.
+ *
+ * The list must not be empty.
+ * Token IDs must have 32 bytes and be unique.
+ * Results for non-unique token IDs are undefined.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
+/** The number of items in @c tokenIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
+
+/** Whether to return proofs for the response, or just direct response. */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
 #pragma mark - GetTokenPreProgrammedDistributionsRequest
 
 typedef GPB_ENUM(GetTokenPreProgrammedDistributionsRequest_FieldNumber) {
@@ -6815,6 +6672,72 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConf
 
 @end
 
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber_FixedPrice = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber_VariablePrice = 2,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_FieldNumber_PublicNote = 3,
+};
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase_FixedPrice = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase_VariablePrice = 2,
+};
+
+/**
+ * UpdatePrice event
+ **/
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent : GPBMessage
+
+@property(nonatomic, readonly) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_Price_OneOfCase priceOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t fixedPrice;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule *variablePrice;
+
+/** Public note */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *publicNote;
+/** Test to see if @c publicNote has been set. */
+@property(nonatomic, readwrite) BOOL hasPublicNote;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'price'.
+ **/
+void GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_ClearPriceOneOfCase(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *message);
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity_FieldNumber_Quantity = 1,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity_FieldNumber_Price = 2,
+};
+
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t quantity;
+
+@property(nonatomic, readwrite) uint64_t price;
+
+@end
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule
+
+typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule_FieldNumber) {
+  GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule_FieldNumber_PriceForQuantityArray = 1,
+};
+
+GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PricingSchedule : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent_PriceForQuantity*> *priceForQuantityArray;
+/** The number of items in @c priceForQuantityArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger priceForQuantityArray_Count;
+
+@end
+
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent_FieldNumber) {
@@ -6935,6 +6858,7 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Fi
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_DestroyFrozenFunds = 5,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_EmergencyAction = 6,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_TokenConfigUpdate = 7,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_UpdatePrice = 8,
 };
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase) {
@@ -6946,6 +6870,7 @@ typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Ty
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_DestroyFrozenFunds = 5,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_EmergencyAction = 6,
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_TokenConfigUpdate = 7,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_Type_OneOfCase_UpdatePrice = 8,
 };
 
 /**
@@ -6975,6 +6900,9 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEven
 
 /** Token configuration update details */
 @property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent *tokenConfigUpdate;
+
+/** Updating the token direct selling price */
+@property(nonatomic, readwrite, strong, null_resettable) GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *updatePrice;
 
 @end
 
