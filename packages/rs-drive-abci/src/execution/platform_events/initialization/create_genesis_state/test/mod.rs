@@ -27,6 +27,7 @@ impl<C> Platform<C> {
         }
 
         self.create_data_for_group_token_queries(block_info, transaction, platform_version)?;
+        self.create_data_for_token_direct_prices(block_info, transaction, platform_version)?;
 
         Ok(())
     }

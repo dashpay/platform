@@ -24,6 +24,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::tokens::status::v0::TokenStatusV0;
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_event::TokenEvent;
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use rand::rngs::StdRng;
@@ -93,6 +94,46 @@ impl<C> Platform<C> {
             action_id,
             IDENTITY_ID_1,
             1,
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+
+        Ok(())
+    }
+
+    /// Create some test data for token direct prices.
+    ///
+    /// Define single price pricing for [TOKEN_ID_1], and pricing schedule for [TOKEN_ID_2].
+    /// Leave [TOKEN_ID_0] without pricing.
+    ///
+    /// Tokens must be already created.
+    pub(crate) fn create_data_for_token_direct_prices(
+        &self,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.token_set_direct_purchase_price(
+            TOKEN_ID_1.to_buffer(),
+            Some(TokenPricingSchedule::SinglePrice(25)),
+            block_info,
+            true,
+            transaction,
+            platform_version,
+        )?;
+
+        let pricing = TokenPricingSchedule::SetPrices(
+            (0..=900)
+                .step_by(100)
+                .map(|amount| (amount, 1000 - amount))
+                .collect(),
+        );
+
+        self.drive.token_set_direct_purchase_price(
+            TOKEN_ID_2.to_buffer(),
+            Some(pricing),
             block_info,
             true,
             transaction,
@@ -198,6 +239,7 @@ impl<C> Platform<C> {
                 new_tokens_destination_identity_rules: ChangeControlRulesV0::default().into(),
                 minting_allow_choosing_destination: true,
                 minting_allow_choosing_destination_rules: ChangeControlRulesV0::default().into(),
+                change_direct_purchase_pricing_rules: ChangeControlRulesV0::default().into(),
             }
             .into(),
             manual_minting_rules: ChangeControlRulesV0 {
