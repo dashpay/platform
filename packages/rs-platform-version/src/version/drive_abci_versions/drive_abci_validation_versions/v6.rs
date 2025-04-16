@@ -88,7 +88,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
             },
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
-                advanced_structure: Some(0),
+                advanced_structure: Some(1),
                 identity_signatures: None,
                 advanced_minimum_balance_pre_check: None,
                 nonce: Some(0),

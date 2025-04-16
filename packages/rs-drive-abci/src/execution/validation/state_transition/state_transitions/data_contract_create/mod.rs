@@ -3,6 +3,7 @@ mod basic_structure;
 mod identity_nonce;
 mod state;
 
+use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::PartialIdentity;
@@ -117,14 +118,15 @@ impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransiti
             .advanced_structure
         {
             Some(0) => self.validate_advanced_structure_v0(execution_context),
+            Some(1) => self.validate_advanced_structure_v1(execution_context),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_advanced_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "data contract create transition: validate_advanced_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
             })),
         }
     }
