@@ -5506,6 +5506,10 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_Version_OneOfCase) {
   GetTokenDirectPurchasePricesResponse_Version_OneOfCase_V0 = 1,
 };
 
+/**
+ * Response to GetTokenDirectPurchasePricesRequest, containing information about
+ * direct purchase prices defined for requested token IDs.
+ **/
 GPB_FINAL @interface GetTokenDirectPurchasePricesResponse : GPBMessage
 
 @property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_Version_OneOfCase versionOneOfCase;
@@ -5537,10 +5541,16 @@ GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchase
 
 @property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** Contains the list of token IDs and their corresponding direct */
 @property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices *tokenDirectPurchasePrices;
 
+/**
+ * Requested information in a form of cryptographic proof.
+ * In Rust, use `FromProof` trait to convert it to the actual data.
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state. */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -5559,10 +5569,15 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePric
   GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity_FieldNumber_Price = 2,
 };
 
+/**
+ * Contains the individual price tier for a specific quantity of tokens.
+ **/
 GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity : GPBMessage
 
+/** Minimum quantity of tokens to purchase to get this price. */
 @property(nonatomic, readwrite) uint64_t quantity;
 
+/** Price for the specified quantity of tokens. */
 @property(nonatomic, readwrite) uint64_t price;
 
 @end
@@ -5573,6 +5588,9 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePric
   GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule_FieldNumber_PriceForQuantityArray = 1,
 };
 
+/**
+ * Contains list of price tiers for a specific token.
+ **/
 GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity*> *priceForQuantityArray;
@@ -5597,13 +5615,19 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePric
 
 GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry : GPBMessage
 
+/** 32-byte token identifier */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
 
 /** Price of the token; optional */
 @property(nonatomic, readonly) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry_Price_OneOfCase priceOneOfCase;
 
+/** Fixed price for the token. */
 @property(nonatomic, readwrite) uint64_t fixedPrice;
 
+/**
+ * Tiered pricing for the token, where the price varies based on the
+ * quantity purchased.
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule *variablePrice;
 
 @end
@@ -5619,6 +5643,10 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePric
   GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices_FieldNumber_TokenDirectPurchasePriceArray = 1,
 };
 
+/**
+ * For each requested token, contains list of token IDs and their
+ * corresponding direct purchase prices.
+ **/
 GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry*> *tokenDirectPurchasePriceArray;
@@ -5638,6 +5666,14 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
   GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
 };
 
+/**
+ * Retrieve direct purchase prices defined for one or more tokens.
+ *
+ * Some tokens can have a direct purchase price defined using
+ * `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
+ * This request retrieves the direct purchase prices for those tokens and
+ * returns [GetTokenDirectPurchasePricesResponse].
+ **/
 GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
 
 @property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
@@ -5660,10 +5696,18 @@ typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePrice
 
 GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
 
+/**
+ * List of token IDs to get prices for.
+ *
+ * The list must not be empty.
+ * Token IDs must have 32 bytes and be unique.
+ * Results for non-unique token IDs are undefined.
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
 /** The number of items in @c tokenIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
 
+/** Whether to return proofs for the response, or just direct response. */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
