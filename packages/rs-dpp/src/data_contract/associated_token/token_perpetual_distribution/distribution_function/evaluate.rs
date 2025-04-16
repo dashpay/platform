@@ -254,7 +254,7 @@ impl DistributionFunction {
                 n,
                 o,
                 start_moment,
-                b: c,
+                b,
                 min_value,
                 max_value,
             } => {
@@ -284,7 +284,7 @@ impl DistributionFunction {
                 }
 
                 let exponent = (*m as f64) * (diff as f64) / (*n as f64);
-                let value = ((*a as f64) * exponent.exp() / (*d as f64)) + (*c as f64);
+                let value = ((*a as f64) * exponent.exp() / (*d as f64)) + (*b as f64);
                 if let Some(max_value) = max_value {
                     if value.is_infinite() && value.is_sign_positive() || value > *max_value as f64
                     {

@@ -651,18 +651,18 @@ impl fmt::Display for DistributionFunction {
                 m,
                 n,
                 o,
-                start_moment: s,
-                b: c,
+                start_moment,
+                b,
                 min_value,
                 max_value,
             } => {
                 write!(f, "Exponential: f(x) = {} * e^( {} * (x", a, m)?;
-                if let Some(start) = s {
+                if let Some(start) = start_moment {
                     write!(f, " - {} + {})", start, o)?;
                 } else {
                     write!(f, " + {})", o)?;
                 }
-                write!(f, " / {} ) / {} + {}", n, d, c)?;
+                write!(f, " / {} ) / {} + {}", n, d, b)?;
                 if let Some(min) = min_value {
                     write!(f, ", min: {}", min)?;
                 }

@@ -87,7 +87,7 @@ impl Encode for DistributionFunction {
                 n,
                 o,
                 start_moment: s,
-                b: c,
+                b,
                 min_value,
                 max_value,
             } => {
@@ -98,7 +98,7 @@ impl Encode for DistributionFunction {
                 n.encode(encoder)?;
                 o.encode(encoder)?;
                 s.encode(encoder)?;
-                c.encode(encoder)?;
+                b.encode(encoder)?;
                 min_value.encode(encoder)?;
                 max_value.encode(encoder)?;
             }
@@ -234,8 +234,8 @@ impl Decode for DistributionFunction {
                 let m = i64::decode(decoder)?;
                 let n = u64::decode(decoder)?;
                 let o = i64::decode(decoder)?;
-                let s = Option::<u64>::decode(decoder)?;
-                let c = TokenAmount::decode(decoder)?;
+                let start_moment = Option::<u64>::decode(decoder)?;
+                let b = TokenAmount::decode(decoder)?;
                 let min_value = Option::<u64>::decode(decoder)?;
                 let max_value = Option::<u64>::decode(decoder)?;
                 Ok(Self::Exponential {
@@ -244,8 +244,8 @@ impl Decode for DistributionFunction {
                     m,
                     n,
                     o,
-                    start_moment: s,
-                    b: c,
+                    start_moment,
+                    b,
                     min_value,
                     max_value,
                 })
@@ -384,8 +384,8 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                 let m = i64::borrow_decode(decoder)?;
                 let n = u64::borrow_decode(decoder)?;
                 let o = i64::borrow_decode(decoder)?;
-                let s = Option::<u64>::borrow_decode(decoder)?;
-                let c = TokenAmount::borrow_decode(decoder)?;
+                let start_moment = Option::<u64>::borrow_decode(decoder)?;
+                let b = TokenAmount::borrow_decode(decoder)?;
                 let min_value = Option::<u64>::borrow_decode(decoder)?;
                 let max_value = Option::<u64>::borrow_decode(decoder)?;
                 Ok(Self::Exponential {
@@ -394,8 +394,8 @@ impl<'de> BorrowDecode<'de> for DistributionFunction {
                     m,
                     n,
                     o,
-                    start_moment: s,
-                    b: c,
+                    start_moment,
+                    b,
                     min_value,
                     max_value,
                 })
