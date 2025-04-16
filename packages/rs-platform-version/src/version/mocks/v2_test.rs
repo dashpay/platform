@@ -238,6 +238,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                token_direct_purchase_prices:FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 token_pre_programmed_distributions: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

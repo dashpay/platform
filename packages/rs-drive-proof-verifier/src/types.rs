@@ -22,6 +22,7 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
@@ -628,3 +629,6 @@ pub struct ProposerBlockCountByRange(pub u64);
 #[derive(Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposerBlockCountById(pub u64);
+
+/// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
+pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;

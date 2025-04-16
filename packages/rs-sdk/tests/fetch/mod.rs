@@ -27,4 +27,5 @@ mod mock_fetch_many;
 mod prefunded_specialized_balance;
 mod protocol_version_vote_count;
 mod protocol_version_votes;
+mod token_direct_prices;
 mod tokens;
