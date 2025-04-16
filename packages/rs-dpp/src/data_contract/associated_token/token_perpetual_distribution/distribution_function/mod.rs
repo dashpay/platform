@@ -22,6 +22,10 @@ pub const DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION
 
 pub const MAX_LINEAR_SLOPE_PARAM: u64 = 256;
 
+pub const MIN_LOG_A_PARAM: i64 = -32_766;
+pub const MAX_LOG_A_PARAM: i64 = 32_767;
+pub const MAX_EXP_A_PARAM: u64 = 256;
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum DistributionFunction {
     /// Emits a constant (fixed) number of tokens for every period.
@@ -499,22 +503,24 @@ pub enum DistributionFunction {
     ///   claimants receive diminishing rewards.
     ///
     /// # Example
-    /// - Suppose a system starts with **500 tokens per period** and gradually reduces over time:
-    ///
     ///   ```text
-    ///   f(x) = (1000 * log(5000 / (5 * (x - 1000)))) / 10 + 10
+    ///   f(x) = 10000 * log(5000 / x)
     ///   ```
-    ///
-    ///   Example values:
-    ///
-    ///   | Period (x) | Emission (f(x)) |
-    ///   |------------|----------------|
-    ///   | 1000       | 500 tokens      |
-    ///   | 1500       | 230 tokens      |
-    ///   | 2000       | 150 tokens      |
-    ///   | 5000       | 50 tokens       |
-    ///   | 10,000     | 20 tokens       |
-    ///   | 50,000     | 10 tokens       |
+    /// - Values: a = 10000 n = 5000 m = 1 o = 0 b = 0 d = 0
+    ///           y
+    ///           ↑
+    ///          10000 |*
+    ///           9000 | *
+    ///           8000 |  *
+    ///           7000 |   *
+    ///           6000 |    *
+    ///           5000 |     *
+    ///           4000 |       *
+    ///           3000 |         *
+    ///           2000 |           *
+    ///           1000 |              *
+    ///              0 +-------------------*----------→ x
+    ///                  0     2000   4000   6000   8000
     ///
     ///   - The emission **starts high** and **gradually decreases**, ensuring early adopters receive
     ///     more tokens while later participants still get rewards.

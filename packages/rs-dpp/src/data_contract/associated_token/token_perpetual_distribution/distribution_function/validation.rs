@@ -5,7 +5,8 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError,
 };
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
-    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_LINEAR_SLOPE_PARAM,
+    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_EXP_A_PARAM, MAX_LINEAR_SLOPE_PARAM,
+    MAX_LOG_A_PARAM, MIN_LOG_A_PARAM,
 };
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -60,7 +61,7 @@ impl DistributionFunction {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                start_decreasing_offset: s,
+                start_decreasing_offset,
                 max_interval_count,
                 distribution_start_amount,
                 trailing_distribution_interval_amount,
@@ -68,7 +69,7 @@ impl DistributionFunction {
             } => {
                 // Validate n.
                 if *distribution_start_amount == 0
-                    || *distribution_start_amount > MAX_DISTRIBUTION_PARAM as u64
+                    || *distribution_start_amount > MAX_DISTRIBUTION_PARAM
                 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
@@ -149,7 +150,7 @@ impl DistributionFunction {
                     }
                 }
 
-                if let Some(s) = s {
+                if let Some(s) = start_decreasing_offset {
                     if *s > MAX_DISTRIBUTION_PARAM {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             InvalidTokenDistributionFunctionInvalidParameterError::new(
@@ -460,12 +461,13 @@ impl DistributionFunction {
                         .into(),
                     ));
                 }
-                if *a == 0 {
+                // Check valid a values
+                if *a == 0 || *a > MAX_EXP_A_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
                             1,
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            MAX_LOG_A_PARAM,
                             None,
                         )
                         .into(),
@@ -638,13 +640,14 @@ impl DistributionFunction {
                         .into(),
                     ));
                 }
-                if *a == 0 {
+                // Check valid a values
+                if *a == 0 || *a < MIN_LOG_A_PARAM || *a > MAX_LOG_A_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
-                            1,
-                            MAX_DISTRIBUTION_PARAM as i64,
-                            None,
+                            MIN_LOG_A_PARAM,
+                            MAX_LOG_A_PARAM,
+                            Some(0),
                         )
                         .into(),
                     ));
@@ -764,6 +767,18 @@ impl DistributionFunction {
                 min_value,
                 max_value,
             } => {
+                // Check valid a values
+                if *a == 0 || *a < MIN_LOG_A_PARAM || *a > MAX_LOG_A_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "a".to_string(),
+                            MIN_LOG_A_PARAM,
+                            MAX_LOG_A_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
                 // Check for division by zero.
                 if *d == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -2210,6 +2225,66 @@ mod tests {
         }
 
         #[test]
+        fn test_inverted_logarithmic_invalid_zero_a() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 0,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT);
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_too_low_a() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -50000,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT);
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_too_high_a() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 50000,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT);
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
+            );
+        }
+
+        #[test]
         fn test_inverted_logarithmic_invalid_divide_by_zero_d() {
             let dist = DistributionFunction::InvertedLogarithmic {
                 a: -10,
@@ -2346,6 +2421,28 @@ mod tests {
             assert!(
                 result.expect("expected valid").first_error().is_none(),
                 "Expected valid function with max boundary"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_valid_with_min_a() {
+            // Since `a` is negative, the inverted logarithmic function is increasing,
+            // but it starts at the maximum value already, so it will never produce a higher value.
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: i64::MIN,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT);
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
             );
         }
 
