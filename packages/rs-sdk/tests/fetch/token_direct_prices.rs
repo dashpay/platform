@@ -35,7 +35,7 @@ async fn test_direct_prices_token_not_found() {
 async fn test_direct_prices_tokens_ok() {
     super::common::setup_logs();
     let cfg = Config::new();
-    let sdk = cfg.setup_api("test_direct_prices_token_not_found").await;
+    let sdk = cfg.setup_api("test_direct_prices_tokens_ok").await;
 
     let ids = [*TOKEN_ID_0, *TOKEN_ID_1, *TOKEN_ID_2];
 
@@ -72,7 +72,7 @@ async fn test_direct_prices_tokens_ok() {
 async fn test_direct_prices_duplicate_token() {
     super::common::setup_logs();
     let cfg = Config::new();
-    let sdk = cfg.setup_api("test_direct_prices_token_not_found").await;
+    let sdk = cfg.setup_api("test_direct_prices_duplicate_token").await;
 
     let ids = [*TOKEN_ID_2, *TOKEN_ID_2];
 
@@ -81,11 +81,11 @@ async fn test_direct_prices_duplicate_token() {
         .expect("query should succeed");
 
     assert_eq!(result.len(), 1, "only one token should be present");
-    assert_eq!(
+    assert!(
         result
             .get(&*TOKEN_ID_2)
-            .expect("result should contain token"),
-        &None,
-        "proof of non-existence expected"
+            .expect("result should contain token")
+            .is_some(),
+        "pricing info expected"
     );
 }
