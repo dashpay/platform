@@ -30,7 +30,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<TokenPricingSchedule>>, Error> {
-        match platform_version.drive.methods.token.fetch.token_statuses {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .fetch
+            .token_direct_purchase_prices
+        {
             0 => {
                 self.fetch_tokens_direct_purchase_price_v0(token_ids, transaction, platform_version)
             }

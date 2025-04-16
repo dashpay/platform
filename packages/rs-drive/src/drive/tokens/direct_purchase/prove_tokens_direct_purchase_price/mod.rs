@@ -28,7 +28,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match platform_version.drive.methods.token.prove.token_statuses {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .prove
+            .token_direct_purchase_prices
+        {
             0 => {
                 self.prove_tokens_direct_purchase_price_v0(token_ids, transaction, platform_version)
             }
