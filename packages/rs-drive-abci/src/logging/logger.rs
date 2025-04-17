@@ -53,6 +53,12 @@ pub struct LogBuilder {
     loggers: HashMap<LoggerID, Logger>,
 }
 
+use std::sync::OnceLock;
+use tracing::Dispatch;
+// std, no external crate
+
+static LOGGING_INSTALLED: OnceLock<()> = OnceLock::new();
+
 impl LogBuilder {
     /// Creates a new `LogBuilder` instance with default settings.
     pub fn new() -> Self {
@@ -164,6 +170,12 @@ impl Loggers {
         self.0.get(id)
     }
 
+    /// Build a subscriber containing all layers from these loggers.
+    pub fn as_subscriber(&self) -> Result<Dispatch, Error> {
+        let layers = self.tracing_subscriber_layers()?;
+        Ok(Dispatch::new(Registry::default().with(layers)))
+    }
+
     /// Installs loggers prepared in the [LogBuilder] as a global tracing handler.
     ///
     /// Same as [Loggers::install()], but returns error if the logging subsystem is already initialized.
@@ -177,14 +189,22 @@ impl Loggers {
     /// drive_abci::logging::Loggers::default().try_install().ok();
     /// ```
     pub fn try_install(&self) -> Result<(), Error> {
+        // Fast path: somebody already installed – just return Ok(())
+        if LOGGING_INSTALLED.get().is_some() {
+            return Ok(()); // <- second and later calls are ignored
+        }
+
         let layers = self.tracing_subscriber_layers()?;
 
         registry()
             .with(layers)
             .try_init()
-            .map_err(Error::TryInitError)
-    }
+            .map_err(Error::TryInitError)?;
 
+        // Mark as installed
+        let _ = LOGGING_INSTALLED.set(());
+        Ok(())
+    }
     /// Returns tracing subscriber layers
     pub fn tracing_subscriber_layers(&self) -> Result<Vec<Box<impl Layer<Registry>>>, Error> {
         // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html

@@ -484,11 +484,22 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        let contract =
+        let token_history_contract =
             load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
 
         self.drive.insert_contract(
-            &contract,
+            &token_history_contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        let search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)?;
+
+        self.drive.insert_contract(
+            &search_contract,
             *block_info,
             true,
             Some(transaction),

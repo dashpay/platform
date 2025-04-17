@@ -4,50 +4,29 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterError,
     InvalidTokenDistributionFunctionInvalidParameterTupleError,
 };
+use crate::consensus::basic::UnsupportedFeatureError;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
-    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_LINEAR_SLOPE_PARAM,
+    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_EXP_A_PARAM, MAX_EXP_M_PARAM,
+    MAX_EXP_N_PARAM, MAX_LINEAR_SLOPE_A_PARAM, MAX_LOG_A_PARAM, MAX_POL_M_PARAM, MAX_POL_N_PARAM,
+    MIN_EXP_M_PARAM, MIN_LINEAR_SLOPE_A_PARAM, MIN_LOG_A_PARAM, MIN_POL_M_PARAM,
 };
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 impl DistributionFunction {
     pub fn validate(
         &self,
         start_moment: u64,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match self {
             DistributionFunction::FixedAmount { amount: n } => {
                 // Validate that n is > 0 and does not exceed u32::MAX.
-                if *n == 0 || *n > u32::MAX as u64 {
+                if *n == 0 || *n > MAX_DISTRIBUTION_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "n".to_string(),
                             1,
-                            u32::MAX as i64,
-                            None,
-                        )
-                        .into(),
-                    ));
-                }
-            }
-            DistributionFunction::Random { min, max } => {
-                // Ensure that `min` is not greater than `max`
-                if *min > *max {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
-                            "min".to_string(),
-                            "max".to_string(),
-                            "smaller than or equal to".to_string(),
-                        )
-                        .into(),
-                    ));
-                }
-
-                // Ensure that `max` is within valid bounds
-                if *max > MAX_DISTRIBUTION_PARAM {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidTokenDistributionFunctionInvalidParameterError::new(
-                            "max".to_string(),
-                            0,
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
@@ -55,30 +34,103 @@ impl DistributionFunction {
                     ));
                 }
             }
+            DistributionFunction::Random { .. } => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    UnsupportedFeatureError::new(
+                        "token random distribution".to_string(),
+                        platform_version.protocol_version,
+                    )
+                    .into(),
+                ));
+                // Ensure that `min` is not greater than `max`
+                // if *min > *max {
+                //     return Ok(SimpleConsensusValidationResult::new_with_error(
+                //         InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                //             "min".to_string(),
+                //             "max".to_string(),
+                //             "smaller than or equal to".to_string(),
+                //         )
+                //         .into(),
+                //     ));
+                // }
+                //
+                // // Ensure that `max` is within valid bounds
+                // if *max > MAX_DISTRIBUTION_PARAM {
+                //     return Ok(SimpleConsensusValidationResult::new_with_error(
+                //         InvalidTokenDistributionFunctionInvalidParameterError::new(
+                //             "max".to_string(),
+                //             0,
+                //             MAX_DISTRIBUTION_PARAM as i64,
+                //             None,
+                //         )
+                //         .into(),
+                //     ));
+                // }
+            }
 
             DistributionFunction::StepDecreasingAmount {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
-                s,
-                n,
+                start_decreasing_offset,
+                max_interval_count,
+                distribution_start_amount,
+                trailing_distribution_interval_amount,
                 min_value,
             } => {
                 // Validate n.
-                if *n == 0 || *n > u32::MAX as u64 {
+                if *distribution_start_amount == 0
+                    || *distribution_start_amount > MAX_DISTRIBUTION_PARAM
+                {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "n".to_string(),
                             1,
-                            u32::MAX as i64,
+                            MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
                         .into(),
                     ));
                 }
+
+                // Ensure trailing amount does not exceed the initial amount
+                if *trailing_distribution_interval_amount > *distribution_start_amount {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                            "trailing_distribution_interval_amount".to_string(),
+                            "distribution_start_amount".to_string(),
+                            "smaller than or equal to".to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                if let Some(max_interval_count) = max_interval_count {
+                    if *max_interval_count < 2 || *max_interval_count > 1024 {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            InvalidTokenDistributionFunctionInvalidParameterError::new(
+                                "max_interval_count".to_string(),
+                                2,
+                                1024,
+                                None,
+                            )
+                            .into(),
+                        ));
+                    }
+                }
                 if *step_count == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+                if *decrease_per_interval_numerator == 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "decrease_per_interval_numerator".to_string(),
+                            1,
+                            u16::MAX as i64,
+                            None,
+                        )
+                        .into(),
                     ));
                 }
                 if *decrease_per_interval_denominator == 0 {
@@ -97,7 +149,7 @@ impl DistributionFunction {
                     ));
                 }
                 if let Some(min) = min_value {
-                    if *n < *min {
+                    if *distribution_start_amount < *min {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
                                 "n".to_string(),
@@ -109,7 +161,7 @@ impl DistributionFunction {
                     }
                 }
 
-                if let Some(s) = s {
+                if let Some(s) = start_decreasing_offset {
                     if *s > MAX_DISTRIBUTION_PARAM {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             InvalidTokenDistributionFunctionInvalidParameterError::new(
@@ -143,7 +195,7 @@ impl DistributionFunction {
                 a,
                 d,
                 start_step: s,
-                starting_amount: b,
+                starting_amount,
                 min_value,
                 max_value,
             } => {
@@ -152,25 +204,14 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
-                if *a == 0 {
+                if *a == 0 || *a > MAX_LINEAR_SLOPE_A_PARAM as i64 || *a < MIN_LINEAR_SLOPE_A_PARAM
+                {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
-                            -(MAX_DISTRIBUTION_PARAM as i64),
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            MIN_LINEAR_SLOPE_A_PARAM,
+                            MAX_LINEAR_SLOPE_A_PARAM as i64,
                             Some(0),
-                        )
-                        .into(),
-                    ));
-                }
-
-                if *a > MAX_LINEAR_SLOPE_PARAM as i64 || *a < -(MAX_LINEAR_SLOPE_PARAM as i64) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidTokenDistributionFunctionInvalidParameterError::new(
-                            "a".to_string(),
-                            -(MAX_LINEAR_SLOPE_PARAM as i64),
-                            MAX_LINEAR_SLOPE_PARAM as i64,
-                            None,
                         )
                         .into(),
                     ));
@@ -221,7 +262,7 @@ impl DistributionFunction {
                     a: *a,
                     d: *d,
                     start_step: Some(s.unwrap_or(start_moment)),
-                    starting_amount: *b,
+                    starting_amount: *starting_amount,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
@@ -277,6 +318,53 @@ impl DistributionFunction {
                 if *n == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+
+                if *m > 0 && *n == m.unsigned_abs() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                            "m".to_string(),
+                            "n".to_string(),
+                            "different than".to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *a == 0 || *a < MIN_LOG_A_PARAM || *a > MAX_LOG_A_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "a".to_string(),
+                            MIN_LOG_A_PARAM,
+                            MAX_LOG_A_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *m == 0 || *m < MIN_POL_M_PARAM || *m > MAX_POL_M_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "m".to_string(),
+                            MIN_POL_M_PARAM,
+                            MAX_POL_M_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *n > MAX_POL_N_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "n".to_string(),
+                            1,
+                            MAX_POL_N_PARAM as i64,
+                            None,
+                        )
+                        .into(),
                     ));
                 }
 
@@ -387,7 +475,7 @@ impl DistributionFunction {
                     }
                 }
             }
-            // f(x) = (a * e^(m * (x - s + o) / n)) / d + c
+            // f(x) = (a * e^(m * (x - s + o) / n)) / d + b
             DistributionFunction::Exponential {
                 a,
                 d,
@@ -395,7 +483,7 @@ impl DistributionFunction {
                 n,
                 o,
                 start_moment: s,
-                c,
+                b,
                 min_value,
                 max_value,
             } => {
@@ -409,23 +497,35 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
-                if *m == 0 {
+                if *n > MAX_EXP_N_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "n".to_string(),
+                            1,
+                            MAX_EXP_N_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+                if *m == 0 || *m > MAX_EXP_M_PARAM as i64 || *m < MIN_EXP_M_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "m".to_string(),
-                            -(MAX_DISTRIBUTION_PARAM as i64),
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            MIN_EXP_M_PARAM,
+                            MAX_EXP_M_PARAM as i64,
                             Some(0),
                         )
                         .into(),
                     ));
                 }
-                if *a == 0 {
+                // Check valid a values
+                if *a == 0 || *a > MAX_EXP_A_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
                             1,
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            MAX_EXP_A_PARAM as i64,
                             None,
                         )
                         .into(),
@@ -472,10 +572,10 @@ impl DistributionFunction {
                     ));
                 }
 
-                if *a > MAX_DISTRIBUTION_PARAM {
+                if *b > MAX_DISTRIBUTION_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
-                            "a".to_string(),
+                            "b".to_string(),
                             0,
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
@@ -530,7 +630,7 @@ impl DistributionFunction {
                     n: *n,
                     o: *o,
                     start_moment: Some(s.unwrap_or(start_moment)),
-                    c: *c,
+                    b: *b,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
@@ -565,7 +665,7 @@ impl DistributionFunction {
                     start_token_amount
                 };
             }
-            // f(x) = (a * log(m * (x - s + o) / n)) / d + b
+            // f(x) = (a * ln(m * (x - s + o) / n)) / d + b
             DistributionFunction::Logarithmic {
                 a,
                 d,
@@ -587,7 +687,7 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
-                if *m == 0 {
+                if *m == 0 || *m > MAX_DISTRIBUTION_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "m".to_string(),
@@ -598,11 +698,24 @@ impl DistributionFunction {
                         .into(),
                     ));
                 }
-                if *a == 0 {
+                // Check valid a values
+                if *a == 0 || *a < MIN_LOG_A_PARAM || *a > MAX_LOG_A_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
-                            1,
+                            MIN_LOG_A_PARAM,
+                            MAX_LOG_A_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *b > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "b".to_string(),
+                            0,
                             MAX_DISTRIBUTION_PARAM as i64,
                             None,
                         )
@@ -724,6 +837,31 @@ impl DistributionFunction {
                 min_value,
                 max_value,
             } => {
+                // Check valid a values
+                if *a == 0 || *a < MIN_LOG_A_PARAM || *a > MAX_LOG_A_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "a".to_string(),
+                            MIN_LOG_A_PARAM,
+                            MAX_LOG_A_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *b > MAX_DISTRIBUTION_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "b".to_string(),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+
                 // Check for division by zero.
                 if *d == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -889,7 +1027,7 @@ mod tests {
         #[test]
         fn test_fixed_amount_valid() {
             let dist = DistributionFunction::FixedAmount { amount: 100 };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_fixed_amount_valid")
                 .first_error()
@@ -899,7 +1037,7 @@ mod tests {
         #[test]
         fn test_fixed_amount_zero_invalid() {
             let dist = DistributionFunction::FixedAmount { amount: 0 };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_fixed_amount_zero_invalid")
                 .first_error()
@@ -911,7 +1049,7 @@ mod tests {
             let dist = DistributionFunction::FixedAmount {
                 amount: u32::MAX as u64,
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_fixed_amount_max_valid")
                 .first_error()
@@ -921,9 +1059,9 @@ mod tests {
         #[test]
         fn test_fixed_amount_exceeds_max_invalid() {
             let dist = DistributionFunction::FixedAmount {
-                amount: u32::MAX as u64 + 1,
+                amount: MAX_DISTRIBUTION_PARAM + 1,
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_fixed_amount_exceeds_max_invalid")
                 .first_error()
@@ -939,11 +1077,13 @@ mod tests {
                 step_count: 10,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
-                s: Some(0),
-                n: 100,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_step_decreasing_amount_valid")
                 .first_error()
@@ -956,11 +1096,13 @@ mod tests {
                 step_count: 0,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 2,
-                s: Some(0),
-                n: 100,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_step_decreasing_amount_invalid_zero_step_count")
                 .first_error()
@@ -973,11 +1115,13 @@ mod tests {
                 step_count: 10,
                 decrease_per_interval_numerator: 1,
                 decrease_per_interval_denominator: 0,
-                s: Some(0),
-                n: 100,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
                 min_value: Some(10),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_step_decreasing_amount_invalid_zero_denominator")
                 .first_error()
@@ -993,7 +1137,7 @@ mod tests {
             steps.insert(10, 50);
             steps.insert(20, 25);
             let dist = DistributionFunction::Stepwise(steps);
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_stepwise_valid")
                 .first_error()
@@ -1005,7 +1149,7 @@ mod tests {
             let mut steps = BTreeMap::new();
             steps.insert(0, 100);
             let dist = DistributionFunction::Stepwise(steps);
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_stepwise_invalid_single_step")
                 .first_error()
@@ -1025,7 +1169,7 @@ mod tests {
                 max_value: Some(150),
             };
 
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
 
             // If the test fails, print the exact error message.
             if let Err(err) = &result {
@@ -1047,7 +1191,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_linear_invalid_divide_by_zero")
                 .first_error()
@@ -1064,7 +1208,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_linear_invalid_s_exceeds_max")
                 .first_error()
@@ -1081,7 +1225,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_a_zero")
@@ -1101,7 +1245,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_a_too_large")
@@ -1121,7 +1265,7 @@ mod tests {
                 min_value: Some(200), // Invalid: min > max
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_min_greater_than_max")
@@ -1141,7 +1285,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_s_greater_than_max")
@@ -1161,7 +1305,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value exceeds max allowed range
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_max_exceeds_max_distribution_param")
@@ -1181,7 +1325,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_starting_at_max_value")
@@ -1201,7 +1345,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_linear_invalid_starting_at_min_value")
@@ -1221,7 +1365,7 @@ mod tests {
                 min_value: Some(50),
                 max_value: Some(250),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
 
             match result {
                 Ok(validation_result) => {
@@ -1251,7 +1395,7 @@ mod tests {
                 min_value: Some(10), // Valid min boundary
                 max_value: Some(150),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_linear_valid_with_min_boundary")
                 .first_error()
@@ -1268,7 +1412,7 @@ mod tests {
                 min_value: Some(10),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_linear_valid_with_max_boundary")
                 .first_error()
@@ -1291,7 +1435,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(80),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
 
             match &result {
                 Ok(validation_result) => {
@@ -1304,6 +1448,30 @@ mod tests {
                 }
             }
         }
+
+        #[test]
+        fn test_polynomial_invalid_zero_a() {
+            let dist = DistributionFunction::Polynomial {
+                a: 0,
+                d: 1,
+                m: 2,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_zero_a")
+                    .first_error()
+                    .is_some(),
+                "Expected error: a cannot be zero"
+            );
+        }
+
         #[test]
         fn test_polynomial_invalid_divide_by_zero() {
             let dist = DistributionFunction::Polynomial {
@@ -1317,7 +1485,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_polynomial_invalid_divide_by_zero")
                 .first_error()
@@ -1338,7 +1506,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when n is zero"
@@ -1359,7 +1527,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when s exceeds MAX_DISTRIBUTION_PARAM"
@@ -1380,7 +1548,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when o is above the allowed maximum"
@@ -1401,10 +1569,130 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when o is below the allowed minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_a_below_min() {
+            let dist = DistributionFunction::Polynomial {
+                a: MIN_LOG_A_PARAM - 1,
+                d: 1,
+                m: 2,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: a is below minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_m_equal_n() {
+            let dist = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 3,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: a is below minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_a_above_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: MAX_LOG_A_PARAM + 1,
+                d: 1,
+                m: 2,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: a is above maximum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_m_below_min() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: MIN_POL_M_PARAM - 1,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: m is below minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_m_above_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: MAX_POL_M_PARAM + 1,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: m is above maximum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_n_above_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 3,
+                n: MAX_POL_N_PARAM + 1,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: n is above maximum"
             );
         }
 
@@ -1422,7 +1710,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too high
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when max_value exceeds MAX_DISTRIBUTION_PARAM"
@@ -1443,7 +1731,7 @@ mod tests {
                 min_value: Some(60), // min_value > max_value
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when min_value is greater than max_value"
@@ -1466,7 +1754,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(100), // Starting at max_value
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an incoherence error when an increasing function starts at max_value"
@@ -1489,7 +1777,7 @@ mod tests {
                 min_value: Some(50), // Starting at min_value
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an incoherence error when a decreasing function starts at min_value"
@@ -1510,7 +1798,7 @@ mod tests {
                 min_value: None,
                 max_value: None,
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected valid").first_error().is_none(),
                 "Expected no validation errors when boundaries are omitted"
@@ -1540,7 +1828,7 @@ mod tests {
                 8,
                 "Expected f(4) to be 8 for a fractional exponent of 3/2"
             );
-            let validation_result = dist.validate(4);
+            let validation_result = dist.validate(4, PlatformVersion::latest());
             assert!(
                 validation_result
                     .expect("expected valid")
@@ -1561,11 +1849,11 @@ mod tests {
                 n: 2,
                 o: -3999,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(1000000),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             if let Err(err) = &result {
                 panic!("Test failed: unexpected error: {:?}", err);
             }
@@ -1586,11 +1874,11 @@ mod tests {
                 n: 0,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_exponential_invalid_zero_n")
                 .first_error()
@@ -1606,11 +1894,11 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_zero_m")
@@ -1629,11 +1917,11 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_zero_a")
@@ -1652,11 +1940,11 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: None, // Invalid: max_value must be set
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_max_missing_when_m_positive")
@@ -1675,11 +1963,11 @@ mod tests {
                 n: 2,
                 o: MAX_DISTRIBUTION_PARAM as i64 + 1, // Invalid: `o` exceeds allowed range
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_o_too_large")
@@ -1698,11 +1986,11 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(50), // Invalid: min > max
                 max_value: Some(30),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_min_greater_than_max")
@@ -1721,11 +2009,11 @@ mod tests {
                 n: 4,
                 o: 2,
                 start_moment: Some(START_MOMENT),
-                c: 8,
+                b: 8,
                 min_value: Some(2),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_exponential_valid_with_negative_m")
                 .first_error()
@@ -1741,11 +2029,11 @@ mod tests {
                 n: 4,
                 o: 1,
                 start_moment: Some(START_MOMENT),
-                c: 8,
+                b: 8,
                 min_value: Some(2),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_exponential_valid_with_max_boundary")
                 .first_error()
@@ -1761,11 +2049,11 @@ mod tests {
                 n: 1,
                 o: 1,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_large_start_token_amount")
@@ -1784,11 +2072,11 @@ mod tests {
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(1),
                 max_value: Some(1000), // Small `max_value`
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_a_too_large_for_max")
@@ -1807,11 +2095,11 @@ mod tests {
                 n: 2,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(10), // Function starts at `min_value`
                 max_value: Some(1000),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_starts_at_min")
@@ -1830,11 +2118,11 @@ mod tests {
                 n: 2,
                 o: 1,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: Some(1),
                 max_value: None, // Should fail
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_missing_max_for_positive_m")
@@ -1853,11 +2141,11 @@ mod tests {
                 n: 1,
                 o: i64::MAX / 2, // Large `o`
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_large_o_overflow")
@@ -1876,11 +2164,11 @@ mod tests {
                 n: 2,
                 o: 0,
                 start_moment: Some(0),
-                c: 10,
+                b: 10,
                 min_value: Some(10),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_exponential_invalid_a_too_small")
@@ -1899,12 +2187,12 @@ mod tests {
                 n: 10,
                 o: -3,
                 start_moment: Some(0),
-                c: 5,
+                b: 5,
                 min_value: Some(10),
                 max_value: Some(1000),
             };
 
-            let result = dist.validate(5);
+            let result = dist.validate(5, PlatformVersion::latest());
 
             match result {
                 Ok(validation_result) => {
@@ -1930,11 +2218,11 @@ mod tests {
                 n: 4,
                 o: 2,
                 start_moment: Some(START_MOMENT),
-                c: 8,
+                b: 8,
                 min_value: Some(5),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_exponential_valid_gentle_decay")
                 .first_error()
@@ -1950,11 +2238,11 @@ mod tests {
                 n: 3,
                 o: 5, // Shift start
                 start_moment: Some(START_MOMENT),
-                c: 10,
+                b: 10,
                 min_value: Some(5),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_exponential_valid_negative_m_with_o_offset")
                 .first_error()
@@ -1976,7 +2264,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_logarithmic_valid")
                 .first_error()
@@ -1996,7 +2284,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_logarithmic_invalid_zero_d")
@@ -2019,13 +2307,36 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_logarithmic_invalid_zero_n")
                     .first_error()
                     .is_some(),
                 "Expected division by zero error"
+            );
+        }
+
+        #[test]
+        fn test_logarithmic_invalid_zero_m() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 4,
+                d: 10,
+                m: 0, // Invalid: this would make it a constant
+                n: 1,
+                o: 1,
+                start_moment: Some(0),
+                b: 10,
+                min_value: Some(1),
+                max_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(
+                result
+                    .expect("no error on test_logarithmic_invalid_zero_m")
+                    .first_error()
+                    .is_some(),
+                "Expected m == 0 error"
             );
         }
 
@@ -2042,7 +2353,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(100),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_logarithmic_invalid_x_s_o_non_positive")
@@ -2065,7 +2376,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM + 1), // Invalid: max_value too large
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_logarithmic_invalid_max_greater_than_max_param")
@@ -2088,7 +2399,7 @@ mod tests {
                 min_value: Some(50), // Invalid: min > max
                 max_value: Some(30),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_logarithmic_invalid_min_greater_than_max")
@@ -2111,7 +2422,7 @@ mod tests {
                 min_value: Some(2),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_logarithmic_valid_with_s_and_o")
                 .first_error()
@@ -2131,7 +2442,7 @@ mod tests {
                 min_value: Some(2),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
                 .expect("no error on test_logarithmic_valid_edge_case_max")
                 .first_error()
@@ -2153,13 +2464,73 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result
                     .expect("no error on test_inverted_logarithmic_valid")
                     .first_error()
                     .is_none(),
                 "Expected valid inverted logarithmic function"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_zero_a() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 0,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_too_low_a() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: -50000,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_invalid_too_high_a() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 50000,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
             );
         }
 
@@ -2176,7 +2547,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: division by zero (d = 0)"
@@ -2196,7 +2567,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: division by zero (n = 0)"
@@ -2216,7 +2587,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: division by zero (m = 0)"
@@ -2236,7 +2607,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: log argument must be positive"
@@ -2256,7 +2627,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: s exceeds MAX_DISTRIBUTION_PARAM"
@@ -2276,7 +2647,7 @@ mod tests {
                 min_value: Some(60), // Invalid: min > max
                 max_value: Some(50),
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: min_value > max_value"
@@ -2296,10 +2667,32 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected valid").first_error().is_none(),
                 "Expected valid function with max boundary"
+            );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_valid_with_min_a() {
+            // Since `a` is negative, the inverted logarithmic function is increasing,
+            // but it starts at the maximum value already, so it will never produce a higher value.
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: i64::MIN,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(MAX_DISTRIBUTION_PARAM), // Valid max boundary
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert_eq!(
+                result.expect("expected valid").first_error().expect("expected error").to_string(),
+                "Invalid parameter `a` in token distribution function. Expected range: -32766 to 32767 except 0 (which we got)"
             );
         }
 
@@ -2316,7 +2709,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50), // Function already at max
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: increasing function starts at max_value"
@@ -2336,7 +2729,7 @@ mod tests {
                 min_value: Some(1),
                 max_value: Some(50), // Function already at min
             };
-            let result = dist.validate(START_MOMENT);
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected error: decreasing function starts at min_value"

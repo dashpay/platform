@@ -61,6 +61,16 @@ use platform_value::Value;
 ///   - Useful for historical analysis, rollback mechanisms, and ensuring changes are anchored
 ///     to specific blockchain states.
 ///
+/// ## 4. **Keywords** (`keywords: Vec<String>`)
+/// - Keywords which contracts can be searched for via the new `search` system contract.
+/// - This vector can be left empty, but if populated, it must contain unique keywords.
+/// - The maximum number of keywords is limited to 20.
+///
+/// ## 5. **Description** (`description: Option<String>`)
+/// - A human-readable description of the contract.
+/// - This field is optional but if provided, must be between 3 and 100 characters.
+/// - The description is automatically added to the new `search` system contract as well.
+///
 /// These additions ensure that data contracts are not only more flexible and governed but also
 /// fully auditable in terms of when and how they evolve over time.
 #[derive(Debug, Clone, PartialEq)]
@@ -102,4 +112,10 @@ pub struct DataContractV1 {
 
     /// The tokens on the contract.
     pub tokens: BTreeMap<TokenContractPosition, TokenConfiguration>,
+
+    /// The contract's keywords for searching
+    pub keywords: Vec<String>,
+
+    /// The contract's description
+    pub description: Option<String>,
 }

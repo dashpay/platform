@@ -76,6 +76,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
         block_time_ms: None,
     };
 
+    // todo: deal with cost of this operation
     let withdrawals = context
         .platform
         .drive

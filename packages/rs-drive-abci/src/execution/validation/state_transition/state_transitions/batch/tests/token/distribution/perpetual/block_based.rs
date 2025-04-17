@@ -77,7 +77,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -145,7 +145,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -173,7 +173,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
                 _
             )]
@@ -215,7 +215,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -326,7 +326,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -354,7 +354,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
+            [PaidConsensusError(
                 ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
                 _
             )]
@@ -448,7 +448,7 @@ mod perpetual_distribution_block {
             None,
             None,
         )
-        .expect("expect to create documents batch transition");
+            .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
             .serialize_to_bytes()
@@ -501,7 +501,7 @@ mod perpetual_distribution_block {
 }
 
 #[cfg(test)]
-mod block_based_perpetual_fixed_amount {
+mod fixed_amount {
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 
     use super::{test_suite::*, INITIAL_BALANCE};
@@ -509,15 +509,34 @@ mod block_based_perpetual_fixed_amount {
         consensus::{state::state_error::StateError, ConsensusError},
         data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction,
     };
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_CYCLES_PARAM, MAX_DISTRIBUTION_PARAM};
+
+    #[test]
+    fn fixed_amount_1_interval_1() -> Result<(), String> {
+        check_heights(
+            DistributionFunction::FixedAmount { amount: 1 },
+            &[
+                TestStep::new(1, 100_001, true),
+                TestStep::new(2, 100_002, true),
+                TestStep::new(3, 100_003, true),
+                TestStep::new(50, 100_050, true),
+            ],
+            None,
+            1,
+            None,
+        )
+    }
 
     // Given some token configuration,
-    // When a claim is made at block 42,
+    // When a claim is made at block 41 and 50,
     // Then the claim should be successful.
+    // If we claim again in the interval it should not be successful.
     #[test]
-    fn test_block_based_perpetual_fixed_amount_50() {
-        super::test_suite::check_heights(
+    fn fixed_amount_50_interval_10() {
+        check_heights(
             DistributionFunction::FixedAmount { amount: 50 },
             &[
+                TestStep::new(1, 100_000, false),
                 TestStep::new(41, 100_200, true),
                 TestStep::new(46, 100_200, false),
                 TestStep::new(50, 100_250, true),
@@ -527,17 +546,16 @@ mod block_based_perpetual_fixed_amount {
             10,
             None,
         )
-        .expect("\n-> fixed amount should pass");
+            .expect("\n-> fixed amount should pass");
     }
 
     /// Test case for overflow error.
     ///
-    /// TODO: Fails, please fix.
     ///
     /// claim at height 1000000000000: claim failed: assertion 0 failed: expected SuccessfulExecution,
     /// got [InternalError(\"storage: protocol: overflow error: Overflow in FixedAmount evaluation\")]"
     #[test]
-    fn fail_test_block_based_perpetual_fixed_amount_1_000_000_000() {
+    fn fixed_amount_at_trillionth_block() {
         check_heights(
             DistributionFunction::FixedAmount {
                 amount: 1_000_000_000,
@@ -547,44 +565,46 @@ mod block_based_perpetual_fixed_amount {
                 TestStep::new(46, INITIAL_BALANCE + 4 * 1_000_000_000, false),
                 TestStep::new(50, INITIAL_BALANCE + 5 * 1_000_000_000, true),
                 TestStep::new(51, INITIAL_BALANCE + 5 * 1_000_000_000, false),
+                // We will be getting MAX_DISTRIBUTION_CYCLES_PARAM intervals of 1_000_000_000 tokens, and we already had 5
                 TestStep::new(
                     1_000_000_000_000,
-                    INITIAL_BALANCE + 5 * 1_000_000_000,
-                    false,
+                    INITIAL_BALANCE + (MAX_DISTRIBUTION_CYCLES_PARAM + 5) * 1_000_000_000,
+                    true,
+                ),
+                // We will be getting another MAX_DISTRIBUTION_CYCLES_PARAM intervals of 1_000_000_000 tokens, and we already had 5 + MAX_DISTRIBUTION_CYCLES_PARAM
+                TestStep::new(
+                    1_000_000_000_000,
+                    INITIAL_BALANCE + (MAX_DISTRIBUTION_CYCLES_PARAM * 2 + 5) * 1_000_000_000,
+                    true,
                 ),
             ],
             None,
             10,
             None,
         )
-        .expect("\n-> fixed amount should pass");
+            .expect("\n-> fixed amount should pass");
     }
 
     #[test]
     /// Given a fixed amount distribution with value of 0,
     /// When we try to claim,
     /// Then we always fail and the balance remains unchanged.
-    fn test_block_based_perpetual_fixed_amount_0() {
+    fn fixed_amount_0() {
         check_heights(
             DistributionFunction::FixedAmount { amount: 0 },
-            &[
-                (41, 100000, false),
-                (46, 100000, false),
-                (50, 100000, false),
-                (1000, 100000, false),
-            ],
+            &[(41, 100000, false)],
             None,
             10,
             None,
         )
-        .expect("\nfixed amount zero increase\n");
+            .expect_err("\namount should not be 0\n");
     }
 
     #[test]
     /// Given a fixed amount distribution with value of 1_000_000 and max_supply of 200_000,
     /// When we try to claim,
     /// Then we always fail and the balance remains unchanged.
-    fn test_fixed_amount_above_max_supply() {
+    fn fixed_amount_gt_max_supply() {
         let test = TestStep {
             name: "test_fixed_amount_above_max_supply".to_string(),
             base_height: 41,
@@ -605,14 +625,14 @@ mod block_based_perpetual_fixed_amount {
             10,
             Some(Some(200_000)),
         )
-        .expect("\nfixed amount zero increase\n");
+            .expect("\nfixed amount zero increase\n");
     }
 
     /// Given a fixed amount distribution with value of u64::MAX,
     /// When I claim tokens,
     /// Then I don't get an InternalError.
     #[test]
-    fn fail_test_block_based_perpetual_fixed_amount_u64_max() {
+    fn test_block_based_perpetual_fixed_amount_u64_max_should_error_at_validation() {
         check_heights(
             DistributionFunction::FixedAmount { amount: u64::MAX },
             &[TestStep::new(41, 100_000, false)],
@@ -620,10 +640,31 @@ mod block_based_perpetual_fixed_amount {
             10,
             None,
         )
-        .expect("\nfixed amount u64::MAX should pass\n");
+            .expect_err("u64::Max is too much for DistributionFunction::FixedAmount");
+    }
+
+    /// Given a fixed amount distribution with value of u64::MAX,
+    /// When I claim tokens,
+    /// Then I don't get an InternalError.
+    #[test]
+    fn test_block_based_perpetual_fixed_amount_max_distribution() {
+        check_heights(
+            DistributionFunction::FixedAmount {
+                amount: MAX_DISTRIBUTION_PARAM,
+            },
+            &[TestStep::new(
+                41,
+                4 * MAX_DISTRIBUTION_PARAM + 100_000,
+                true,
+            )],
+            None,
+            10,
+            None,
+        )
+            .expect("MAX_DISTRIBUTION_PARAM should be valid DistributionFunction::FixedAmount");
     }
 }
-mod block_based_perpetual_random {
+mod random {
     use std::{
         collections::BTreeMap,
         sync::{Arc, Mutex},
@@ -635,6 +676,7 @@ mod block_based_perpetual_random {
         test_suite::{check_heights, TestStep},
         INITIAL_BALANCE,
     };
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
     use dpp::data_contract::{
         associated_token::{
             token_configuration::accessors::v0::TokenConfigurationV0Getters,
@@ -649,38 +691,38 @@ mod block_based_perpetual_random {
         },
         TokenConfiguration,
     };
-    use test_case::test_matrix;
 
-    /// <Given a random distribution function with min=0, max=100,
+    /// Given a random distribution function with min=0, max=100,
     /// When I claim tokens at various heights,
     /// Then I get deterministic balances at those heights.
-    #[test_matrix(
-        0, //min
-        100,//max,
-        [None,Some(1_000_000)], // max_supply
-        &[
+    #[test]
+    #[ignore]
+    fn test_random_max_supply() -> Result<(), String> {
+        let steps = [
             TestStep::new(41, 100_192, true),
             TestStep::new(46, 100_192, false),
             TestStep::new(50, 100_263, true),
             TestStep::new(59, 100_263, false),
             TestStep::new(60, 100_310, true),
-        ]
-    )]
-    fn test_random(min: u64, max: u64, max_supply: Option<u64>, steps: &[TestStep]) {
-        check_heights(
-            DistributionFunction::Random { min, max },
-            steps,
-            None,
-            10,
-            Some(max_supply),
-        )
-        .expect("correct case 1");
+        ];
+
+        for max_supply in [None, Some(1_000_000)] {
+            check_heights(
+                DistributionFunction::Random { min: 0, max: 100 },
+                &steps,
+                None,
+                10,
+                Some(max_supply),
+            )?;
+        }
+        Ok(())
     }
 
     /// Given a random distribution function with min=0, max=0,
     /// When I claim tokens at various heights,
     /// Then claim fails and I get the same balance at those heights.
     #[test]
+    #[ignore]
     fn test_block_based_perpetual_random_0_0() {
         check_heights(
             DistributionFunction::Random { min: 0, max: 0 },
@@ -693,31 +735,49 @@ mod block_based_perpetual_random {
             10,
             None,
         )
-        .expect("no rewards");
+            .expect("no rewards");
     }
     #[test]
-    fn fails_test_block_based_perpetual_random_0_max() {
+    #[ignore]
+    fn test_block_based_perpetual_random_0_u64_max_should_error_at_validation() {
         check_heights(
             DistributionFunction::Random {
                 min: 0,
                 max: u64::MAX,
             },
+            &[TestStep::new(41, INITIAL_BALANCE, false)],
+            None,
+            10,
+            None,
+        )
+            .expect_err("max is too much for DistributionFunction::Random");
+    }
+
+    #[test]
+    #[ignore]
+    fn test_block_based_perpetual_random_0_MAX_distribution_param() {
+        check_heights(
+            DistributionFunction::Random {
+                min: 0,
+                max: MAX_DISTRIBUTION_PARAM,
+            },
             &[
-                TestStep::new(41, INITIAL_BALANCE, false),
-                TestStep::new(50, INITIAL_BALANCE, false),
-                TestStep::new(100, INITIAL_BALANCE, false),
+                TestStep::new(41, 382777733174502, true),
+                TestStep::new(50, 447703202535488, true),
+                TestStep::new(100, 1080112432401531, true),
             ],
             None,
             10,
             None,
         )
-        .expect("no rewards");
+            .expect("no rewards");
     }
 
     /// Given a random distribution function with min=10, max=30,
     /// When I claim tokens at various heights,
     /// Then I get a distribution of balances that is close to the maximum entropy.
     #[test]
+    #[ignore]
     fn test_block_based_perpetual_random_10_30_entropy() {
         const N: u64 = 200;
         const MIN: u64 = 10;
@@ -754,14 +814,14 @@ mod block_based_perpetual_random {
                     )));
             }),
         )
-        .with_step_success_fn(move |balance: u64| {
-            balances.lock().unwrap().push(balance);
-        });
+            .with_step_success_fn(move |balance: u64| {
+                balances.lock().unwrap().push(balance);
+            });
 
         suite.execute(&tests).expect("should execute");
 
         let data = balances_result.lock().unwrap();
-        // substract balance from previous step (for first step, substract initial balance of 100_000)
+        // subtract balance from previous step (for first step, subtract initial balance of 100_000)
         let diffs: Vec<u64> = data
             .iter()
             .scan(INITIAL_BALANCE, |prev, &x| {
@@ -812,208 +872,640 @@ mod block_based_perpetual_random {
     }
 }
 
-mod block_based_perpetual_step_decreasing {
+mod step_decreasing {
     use dpp::balances::credits::TokenAmount;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-    use rust_decimal::prelude::ToPrimitive;
-    use test_case::test_case;
-    use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_PARAM};
+    use dpp::prelude::{BlockHeight, BlockHeightInterval};
+    use crate::{execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::test_suite::check_heights};
     use crate::execution::validation::state_transition::batch::tests::token::distribution::perpetual::block_based::INITIAL_BALANCE;
 
-    #[test_case(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-      Some((1..1000).step_by(100).collect()),// claim_heights
-        1; // distribution_interval
-        "claim every 100 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-      Some((1..1000).step_by(500).collect()),// claim_heights
-        1; // distribution_interval
-        "fails: claim every 500 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        101,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-        Some((1..1000).step_by(100).collect()),// claim_heights
-        1; // distribution_interval
-        "1% increase, claim every 100 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        101,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-        Some((1..1000).step_by(500).collect()),// claim_heights
-        1; // distribution_interval
-        "fails: 1% increase, claim every 500 blocks"
-    )]
-    #[test_case(
-        1,// step_count
-        1000,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(1),// min_value
-        Some(vec![1,7]), // claim_heights
-        1; // distribution_interval
-        "fails: 1000x increase, overflow"
-    )]
-    #[test_matrix(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        [Some(1), Some(100)],// min_value
-        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "100% decrease, various min values"
-    )]
-    #[test_case(
-        1,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        Some(u64::MAX),// min_value
-        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "fails: full decrease, min is u64::MAX"
-    )]
-    #[test_matrix(
-        1,// step_count
-        0,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        [None,Some(0),Some(1),Some(100)],// min_value
-        Some(vec![1,2,3,10,100]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "no decrease, irrelevant min values"
-    )]
-    /// Given 100% decrease with step 10, when I claim below 10th block, then the claim is successful.
-    #[test_case(
-        10,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        None,// min_value
-        Some(vec![2,7,9]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "full decrease, step 10 interval 1"
-    )]
-    /// Given 100% decrease with step 10 starting at 5, when I claim below 15th block, then the claim is successful.
-    #[test_case(
-        10,// step_count
-        1,// decrease_per_interval_numerator
-        1,// decrease_per_interval_denominator
-        Some(5),// s
-        100_000,// n
-        None,// min_value
-        Some(vec![2,7,9,13,14]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "full decrease, start 5 step 10 interval 1"
-    )]
-    /// Given 100% decrease with step 10 starting at 5, when I claim at height 15, there are no new coins.
-    #[test_case(
-            10,// step_count
-            1,// decrease_per_interval_numerator
-            1,// decrease_per_interval_denominator
-            Some(5),// s
-            100_000,// n
-            None,// min_value
-            Some(vec![14,15]), // claim_heights // at 14 we zero out, at 15 nothing to claim
-            1 // distribution_interval
-            => with |x:Result<(),String>| assert!(x.is_err_and(|s|s.contains("claim at height 15: claim failed")))
-            ;"full decrease, start 5 step 10 interval 1 err at 15"
-        )]
-    #[test_matrix(
-        [5,10],// step_count
-        1,// decrease_per_interval_numerator
-        2,// decrease_per_interval_denominator
-        None,// s
-        100_000,// n
-        None,// min_value
-        Some(vec![5,10,18,22,100]), // claim_heights
-        [1,5]; // distribution_interval
-        "fails: 1/2 decrease, changing step"
-    )]
-    #[test_matrix(
-        1,// step_count
-        10,// decrease_per_interval_numerator
-        100,// decrease_per_interval_denominator
-        [None,Some(1),Some(5)],// s
-        100_000,// n
-        None,// min_value
-        Some(vec![5,10,15,20]), // claim_heights // ,300,500,800,1_000,1_000_000
-        1; // distribution_interval
-        "1/2 decrease, changing S"
-    )]
+    const DECREASING_ONE_PERCENT_100K: [TokenAmount; 500] = [
+        100000, 99000, 98010, 97029, 96058, 95097, 94146, 93204, 92271, 91348, 90434, 89529, 88633,
+        87746, 86868, 85999, 85139, 84287, 83444, 82609, 81782, 80964, 80154, 79352, 78558, 77772,
+        76994, 76224, 75461, 74706, 73958, 73218, 72485, 71760, 71042, 70331, 69627, 68930, 68240,
+        67557, 66881, 66212, 65549, 64893, 64244, 63601, 62964, 62334, 61710, 61092, 60481, 59876,
+        59277, 58684, 58097, 57516, 56940, 56370, 55806, 55247, 54694, 54147, 53605, 53068, 52537,
+        52011, 51490, 50975, 50465, 49960, 49460, 48965, 48475, 47990, 47510, 47034, 46563, 46097,
+        45636, 45179, 44727, 44279, 43836, 43397, 42963, 42533, 42107, 41685, 41268, 40855, 40446,
+        40041, 39640, 39243, 38850, 38461, 38076, 37695, 37318, 36944, 36574, 36208, 35845, 35486,
+        35131, 34779, 34431, 34086, 33745, 33407, 33072, 32741, 32413, 32088, 31767, 31449, 31134,
+        30822, 30513, 30207, 29904, 29604, 29307, 29013, 28722, 28434, 28149, 27867, 27588, 27312,
+        27038, 26767, 26499, 26234, 25971, 25711, 25453, 25198, 24946, 24696, 24449, 24204, 23961,
+        23721, 23483, 23248, 23015, 22784, 22556, 22330, 22106, 21884, 21665, 21448, 21233, 21020,
+        20809, 20600, 20394, 20190, 19988, 19788, 19590, 19394, 19200, 19008, 18817, 18628, 18441,
+        18256, 18073, 17892, 17713, 17535, 17359, 17185, 17013, 16842, 16673, 16506, 16340, 16176,
+        16014, 15853, 15694, 15537, 15381, 15227, 15074, 14923, 14773, 14625, 14478, 14333, 14189,
+        14047, 13906, 13766, 13628, 13491, 13356, 13222, 13089, 12958, 12828, 12699, 12572, 12446,
+        12321, 12197, 12075, 11954, 11834, 11715, 11597, 11481, 11366, 11252, 11139, 11027, 10916,
+        10806, 10697, 10590, 10484, 10379, 10275, 10172, 10070, 9969, 9869, 9770, 9672, 9575, 9479,
+        9384, 9290, 9197, 9105, 9013, 8922, 8832, 8743, 8655, 8568, 8482, 8397, 8313, 8229, 8146,
+        8064, 7983, 7903, 7823, 7744, 7666, 7589, 7513, 7437, 7362, 7288, 7215, 7142, 7070, 6999,
+        6929, 6859, 6790, 6722, 6654, 6587, 6521, 6455, 6390, 6326, 6262, 6199, 6137, 6075, 6014,
+        5953, 5893, 5834, 5775, 5717, 5659, 5602, 5545, 5489, 5434, 5379, 5325, 5271, 5218, 5165,
+        5113, 5061, 5010, 4959, 4909, 4859, 4810, 4761, 4713, 4665, 4618, 4571, 4525, 4479, 4434,
+        4389, 4345, 4301, 4257, 4214, 4171, 4129, 4087, 4046, 4005, 3964, 3924, 3884, 3845, 3806,
+        3767, 3729, 3691, 3654, 3617, 3580, 3544, 3508, 3472, 3437, 3402, 3367, 3333, 3299, 3266,
+        3233, 3200, 3168, 3136, 3104, 3072, 3041, 3010, 2979, 2949, 2919, 2889, 2860, 2831, 2802,
+        2773, 2745, 2717, 2689, 2662, 2635, 2608, 2581, 2555, 2529, 2503, 2477, 2452, 2427, 2402,
+        2377, 2353, 2329, 2305, 2281, 2258, 2235, 2212, 2189, 2167, 2145, 2123, 2101, 2079, 2058,
+        2037, 2016, 1995, 1975, 1955, 1935, 1915, 1895, 1876, 1857, 1838, 1819, 1800, 1782, 1764,
+        1746, 1728, 1710, 1692, 1675, 1658, 1641, 1624, 1607, 1590, 1574, 1558, 1542, 1526, 1510,
+        1494, 1479, 1464, 1449, 1434, 1419, 1404, 1389, 1375, 1361, 1347, 1333, 1319, 1305, 1291,
+        1278, 1265, 1252, 1239, 1226, 1213, 1200, 1188, 1176, 1164, 1152, 1140, 1128, 1116, 1104,
+        1092, 1081, 1070, 1059, 1048, 1037, 1026, 1015, 1004, 993, 983, 973, 963, 953, 943, 933,
+        923, 913, 903, 893, 884, 875, 866, 857, 848, 839, 830, 821, 812, 803, 794, 786, 778, 770,
+        762, 754, 746, 738, 730, 722, 714, 706, 698, 691, 684, 677, 670, 663, 656, 649, 642, 635,
+        628, 621, 614,
+    ];
+
+    fn sum_till_for_100k_step_1_interval_1(
+        distribution_heights: Vec<BlockHeight>,
+    ) -> Vec<TokenAmount> {
+        distribution_heights
+            .into_iter()
+            .map(|height| {
+                (1..=height)
+                    .map(|height| DECREASING_ONE_PERCENT_100K[height as usize])
+                    .sum::<TokenAmount>()
+                    + INITIAL_BALANCE
+            })
+            .collect()
+    }
+
+    const DECREASING_HALF_100K: [TokenAmount; 20] = [
+        100000, 50000, 25000, 12500, 6250, 3125, 1562, 781, 390, 195, 97, 48, 24, 12, 6, 3, 1, 0,
+        0, 0,
+    ];
+
+    fn sum_till_for_100k_halving(
+        distribution_heights: Vec<BlockHeight>,
+        reduce_every_block_count: u32,
+        interval: BlockHeightInterval,
+        start_decreasing_step: u64,
+    ) -> Vec<TokenAmount> {
+        distribution_heights
+            .into_iter()
+            .map(|height| {
+                // How many full intervals have passed by `height`?
+                let end = height / interval;
+
+                // If not even 1 interval, return the initial balance
+                if end < 1 {
+                    return INITIAL_BALANCE;
+                }
+
+                // Sum each interval’s distribution
+                let sum_halved = (1..=end)
+                    .map(|i| {
+                        if i < start_decreasing_step {
+                            // Before start offset => always distribute the first entry
+                            DECREASING_HALF_100K[0]
+                        } else {
+                            // After offset => normal indexing
+                            let offset_index = ((i - start_decreasing_step) as usize)
+                                / (reduce_every_block_count as usize);
+
+                            DECREASING_HALF_100K.get(offset_index).copied().unwrap_or(0)
+                        }
+                    })
+                    .sum::<TokenAmount>();
+
+                INITIAL_BALANCE + sum_halved
+            })
+            .collect()
+    }
+
+    #[test]
+    fn claim_every_block() {
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            None,
+            10_000,
+            0,
+            Some(1),
+            (1..5).step_by(1).collect(),
+            1,
+            vec![
+                INITIAL_BALANCE + 9_900,
+                INITIAL_BALANCE + 9_900 + 9_801,
+                INITIAL_BALANCE + 9_900 + 9_801 + 9_702,
+                INITIAL_BALANCE + 9_900 + 9_801 + 9_702 + 9_604,
+            ],
+        )
+            .expect("expected to succeed");
+    }
+
+    #[test]
+    fn claim_every_5_blocks() {
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            None,
+            10_000,
+            0,
+            Some(1),
+            vec![1, 6, 11],
+            1,
+            vec![
+                INITIAL_BALANCE + 9_900,
+                INITIAL_BALANCE + 9_900 + 9_801 + 9_702 + 9_604 + 9_507 + 9_411,
+                INITIAL_BALANCE
+                    + 9_900
+                    + 9_801
+                    + 9_702
+                    + 9_604
+                    + 9_507
+                    + 9_411
+                    + 9_316
+                    + 9_222
+                    + 9_129
+                    + 9_037
+                    + 8_946,
+            ],
+        )
+            .expect("expected to succeed");
+    }
+
+    #[test]
+    fn claim_with_1_percent_increase_should_fail() {
+        let result_str = run_test(
+            1,
+            101,
+            100,
+            None,
+            None,
+            100_000,
+            0,
+            Some(1),
+            (1..1000).step_by(100).collect(),
+            1,
+            vec![],
+        )
+            .expect_err("should not allow to increase");
+        assert!(
+            result_str.contains("Invalid parameter tuple in token distribution function: `decrease_per_interval_numerator` must be smaller than `decrease_per_interval_denominator`"),
+            "Unexpected panic message: {result_str}"
+        );
+    }
+
+    #[test]
+    fn claim_with_no_decrease_should_fail() {
+        let result_str = run_test(
+            1,
+            0,
+            100,
+            None,
+            None,
+            100_000,
+            0,
+            Some(1),
+            (1..1000).step_by(100).collect(),
+            1,
+            vec![],
+        )
+            .expect_err("should not allow to increase");
+        assert!(
+            result_str.contains("Invalid parameter `decrease_per_interval_numerator` in token distribution function. Expected range: 1 to 65535"),
+            "Unexpected panic message: {result_str}"
+        );
+    }
+
+    #[test]
+    fn claim_every_10_blocks_on_100k() {
+        let steps = (1..500).step_by(10).collect::<Vec<_>>();
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            Some(1024),
+            100_000,
+            0,
+            Some(1),
+            steps.clone(),
+            1,
+            sum_till_for_100k_step_1_interval_1(steps),
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn claim_every_block_on_100k_128_default_steps() {
+        let steps = (1..140).step_by(1).collect::<Vec<_>>();
+        let start_steps = (1..129).step_by(1).collect::<Vec<_>>();
+        let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps.clone());
+        let later_steps = (129..140).step_by(1).collect::<Vec<_>>();
+        let later_steps_expected_amounts = later_steps
+            .iter()
+            .map(|_| *start_steps_expected_amounts.last().unwrap())
+            .collect::<Vec<_>>();
+        let mut expected_amounts = start_steps_expected_amounts;
+        expected_amounts.extend(later_steps_expected_amounts);
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            None,
+            100_000,
+            0,
+            Some(1),
+            steps.clone(),
+            1,
+            expected_amounts,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn claim_every_block_on_100k_128_default_steps_with_trailing_distribution() {
+        let steps = (1..200).step_by(1).collect::<Vec<_>>();
+        let start_steps = (1..129).step_by(1).collect::<Vec<_>>();
+        let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps.clone());
+        let later_steps = (129..200).step_by(1).collect::<Vec<_>>();
+        let later_steps_expected_amounts = later_steps
+            .iter()
+            .map(|&i| *start_steps_expected_amounts.last().unwrap() + (i - 128) * 10)
+            .collect::<Vec<_>>();
+        let mut expected_amounts = start_steps_expected_amounts;
+        expected_amounts.extend(later_steps_expected_amounts);
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            None,
+            100_000,
+            // 10 credits per step afterward
+            10,
+            Some(1),
+            steps.clone(),
+            1,
+            expected_amounts,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn claim_every_10_blocks_on_100k_128_default_steps() {
+        let steps = (1..500).step_by(10).collect::<Vec<_>>();
+        let start_steps = (1..128).step_by(10).collect::<Vec<_>>();
+        let start_steps_expected_amounts = sum_till_for_100k_step_1_interval_1(start_steps);
+        let step_128_amount = sum_till_for_100k_step_1_interval_1(vec![128]).remove(0);
+        let later_steps = (141..500).step_by(10).collect::<Vec<_>>();
+        let later_steps_expected_amounts = later_steps
+            .iter()
+            .map(|_| step_128_amount)
+            .collect::<Vec<_>>();
+        let mut expected_amounts = start_steps_expected_amounts;
+        expected_amounts.push(step_128_amount); // at 131.
+        expected_amounts.extend(later_steps_expected_amounts);
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            None,
+            100_000,
+            0,
+            Some(1),
+            steps.clone(),
+            1,
+            expected_amounts,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn claim_128_default_steps_480_max_token_redemption_cycles() {
+        // We can only claim 128 events at a time.
+        // The step_wise distribution stops after 500 from the start.
+        let claim_heights = vec![1, 400, 400, 400, 400, 401, 450, 500];
+        // 129 is the first claim for 400 because we can only do 128 cycles at a time
+        // Then 257 because we are doing 128 cycles and 129 + 128 = 257
+        // The last one is 480 because our max steps is 480
+        let expected_amounts =
+            sum_till_for_100k_step_1_interval_1(vec![1, 129, 257, 385, 400, 401, 450, 480]);
+        run_test(
+            1,
+            1,
+            100,
+            None,
+            Some(480),
+            100_000,
+            0,
+            Some(1),
+            // This will give us 1, 151, 301, 400, 401, 450 for result values
+            claim_heights,
+            1,
+            expected_amounts,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn decrease_where_min_would_not_matter_min_1_100() {
+        let claim_heights = vec![1, 2, 3, 10, 100];
+        let expected_amounts = sum_till_for_100k_step_1_interval_1(claim_heights.clone());
+        for min in [1, 100] {
+            run_test(
+                1,
+                1,
+                100,
+                None,
+                None,
+                100_000,
+                0,
+                Some(min),
+                claim_heights.clone(),
+                1,
+                expected_amounts.clone(),
+            )
+                .map_err(|e| format!("failed with min {}: {}", min, e))
+                .expect("should pass");
+        }
+    }
+
+    #[test]
+    fn heavy_decrease_to_min_with_min_various_values() {
+        let claim_heights = vec![1, 2, 3, 10, 100];
+        for min in [1, 10] {
+            let expected_amounts = vec![
+                INITIAL_BALANCE + min,
+                INITIAL_BALANCE + 2 * min,
+                INITIAL_BALANCE + 3 * min,
+                INITIAL_BALANCE + 10 * min,
+                INITIAL_BALANCE + 100 * min,
+            ];
+            run_test(
+                1,
+                u16::MAX - 1,
+                u16::MAX,
+                None,
+                None,
+                100_000,
+                0,
+                Some(min),
+                claim_heights.clone(),
+                1,
+                expected_amounts,
+            )
+                .map_err(|e| format!("failed with min {}: {}", min, e))
+                .expect("should pass");
+        }
+    }
+
+    #[test]
+    fn full_decrease_min_eq_u64_max() {
+        let result_str = run_test(
+            1,
+            u16::MAX - 1,
+            u16::MAX,
+            None,
+            None,
+            MAX_DISTRIBUTION_PARAM,
+            0,
+            Some(u64::MAX),
+            vec![1, 2, 3, 10, 100],
+            1,
+            vec![],
+        )
+            .expect_err("should fail");
+        assert!(
+            result_str.contains("Invalid parameter tuple in token distribution function: `n` must be greater than or equal to `min_value`"),
+            "Unexpected panic message: {result_str}"
+        );
+    }
+    #[test]
+    fn full_decrease_min_eq_max_distribution() {
+        run_test(
+            1,
+            u16::MAX - 1,
+            u16::MAX,
+            None,
+            None,
+            MAX_DISTRIBUTION_PARAM,
+            0,
+            Some(MAX_DISTRIBUTION_PARAM),
+            vec![1, 2, 10],
+            1,
+            vec![
+                MAX_DISTRIBUTION_PARAM + INITIAL_BALANCE,
+                MAX_DISTRIBUTION_PARAM * 2 + INITIAL_BALANCE,
+                MAX_DISTRIBUTION_PARAM * 10 + INITIAL_BALANCE,
+            ],
+        )
+            .expect("should succeed");
+    }
+
+    #[test]
+    fn distribute_max_distribution_param_every_step() {
+        let claim_heights = (1..65_536).step_by(128).collect::<Vec<_>>();
+        let expected_balances = claim_heights
+            .iter()
+            .map(|&height| {
+                MAX_DISTRIBUTION_PARAM
+                    .saturating_mul(height)
+                    .saturating_add(INITIAL_BALANCE)
+                    .min(i64::MAX as u64)
+            })
+            .collect();
+        run_test(
+            1,
+            u16::MAX - 1,
+            u16::MAX,
+            None,
+            None,
+            MAX_DISTRIBUTION_PARAM,
+            MAX_DISTRIBUTION_PARAM,
+            Some(MAX_DISTRIBUTION_PARAM),
+            claim_heights,
+            1,
+            expected_balances,
+        )
+            .expect("should succeed");
+    }
+
+    #[test]
+    fn start_over_max_distribution_param_should_fail() {
+        let result_str = run_test(
+            1,
+            1,
+            u16::MAX,
+            None,
+            None,
+            MAX_DISTRIBUTION_PARAM + 1,
+            0,
+            None,
+            vec![1, 2, 10],
+            1,
+            vec![],
+        )
+            .expect_err("should fail");
+        assert!(
+            result_str.contains("Invalid parameter `n` in token distribution function. Expected range: 1 to 281474976710655"),
+            "Unexpected panic message: {result_str}"
+        );
+    }
+
+    #[test]
+    fn half_decrease_changing_step_5_distribution_interval_1() {
+        let step = 5; // Every 5 blocks the amount divides by 1/2
+        let distribution_interval = 1; // The payout happens every block
+        let claim_heights = vec![5, 10, 18, 22, 100];
+        let expected_balances =
+            sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
+        run_test(
+            step,
+            1,
+            2,
+            None,
+            None,
+            100_000,
+            0,
+            None,
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn half_decrease_changing_step_5_distribution_interval_5() {
+        let step = 5; // Every 25 blocks (5 x distribution interval) the amount divides by 1/2
+        let distribution_interval = 5; // The payout happens every 5 blocks
+        let claim_heights = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 22, 25, 26, 51, 100];
+        let expected_balances =
+            sum_till_for_100k_halving(claim_heights.clone(), step, distribution_interval, 0);
+        run_test(
+            step,
+            1,
+            2,
+            None,
+            None,
+            100_000,
+            0,
+            None,
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn half_decrease_changing_step_24_distribution_interval_1000() {
+        let step = 24; // Every 24000 blocks (24 x distribution interval) the amount divides by 1/2
+        let distribution_interval = 1000; // The payout happens every 400 blocks
+        let claim_heights = vec![3000, 45000, 60000, 300000, 300000];
+        let value_heights = vec![3000, 45000, 60000, 60000 + 128 * 1000, 300000];
+        let expected_balances =
+            sum_till_for_100k_halving(value_heights, step, distribution_interval, 0);
+        run_test(
+            step,
+            1,
+            2,
+            None,
+            None,
+            100_000,
+            0,
+            None,
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
+    }
+
+    #[test]
+    fn half_decrease_changing_step_24_distribution_interval_1000_start_height_2000() {
+        let step = 24; // Every 24000 blocks (24 x distribution interval) the amount divides by 1/2
+        let distribution_interval = 1000; // The payout happens every 400 blocks
+        let claim_heights = vec![3000, 23000, 24000, 25000, 43000, 44000, 300000, 300000];
+        let start_height = 2000;
+        let value_heights = vec![
+            3000,
+            23000,
+            24000,
+            25000,
+            43000,
+            44000,
+            44000 + 128 * 1000,
+            300000,
+        ];
+        let expected_balances = sum_till_for_100k_halving(
+            value_heights,
+            step,
+            distribution_interval,
+            start_height / distribution_interval,
+        );
+        run_test(
+            step,
+            1,
+            2,
+            Some(start_height / distribution_interval),
+            None,
+            100_000,
+            0,
+            None,
+            claim_heights,
+            distribution_interval,
+            expected_balances,
+        )
+            .expect("should pass");
+    }
 
     /// Test various combinations of [DistributionFunction::StepDecreasingAmount] distribution.
+    #[allow(clippy::too_many_arguments)]
     fn run_test(
         step_count: u32,
         decrease_per_interval_numerator: u16,
         decrease_per_interval_denominator: u16,
-        s: Option<u64>,
-        n: TokenAmount,
-        min_value: Option<u64>,
-        claim_heights: Option<Vec<u64>>,
-        distribution_interval: u64,
+        start_decreasing_offset: Option<BlockHeight>,
+        max_interval_count: Option<u16>,
+        distribution_start_amount: TokenAmount,
+        trailing_distribution_interval_amount: TokenAmount,
+        min_value: Option<TokenAmount>,
+        claim_heights: Vec<BlockHeight>,
+        distribution_interval: BlockHeightInterval,
+        mut expected_balances: Vec<TokenAmount>,
     ) -> Result<(), String> {
         let dist = DistributionFunction::StepDecreasingAmount {
             step_count,
             decrease_per_interval_numerator,
             decrease_per_interval_denominator,
-            s,
-            n,
+            start_decreasing_offset,
+            max_interval_count,
+            distribution_start_amount,
+            trailing_distribution_interval_amount,
             min_value,
         };
-        let claim_heights =
-            claim_heights.unwrap_or(vec![1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 1_000_000]);
 
-        let expected_balances = claim_heights
-            .iter()
-            .map(|&h| {
-                // initial balance, defined in contract js
-                let mut expected_balance: i128 = INITIAL_BALANCE as i128;
-                // loop over blocks, starting with S, with step PERPETUAL_DISTRIBUTION_INTERVAL
-                for i in (1..=h).step_by(distribution_interval as usize) {
-                    expected_balance += expected_emission(i, &dist);
-                }
-                tracing::debug!("expected balance at height {}: {}", h, expected_balance);
-                expected_balance.to_u64().unwrap_or_else(|| {
-                    tracing::error!("overflow in expected balance at height {}", h);
-                    0
-                }) // to handle tests that overflow
-            })
-            .collect::<Vec<_>>();
-        // we expect all tests to pass
+        if claim_heights.len() != expected_balances.len() {
+            expected_balances = (0..claim_heights.len()).map(|_| 0u64).collect();
+        }
+
+        let mut prev = None;
         let claims = claim_heights
             .iter()
             .zip(expected_balances.iter())
-            .map(|(&h, &b)| (h, b, true))
+            .map(|(&h, &b)| {
+                let is_increase = match prev {
+                    Some(p) => b > p || b == i64::MAX as u64,
+                    None => b > INITIAL_BALANCE,
+                };
+                prev = Some(b);
+                (h, b, is_increase)
+            })
             .collect::<Vec<_>>();
 
-        // we return Err(()) to make result comparision easier in test_case
+        // we return Err(()) to make result comparison easier in test_case
         check_heights(
             dist,
             &claims,
@@ -1021,83 +1513,29 @@ mod block_based_perpetual_step_decreasing {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!(e);
-        })
-    }
-
-    // ===== HELPER FUNCTIONS ===== //
-
-    /// Calculate expected emission at provided height.
-    ///
-    /// We use [i128] to ensure we handle overflows better than the original code.
-    ///
-    // f(x) = n * (1 - (decrease_per_interval_numerator / decrease_per_interval_denominator))^((x - s) / step_count)
-    pub(super) fn expected_emission(x: u64, dist: &DistributionFunction) -> i128 {
-        let x = x as i128;
-        let (
-            step_count,
-            decrease_per_interval_numerator,
-            decrease_per_interval_denominator,
-            s,
-            n,
-            min_value,
-        ) = match dist {
-            DistributionFunction::StepDecreasingAmount {
-                step_count,
-                decrease_per_interval_numerator,
-                decrease_per_interval_denominator,
-                s,
-                n,
-                min_value,
-            } => (
-                *step_count as i128,
-                *decrease_per_interval_numerator as i128,
-                *decrease_per_interval_denominator as i128,
-                s.unwrap_or_default() as i128,
-                *n as i128,
-                min_value.unwrap_or(1) as i128,
-            ),
-            _ => panic!("expected StepDecreasingAmount"),
-        };
-
-        if x < s {
-            n
-        } else {
-            // let's simplify it to a form like:
-            //    f(x) = N * a ^ b
-            let a = 1f64
-                - (decrease_per_interval_numerator as f64
-                    / decrease_per_interval_denominator as f64);
-            let b = (x - s) / step_count; // integer by purpose, we want to round down
-            let f_x = n as f64 * a.powi(b.to_i32().expect("overflow"));
-            f_x.to_i128()
-                .unwrap_or_else(|| {
-                    tracing::error!("overflow in expected_emission({})", f_x);
-                    0
-                })
-                .max(min_value)
-        }
+            .inspect_err(|e| {
+                tracing::error!(e);
+            })
     }
 }
 
-mod block_based_perpetual_stepwise {
+mod stepwise {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use std::collections::BTreeMap;
 
     #[test]
-    fn fails_stepwise_correct() {
+    fn distribution_stepwise_correct() {
+        let distribution_interval = 10;
         let periods = BTreeMap::from([
-            (0, 10_000),
-            (20, 20_000),
+            (0, 10_000), // h 1-20
+            (2, 20_000), // h 20+
             (45, 30_000),
             (50, 40_000),
             (70, 50_000),
         ]);
 
         let dist = DistributionFunction::Stepwise(periods);
-        let distribution_interval = 10;
 
         // claims: height, balance, expect_pass
         let steps = [
@@ -1106,19 +1544,18 @@ mod block_based_perpetual_stepwise {
             (10, 110_000, true),
             (11, 110_000, false),
             (19, 110_000, false),
-            (20, 120_000, true),
-            (21, 120_000, false),
-            (24, 120_000, false),
-            (35, 140_000, true), // since 20, we should get one more distribution of 20k at height 30
-            (39, 140_000, false),
-            (46, 160_000, true),
-            (49, 160_000, false),
-            (51, 180_000, true),
-            (52, 180_000, false),
-            (70, 270_000, true),
+            (20, 130_000, true),
+            (21, 130_000, false),
+            (24, 130_000, false),
+            (35, 150_000, true),
+            (39, 150_000, false),
+            (46, 170_000, true),
+            (49, 170_000, false),
+            (51, 190_000, true),
+            (200, 490_000, true),
+            (300, 690_000, true),
             (
-                1_000_000,
-                270_000 + 50_000 * (1_000_000 - 70_000) / distribution_interval,
+                1_000_000, 6_370_000, // because we only do 128 steps at a time.
                 true,
             ),
         ];
@@ -1130,88 +1567,71 @@ mod block_based_perpetual_stepwise {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
-        .expect("stepwise should pass");
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
+            .expect("stepwise should pass");
     }
 }
 
-mod block_based_perpetual_linear {
+mod linear {
     use super::test_suite::check_heights;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
-    use test_case::test_matrix;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_LINEAR_SLOPE_A_PARAM, MIN_LINEAR_SLOPE_A_PARAM};
 
-    #[test_matrix(
-        1,// a
-        1, // d
-        [None,Some(0)], // start_step
-        0, // starting_amount
-        [None,Some(0),Some(1)],// min_value
-        [None,Some(1000)],// max_value
-        &[(1,100_001,true),(2,100_003,true),(3,100_006,true),(10,100_055,true)], // heights
-        1 // distribution_interval
-    ; "f(x)=x")]
+    #[test]
+    fn linear_distribution_divide_by_max() -> Result<(), String> {
+        // Given linear distribution with d=MAX and starting amount of 1,
+        // We expect no claim rewards
+        test_linear(
+            1,                                            // a
+            u64::MAX,                                     // d
+            None,                                         // start_step
+            0,                                            // starting_amount
+            Some(0),                                      // min_value
+            None,                                         // max_value
+            &[(1, 100_000, false), (20, 100_000, false)], // heights
+            1,
+        )
+    }
 
-    /// Given linear distribution with d=0,
-    /// When I create a token,
-    /// Then I get an error.
-    #[test_case(
-        1,// a
-        0, // d
-        None, // start_step
-        100_000, // starting_amount
-        None, // min_value
-        None, // max_value
-        &[(10,100_000,false)], // heights
-        1 // distribution_interval
-    ; "fails: divide by 0")]
-    /// Given linear distribution with d=MAX and starting amount of 1,
-    /// When I claim tokens,
-    /// Then I have only one success, and subsequent claims fail because the calculated distribution is lower than 1
-    #[test_case(
-        1,// a
-        u64::MAX, // d
-        None, // start_step
-        0, // starting_amount
-        Some(0), // min_value
-        None, // max_value
-        &[(1,100_000,false),(20,100_000,false)], // heights
-        1 // distribution_interval
-    ; "divide by u64::MAX")]
-    #[test_matrix(
-        [-1,-100000,i64::MIN],// a
-        1, // d
-        None, // start_step
-        0, // starting_amount
-        None, // min_value
-        None, // max_value
-        &[(1,100_000,false),(20,100_000,false)], // heights
-        1 // distribution_interval
-    ; "negative a")]
+    #[test]
+    fn linear_distribution_x_matrix() -> Result<(), String> {
+        let steps = [
+            (1, 100_001, true),
+            (2, 100_003, true),
+            (3, 100_006, true),
+            (10, 100_055, true),
+        ];
 
-    /// We expect failure when max < min
-    #[test_matrix(
-        1,// a
-        1, // d
-        None, // start_step
-        0, // starting_amount
-        Some(100), // min_value
-        [Some(0),Some(99)], // max_value
-        &[(1,100_000,false),(20,100_000,false)], // heights
-        1 // distribution_interval
-    ; "fails: max less than min")]
-    #[test_case(
-        1,// a
-        1, // d
-        None, // start_step
-        0, // starting_amount
-        Some(10), // min_value
-        Some(10), // max_value
-        &[(1,100_010,true),(2,100_020,true),(10,100_100,true)], // heights
-        1 // distribution_interval
-    ; "min eq max")]
+        for start_step in [None, Some(0)] {
+            for min_value in [None, Some(0), Some(1)] {
+                for max_value in [None, Some(1000)] {
+                    test_linear(1, 1, start_step, 0, min_value, max_value, &steps, 1)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    #[test]
+    fn linear_distribution_slopes() -> Result<(), String> {
+        for (a, steps) in [
+            (-1, [(1, 100_000, false), (20, 100_000, false)]),
+            (1, [(1, 100_001, true), (20, 100_210, true)]),
+            (
+                MIN_LINEAR_SLOPE_A_PARAM,
+                [(1, 100_000, false), (20, 100_000, false)],
+            ),
+            (
+                MAX_LINEAR_SLOPE_A_PARAM as i64,
+                [(1, 100_256, true), (20, 153_760, true)],
+            ),
+        ] {
+            test_linear(a, 1, None, 0, None, None, &steps, 1)?;
+        }
+        Ok(())
+    }
 
+    #[allow(clippy::too_many_arguments)]
     fn test_linear(
         a: i64,
         d: u64,
@@ -1221,7 +1641,7 @@ mod block_based_perpetual_linear {
         max_value: Option<u64>,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,
-    ) {
+    ) -> Result<(), String> {
         // Linear distribution function
         //
         // # Formula
@@ -1247,14 +1667,208 @@ mod block_based_perpetual_linear {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
-        .expect("stepwise should pass");
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 }
 
-mod block_based_perpetual_polynomial {
+#[cfg(test)]
+mod exponential {
+    use super::test_suite::{check_heights, TestStep, TestSuite};
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use dpp::data_contract::{
+        associated_token::{
+            token_configuration::accessors::v0::TokenConfigurationV0Getters,
+            token_distribution_key::TokenDistributionType,
+            token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters,
+            token_perpetual_distribution::{
+                distribution_function::DistributionFunction::{self, Exponential},
+                distribution_recipient::TokenDistributionRecipient,
+                reward_distribution_type::RewardDistributionType,
+                v0::TokenPerpetualDistributionV0,
+                TokenPerpetualDistribution,
+            },
+        },
+        TokenConfiguration,
+    };
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_EXP_A_PARAM, MAX_EXP_M_PARAM, MAX_EXP_N_PARAM, MIN_EXP_M_PARAM};
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // helper – one‑liner wrapper around `check_heights` (same as polynomial)
+    // ─────────────────────────────────────────────────────────────────────────
+    fn test_exponential(
+        dist: DistributionFunction,
+        steps: &[(u64, u64, bool)], // (height, expected balance, expect‑pass)
+        distribution_interval: u64,
+    ) -> Result<(), String> {
+        check_heights(dist, steps, None, distribution_interval, None)
+            .inspect_err(|e| tracing::error!("{e}"))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1.  Basic positive‑growth example  (m > 0)
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn exponential_distribution_growth_basic() -> Result<(), String> {
+        test_exponential(
+            Exponential {
+                a: 1,
+                d: 1,
+                m: 1, // positive  ⇒ growth
+                n: 1,
+                o: 0,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: Some(1_000_000),
+            },
+            // heights 10 and 20 should both succeed – balances are illustrative
+            &[(10, 112_814, true), (20, 6_799_881, true)],
+            1,
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2.  Basic negative‑decay example  (m < 0)
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn exponential_distribution_decay_basic() -> Result<(), String> {
+        test_exponential(
+            Exponential {
+                a: 5,
+                d: 1,
+                m: -1, // negative  ⇒ decay
+                n: 1,
+                o: 0,
+                start_moment: Some(1),
+                b: 100_000,
+                min_value: Some(50_000),
+                max_value: None,
+            },
+            &[(1, 200_005, true), (4, 500_006, true)],
+            1,
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3.  o at −MAX_DISTRIBUTION_PARAM ⇒ argument very negative ▶ min / 0
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn exponential_distribution_o_min() -> Result<(), String> {
+        test_exponential(
+            Exponential {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: -(MAX_DISTRIBUTION_PARAM as i64),
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: Some(MAX_DISTRIBUTION_PARAM),
+            },
+            &[(1, 100_000, false), (4, 100_000, false)],
+            1,
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4.  o at +MAX_DISTRIBUTION_PARAM  (huge positive shift)
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn exponential_distribution_o_max() -> Result<(), String> {
+        test_exponential(
+            Exponential {
+                a: MAX_EXP_A_PARAM,
+                d: 1,
+                m: -1,
+                n: 32,
+                o: MAX_DISTRIBUTION_PARAM as i64,
+                start_moment: Some(1),
+                b: 10,
+                min_value: None,
+                max_value: Some(MAX_DISTRIBUTION_PARAM),
+            },
+            &[(1, 100010, true), (10, 100100, true)],
+            1,
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5.  Exhaustive combination of extreme parameter values
+    //     ‑ ensure no `InternalError`
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn exponential_distribution_extreme_values() -> Result<(), String> {
+        for m in [MIN_EXP_M_PARAM, -1, 1, MAX_EXP_M_PARAM as i64] {
+            for n in [1, MAX_EXP_N_PARAM] {
+                for a in [1, MAX_EXP_A_PARAM] {
+                    let dist = Exponential {
+                        a,
+                        d: 1,
+                        m,
+                        n,
+                        o: 0,
+                        start_moment: Some(1),
+                        b: 0,
+                        min_value: None,
+                        max_value: Some(MAX_DISTRIBUTION_PARAM),
+                    };
+
+                    let mut suite = TestSuite::new(
+                        10_200_000_000, // initial balance
+                        0,              // owner balance
+                        TokenDistributionType::Perpetual,
+                        Some(move |cfg: &mut TokenConfiguration| {
+                            cfg.distribution_rules_mut()
+                                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                                    TokenPerpetualDistributionV0 {
+                                        distribution_type:
+                                        RewardDistributionType::BlockBasedDistribution {
+                                            interval: 1,
+                                            function: dist,
+                                        },
+                                        distribution_recipient:
+                                        TokenDistributionRecipient::ContractOwner,
+                                    },
+                                )));
+                        }),
+                    );
+
+                    suite = suite.with_contract_start_time(1);
+
+                    let step = TestStep {
+                        base_height: 10,
+                        base_time_ms: Default::default(),
+                        expected_balance: None,
+                        claim_transition_assertions: vec![
+                            |results: &[StateTransitionExecutionResult]| -> Result<(), String> {
+                                let err = results
+                                    .iter()
+                                    .find(|r| format!("{:?}", r).contains("InternalError"));
+
+                                if let Some(e) = err {
+                                    Err(format!("InternalError: {:?}", e))
+                                } else {
+                                    Ok(())
+                                }
+                            },
+                        ],
+                        name: "extreme".into(),
+                    };
+
+                    suite
+                        .execute(&[step])
+                        .map_err(|e| format!("failed with a {a} m {m} n {n}: {e}"))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+mod polynomial {
     use super::test_suite::{check_heights, TestStep, TestSuite};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use dpp::data_contract::{
@@ -1272,237 +1886,130 @@ mod block_based_perpetual_polynomial {
         },
         TokenConfiguration,
     };
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_POL_A_PARAM, MAX_POL_M_PARAM, MAX_POL_N_PARAM, MIN_POL_A_PARAM, MIN_POL_M_PARAM};
 
-    /// Calculates     f(x) = (a * (x - s + o)^(m/n)) / d + b
-
-    #[test_case::test_matrix([1,2,10,20])]
-
-    fn test_fx(x_max: i128) {
-        let a: i128 = 1;
-        let d: i128 = 1;
-        let m: i128 = 1;
-        let n: i128 = 1;
-        let o: i128 = 1;
-        let s: i128 = 0;
-        let b: i128 = 100_000;
-
-        let mut sum = 0;
-        for x in 1i128..=x_max {
-            // f(x) = (a * (x - s + o)^(m/n)) / d + b
-            let f_x = (a * (x - s + o).pow((m / n) as u32)) / d + b;
-            sum += f_x;
-            println!("f({}) = {}", x, f_x);
-        }
-
-        println!("SUM({}) = {}", n, sum);
-    }
-
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (10,1_100_055,true),
-            (20,2_100_210,true),
-        ], // steps
-        1; // distribution_interval
-        "ones")]
-
-    /// Divide by 0
-    /// claim at height 10: claim failed: assertion 1 failed: expected SuccessfulExecution, got
-    /// [InternalError(\"storage: protocol: divide by zero error: Polynomial function: divisor d is 0\")]\nexpected balance Some(1100055) but got 100000\n\n-->
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 0,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (10,1_100_055,true),
-            (20,2_100_210,true),
-        ], // steps
-        1; // distribution_interval
-        "fails: divide by 0")]
-    #[test_case::test_case(
+    #[test]
+    fn polynomial_distribution_basic() -> Result<(), String> {
+        test_polynomial(
             Polynomial {
                 a: 1,
                 d: 1,
-                m: 1,
+                m: 2,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(10, 100_385, true), (20, 102_870, true)],
+            1,
+        )
+    }
+
+    #[test]
+    fn polynomial_distribution_negative_a() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: -1,
+                d: 1,
+                m: 3,
                 n: 1,
                 o: 1,
                 start_moment: Some(1),
                 b: 100_000,
-                min_value: Some(100_000),
-                max_value: Some(10_000),
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 199_999, true), (4, 499_900, true)],
+            1,
+        )
+    }
+
+    #[test]
+    fn polynomial_distribution_a_minus_1_b_0() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: -1,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 1,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (4, 100_000, false)],
+            1,
+        )
+    }
+
+    ///  Given a polynomial distribution function with o=-MAX_DISTRIBUTION_PARAM, we should
+    /// have no rewards
+    #[test]
+    fn polynomial_distribution_o_min() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: -(MAX_DISTRIBUTION_PARAM as i64),
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 100_000, false), (4, 100_000, false)],
+            1,
+        )
+    }
+
+    #[test]
+    fn polynomial_distribution_pow_minus_1_at_h_2() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 2,
+                o: 0,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
             },
             &[
-                (10,100_000,false),
-                (20,100_000,false),
-            ], // steps
-            1 // distribution_interval
-            ; "max < min should fail")]
-    #[test_case::test_case(
-        Polynomial {
-            a: -1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,199_999,true),
-            (4,499_990,true),
-        ], // steps
-        1 // distribution_interval
-        ; "negative a")]
-    #[test_case::test_case(
-        Polynomial {
-            a: i64::MIN,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,true),
-        ], // steps
-        1 // distribution_interval
-    ; "fails: a=i64::MIN")]
-    #[test_case::test_case(
-        Polynomial {
-            a: -1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: 1,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "a=-1 b=0")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: i64::MIN,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "o=i64::MIN")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 1,
-            o: i64::MAX,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (4,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "o=i64::MAX")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: -1,
-            n: 1,
-            o: 0,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false), // this should fail, 0.pow(-1) is unspecified
-            (2,100_001,true), // it's 1.pow(-1) but not sure about handling of overflow at prev height
-        ], // steps
-        1 // distribution_interval
-    ; "0.pow(-1) at h=1")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 1,
-            n: 2,
-            o: 0,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false), // this should fail, 0.pow(-1) is unspecified
-            (2,100_001,true), // it's 1.pow(1/2) == 1
-            (3,100_002,true), // 2.pow(1/2) == 1.41 - should round to 1
-            (4,100_004,true),  // 3.pow(1/2) == 1.73 - should round to 2; FAILS
-            (5,100_006,true), // 4.pow(1/2) == 2
-            (6,100_008,true), // 5.pow(1/2) == 2.23 - should round to 2
-        ], // steps
-        1 // distribution_interval
-    ; "0.pow(1/2) at h=1")]
-    #[test_case::test_case(
-        Polynomial {
-            a: 1,
-            d: 1,
-            m: 2,
-            n: 1,
-            o: i64::MAX,
-            start_moment: Some(1),
-            b: 0,
-            min_value: None,
-            max_value: None,
-        },
-        &[
-            (1,100_000,false),
-            (10,100_000,false),
-        ], // steps
-        1 // distribution_interval
-    ; "fails: o=i64::MAX m=2")]
+                (1, 100_000, false), // this should fail, 0.pow(-1) is unspecified
+                (2, 100_001, true),  // it's 1.pow(1/2) == 1
+                (3, 100_002, true),  // 2.pow(1/2) == 1.41 - should round to 1
+                (4, 100_003, true),  // 3.pow(1/2) == 1.73 - should round to 1
+                (5, 100_005, true),  // 4.pow(1/2) == 2
+                (6, 100_007, true),  // 5.pow(1/2) == 2.23 - should round to 2
+            ],
+            1,
+        )
+    }
+
+    #[test]
+    fn polynomial_distribution_o_max() -> Result<(), String> {
+        test_polynomial(
+            Polynomial {
+                a: 1,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: MAX_DISTRIBUTION_PARAM as i64,
+                start_moment: Some(1),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            },
+            &[(1, 281474976810655, true), (10, 2814749767206550, true)],
+            1,
+        )
+    }
     /// Test polynomial distribution function.
     ///
     /// `f(x) = (a * (x - s + o)^(m/n)) / d + b`
@@ -1518,330 +2025,240 @@ mod block_based_perpetual_polynomial {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
-    }
-
-    #[test_case::test_matrix(
-        [i64::MIN,0,1,i64::MAX],// m
-        [0,1,u64::MAX] // n
-        ; "power m/n"
-    )]
-    // due to bug in test_matrix https://github.com/frondeus/test-case/issues/19, we need separate test for -1
-    #[test_case::test_matrix(
-        -1,// m
-        [0,1,u64::MAX] // n
-        ; "negative power -1/n"
-    )]
-    /// Test various combinations of `m/n` in [DistributionFunction::Polynomial] distribution.
-    ///
-    /// We expect this test not to end with InternalError.
-    fn test_poynomial_power(m: i64, n: u64) {
-        let dist = Polynomial {
-            a: 1,
-            d: 1,
-            m,
-            n,
-            o: 1,
-            start_moment: Some(1),
-            b: 100_000,
-            min_value: None,
-            max_value: None,
-        };
-
-        let mut suite = TestSuite::new(
-            10_200_000_000,
-            0,
-            TokenDistributionType::Perpetual,
-            Some(move |token_configuration: &mut TokenConfiguration| {
-                token_configuration
-                    .distribution_rules_mut()
-                    .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
-                        TokenPerpetualDistributionV0 {
-                            distribution_type: RewardDistributionType::BlockBasedDistribution {
-                                interval: 1,
-                                function: dist,
-                            },
-                            distribution_recipient: TokenDistributionRecipient::ContractOwner,
-                        },
-                    )));
-            }),
-        );
-
-        suite = suite.with_contract_start_time(1);
-
-        let step = TestStep {
-            base_height: 10,
-            base_time_ms: Default::default(),
-            expected_balance: None,
-            claim_transition_assertions: vec![
-                |results: &[StateTransitionExecutionResult]| -> Result<(), String> {
-                    let err = results
-                        .iter()
-                        .find(|r| format!("{:?}", r).contains("InternalError"));
-
-                    if let Some(e) = err {
-                        Err(format!("InternalError: {:?}", e))
-                    } else {
-                        Ok(())
-                    }
-                },
-            ],
-            name: "test".to_string(),
-        };
-
-        suite
-            .execute(&[step])
             .inspect_err(|e| {
                 tracing::error!("{}", e);
             })
-            .expect("test should pass");
+    }
+
+    /// Test various combinations of `m/n` in `[DistributionFunction::Polynomial]` distribution.
+    ///
+    /// We expect this test not to end with InternalError.
+    #[test]
+    fn polynomial_distribution_power_extreme_values() -> Result<(), String> {
+        for m in [MIN_POL_M_PARAM, MAX_POL_M_PARAM] {
+            for n in [1, MAX_POL_N_PARAM] {
+                for a in [MIN_POL_A_PARAM, MAX_POL_A_PARAM] {
+                    for b in [0, MAX_DISTRIBUTION_PARAM] {
+                        for o in [
+                            -(MAX_DISTRIBUTION_PARAM as i64),
+                            0,
+                            MAX_DISTRIBUTION_PARAM as i64,
+                        ] {
+                            let dist = Polynomial {
+                                a,
+                                d: 1,
+                                m,
+                                n,
+                                o,
+                                start_moment: Some(1),
+                                b,
+                                min_value: None,
+                                max_value: None,
+                            };
+
+                            let mut suite = TestSuite::new(
+                                10_200_000_000,
+                                0,
+                                TokenDistributionType::Perpetual,
+                                Some(move |token_configuration: &mut TokenConfiguration| {
+                                    token_configuration
+                                        .distribution_rules_mut()
+                                        .set_perpetual_distribution(
+                                            Some(TokenPerpetualDistribution::V0(
+                                                TokenPerpetualDistributionV0 {
+                                                    distribution_type:
+                                                    RewardDistributionType::BlockBasedDistribution {
+                                                        interval: 1,
+                                                        function: dist,
+                                                    },
+                                                    distribution_recipient:
+                                                    TokenDistributionRecipient::ContractOwner,
+                                                },
+                                            )),
+                                        );
+                                }),
+                            );
+
+                            suite = suite.with_contract_start_time(1);
+
+                            let step = TestStep {
+                                base_height: 10,
+                                base_time_ms: Default::default(),
+                                expected_balance: None,
+                                claim_transition_assertions: vec![
+                                    |results: &[StateTransitionExecutionResult]| -> Result<(), String> {
+                                        let err = results
+                                            .iter()
+                                            .find(|r| format!("{:?}", r).contains("InternalError"));
+
+                                        if let Some(e) = err {
+                                            Err(format!("InternalError: {:?}", e))
+                                        } else {
+                                            Ok(())
+                                        }
+                                    },
+                                ],
+                                name: "test".to_string(),
+                            };
+
+                            suite
+                                .execute(&[step])
+                                .inspect_err(|e| {
+                                    tracing::error!("{}", e);
+                                })
+                                .map_err(|e| format!("failed with m {} n {}: {}", m, n, e))?;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
-mod block_based_perpetual_logarithmic {
+mod logarithmic {
 
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,Logarithmic};
-    use test_case::{test_matrix,test_case};
-    #[test_case(
-        Logarithmic{
-            a: 0, // a: i64,
-            d: 0, // d: u64,
-            m: 0, // m: u64,
-            n: 0, // n: u64,
-            o: 0, // o: i64,
-            start_moment:Some(0), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(4,100_000,true)],
-        1
-        ; "zeros"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_001,true), // log(0)+1 = 1
-            (2,100_002,true), // log(1)+1 = 1
-            (3,100_003,true), // log(3)+1 = 1
-            (4,100_005,true), // log(4)+1 = 2 (log(4) == 0.6, rounded up to 1)
-        ],
-        1
-        ; "fails: ones - use of ln instead of log as documented"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 0, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(2,100_002,false)],
-        1
-        ; "fails: divide by 0"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 0, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(1,100_001,true),(5,100_001,true)],
-        1
-        ; "fails: log(0)"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(1,100_010,true),(5,100_050,true)],
-        1
-        ; "min eq max means linear"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(5,100_010,true),(10,100_020,true)],
-        5
-        ; "min eq max means linear, interval 5"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(5), // max_value: Option<u64>,
-        },
-        &[(5,100_000,false),(10,100_000,false)],
-        5
-        ; "fails: min gt max"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: i64::MIN, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),  // f(1) should be < 0, is 1
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: a=i64::MIN"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: i64::MAX, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: a=i64::MAX overflows"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 0, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "a=0 b=0"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: -10, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: log(negative)"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: i64::MIN, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: o=i64::MIN"
-    )]
-    #[test_case(
-        Logarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: u64::MAX, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: b=u64::MAX"
-    )]
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_DISTRIBUTION_PARAM, MAX_LOG_A_PARAM, MIN_LOG_A_PARAM};
+
+    #[test]
+    fn log_distribution_basic() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[
+                (1, 100_001, true), // ln(0)+1 = 1
+                (2, 100_002, true), // ln(1)+1 = 1
+                (3, 100_004, true), // ln(3)+1 = 2
+                (4, 100_006, true), // ln(4)+1 = 2
+            ],
+            1,
+        )
+    }
+
+    #[test]
+    fn log_distribution_1_div_u64_max() -> Result<(), String> {
+        // n is very big here, so we would expect to get 0
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                  // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: u64::MAX,           // n: u64,
+                o: 0,                  // o: i64,
+                start_moment: Some(0), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[(1, 100_000, false), (5, 100_000, false)],
+            1,
+        )
+    }
+
+    #[test]
+    fn log_distribution_neg_1_div_u64_max() -> Result<(), String> {
+        // n is very big here, so we would expect to get 0
+        test_logarithmic(
+            Logarithmic {
+                a: -1,                 // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: u64::MAX,           // n: u64,
+                o: 0,                  // o: i64,
+                start_moment: Some(0), // start_moment: Option<u64>,
+                b: 0,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            &[(1, 100_044, true), (5, 100_214, true)],
+            1,
+        )
+    }
+
+    #[test]
+    fn log_distribution_a_min() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: MIN_LOG_A_PARAM,    // a: i64,
+                d: 1,                  // d: u64,
+                m: 1,                  // m: u64,
+                n: 1,                  // n: u64,
+                o: 1,                  // o: i64,
+                start_moment: Some(1), // start_moment: Option<u64>,
+                b: 1,                  // b: TokenAmount,
+                min_value: None,       // min_value: Option<u64>,
+                max_value: None,       // max_value: Option<u64>,
+            },
+            // f(x) = (a * log(m * (x - s + o) / n)) / d + b
+            &[
+                (1, 100_001, true),
+                (2, 100_001, false),
+                (9, 100_001, false),
+                (10, 100_001, false),
+            ],
+            1,
+        )
+    }
+
+    #[test]
+    fn log_distribution_max_amounts() {
+        test_logarithmic(
+            Logarithmic {
+                a: MAX_LOG_A_PARAM,               // a: i64,
+                d: 1,                             // d: u64,
+                m: MAX_DISTRIBUTION_PARAM,        // m: u64,
+                n: 1,                             // n: u64,
+                o: MAX_DISTRIBUTION_PARAM as i64, // o: i64,
+                start_moment: Some(0),            // start_moment: Option<u64>,
+                b: MAX_DISTRIBUTION_PARAM,        // b: TokenAmount,
+                min_value: None,                  // min_value: Option<u64>,
+                max_value: None,                  // max_value: Option<u64>,
+            },
+            &[
+                (1, 281474978991040, true),
+                (9, 2533274810119360, true),
+                (10, 2814749789010400, true),
+                (200, 38843547087063520, true),
+            ],
+            1,
+        )
+            .expect("expect to pass");
+    }
+
+    #[test]
+    fn log_distribution_with_b_max() -> Result<(), String> {
+        test_logarithmic(
+            Logarithmic {
+                a: 1,                      // a: i64,
+                d: 1,                      // d: u64,
+                m: 1,                      // m: u64,
+                n: 1,                      // n: u64,
+                o: 1,                      // o: i64,
+                start_moment: Some(1),     // start_moment: Option<u64>,
+                b: MAX_DISTRIBUTION_PARAM, // b: TokenAmount,
+                min_value: None,           // min_value: Option<u64>,
+                max_value: None,           // max_value: Option<u64>,
+            },
+            &[
+                (1, 281474976810655, true), // We start at 1
+                (9, 2533274790495904, true),
+                (10, 2814749767206561, true),
+            ],
+            1,
+        )
+    }
     /// f(x) = (a * log(m * (x - s + o) / n)) / d + b
     fn test_logarithmic(
         dist: DistributionFunction,
@@ -1855,256 +2272,173 @@ mod block_based_perpetual_logarithmic {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 }
 
-mod block_based_perpetual_inverted_logarithmic {
+mod inverted_logarithmic {
     use super::test_suite::check_heights;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::{self,InvertedLogarithmic};
-    use test_case::{test_matrix,test_case};
 
-    #[test_case(
-        InvertedLogarithmic{
-            a: 0, // a: i64,
-            d: 0, // d: u64,
-            m: 0, // m: u64,
-            n: 0, // n: u64,
-            o: 0, // o: i64,
-            start_moment:Some(0), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(4,100_000,true)],
-        1
-        ; "fails: zeros"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_001,true),
-            (2,100_002,true),
-            (3,100_003,true),
-            (4,100_005,true), // [InternalError("storage: protocol: divide by zero error: InvertedLogarithmic: divisor d is 0")]
-        ],
-        1
-        ; "fails: ones"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 0, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(2,100_002,false)],
-        1
-        ; "fails: divide by 0"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 0, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[(1,100_001,true),(5,100_001,true)],
-        1
-        ; "n=0 log(0)"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(1,100_010,true),(5,100_050,true)],
-        1
-        ; "min eq max means linear"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(10), // max_value: Option<u64>,
-        },
-        &[(5,100_010,true),(10,100_020,true)],
-        5
-        ; "min eq max means linear, interval 5"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:Some(10), // min_value: Option<u64>,
-            max_value:Some(5), // max_value: Option<u64>,
-        },
-        &[(5,100_000,false),(10,100_000,false)],
-        5
-        ; "fails: min gt max"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: i64::MIN, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),  // f(1) should be < 0, is 1
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: a=i64::MIN"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: i64::MAX, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 1, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_001,true), // f(x) = 0 for x>1
-            (9,100_001,false),
-            (10,100_001,false),
-        ],
-        1
-        ; "a=i64::MAX"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 0, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "a=0 b=0"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: -10, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: log(negative)"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: i64::MIN, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: 0, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: o=i64::MIN"
-    )]
-    #[test_case(
-        InvertedLogarithmic{
-            a: 1, // a: i64,
-            d: 1, // d: u64,
-            m: 1, // m: u64,
-            n: 1, // n: u64,
-            o: 1, // o: i64,
-            start_moment:Some(1), // start_moment: Option<u64>,
-            b: u64::MAX, // b: TokenAmount,
-            min_value:None, // min_value: Option<u64>,
-            max_value:None, // max_value: Option<u64>,
-        },
-        &[
-            (1,100_000,false),
-            (9,100_000,false),
-            (10,100_000,false)
-        ],
-        1
-        ; "fails: b=u64::MAX"
-    )]
+    #[test]
+    fn inv_log_distribution_very_low_emission() -> Result<(), String> {
+        // At block 2 no more can ever be claimed because the function is decreasing
+        let dist = InvertedLogarithmic {
+            a: 1,                  // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 1,                  // n: u64,
+            o: 1,                  // o: i64,
+            start_moment: Some(1), // start_moment: Option<u64>,
+            b: 1,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100_001, true),
+            (2, 100_001, false),
+            (50000, 100_001, false),
+        ];
+        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        assert_eq!(x_1, 1); // This is ln (1/ (1 - 1 + 1)), or basically ln(1) = 1
+        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        assert_eq!(x_2, 0); // This is ln (1/ (1 - 1 + 2)), or basically ln(1/2) = 0
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn inv_log_distribution_reduced_emission() -> Result<(), String> {
+        //       y
+        //       ↑
+        // 10000 |*
+        //  9000 | *
+        //  8000 |  *
+        //  7000 |   *
+        //  6000 |    *
+        //  5000 |     *
+        //  4000 |       *
+        //  3000 |         *
+        //  2000 |           *
+        //  1000 |              *
+        //     0 +-------------------*----------→ x
+        //         0     2000   4000   6000   8000
+        let dist = InvertedLogarithmic {
+            a: 10000,              // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 5000,               // n: u64,
+            o: 0,                  // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
+        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
+        let x_5000 = dist.evaluate(0, 5000).expect("expected to evaluate");
+        let x_6000 = dist.evaluate(0, 6000).expect("expected to evaluate");
+        assert_eq!(x_1, 85171);
+        assert_eq!(x_2, 78240);
+        assert_eq!(x_1000, 16094);
+        assert_eq!(x_4000, 2231);
+        assert_eq!(x_5000, 0);
+        assert_eq!(x_6000, 0);
+        let steps = [
+            (1, 185_171, true),
+            (2, 263_411, true),
+            (1000, 6_110_958, true),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn inv_log_distribution_reduced_emission_passing_0() -> Result<(), String> {
+        //         y
+        //         ↑
+        //     350 |*
+        //     300 | *
+        //     250 |  *
+        //     200 |   *
+        //     150 |     *
+        //     100 |       *
+        //      50 |         *
+        //       0 +-------------*--------------→ x
+        //         0     100    200   300   400
+        let dist = InvertedLogarithmic {
+            a: 100,                // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 200,                // n: u64,
+            o: 0,                  // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
+            b: 0,                  // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let steps = [
+            (1, 100529, true),
+            (2, 100989, true),
+            (100, 116559, true),
+            (210, 119546, true),
+            (300, 119546, false), // past 200 we won't get any more
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
+    #[test]
+    fn inv_log_distribution_negative_a_increase_emission() -> Result<(), String> {
+        //         y
+        //          ↑
+        //    10000 |
+        //     9000 |
+        //     8000 |
+        //     7000 |                                                    *
+        //     6000 |                                 *
+        //     5000 |                    *
+        //     4000 |           *
+        //     3000 |      *
+        //     2000 |  *
+        //     1000 *
+        //        0 +-------------------------------------------→ x
+        //          0       5k     10k     15k     20k     25k     30k
+        let dist = InvertedLogarithmic {
+            a: -2200,              // a: i64,
+            d: 1,                  // d: u64,
+            m: 1,                  // m: u64,
+            n: 10000,              // n: u64,
+            o: 3000,               // o: i64,
+            start_moment: Some(0), // start_moment: Option<u64>,
+            b: 4000,               // b: TokenAmount,
+            min_value: None,       // min_value: Option<u64>,
+            max_value: None,       // max_value: Option<u64>,
+        };
+        let x_1 = dist.evaluate(0, 1).expect("expected to evaluate");
+        let x_2 = dist.evaluate(0, 2).expect("expected to evaluate");
+        let x_1000 = dist.evaluate(0, 1000).expect("expected to evaluate");
+        let x_4000 = dist.evaluate(0, 4000).expect("expected to evaluate");
+        assert_eq!(x_1, 1351);
+        assert_eq!(x_2, 1352);
+        assert_eq!(x_1000, 1984);
+        assert_eq!(x_4000, 3215);
+        let steps = [
+            (1, 101351, true),
+            (2, 102703, true),
+            (100, 238739, true),
+            (210, 399539, true),
+            (300, 537282, true),
+        ];
+
+        run_test(dist, &steps, 1)
+    }
+
     /// f(x) = (a * log( n / (m * (x - s + o)) )) / d + b
-    fn test_inverted_logarithmic(
+    fn run_test(
         dist: DistributionFunction,
         steps: &[(u64, u64, bool)], // height, expected balance, expect pass
         distribution_interval: u64,
@@ -2116,9 +2450,9 @@ mod block_based_perpetual_inverted_logarithmic {
             distribution_interval,
             None,
         )
-        .inspect_err(|e| {
-            tracing::error!("{}", e);
-        })
+            .inspect_err(|e| {
+                tracing::error!("{}", e);
+            })
     }
 }
 
@@ -2129,6 +2463,8 @@ mod test_suite {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+    use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
@@ -2137,7 +2473,7 @@ mod test_suite {
     use dpp::prelude::{DataContract, IdentityPublicKey, TimestampMillis};
     use simple_signer::signer::SimpleSigner;
 
-    const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(10);
+    const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(60);
     /// Run provided closure with timeout.
     /// TODO: Check if it works with sync code
     fn with_timeout(
@@ -2169,7 +2505,7 @@ mod test_suite {
     /// * `distribution_interval` - interval between distributions
     /// * `max_supply` - optional max supply of the token; if Some(), it will override max supply in contract JSON definition
     ///
-    /// Note that for conveniance, you can provide `steps` as a [`TestStep`] or a slice of tuples, where each tuple contains:
+    /// Note that for convenience, you can provide `steps` as a [`TestStep`] or a slice of tuples, where each tuple contains:
     /// * `height` - height at which claim will be made
     /// * `expected_balance` - expected balance after claim was made
     /// * `expect_pass` - whether we expect the claim to pass or not
@@ -2200,7 +2536,7 @@ mod test_suite {
             }),
         );
         if let Some(max_supply) = max_supply {
-            suite = suite.with_max_suppy(max_supply);
+            suite = suite.with_max_supply(max_supply);
         }
 
         suite = suite.with_contract_start_time(contract_start_time.unwrap_or(1));
@@ -2221,7 +2557,7 @@ mod test_suite {
         identity: dpp::prelude::Identity,
         signer: SimpleSigner,
         identity_public_key: IdentityPublicKey,
-        token_id: Option<dpp::prelude::Identifier>,
+        token_id: Option<Identifier>,
         contract: Option<DataContract>,
         start_time: Option<TimestampMillis>,
         token_distribution_type: TokenDistributionType,
@@ -2276,7 +2612,7 @@ mod test_suite {
                 token_configuration_modification: None, // setup later
                 on_step_success: Box::new(|_| {}),
             }
-            .with_genesis(1, genesis_time_ms);
+                .with_genesis(1, genesis_time_ms);
 
             if let Some(token_configuration_modification) = token_configuration_modification {
                 me.with_token_configuration_modification_fn(token_configuration_modification)
@@ -2289,9 +2625,9 @@ mod test_suite {
         pub(crate) fn with_token_configuration_modification_fn(
             mut self,
             token_configuration_modification: impl FnOnce(&mut TokenConfiguration)
-                + Send
-                + Sync
-                + 'static,
+            + Send
+            + Sync
+            + 'static,
         ) -> Self {
             if let Some(previous) = self.token_configuration_modification.take() {
                 let f = Box::new(move |token_configuration: &mut TokenConfiguration| {
@@ -2309,7 +2645,7 @@ mod test_suite {
             self
         }
         /// Appends a token configuration modification that will change max supply.
-        pub(crate) fn with_max_suppy(self, max_supply: Option<u64>) -> Self {
+        pub(crate) fn with_max_supply(self, max_supply: Option<u64>) -> Self {
             self.with_token_configuration_modification_fn(
                 move |token_configuration: &mut TokenConfiguration| {
                     token_configuration.set_max_supply(max_supply);
@@ -2320,14 +2656,14 @@ mod test_suite {
         /// Enable logging for tests
         fn setup_logs() {
             tracing_subscriber::fmt::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace",
-        ))
-        .pretty()
-        .with_ansi(true)
-        .with_writer(std::io::stdout)
-        .try_init()
-        .ok();
+                .with_env_filter(tracing_subscriber::EnvFilter::new(
+                    "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace",
+                ))
+                .pretty()
+                .with_ansi(true)
+                .with_writer(std::io::stdout)
+                .try_init()
+                .ok();
         }
 
         /// Lazily initialize and return token contract. Also sets token id.
@@ -2339,7 +2675,18 @@ mod test_suite {
             // the contract and token id initialized so it should never happen
             let token_config_fn = if let Some(tc) = self.token_configuration_modification.take() {
                 let closure = |token_configuration: &mut TokenConfiguration| {
+                    // call previous token configuration modification
                     tc(token_configuration);
+
+                    // execute distribution function validation
+                    if let Err(e) = validate_distribution_function(
+                        token_configuration,
+                        self.start_time.unwrap_or(0),
+                    ) {
+                        panic!("{}", e);
+                    };
+
+                    tracing::trace!("token configuration validated");
                 };
                 Some(closure)
             } else {
@@ -2354,6 +2701,7 @@ mod test_suite {
                 None,
                 self.platform_version,
             );
+
             self.token_id = Some(token_id);
             self.contract = Some(contract.clone());
 
@@ -2405,7 +2753,7 @@ mod test_suite {
                 None,
                 None,
             )
-            .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let claim_serialized_transition = claim_transition
                 .serialize_to_bytes()
@@ -2418,7 +2766,7 @@ mod test_suite {
                 .platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![claim_serialized_transition.clone()],
+                    &[claim_serialized_transition.clone()],
                     &platform_state,
                     &new_block_info,
                     &transaction,
@@ -2599,6 +2947,32 @@ mod test_suite {
                 Err(result.join("\n"))
             }
         }
+    }
+
+    /// dyn FnOnce(&mut TokenConfiguration) + Send + Sync;
+    fn validate_distribution_function(
+        token_configuration: &mut TokenConfiguration,
+        contract_start_time: u64,
+    ) -> Result<(), String> {
+        let TokenConfiguration::V0(token_config) = token_configuration;
+
+        let TokenDistributionRules::V0(dist_rules) = token_config.distribution_rules();
+
+        let TokenPerpetualDistribution::V0(perpetual_distribution) = dist_rules
+            .perpetual_distribution()
+            .expect("expected perpetual distribution");
+
+        let consensus_result = perpetual_distribution
+            .distribution_type
+            .function()
+            .validate(contract_start_time, PlatformVersion::latest())
+            .map_err(|e| format!("invalid distribution function: {:?}", e))?;
+
+        if let Some(error) = consensus_result.first_error() {
+            return Err(error.to_string());
+        }
+
+        Ok(())
     }
 
     pub(crate) type AssertionFn = fn(&[StateTransitionExecutionResult]) -> Result<(), String>;

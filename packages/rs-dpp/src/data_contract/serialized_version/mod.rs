@@ -21,6 +21,8 @@ use platform_versioning::PlatformVersioned;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use super::EMPTY_KEYWORDS;
+
 pub(in crate::data_contract) mod v0;
 pub(in crate::data_contract) mod v1;
 
@@ -94,6 +96,20 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(_) => &EMPTY_TOKENS,
             DataContractInSerializationFormat::V1(v1) => &v1.tokens,
+        }
+    }
+
+    pub fn keywords(&self) -> &Vec<String> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &EMPTY_KEYWORDS,
+            DataContractInSerializationFormat::V1(v1) => &v1.keywords,
+        }
+    }
+
+    pub fn description(&self) -> &Option<String> {
+        match self {
+            DataContractInSerializationFormat::V0(_) => &None,
+            DataContractInSerializationFormat::V1(v1) => &v1.description,
         }
     }
 

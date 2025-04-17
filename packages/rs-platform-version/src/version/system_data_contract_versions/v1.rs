@@ -8,4 +8,6 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V1: SystemDataContractVersions =
         masternode_reward_shares: 1,
         feature_flags: 1,
         wallet: 1,
+        token_history: 1,
+        keyword_search: 1,
     };

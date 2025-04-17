@@ -1,15 +1,21 @@
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
-    InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
-    NonContiguousContractTokenPositionsError,
+    DuplicateKeywordsError, InvalidDataContractVersionError, InvalidDescriptionLengthError,
+    InvalidKeywordLengthError, InvalidTokenBaseSupplyError,
+    NonContiguousContractTokenPositionsError, TooManyKeywordsError,
 };
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::collections::HashSet;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreateStateTransitionBasicStructureValidationV0
 {
@@ -75,6 +81,72 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
             )?;
             if !validation_result.is_valid() {
                 return Ok(validation_result);
+            }
+
+            if let Some(perpetual_distribution) = token_configuration
+                .distribution_rules()
+                .perpetual_distribution()
+            {
+                // We use 0 as the start moment to show that we are starting now with no offset
+                let validation_result = perpetual_distribution
+                    .distribution_type()
+                    .function()
+                    .validate(0, platform_version)?;
+
+                if !validation_result.is_valid() {
+                    return Ok(validation_result);
+                }
+            }
+        }
+
+        // Validate there are no more than 20 keywords
+        if self.data_contract().keywords().len() > 20 {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(BasicError::TooManyKeywordsError(
+                    TooManyKeywordsError::new(
+                        self.data_contract().id(),
+                        self.data_contract().keywords().len() as u8,
+                    ),
+                )),
+            ));
+        }
+
+        // Validate the keywords are all unique and between 3 and 50 characters
+        let mut seen_keywords = HashSet::new();
+        for keyword in self.data_contract().keywords() {
+            // First check keyword length
+            if keyword.len() < 3 || keyword.len() > 50 {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(
+                        InvalidKeywordLengthError::new(
+                            self.data_contract().id(),
+                            keyword.to_string(),
+                        ),
+                    )),
+                ));
+            }
+
+            // Then check uniqueness
+            if !seen_keywords.insert(keyword) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::DuplicateKeywordsError(
+                        DuplicateKeywordsError::new(self.data_contract().id(), keyword.to_string()),
+                    )),
+                ));
+            }
+        }
+
+        // Validate the description is between 3 and 100 characters
+        if let Some(description) = self.data_contract().description() {
+            if !(description.len() >= 3 && description.len() <= 100) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(
+                        InvalidDescriptionLengthError::new(
+                            self.data_contract().id(),
+                            description.to_string(),
+                        ),
+                    )),
+                ));
             }
         }
 

@@ -57,7 +57,7 @@ impl Drive {
         // if it requires revision then there are reasons for us to be able to update in drive
         {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
-                "documents for this contract are not mutable",
+                "this document type is not mutable",
             )));
         }
 
