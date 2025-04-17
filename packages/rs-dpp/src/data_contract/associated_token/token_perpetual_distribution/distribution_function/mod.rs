@@ -10,7 +10,6 @@ pub mod reward_ratio;
 mod validation;
 
 pub const MAX_DISTRIBUTION_PARAM: u64 = 281_474_976_710_655; //u48::Max 2^48 - 1
-
 /// The max cycles param is the upper limit of cycles the system can ever support
 /// This is applied to linear distribution.
 /// For all other distributions we use a versioned max cycles contained in the platform version.
@@ -20,11 +19,27 @@ pub const MAX_DISTRIBUTION_CYCLES_PARAM: u64 = 32_767; //u15::Max 2^(63 - 48) - 
 
 pub const DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION: u16 = 128;
 
-pub const MAX_LINEAR_SLOPE_PARAM: u64 = 256;
+pub const MAX_LINEAR_SLOPE_A_PARAM: u64 = 256;
+
+pub const MIN_LINEAR_SLOPE_A_PARAM: i64 = -255;
+
+pub const MIN_POL_M_PARAM: i64 = -8;
+pub const MAX_POL_M_PARAM: i64 = 8;
+
+pub const MAX_POL_N_PARAM: u64 = 32;
 
 pub const MIN_LOG_A_PARAM: i64 = -32_766;
 pub const MAX_LOG_A_PARAM: i64 = 32_767;
 pub const MAX_EXP_A_PARAM: u64 = 256;
+
+pub const MAX_EXP_M_PARAM: u64 = 8;
+
+pub const MIN_EXP_M_PARAM: i64 = -8;
+
+pub const MAX_EXP_N_PARAM: u64 = 32;
+
+pub const MIN_POL_A_PARAM: i64 = -255;
+pub const MAX_POL_A_PARAM: i64 = 256;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum DistributionFunction {
@@ -136,6 +151,8 @@ pub enum DistributionFunction {
     /// - Within each step, the emission remains constant.
     /// - The keys in the `BTreeMap` represent the starting period for each interval,
     ///   and the corresponding values are the fixed token amounts to emit during that interval.
+    /// - VERY IMPORTANT: the steps are the amount of intervals, not the time or the block count.
+    ///   So if you have step 5 with interval 10 using blocks that's 50 blocks.
     ///
     /// # Use Case
     /// - Adjusting rewards at specific milestones or time intervals.

@@ -1,6 +1,7 @@
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
     DistributionFunction, DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+    MAX_DISTRIBUTION_PARAM,
 };
 use crate::ProtocolError;
 
@@ -204,10 +205,12 @@ impl DistributionFunction {
                 let exponent = (*m as f64) / (*n as f64);
                 let diff = x as i128 - s_val as i128 + *o as i128;
 
-                if diff < 0 {
-                    return Err(ProtocolError::Overflow(
-                        "Polynomial function: argument is non-positive",
-                    ));
+                if diff <= 0 {
+                    return if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    };
                 }
 
                 if diff > u64::MAX as i128 {
@@ -218,19 +221,50 @@ impl DistributionFunction {
 
                 let diff_exp = (diff as f64).powf(exponent);
 
-                if !diff_exp.is_finite() || diff_exp.abs() > (u64::MAX as f64) {
-                    return Err(ProtocolError::Overflow(
-                        "Polynomial function evaluation overflow or negative",
-                    ));
+                if !diff_exp.is_finite() {
+                    return if diff_exp.is_sign_positive() {
+                        if let Some(max_value) = max_value {
+                            Ok(*max_value)
+                        } else {
+                            Ok(MAX_DISTRIBUTION_PARAM)
+                        }
+                    } else if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    };
                 }
 
                 let pol = diff_exp as i128;
 
-                let value = (((*a as i128) * pol / (*d as i128)) as i64)
-                    .checked_add(*b as i64)
-                    .ok_or(ProtocolError::Overflow(
-                        "Polynomial function evaluation overflow or negative",
-                    ))?;
+                let intermediate = if *d == 1 {
+                    (*a as i128).saturating_mul(pol)
+                } else {
+                    ((*a as i128).saturating_mul(pol)) / *d as i128
+                };
+
+                if intermediate > MAX_DISTRIBUTION_PARAM as i128
+                    || intermediate < -(MAX_DISTRIBUTION_PARAM as i128)
+                {
+                    return if intermediate > 0 {
+                        if let Some(max_value) = max_value {
+                            Ok(*max_value)
+                        } else {
+                            Ok(MAX_DISTRIBUTION_PARAM)
+                        }
+                    } else if let Some(min_value) = min_value {
+                        Ok(*min_value)
+                    } else {
+                        Ok(0)
+                    };
+                }
+
+                let value =
+                    (intermediate as i64)
+                        .checked_add(*b as i64)
+                        .ok_or(ProtocolError::Overflow(
+                            "Polynomial function evaluation overflow",
+                        ))?;
 
                 let value = if value < 0 { 0 } else { value as u64 };
 
@@ -244,7 +278,12 @@ impl DistributionFunction {
                         return Ok(*max_value);
                     }
                 }
-                Ok(value)
+
+                if value > MAX_DISTRIBUTION_PARAM {
+                    Ok(MAX_DISTRIBUTION_PARAM)
+                } else {
+                    Ok(value)
+                }
             }
 
             DistributionFunction::Exponential {
@@ -752,6 +791,7 @@ mod tests {
         }
     }
     mod polynomial {
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{MAX_POL_A_PARAM, MAX_POL_M_PARAM};
         use super::*;
         #[test]
         fn test_polynomial_function() {
@@ -767,18 +807,18 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 0).unwrap(), 0);
             assert_eq!(distribution.evaluate(0, 2).unwrap(), 18);
             assert_eq!(distribution.evaluate(0, 3).unwrap(), 28);
             assert_eq!(distribution.evaluate(0, 4).unwrap(), 42);
         }
 
         #[test]
-        fn test_polynomial_function_overflow() {
+        fn test_polynomial_function_should_not_overflow() {
             let distribution = DistributionFunction::Polynomial {
-                a: i64::MAX,
+                a: MAX_POL_A_PARAM,
                 d: 1,
-                m: 2,
+                m: MAX_POL_M_PARAM,
                 n: 1,
                 o: 0,
                 start_moment: Some(0),
@@ -787,12 +827,8 @@ mod tests {
                 max_value: None,
             };
 
-            let result = distribution.evaluate(0, 1);
-            assert!(
-                matches!(result, Err(ProtocolError::Overflow(_))),
-                "Expected overflow but got {:?}",
-                result
-            );
+            let result = distribution.evaluate(0, 100000).expect("expected value");
+            assert_eq!(result, MAX_DISTRIBUTION_PARAM);
         }
 
         // Test: Fractional exponent (exponent = 3/2)
@@ -845,9 +881,8 @@ mod tests {
                 min_value: None,
                 max_value: None,
             };
-            // f(x) = 2 * ((x - 2)^2) + 10.
-            // At x = 2: (0)^2 = 0, f(2) = 10.
-            assert_eq!(distribution.evaluate(0, 2).unwrap(), 10);
+            // since it starts at 2 (that's like the contract registration at 2, so we should get 0
+            assert_eq!(distribution.evaluate(0, 2).unwrap(), 0);
             // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
             assert_eq!(distribution.evaluate(0, 3).unwrap(), 12);
         }
@@ -869,26 +904,6 @@ mod tests {
             // f(x) = 2 * ((x - 0 + 3)^2) + 10.
             // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
             assert_eq!(distribution.evaluate(0, 1).unwrap(), 42);
-        }
-
-        // Test: Constant function when m = 0 (should ignore x)
-        #[test]
-        fn test_polynomial_function_constant() {
-            let distribution = DistributionFunction::Polynomial {
-                a: 5,
-                d: 1,
-                m: 0, // exponent 0 => (x-s+o)^0 = 1 (for any x where x-s+o ≠ 0)
-                n: 1,
-                o: 0,
-                start_moment: Some(0),
-                b: 3,
-                min_value: None,
-                max_value: None,
-            };
-            // f(x) = 5*1 + 3 = 8 for any x.
-            for x in [0, 10, 100].iter() {
-                assert_eq!(distribution.evaluate(0, *x).unwrap(), 8);
-            }
         }
 
         // Test: Linear function when exponent is 1 (m = 1, n = 1)

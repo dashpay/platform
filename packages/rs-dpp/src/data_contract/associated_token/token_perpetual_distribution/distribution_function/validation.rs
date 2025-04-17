@@ -5,8 +5,9 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError,
 };
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{
-    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_EXP_A_PARAM, MAX_LINEAR_SLOPE_PARAM,
-    MAX_LOG_A_PARAM, MIN_LOG_A_PARAM,
+    DistributionFunction, MAX_DISTRIBUTION_PARAM, MAX_EXP_A_PARAM, MAX_EXP_M_PARAM,
+    MAX_EXP_N_PARAM, MAX_LINEAR_SLOPE_A_PARAM, MAX_LOG_A_PARAM, MAX_POL_M_PARAM, MAX_POL_N_PARAM,
+    MIN_EXP_M_PARAM, MIN_LINEAR_SLOPE_A_PARAM, MIN_LOG_A_PARAM, MIN_POL_M_PARAM,
 };
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -184,7 +185,7 @@ impl DistributionFunction {
                 a,
                 d,
                 start_step: s,
-                starting_amount: b,
+                starting_amount,
                 min_value,
                 max_value,
             } => {
@@ -193,25 +194,14 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
-                if *a == 0 {
+                if *a == 0 || *a > MAX_LINEAR_SLOPE_A_PARAM as i64 || *a < MIN_LINEAR_SLOPE_A_PARAM
+                {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "a".to_string(),
-                            -(MAX_DISTRIBUTION_PARAM as i64),
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            MIN_LINEAR_SLOPE_A_PARAM,
+                            MAX_LINEAR_SLOPE_A_PARAM as i64,
                             Some(0),
-                        )
-                        .into(),
-                    ));
-                }
-
-                if *a > MAX_LINEAR_SLOPE_PARAM as i64 || *a < -(MAX_LINEAR_SLOPE_PARAM as i64) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidTokenDistributionFunctionInvalidParameterError::new(
-                            "a".to_string(),
-                            -(MAX_LINEAR_SLOPE_PARAM as i64),
-                            MAX_LINEAR_SLOPE_PARAM as i64,
-                            None,
                         )
                         .into(),
                     ));
@@ -262,7 +252,7 @@ impl DistributionFunction {
                     a: *a,
                     d: *d,
                     start_step: Some(s.unwrap_or(start_moment)),
-                    starting_amount: *b,
+                    starting_amount: *starting_amount,
                     min_value: *min_value,
                     max_value: *max_value,
                 }
@@ -318,6 +308,53 @@ impl DistributionFunction {
                 if *n == 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
+                    ));
+                }
+
+                if *m > 0 && *n == m.unsigned_abs() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterTupleError::new(
+                            "m".to_string(),
+                            "n".to_string(),
+                            "different than".to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *a == 0 || *a < MIN_LOG_A_PARAM || *a > MAX_LOG_A_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "a".to_string(),
+                            MIN_LOG_A_PARAM,
+                            MAX_LOG_A_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *m == 0 || *m < MIN_POL_M_PARAM || *m > MAX_POL_M_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "m".to_string(),
+                            MIN_POL_M_PARAM,
+                            MAX_POL_M_PARAM,
+                            Some(0),
+                        )
+                        .into(),
+                    ));
+                }
+
+                if *n > MAX_POL_N_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "n".to_string(),
+                            1,
+                            MAX_POL_N_PARAM as i64,
+                            None,
+                        )
+                        .into(),
                     ));
                 }
 
@@ -450,12 +487,23 @@ impl DistributionFunction {
                         InvalidTokenDistributionFunctionDivideByZeroError::new(self.clone()).into(),
                     ));
                 }
-                if *m == 0 {
+                if *n > MAX_EXP_N_PARAM {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidTokenDistributionFunctionInvalidParameterError::new(
+                            "n".to_string(),
+                            1,
+                            MAX_EXP_N_PARAM as i64,
+                            None,
+                        )
+                        .into(),
+                    ));
+                }
+                if *m == 0 || *m > MAX_EXP_M_PARAM as i64 || *m < MIN_EXP_M_PARAM {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         InvalidTokenDistributionFunctionInvalidParameterError::new(
                             "m".to_string(),
-                            -(MAX_DISTRIBUTION_PARAM as i64),
-                            MAX_DISTRIBUTION_PARAM as i64,
+                            MIN_EXP_M_PARAM,
+                            MAX_EXP_M_PARAM as i64,
                             Some(0),
                         )
                         .into(),
@@ -1390,6 +1438,30 @@ mod tests {
                 }
             }
         }
+
+        #[test]
+        fn test_polynomial_invalid_zero_a() {
+            let dist = DistributionFunction::Polynomial {
+                a: 0,
+                d: 1,
+                m: 2,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result
+                    .expect("no error on test_exponential_invalid_zero_a")
+                    .first_error()
+                    .is_some(),
+                "Expected error: a cannot be zero"
+            );
+        }
+
         #[test]
         fn test_polynomial_invalid_divide_by_zero() {
             let dist = DistributionFunction::Polynomial {
@@ -1491,6 +1563,126 @@ mod tests {
             assert!(
                 result.expect("expected error").first_error().is_some(),
                 "Expected an error when o is below the allowed minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_a_below_min() {
+            let dist = DistributionFunction::Polynomial {
+                a: MIN_LOG_A_PARAM - 1,
+                d: 1,
+                m: 2,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: a is below minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_m_equal_n() {
+            let dist = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 3,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: a is below minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_a_above_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: MAX_LOG_A_PARAM + 1,
+                d: 1,
+                m: 2,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: a is above maximum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_m_below_min() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: MIN_POL_M_PARAM - 1,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: m is below minimum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_m_above_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: MAX_POL_M_PARAM + 1,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: m is above maximum"
+            );
+        }
+
+        #[test]
+        fn test_polynomial_invalid_n_above_max() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 3,
+                n: MAX_POL_N_PARAM + 1,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let result = dist.validate(START_MOMENT);
+            assert!(
+                result.expect("expected result").first_error().is_some(),
+                "Expected error: n is above maximum"
             );
         }
 
