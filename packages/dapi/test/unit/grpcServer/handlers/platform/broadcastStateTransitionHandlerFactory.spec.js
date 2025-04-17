@@ -195,7 +195,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     };
 
     requestTenderRpcMock.withArgs('unconfirmed_tx').resolves({
-      tx: [stateTransitionFixture.toBuffer().toString('base64')],
+      tx: stateTransitionFixture.toBuffer().toString('base64'),
     });
 
     try {
