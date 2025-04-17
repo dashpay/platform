@@ -1291,7 +1291,6 @@ dependencies = [
  "anyhow",
  "base64-compat",
  "bech32",
- "bincode",
  "bitflags 2.9.0",
  "blake3",
  "bls-signatures 1.2.5 (git+https://github.com/dashpay/bls-signatures?rev=0bb5c5b03249c463debb5cef5f7e52ee66f3aaab)",
@@ -1344,7 +1343,6 @@ name = "dashcore_hashes"
 version = "0.39.6"
 source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.6#51df58f5d5d499f5ee80ab17076ff70b5347c7db"
 dependencies = [
- "bincode",
  "dashcore-private",
  "secp256k1",
  "serde",
@@ -1625,7 +1623,7 @@ dependencies = [
  "clap",
  "console-subscriber",
  "dapi-grpc",
- "dashcore",
+ "dashcore-rpc",
  "delegate",
  "derive_more 1.0.0",
  "dotenvy",
@@ -4712,7 +4710,7 @@ version = "2.0.0-dev.1"
 dependencies = [
  "base64 0.22.1",
  "bincode",
- "dashcore",
+ "dashcore-rpc",
  "dpp",
 ]
 
