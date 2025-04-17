@@ -1,25 +1,16 @@
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
-use dpp::consensus::basic::data_contract::{
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidTokenBaseSupplyError,
-    NonContiguousContractTokenPositionsError,
-};
-use dpp::consensus::basic::BasicError;
-use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
-use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
-use dpp::prelude::DataContract;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
+use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
+use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::ConsensusValidationResult;
-use dpp::version::PlatformVersion;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionAdvancedStructureValidationV0 {
-    fn validate_advanced_structure_v0(&self, execution_context: &mut StateTransitionExecutionContext, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    fn validate_advanced_structure_v0(&self, execution_context: &mut StateTransitionExecutionContext) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
@@ -28,8 +19,8 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
     fn validate_advanced_structure_v0(
         &self,
         execution_context: &mut StateTransitionExecutionContext,
-        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // Moved this to basic structure validation in protocol version 9
         if self.data_contract().version() != INITIAL_DATA_CONTRACT_VERSION {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
@@ -45,230 +36,77 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
             ));
         }
 
-        // Validate data contract id
-        let generated_id = DataContract::generate_data_contract_id_v0(
-            self.data_contract().owner_id(),
-            self.identity_nonce(),
-        );
-
-        // This hash will only take 1 block (64 bytes)
-        execution_context.add_operation(ValidationOperation::DoubleSha256(1));
-
-        if generated_id != self.data_contract().id() {
-            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                vec![
-                    BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
-                        generated_id.to_vec(),
-                        self.data_contract().id().to_vec(),
-                    ))
-                    .into(),
-                ],
-            ));
-        }
-
-        let groups = self.data_contract().groups();
-        if !groups.is_empty() {
-            let validation_result = DataContract::validate_groups(groups, platform_version)?;
-
-            if !validation_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    validation_result.errors,
-                ));
-            }
-        }
-
-        for (expected_position, (token_contract_position, token_configuration)) in
-            self.data_contract().tokens().iter().enumerate()
-        {
-            if expected_position as TokenContractPosition != *token_contract_position {
-                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![NonContiguousContractTokenPositionsError::new(
-                        expected_position as TokenContractPosition,
-                        *token_contract_position,
-                    )
-                    .into()],
-                ));
-            }
-
-            if token_configuration.base_supply() > i64::MAX as u64 {
-                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    vec![
-                        InvalidTokenBaseSupplyError::new(token_configuration.base_supply()).into(),
-                    ],
-                ));
-            }
-
-            let validation_result = token_configuration
-                .conventions()
-                .validate_localizations(platform_version)?;
-            if !validation_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    validation_result.errors,
-                ));
-            }
-
-            let validation_result = token_configuration.validate_token_config_groups_exist(
-                self.data_contract().groups(),
-                platform_version,
-            )?;
-            if !validation_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                );
-
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    validation_result.errors,
-                ));
-            }
-        }
-
-        Ok(ConsensusValidationResult::default())
+        self.validate_advanced_structure_v1(execution_context)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution::types::execution_operation::ValidationOperation;
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
     use assert_matches::assert_matches;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::prelude::{Identifier, IdentityNonce};
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
+    use platform_version::version::PlatformVersion;
+    use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
-    mod validate_advanced_structure {
-        use super::*;
-        use dpp::consensus::ConsensusError;
-        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-        use dpp::prelude::{Identifier, IdentityNonce};
-        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-        use dpp::tests::fixtures::get_data_contract_fixture;
-        use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
-        use platform_version::version::PlatformVersion;
-        use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
+    #[test]
+    fn should_return_invalid_result_if_contract_id_is_not_valid() {
+        let platform_version = PlatformVersion::latest();
+        let identity_nonce = IdentityNonce::default();
 
-        #[test]
-        fn should_return_invalid_result_if_contract_version_is_not_initial() {
-            let platform_version = PlatformVersion::latest();
-            let identity_nonce = IdentityNonce::default();
+        let mut data_contract =
+            get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                .data_contract_owned();
 
-            let mut data_contract =
-                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
-                    .data_contract_owned();
+        let identity_id = data_contract.owner_id();
+        let original_id = data_contract.id();
+        let invalid_id = Identifier::default();
 
-            data_contract.set_version(6);
+        data_contract.set_id(invalid_id);
 
-            let identity_id = data_contract.owner_id();
+        let data_contract_for_serialization = data_contract
+            .try_into_platform_versioned(platform_version)
+            .expect("failed to convert data contract");
 
-            let data_contract_for_serialization = data_contract
-                .try_into_platform_versioned(platform_version)
-                .expect("failed to convert data contract");
-
-            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
-                data_contract: data_contract_for_serialization,
-                identity_nonce,
-                user_fee_increase: 0,
-                signature_public_key_id: 0,
-                signature: Default::default(),
-            }
-            .into();
-
-            let mut execution_context =
-                StateTransitionExecutionContext::default_for_platform_version(platform_version)
-                    .expect("failed to create execution context");
-
-            let result = transition
-                .validate_advanced_structure_v0(&mut execution_context, platform_version)
-                .expect("failed to validate advanced structure");
-
-            assert_matches!(execution_context.operations_slice(), []);
-
-            assert_matches!(
-                result.data,
-                Some(StateTransitionAction::BumpIdentityNonceAction(action))
-                if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
-            );
-
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidDataContractVersionError(e))] if e.expected_version() == INITIAL_DATA_CONTRACT_VERSION && e.version() == 6
-            );
+        let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+            data_contract: data_contract_for_serialization,
+            identity_nonce,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
         }
+        .into();
 
-        #[test]
-        fn should_return_invalid_result_if_contract_id_is_not_valid() {
-            let platform_version = PlatformVersion::latest();
-            let identity_nonce = IdentityNonce::default();
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("failed to create execution context");
 
-            let mut data_contract =
-                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
-                    .data_contract_owned();
+        let result = transition
+            .validate_advanced_structure_v0(&mut execution_context)
+            .expect("failed to validate advanced structure");
+        assert_matches!(
+            execution_context.operations_slice(),
+            [ValidationOperation::DoubleSha256(1)]
+        );
 
-            let identity_id = data_contract.owner_id();
-            let original_id = data_contract.id();
-            let invalid_id = Identifier::default();
+        assert_matches!(
+            result.data,
+            Some(StateTransitionAction::BumpIdentityNonceAction(action))
+            if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
+        );
 
-            data_contract.set_id(invalid_id);
-
-            let data_contract_for_serialization = data_contract
-                .try_into_platform_versioned(platform_version)
-                .expect("failed to convert data contract");
-
-            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
-                data_contract: data_contract_for_serialization,
-                identity_nonce,
-                user_fee_increase: 0,
-                signature_public_key_id: 0,
-                signature: Default::default(),
-            }
-            .into();
-
-            let mut execution_context =
-                StateTransitionExecutionContext::default_for_platform_version(platform_version)
-                    .expect("failed to create execution context");
-
-            let result = transition
-                .validate_advanced_structure_v0(&mut execution_context, platform_version)
-                .expect("failed to validate advanced structure");
-
-            assert_matches!(
-                execution_context.operations_slice(),
-                [ValidationOperation::DoubleSha256(1)]
-            );
-
-            assert_matches!(
-                result.data,
-                Some(StateTransitionAction::BumpIdentityNonceAction(action))
-                if action.identity_id() == identity_id && action.identity_nonce() == identity_nonce
-            );
-
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidDataContractIdError(e))]
-                if Identifier::try_from(e.expected_id()).unwrap() == original_id
-                    && Identifier::try_from(e.invalid_id()).unwrap() == invalid_id
-            );
-        }
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::InvalidDataContractIdError(e))]
+            if Identifier::try_from(e.expected_id()).unwrap() == original_id
+                && Identifier::try_from(e.invalid_id()).unwrap() == invalid_id
+        );
     }
 }

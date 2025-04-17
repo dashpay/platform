@@ -66,6 +66,7 @@ impl<C> Platform<C> {
             block_time_ms: None,
         };
 
+        // todo: deal with cost of this operation
         let query_documents_outcome = self.drive.query_documents(
             drive_query,
             None,

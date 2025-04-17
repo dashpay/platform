@@ -28,7 +28,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "rand",
   "signer",
   "serde",
-], default-features = false, tag = "v0.39.3" }
+], default-features = false, tag = "v0.39.6" }
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
@@ -71,7 +71,7 @@ dpp = { path = ".", features = ["all_features_without_client"] }
 assert_matches = "1.5.0"
 once_cell = "1.7"
 env_logger = { version = "0.11" }
-log = { version = "0.4.22" }
+log = { version = "0.4.27" }
 
 [features]
 default = ["state-transitions"]
