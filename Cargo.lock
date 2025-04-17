@@ -1285,12 +1285,13 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.39.4"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
+version = "0.39.6"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.6#51df58f5d5d499f5ee80ab17076ff70b5347c7db"
 dependencies = [
  "anyhow",
  "base64-compat",
  "bech32",
+ "bincode",
  "bitflags 2.9.0",
  "blake3",
  "bls-signatures 1.2.5 (git+https://github.com/dashpay/bls-signatures?rev=0bb5c5b03249c463debb5cef5f7e52ee66f3aaab)",
@@ -1308,13 +1309,13 @@ dependencies = [
 
 [[package]]
 name = "dashcore-private"
-version = "0.39.4"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
+version = "0.39.6"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.6#51df58f5d5d499f5ee80ab17076ff70b5347c7db"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.39.4"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
+version = "0.39.6"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.6#51df58f5d5d499f5ee80ab17076ff70b5347c7db"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1326,8 +1327,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.39.4"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
+version = "0.39.6"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.6#51df58f5d5d499f5ee80ab17076ff70b5347c7db"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1340,9 +1341,10 @@ dependencies = [
 
 [[package]]
 name = "dashcore_hashes"
-version = "0.39.4"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.5#8a87e75a31a40c3bf7a42d1c9a4197bc0a79ea12"
+version = "0.39.6"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.39.6#51df58f5d5d499f5ee80ab17076ff70b5347c7db"
 dependencies = [
+ "bincode",
  "dashcore-private",
  "secp256k1",
  "serde",
@@ -1623,7 +1625,7 @@ dependencies = [
  "clap",
  "console-subscriber",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore",
  "delegate",
  "derive_more 1.0.0",
  "dotenvy",
@@ -4710,7 +4712,7 @@ version = "2.0.0-dev.1"
 dependencies = [
  "base64 0.22.1",
  "bincode",
- "dashcore-rpc",
+ "dashcore",
  "dpp",
 ]
 
