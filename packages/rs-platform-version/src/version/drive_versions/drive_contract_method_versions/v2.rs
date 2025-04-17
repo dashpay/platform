@@ -17,9 +17,15 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V2: DriveContractMethodVersions =
         },
         insert: DriveContractInsertMethodVersions {
             add_contract_to_storage: 0,
-            insert_contract: 1, // <--- changed to v1 (for token insertion
+            insert_contract: 1, // <--- changed to v1 (for token insertion)
+            add_description: 0,
+            add_keywords: 0,
         },
-        update: DriveContractUpdateMethodVersions { update_contract: 1 }, // <--- changed to v1 (for token insertion)
+        update: DriveContractUpdateMethodVersions {
+            update_contract: 1, // <--- changed to v1 (for token insertion)
+            update_description: 0,
+            update_keywords: 0,
+        },
         costs: DriveContractCostsMethodVersions {
             add_estimation_costs_for_contract_insertion: 0,
         },

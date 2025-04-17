@@ -111,6 +111,8 @@ impl DataContractV1 {
             updated_at_epoch: None,
             groups: Default::default(),
             tokens: Default::default(),
+            keywords: Default::default(),
+            description: None,
         };
 
         Ok(data_contract)
@@ -137,6 +139,8 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
+            keywords,
+            description,
         } = data_contract_data;
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
@@ -165,6 +169,8 @@ impl DataContractV1 {
             updated_at_epoch,
             groups,
             tokens,
+            keywords,
+            description,
         };
 
         Ok(data_contract)

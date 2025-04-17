@@ -148,6 +148,8 @@ mod tests {
                     TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
                 ),
             ]),
+            keywords: Vec::new(),
+            description: None,
         });
 
         drive
@@ -316,6 +318,8 @@ mod tests {
                 }),
             )]),
             tokens: BTreeMap::new(),
+            keywords: Vec::new(),
+            description: None,
         });
 
         drive
@@ -409,6 +413,8 @@ mod tests {
                 }),
             )]),
             tokens: BTreeMap::new(),
+            keywords: Vec::new(),
+            description: None,
         });
 
         drive
