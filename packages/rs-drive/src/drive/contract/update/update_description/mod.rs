@@ -16,6 +16,7 @@ mod v0;
 impl Drive {
     /// Updates the documents in the Keyword Search contract for the contract
     /// update description and returns the fee result
+    #[allow(clippy::too_many_arguments)]
     pub fn update_contract_description(
         &self,
         contract_id: Identifier,
@@ -52,6 +53,7 @@ impl Drive {
 
     /// Creates and applies the LowLeveLDriveOperations needed to update
     /// the documents in the Keyword Search contract for the contract description
+    #[allow(clippy::too_many_arguments)]
     pub fn update_contract_description_add_to_operations(
         &self,
         contract_id: Identifier,
@@ -90,6 +92,7 @@ impl Drive {
 
     /// Creates and returns the LowLeveLDriveOperations needed to update
     /// the documents in the Keyword Search contract for the contract description
+    #[allow(clippy::too_many_arguments)]
     pub fn update_contract_description_operations(
         &self,
         contract_id: Identifier,

@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, HashMap};
 impl Drive {
     /// Updates the documents in the Keyword Search contract for the contract
     /// update keywords and returns the fee result
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_contract_keywords_v0(
         &self,
         contract_id: Identifier,
@@ -52,6 +53,7 @@ impl Drive {
 
     /// Creates and applies the LowLeveLDriveOperations needed to update
     /// the documents in the Keyword Search contract for the contract keywords
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_contract_keywords_add_to_operations_v0(
         &self,
         contract_id: Identifier,
@@ -90,6 +92,7 @@ impl Drive {
 
     /// Creates and returns the LowLeveLDriveOperations needed to update
     /// the documents in the Keyword Search contract for the contract keywords
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn update_contract_keywords_operations_v0(
         &self,
         contract_id: Identifier,
