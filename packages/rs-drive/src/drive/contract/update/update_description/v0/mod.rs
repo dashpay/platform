@@ -155,6 +155,7 @@ impl Drive {
             let mut new_document = existing_documents.remove(0);
             new_document.set("description", Value::Text(description.clone()));
             new_document.set_updated_at(Some(block_info.time_ms));
+            new_document.bump_revision();
 
             let info = DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {

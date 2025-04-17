@@ -202,7 +202,7 @@ impl Drive {
             id: document_id,
             owner_id,
             properties,
-            revision: None,
+            revision: Some(1),
             created_at: Some(block_info.time_ms),
             updated_at: None,
             transferred_at: None,
