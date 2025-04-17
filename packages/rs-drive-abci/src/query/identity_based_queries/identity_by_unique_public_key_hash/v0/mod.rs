@@ -14,7 +14,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {
-    pub(super) fn query_identity_by_public_key_hash_v0(
+    pub(super) fn query_identity_by_unique_public_key_hash_v0(
         &self,
         GetIdentityByPublicKeyHashRequestV0 {
             public_key_hash,
@@ -91,7 +91,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_by_public_key_hash_v0(request, &state, version)
+            .query_identity_by_unique_public_key_hash_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -111,7 +111,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_by_public_key_hash_v0(request, &state, version)
+            .query_identity_by_unique_public_key_hash_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -131,7 +131,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_by_public_key_hash_v0(request, &state, version)
+            .query_identity_by_unique_public_key_hash_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(

@@ -32,7 +32,7 @@ impl<C> Platform<C> {
             .drive_abci
             .query
             .identity_based_queries
-            .identity_by_public_key_hash;
+            .identity_by_unique_public_key_hash;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -41,7 +41,7 @@ impl<C> Platform<C> {
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
-                    "identity_by_public_key_hash".to_string(),
+                    "identity_by_unique_public_key_hash".to_string(),
                     feature_version_bounds.min_version,
                     feature_version_bounds.max_version,
                     platform_version.protocol_version,
@@ -52,7 +52,7 @@ impl<C> Platform<C> {
 
         match version {
             RequestVersion::V0(request_v0) => {
-                let request = self.query_identity_by_public_key_hash_v0(
+                let request = self.query_identity_by_unique_public_key_hash_v0(
                     request_v0,
                     platform_state,
                     platform_version,
